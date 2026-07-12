@@ -31,10 +31,12 @@ func New(cfg *config.Config, sessions *sessionstore.Store) *Bot {
 func (b *Bot) Register(s *discordgo.Session) {
 	s.AddHandler(b.onReady)
 	s.AddHandler(b.onMessage)
+	// Message Content is privileged — enable it in Developer Portal → Bot →
+	// Privileged Gateway Intents. Do not request GuildMembers (also privileged);
+	// role checks use m.Member from message events when present.
 	s.Identify.Intents = discordgo.IntentsGuilds |
 		discordgo.IntentsGuildMessages |
-		discordgo.IntentsMessageContent |
-		discordgo.IntentsGuildMembers
+		discordgo.IntentsMessageContent
 }
 
 func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {

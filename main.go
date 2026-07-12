@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
@@ -34,6 +35,14 @@ func main() {
 	b.Register(dg)
 
 	if err := dg.Open(); err != nil {
+		if strings.Contains(err.Error(), "4014") {
+			log.Fatalf("open gateway: %v\n\n"+
+				"Discord rejected privileged intents.\n"+
+				"In https://discord.com/developers/applications → your app → Bot →\n"+
+				"Privileged Gateway Intents, enable:\n"+
+				"  • MESSAGE CONTENT INTENT\n"+
+				"Then restart this process. (Server Members Intent is not required.)\n", err)
+		}
 		log.Fatalf("open gateway: %v", err)
 	}
 	defer dg.Close()
