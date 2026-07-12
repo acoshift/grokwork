@@ -1,0 +1,8 @@
+/grok-discord
+/data
+/config.json
+*.log
+.DS_Store
+.git
+.gitignore
+README.md

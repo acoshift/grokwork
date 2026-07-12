@@ -1,0 +1,21 @@
+{
+  "discordToken": "YOUR_BOT_TOKEN",
+  "allowedUserIds": [
+    "YOUR_DISCORD_USER_ID"
+  ],
+  "allowedRoleIds": [],
+  "projects": {
+    "app": "/absolute/path/to/app",
+    "api": "/absolute/path/to/api"
+  },
+  "channels": {
+    "DISCORD_CHANNEL_ID_FOR_APP": "app",
+    "DISCORD_CHANNEL_ID_FOR_API": "api"
+  },
+  "grokBin": "grok",
+  "yolo": true,
+  "model": "",
+  "maxTurns": 40,
+  "timeoutMs": 1800000,
+  "extraArgs": []
+}
