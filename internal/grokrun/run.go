@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -21,6 +22,14 @@ type Options struct {
 	MaxTurns  int
 	Timeout   time.Duration
 	ExtraArgs []string
+	// Tools, when non-nil, passes --tools (comma-separated allowlist).
+	// Use a pointer to empty string to request no tools when the CLI supports it.
+	Tools *string
+	// NoSubagents / NoPlan / DisableWebSearch add corresponding headless flags.
+	NoSubagents      bool
+	NoPlan           bool
+	NoMemory         bool
+	DisableWebSearch bool
 }
 
 type Result struct {
@@ -61,7 +70,32 @@ func Run(ctx context.Context, opt Options) Result {
 	if opt.SessionID != "" {
 		args = append(args, "--resume", opt.SessionID)
 	}
+	if opt.Tools != nil {
+		args = append(args, "--tools", *opt.Tools)
+	}
+	if opt.NoSubagents {
+		args = append(args, "--no-subagents")
+	}
+	if opt.NoPlan {
+		args = append(args, "--no-plan")
+	}
+	if opt.NoMemory {
+		args = append(args, "--no-memory")
+	}
+	if opt.DisableWebSearch {
+		args = append(args, "--disable-web-search")
+	}
 	args = append(args, opt.ExtraArgs...)
+
+	// Log argv without dumping a huge prompt twice if already logged upstream.
+	logArgs := make([]string, len(args))
+	copy(logArgs, args)
+	for i := 0; i+1 < len(logArgs); i++ {
+		if logArgs[i] == "-p" && len(logArgs[i+1]) > 200 {
+			logArgs[i+1] = logArgs[i+1][:200] + "…"
+		}
+	}
+	log.Printf("grokrun: exec bin=%q cwd=%q args=%v", opt.GrokBin, opt.Cwd, logArgs)
 
 	cmd := exec.CommandContext(ctx, opt.GrokBin, args...)
 	cmd.Dir = opt.Cwd
@@ -75,6 +109,7 @@ func Run(ctx context.Context, opt Options) Result {
 	code := 0
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("grokrun: timeout after %s stderr=%q", opt.Timeout, truncate(stderr.String(), 1000))
 			return Result{
 				Text:      fmt.Sprintf("Timed out after %s. Partial work may exist in the Grok session.", opt.Timeout),
 				SessionID: opt.SessionID,
@@ -84,7 +119,10 @@ func Run(ctx context.Context, opt Options) Result {
 		}
 		if ee, ok := err.(*exec.ExitError); ok {
 			code = ee.ExitCode()
+			log.Printf("grokrun: exit code=%d err=%v stderr=%q stdoutLen=%d",
+				code, err, truncate(stderr.String(), 1000), stdout.Len())
 		} else {
+			log.Printf("grokrun: start failed: %v stderr=%q", err, truncate(stderr.String(), 1000))
 			return Result{
 				Text:      fmt.Sprintf("Failed to start grok: %v", err),
 				SessionID: opt.SessionID,
@@ -92,6 +130,8 @@ func Run(ctx context.Context, opt Options) Result {
 				Stderr:    stderr.String(),
 			}
 		}
+	} else {
+		log.Printf("grokrun: ok stdoutLen=%d stderrLen=%d", stdout.Len(), stderr.Len())
 	}
 
 	out := strings.TrimSpace(stdout.String())
@@ -128,4 +168,93 @@ func Run(ctx context.Context, opt Options) Result {
 		Code:      code,
 		Stderr:    stderr.String(),
 	}
+}
+
+// SummarizeTitle asks Grok for a short Discord thread title (separate one-shot
+// session, no resume into the work session). On failure, ok is false.
+func SummarizeTitle(ctx context.Context, grokBin, model, taskPrompt, cwd string, timeout time.Duration) (title string, ok bool) {
+	if strings.TrimSpace(taskPrompt) == "" {
+		return "", false
+	}
+	if cwd == "" {
+		cwd = os.TempDir()
+	}
+	if timeout <= 0 {
+		timeout = 45 * time.Second
+	}
+
+	noTools := ""
+	prompt := strings.Join([]string{
+		"You name Discord threads for an engineering team.",
+		"Given the user task below, reply with ONLY a short thread title.",
+		"Rules:",
+		"- 3 to 10 words",
+		"- under 80 characters",
+		"- no quotes, no markdown, no trailing punctuation",
+		"- no leading labels like Title:",
+		"- describe the task, not the user",
+		"",
+		"Task:",
+		taskPrompt,
+	}, "\n")
+
+	result := Run(ctx, Options{
+		GrokBin:          grokBin,
+		Prompt:           prompt,
+		Cwd:              cwd,
+		Yolo:             false,
+		Model:            model,
+		MaxTurns:         1,
+		Timeout:          timeout,
+		Tools:            &noTools,
+		NoSubagents:      true,
+		NoPlan:           true,
+		NoMemory:         true,
+		DisableWebSearch: true,
+		ExtraArgs:        []string{"--verbatim"},
+	})
+	if result.Code != 0 {
+		log.Printf("grokrun: summarize failed code=%d text=%q stderr=%q",
+			result.Code, truncate(result.Text, 200), truncate(result.Stderr, 400))
+		return "", false
+	}
+
+	title = cleanTitle(result.Text)
+	if title == "" {
+		return "", false
+	}
+	log.Printf("grokrun: summarize title=%q", title)
+	return title, true
+}
+
+func cleanTitle(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	// First non-empty line only.
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		s = line
+		break
+	}
+	s = strings.Trim(s, "\"'`*")
+	s = strings.TrimPrefix(s, "Title:")
+	s = strings.TrimPrefix(s, "title:")
+	s = strings.TrimSpace(s)
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" || s == "(empty response)" {
+		return ""
+	}
+	return s
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

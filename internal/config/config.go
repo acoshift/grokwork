@@ -13,12 +13,16 @@ type Config struct {
 	AllowedRoleIDs  []string          `json:"allowedRoleIds"`
 	Projects       map[string]string `json:"projects"`
 	Channels       map[string]string `json:"channels"` // channel ID → project name
-	GrokBin        string            `json:"grokBin"`
-	Yolo            *bool             `json:"yolo"`
-	Model           string            `json:"model"`
-	MaxTurns        int               `json:"maxTurns"`
-	TimeoutMs       int               `json:"timeoutMs"`
-	ExtraArgs       []string          `json:"extraArgs"`
+	GrokBin               string   `json:"grokBin"`
+	Yolo                  *bool    `json:"yolo"`
+	Model                 string   `json:"model"`
+	MaxTurns              int      `json:"maxTurns"`
+	TimeoutMs             int      `json:"timeoutMs"`
+	ExtraArgs             []string `json:"extraArgs"`
+	// SummarizeThreadTitle runs a short Grok one-shot to name the Discord thread
+	// before the real task starts. Falls back to a local text trim on failure.
+	SummarizeThreadTitle *bool `json:"summarizeThreadTitle"`
+	SummarizeTimeoutMs   int   `json:"summarizeTimeoutMs"`
 
 	// Resolved at load time
 	AllowedUsers map[string]struct{} `json:"-"`
@@ -32,6 +36,13 @@ func (c *Config) YoloEnabled() bool {
 		return true
 	}
 	return *c.Yolo
+}
+
+func (c *Config) SummarizeTitleEnabled() bool {
+	if c.SummarizeThreadTitle == nil {
+		return true
+	}
+	return *c.SummarizeThreadTitle
 }
 
 func Load() (*Config, error) {
@@ -93,6 +104,9 @@ func Load() (*Config, error) {
 	}
 	if c.TimeoutMs <= 0 {
 		c.TimeoutMs = 30 * 60 * 1000
+	}
+	if c.SummarizeTimeoutMs <= 0 {
+		c.SummarizeTimeoutMs = 45_000
 	}
 
 	c.AllowedUsers = toSet(c.AllowedUserIDs)

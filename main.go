@@ -33,6 +33,7 @@ func main() {
 
 	b := bot.New(cfg, sessions)
 	b.Register(dg)
+	dg.LogLevel = discordgo.LogWarning
 
 	if err := dg.Open(); err != nil {
 		if strings.Contains(err.Error(), "4014") {

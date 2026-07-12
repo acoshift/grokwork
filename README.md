@@ -43,6 +43,8 @@ cp config.example.json config.json
 | `projects` | Name → **absolute** path on this machine |
 | `channels` | Discord channel ID → project name (**required**; only way to select a project) |
 | `yolo` | Auto-approve Grok tools (needed for unattended fix/investigate) |
+| `summarizeThreadTitle` | Call Grok once to name the Discord thread before work (default true) |
+| `summarizeTimeoutMs` | Timeout for the title summary call (default 45000) |
 
 `config.json` is gitignored. Never commit tokens, user IDs, or private project paths.
 

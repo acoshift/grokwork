@@ -17,5 +17,7 @@
   "model": "",
   "maxTurns": 40,
   "timeoutMs": 1800000,
-  "extraArgs": []
+  "extraArgs": [],
+  "summarizeThreadTitle": true,
+  "summarizeTimeoutMs": 45000
 }
