@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -16,12 +17,22 @@ import (
 	"github.com/acoshift/grok-discord/internal/sessionstore"
 )
 
-const maxMsg = 1900
+const (
+	maxMsg          = 1900
+	progressInterval = 15 * time.Second
+)
+
+// runJob is an in-flight Grok run for one Discord thread.
+type runJob struct {
+	cancel  context.CancelFunc
+	start   time.Time
+	project string
+}
 
 type Bot struct {
 	cfg      *config.Config
 	sessions *sessionstore.Store
-	busy     sync.Map // threadID → struct{}
+	busy     sync.Map // threadID → *runJob
 }
 
 func New(cfg *config.Config, sessions *sessionstore.Store) *Bot {
@@ -87,7 +98,12 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	parsed := ParseMessage(m.Content, s.State.User.ID)
-	log.Printf("parse: kind=%s prompt=%q", kindName(parsed.Kind), truncate(parsed.Prompt, 300))
+	// Bare @mention with files only still counts as a task.
+	if parsed.Kind == KindEmpty && len(m.Attachments) > 0 {
+		parsed = Parsed{Kind: KindTask, Prompt: "Please review the attached files."}
+	}
+	log.Printf("parse: kind=%s prompt=%q attachments=%d",
+		kindName(parsed.Kind), truncate(parsed.Prompt, 300), len(m.Attachments))
 
 	switch parsed.Kind {
 	case KindEmpty, KindHelp:
@@ -128,8 +144,8 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 			return
 		}
 		state := "idle"
-		if _, busy := b.busy.Load(m.ChannelID); busy {
-			state = "running"
+		if job, busy := b.getJob(m.ChannelID); busy {
+			state = "running · " + formatElapsed(time.Since(job.start))
 		}
 		if _, err := s.ChannelMessageSendReply(m.ChannelID, strings.Join([]string{
 			"**project:** " + e.Project,
@@ -139,9 +155,42 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}, "\n"), ref(m)); err != nil {
 			log.Printf("error: reply status: %v", err)
 		}
+	case KindCancel:
+		b.handleCancel(s, m)
 	case KindTask:
 		log.Printf("task: starting async for msg=%s", m.ID)
 		go b.handleTask(s, m, parsed)
+	}
+}
+
+func (b *Bot) getJob(threadID string) (*runJob, bool) {
+	v, ok := b.busy.Load(threadID)
+	if !ok {
+		return nil, false
+	}
+	job, ok := v.(*runJob)
+	return job, ok
+}
+
+func (b *Bot) handleCancel(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if !isThread(s, m.ChannelID) {
+		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /cancel` inside a Grok thread that is running.", ref(m)); err != nil {
+			log.Printf("error: reply cancel-not-thread: %v", err)
+		}
+		return
+	}
+	job, ok := b.getJob(m.ChannelID)
+	if !ok {
+		if _, err := s.ChannelMessageSendReply(m.ChannelID, "No run in progress for this thread.", ref(m)); err != nil {
+			log.Printf("error: reply cancel-idle: %v", err)
+		}
+		return
+	}
+	log.Printf("cancel: thread=%s project=%s elapsed=%s user=%s",
+		m.ChannelID, job.project, formatElapsed(time.Since(job.start)), m.Author.String())
+	job.cancel()
+	if _, err := s.ChannelMessageSendReply(m.ChannelID, "Cancelling current run…", ref(m)); err != nil {
+		log.Printf("error: reply cancel: %v", err)
 	}
 }
 
@@ -229,12 +278,16 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	}
 	log.Printf("task: project=%s cwd=%s", proj.Name, proj.Cwd)
 
-	title := threadNameFromPrompt(parsed.Prompt, m.Author.Username)
+	titlePrompt := parsed.Prompt
+	if titlePrompt == "" && len(m.Attachments) > 0 {
+		titlePrompt = "attachments: " + m.Attachments[0].Filename
+	}
+	title := threadNameFromPrompt(titlePrompt, m.Author.Username)
 	needTitle := !isThread(s, m.ChannelID) || shouldRetitleThread(s, m.ChannelID)
 	if needTitle && b.cfg.SummarizeTitleEnabled() {
 		log.Printf("task: summarizing title via grok…")
 		sumCtx, cancel := context.WithTimeout(context.Background(), time.Duration(b.cfg.SummarizeTimeoutMs)*time.Millisecond)
-		if t, ok := grokrun.SummarizeTitle(sumCtx, b.cfg.GrokBin, b.cfg.Model, parsed.Prompt, proj.Cwd, time.Duration(b.cfg.SummarizeTimeoutMs)*time.Millisecond); ok {
+		if t, ok := grokrun.SummarizeTitle(sumCtx, b.cfg.GrokBin, b.cfg.Model, titlePrompt, proj.Cwd, time.Duration(b.cfg.SummarizeTimeoutMs)*time.Millisecond); ok {
 			title = threadNameFromPrompt(t, m.Author.Username)
 			log.Printf("task: grok title=%q", title)
 		} else {
@@ -253,19 +306,58 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	}
 	log.Printf("task: thread=%s title=%q", threadID, title)
 
-	if _, loaded := b.busy.LoadOrStore(threadID, struct{}{}); loaded {
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &runJob{cancel: cancel, start: time.Now(), project: proj.Name}
+	if _, loaded := b.busy.LoadOrStore(threadID, job); loaded {
+		cancel()
 		log.Printf("task: busy thread=%s", threadID)
-		if _, sendErr := s.ChannelMessageSend(threadID, "Already working in this thread — wait for the current run to finish."); sendErr != nil {
+		if _, sendErr := s.ChannelMessageSend(threadID, "Already working in this thread — wait for the current run to finish, or `@Grok /cancel`."); sendErr != nil {
 			log.Printf("error: reply busy: %v", sendErr)
 		}
 		return
 	}
-	defer b.busy.Delete(threadID)
+	defer func() {
+		cancel()
+		b.busy.Delete(threadID)
+	}()
 
-	status, err := s.ChannelMessageSend(threadID, fmt.Sprintf("Working in **%s**…", proj.Name))
+	status, err := s.ChannelMessageSend(threadID, workingStatus(proj.Name, 0))
 	if err != nil {
 		log.Printf("error: status message thread=%s: %v", threadID, err)
 		return
+	}
+
+	stopProgress := make(chan struct{})
+	var progressWG sync.WaitGroup
+	progressWG.Add(1)
+	go func() {
+		defer progressWG.Done()
+		b.progressLoop(s, threadID, status.ID, proj.Name, job.start, stopProgress)
+	}()
+
+	prompt := parsed.Prompt
+	if len(m.Attachments) > 0 {
+		attDir := filepath.Join(b.cfg.DataDir, "attachments", m.ID)
+		defer func() {
+			if rmErr := os.RemoveAll(attDir); rmErr != nil {
+				log.Printf("warn: cleanup attachments %s: %v", attDir, rmErr)
+			}
+		}()
+		log.Printf("task: downloading %d attachment(s) → %s", len(m.Attachments), attDir)
+		files, dlErr := downloadAttachments(ctx, m.Attachments, attDir)
+		if dlErr != nil {
+			close(stopProgress)
+			progressWG.Wait()
+			log.Printf("error: attachments: %v", dlErr)
+			msg := "Could not download attachments: " + dlErr.Error()
+			if _, editErr := s.ChannelMessageEdit(threadID, status.ID, "Failed · attachments"); editErr != nil {
+				log.Printf("error: edit status: %v", editErr)
+			}
+			sendChunks(s, threadID, msg)
+			return
+		}
+		prompt = promptWithAttachments(prompt, files)
+		log.Printf("task: saved %d attachment(s)", len(files))
 	}
 
 	var sessionID string
@@ -274,13 +366,12 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		log.Printf("task: resume session=%s", sessionID)
 	}
 
-	start := time.Now()
 	log.Printf("task: running grok bin=%s yolo=%v maxTurns=%d timeout=%s",
 		b.cfg.GrokBin, b.cfg.YoloEnabled(), b.cfg.MaxTurns, time.Duration(b.cfg.TimeoutMs)*time.Millisecond)
 
-	result := grokrun.Run(context.Background(), grokrun.Options{
+	result := grokrun.Run(ctx, grokrun.Options{
 		GrokBin:   b.cfg.GrokBin,
-		Prompt:    parsed.Prompt,
+		Prompt:    prompt,
 		Cwd:       proj.Cwd,
 		SessionID: sessionID,
 		Yolo:      b.cfg.YoloEnabled(),
@@ -290,9 +381,14 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		ExtraArgs: b.cfg.ExtraArgs,
 	})
 
-	log.Printf("task: grok done elapsed=%s code=%d session=%s textLen=%d stderrLen=%d text=%q",
-		time.Since(start).Round(time.Millisecond),
+	close(stopProgress)
+	progressWG.Wait()
+
+	elapsed := time.Since(job.start)
+	log.Printf("task: grok done elapsed=%s code=%d cancelled=%v session=%s textLen=%d stderrLen=%d text=%q",
+		elapsed.Round(time.Millisecond),
 		result.Code,
+		result.Cancelled,
 		result.SessionID,
 		len(result.Text),
 		len(result.Stderr),
@@ -301,7 +397,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	if result.Stderr != "" {
 		log.Printf("task: grok stderr=%q", truncate(result.Stderr, 2000))
 	}
-	if result.Code != 0 {
+	if result.Code != 0 && !result.Cancelled {
 		log.Printf("error: grok exit code=%d", result.Code)
 	}
 
@@ -316,9 +412,12 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		}
 	}
 
-	header := fmt.Sprintf("Done · **%s**", proj.Name)
-	if result.Code != 0 {
-		header = fmt.Sprintf("Finished with exit **%d** · **%s**", result.Code, proj.Name)
+	header := fmt.Sprintf("Done · **%s** · %s", proj.Name, formatElapsed(elapsed))
+	switch {
+	case result.Cancelled:
+		header = fmt.Sprintf("Cancelled · **%s** · %s", proj.Name, formatElapsed(elapsed))
+	case result.Code != 0:
+		header = fmt.Sprintf("Finished with exit **%d** · **%s** · %s", result.Code, proj.Name, formatElapsed(elapsed))
 	}
 	if _, err := s.ChannelMessageEdit(threadID, status.ID, header); err != nil {
 		log.Printf("error: edit status: %v", err)
@@ -334,6 +433,50 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		sendChunks(s, threadID, "stderr:\n```\n"+errText+"\n```")
 	}
 	log.Printf("task: finished msg=%s thread=%s", m.ID, threadID)
+}
+
+// progressLoop edits the status message with elapsed time until stop is closed.
+func (b *Bot) progressLoop(s *discordgo.Session, threadID, msgID, project string, start time.Time, stop <-chan struct{}) {
+	ticker := time.NewTicker(progressInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			text := workingStatus(project, time.Since(start))
+			if _, err := s.ChannelMessageEdit(threadID, msgID, text); err != nil {
+				log.Printf("warn: progress edit thread=%s: %v", threadID, err)
+			}
+		}
+	}
+}
+
+func workingStatus(project string, elapsed time.Duration) string {
+	if elapsed < time.Second {
+		return fmt.Sprintf("Working in **%s**… · `@Grok /cancel` to stop", project)
+	}
+	return fmt.Sprintf("Working in **%s**… · %s elapsed · `@Grok /cancel` to stop",
+		project, formatElapsed(elapsed))
+}
+
+// formatElapsed renders a compact duration for Discord status lines.
+func formatElapsed(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	d = d.Round(time.Second)
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	sec := int(d.Seconds()) % 60
+	switch {
+	case h > 0:
+		return fmt.Sprintf("%dh %dm", h, m)
+	case m > 0:
+		return fmt.Sprintf("%dm %ds", m, sec)
+	default:
+		return fmt.Sprintf("%ds", sec)
+	}
 }
 
 // ensureThread creates or reuses a thread. name is the final Discord title
@@ -417,6 +560,8 @@ func kindName(k Kind) string {
 		return "reset"
 	case KindStatus:
 		return "status"
+	case KindCancel:
+		return "cancel"
 	case KindTask:
 		return "task"
 	default:

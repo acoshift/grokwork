@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -37,6 +38,8 @@ type Result struct {
 	SessionID string
 	Code      int
 	Stderr    string
+	// Cancelled is true when the parent context was cancelled (e.g. Discord /cancel).
+	Cancelled bool
 }
 
 type jsonOut struct {
@@ -108,13 +111,25 @@ func Run(ctx context.Context, opt Options) Result {
 	err := cmd.Run()
 	code := 0
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
+		// Context done first: CommandContext kills the process, so we may also
+		// see ExitError — prefer the context reason.
+		switch {
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
 			log.Printf("grokrun: timeout after %s stderr=%q", opt.Timeout, truncate(stderr.String(), 1000))
 			return Result{
 				Text:      fmt.Sprintf("Timed out after %s. Partial work may exist in the Grok session.", opt.Timeout),
 				SessionID: opt.SessionID,
 				Code:      124,
 				Stderr:    stderr.String(),
+			}
+		case ctx.Err() != nil:
+			log.Printf("grokrun: cancelled stderr=%q", truncate(stderr.String(), 1000))
+			return Result{
+				Text:      "Cancelled. Partial work may exist in the Grok session.",
+				SessionID: opt.SessionID,
+				Code:      130,
+				Stderr:    stderr.String(),
+				Cancelled: true,
 			}
 		}
 		if ee, ok := err.(*exec.ExitError); ok {

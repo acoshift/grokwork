@@ -14,6 +14,7 @@ const (
 	KindProjects
 	KindReset
 	KindStatus
+	KindCancel
 	KindTask
 )
 
@@ -48,6 +49,8 @@ func ParseMessage(content, botUserID string) Parsed {
 		return Parsed{Kind: KindReset}
 	case "/status", "status":
 		return Parsed{Kind: KindStatus}
+	case "/cancel", "cancel", "/stop", "stop":
+		return Parsed{Kind: KindCancel}
 	}
 
 	return Parsed{Kind: KindTask, Prompt: text}
@@ -60,6 +63,7 @@ func HelpText() string {
 		"**Usage**",
 		"• `@Grok <task>` — run against this channel's configured project",
 		"• `@Grok <follow-up>` in the same thread — resume session",
+		"• Attach logs/screenshots/patches with your message — files are downloaded for Grok to read",
 		"",
 		"Project is fixed per Discord channel (admin `channels` config). Users cannot switch projects.",
 		"",
@@ -67,6 +71,7 @@ func HelpText() string {
 		"• `/projects` — show this channel's project",
 		"• `/reset` — forget this thread's session",
 		"• `/status` — show this thread's session",
+		"• `/cancel` — stop the run in this thread",
 		"• `/help` — this message",
 	}, "\n")
 }

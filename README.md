@@ -111,6 +111,12 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 | `@Grok /projects` | Show this channel’s mapped project |
 | `@Grok /reset` | Drop session for this thread |
 | `@Grok /status` | Show project + session id |
+| `@Grok /cancel` | Stop the in-progress run in this thread |
+| `@Grok <task>` + attachments | Download files for Grok to read (logs, screenshots, patches) |
+
+While a task is running, the bot updates the status message every ~15s with elapsed time. Use `/cancel` (or `/stop`) in that thread to kill the Grok process.
+
+**Attachments:** files on the `@Grok` message are downloaded under `data/attachments/<messageId>/`, absolute paths are added to the prompt, and the directory is deleted when the run finishes. Limits: 10 files, 25 MiB each, 50 MiB total. A mention with only attachments (no text) still starts a task.
 
 ## Security
 
