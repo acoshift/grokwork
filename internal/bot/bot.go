@@ -133,7 +133,6 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		if _, err := s.ChannelMessageSendReply(m.ChannelID, strings.Join([]string{
 			"**project:** " + e.Project,
-			"**cwd:** `" + e.Cwd + "`",
 			"**session:** `" + e.SessionID + "`",
 			"**updated:** " + e.UpdatedAt,
 			"**state:** " + state,
@@ -195,7 +194,7 @@ func (b *Bot) channelProjectHelp(channelID string) string {
 	if err != nil {
 		return err.Error()
 	}
-	return fmt.Sprintf("This channel → **%s** (`%s`)", proj.Name, proj.Cwd)
+	return fmt.Sprintf("This channel → **%s**", proj.Name)
 }
 
 func parentChannelID(s *discordgo.Session, channelID string) string {
@@ -263,7 +262,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	}
 	defer b.busy.Delete(threadID)
 
-	status, err := s.ChannelMessageSend(threadID, fmt.Sprintf("Working in **%s** (`%s`)…", proj.Name, proj.Cwd))
+	status, err := s.ChannelMessageSend(threadID, fmt.Sprintf("Working in **%s**…", proj.Name))
 	if err != nil {
 		log.Printf("error: status message thread=%s: %v", threadID, err)
 		return
