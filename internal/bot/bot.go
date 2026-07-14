@@ -365,6 +365,17 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		log.Printf("task: project %s is not a git repo — using main cwd", proj.Name)
 		return cwd, "", nil
 	}
+
+	// Drop worktree/branch/session when this thread's PR was already merged or closed.
+	if cleaned, state, cErr := gitworktree.CleanupIfPRDone(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID); cErr != nil {
+		log.Printf("warn: worktree PR cleanup check thread=%s: %v", threadID, cErr)
+	} else if cleaned {
+		log.Printf("task: cleaned worktree after PR %s thread=%s", state, threadID)
+		if delErr := b.sessions.Delete(threadID); delErr != nil {
+			log.Printf("warn: session delete after PR cleanup thread=%s: %v", threadID, delErr)
+		}
+	}
+
 	// Reuse existing worktree from session when still valid.
 	if e, ok := b.sessions.Get(threadID); ok && e.WorktreeBranch != "" && e.Cwd != "" && e.Cwd != proj.Cwd {
 		if st, statErr := os.Stat(e.Cwd); statErr == nil && st.IsDir() && gitworktree.IsRepo(e.Cwd) {

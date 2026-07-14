@@ -5,6 +5,7 @@ package gitworktree
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -23,9 +24,31 @@ type Tree struct {
 	Repo string
 }
 
+// BranchPrefix is the required prefix for bot-managed branches.
+// Only branches under this prefix may be deleted by Remove / remote cleanup.
+const BranchPrefix = "grok/discord/"
+
 // BranchName returns the git branch used for a Discord thread.
 func BranchName(threadID string) string {
-	return "grok/discord/" + threadID
+	return BranchPrefix + threadID
+}
+
+// IsManagedBranch reports whether branch is a bot-owned thread branch
+// (grok/discord/<threadID> with a non-empty thread id).
+func IsManagedBranch(branch string) bool {
+	branch = strings.TrimSpace(branch)
+	if !strings.HasPrefix(branch, BranchPrefix) {
+		return false
+	}
+	// Require a non-empty thread id; reject bare "grok/discord/" and path tricks.
+	rest := branch[len(BranchPrefix):]
+	if rest == "" || rest == "." || rest == ".." {
+		return false
+	}
+	if strings.Contains(rest, "..") || strings.HasPrefix(rest, "/") {
+		return false
+	}
+	return true
 }
 
 // WorktreePath returns the on-disk path for a thread's worktree under dataDir.
@@ -41,6 +64,49 @@ func IsRepo(dir string) bool {
 		return false
 	}
 	return strings.TrimSpace(string(out)) == "true"
+}
+
+// CleanupIfPRDone removes the thread worktree and branch when that branch
+// already has a merged or closed pull request (via `gh`). Returns cleaned=true
+// when removal ran. No worktree/branch, no PR, or an open PR → cleaned=false.
+// A missing/unauthenticated `gh` is treated as a soft failure (cleaned=false, err set).
+func CleanupIfPRDone(ctx context.Context, repo, dataDir, project, threadID string) (cleaned bool, state string, err error) {
+	if repo == "" || threadID == "" {
+		return false, "", nil
+	}
+	if !IsRepo(repo) {
+		return false, "", nil
+	}
+
+	branch := BranchName(threadID)
+	path := WorktreePath(dataDir, project, threadID)
+
+	hasPath := false
+	if st, statErr := os.Stat(path); statErr == nil && st.IsDir() {
+		hasPath = true
+	}
+	hasBranch := branchExists(ctx, repo, branch)
+	if !hasPath && !hasBranch {
+		return false, "", nil
+	}
+
+	done, state, err := branchPRTerminal(ctx, repo, branch)
+	if err != nil {
+		return false, "", err
+	}
+	if !done {
+		return false, "", nil
+	}
+
+	log.Printf("gitworktree: PR %s for branch %s — removing worktree path=%s", state, branch, path)
+	if rmErr := Remove(ctx, repo, path, branch); rmErr != nil {
+		return false, state, rmErr
+	}
+	if delErr := deleteRemoteBranch(ctx, repo, branch); delErr != nil {
+		// Remote may already be gone (GitHub auto-delete) or push denied — not fatal.
+		log.Printf("gitworktree: remote branch delete %s: %v", branch, delErr)
+	}
+	return true, state, nil
 }
 
 // Ensure returns an existing worktree for the thread or creates one from HEAD
@@ -108,9 +174,13 @@ func Remove(ctx context.Context, repo, path, branch string) error {
 		}
 	}
 
-	if branch != "" && repo != "" && branchExists(ctx, repo, branch) {
-		if err := runGit(ctx, repo, "branch", "-D", branch); err != nil {
-			errs = append(errs, fmt.Sprintf("delete branch %s: %v", branch, err))
+	if branch != "" && repo != "" {
+		if !IsManagedBranch(branch) {
+			errs = append(errs, fmt.Sprintf("refuse to delete unprotected branch %q (want prefix %s)", branch, BranchPrefix))
+		} else if branchExists(ctx, repo, branch) {
+			if err := runGit(ctx, repo, "branch", "-D", branch); err != nil {
+				errs = append(errs, fmt.Sprintf("delete branch %s: %v", branch, err))
+			}
 		}
 	}
 
@@ -168,6 +238,80 @@ func absGitPath(base, p string) (string, error) {
 func branchExists(ctx context.Context, repo, branch string) bool {
 	err := runGit(ctx, repo, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 	return err == nil
+}
+
+// branchPRTerminal reports whether head branch already has a merged/closed PR
+// and no open PR. Uses the GitHub CLI (`gh`).
+func branchPRTerminal(ctx context.Context, repo, branch string) (done bool, state string, err error) {
+	cmd := exec.CommandContext(ctx, "gh", "pr", "list",
+		"--head", branch,
+		"--state", "all",
+		"--json", "state",
+		"--limit", "20",
+	)
+	cmd.Dir = repo
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if runErr := cmd.Run(); runErr != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = runErr.Error()
+		}
+		return false, "", fmt.Errorf("gh pr list: %s", msg)
+	}
+
+	var prs []struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &prs); err != nil {
+		return false, "", fmt.Errorf("gh pr list json: %w", err)
+	}
+	states := make([]string, 0, len(prs))
+	for _, pr := range prs {
+		states = append(states, pr.State)
+	}
+	done, state = terminalPRState(states)
+	return done, state, nil
+}
+
+// terminalPRState returns done=true when there is at least one MERGED/CLOSED PR
+// and no OPEN PR for the branch.
+func terminalPRState(states []string) (done bool, state string) {
+	hasOpen := false
+	var terminal string
+	for _, s := range states {
+		switch strings.ToUpper(strings.TrimSpace(s)) {
+		case "OPEN":
+			hasOpen = true
+		case "MERGED":
+			terminal = "MERGED"
+		case "CLOSED":
+			if terminal == "" {
+				terminal = "CLOSED"
+			}
+		}
+	}
+	if hasOpen || terminal == "" {
+		return false, ""
+	}
+	return true, terminal
+}
+
+// deleteRemoteBranch deletes origin/<branch> when it exists. Best-effort.
+// Only managed branches (grok/discord/…) are eligible.
+func deleteRemoteBranch(ctx context.Context, repo, branch string) error {
+	if !IsManagedBranch(branch) {
+		return fmt.Errorf("refuse to delete unprotected remote branch %q (want prefix %s)", branch, BranchPrefix)
+	}
+	out, err := gitOutput(ctx, repo, "ls-remote", "--heads", "origin", branch)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(out) == "" {
+		return nil
+	}
+	return runGit(ctx, repo, "push", "origin", "--delete", branch)
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
