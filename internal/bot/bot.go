@@ -20,7 +20,6 @@ import (
 
 const (
 	maxMsg           = 1900
-	progressInterval = 15 * time.Second
 	maxFollowupQueue = 5 // pending tasks per thread (not counting the active run)
 )
 
@@ -172,7 +171,15 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	parsed := ParseMessage(m.Content, s.State.User.ID)
+	// Prefer full message text (content + embed URLs) so links with query
+	// params / #fragments are not dropped when Discord primarily surfaces embeds.
+	msgText := ""
+	if m.Message != nil {
+		msgText = messagePromptText(m.Message)
+	} else {
+		msgText = messagePromptText(&discordgo.Message{Content: m.Content, Embeds: m.Embeds})
+	}
+	parsed := ParseMessage(msgText, s.State.User.ID)
 	if parsed.Kind == KindEmpty {
 		switch {
 		case len(m.Attachments) > 0:
@@ -493,8 +500,10 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			titlePrompt = "attachments: " + m.Attachments[0].Filename
 		case m.ReferencedMessage != nil && len(m.ReferencedMessage.Attachments) > 0:
 			titlePrompt = "attachments: " + m.ReferencedMessage.Attachments[0].Filename
-		case m.ReferencedMessage != nil && strings.TrimSpace(m.ReferencedMessage.Content) != "":
-			titlePrompt = m.ReferencedMessage.Content
+		case m.ReferencedMessage != nil:
+			if t := messagePromptText(m.ReferencedMessage); t != "" {
+				titlePrompt = t
+			}
 		}
 	}
 	title := threadNameFromPrompt(titlePrompt, m.Author.Username)
@@ -591,6 +600,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 
 	runCwd, wtBranch, wtErr := b.resolveRunCwd(ctx, proj, threadID)
 	if wtErr != nil {
+		streamer.Stop()
 		close(stopProgress)
 		progressWG.Wait()
 		log.Printf("error: worktree thread=%s: %v", threadID, wtErr)
@@ -634,6 +644,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		log.Printf("task: downloading %d attachment(s) → %s", len(attachments), attDir)
 		files, dlErr := downloadAttachments(ctx, attachments, attDir)
 		if dlErr != nil {
+			streamer.Stop()
 			close(stopProgress)
 			progressWG.Wait()
 			log.Printf("error: attachments: %v", dlErr)
@@ -673,6 +684,9 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		},
 		OnThought: func(delta string) {
 			thoughts.OnDelta(delta)
+		},
+		OnActivity: func(line string) {
+			thoughts.OnActivity(line)
 		},
 	})
 	streamer.Flush()
@@ -738,8 +752,19 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		log.Printf("error: edit status: %v", err)
 	}
 
-	if !streamer.Finish() {
-		sendChunks(s, threadID, result.Text)
+	var fullyStreamed bool
+	if result.Cancelled {
+		streamer.Abort("cancelled")
+		fullyStreamed = streamer.Text() != "" && streamer.Unposted() == ""
+	} else {
+		fullyStreamed = streamer.Finish()
+	}
+	if !fullyStreamed {
+		rem := streamer.Unposted()
+		if rem == "" {
+			rem = result.Text
+		}
+		sendChunks(s, threadID, rem)
 	}
 
 	if result.Stderr != "" && os.Getenv("GROK_DISCORD_DEBUG") != "" {
@@ -929,14 +954,33 @@ func sendChunks(s *discordgo.Session, channelID, text string) {
 	parts := splitMessage(text)
 	log.Printf("reply: channel=%s parts=%d totalLen=%d", channelID, len(parts), len(text))
 	for i, p := range parts {
-		content := p
+		content := sanitizeDiscordContent(p)
 		if len(parts) > 1 {
-			content = fmt.Sprintf("(%d/%d)\n%s", i+1, len(parts), p)
+			content = sanitizeDiscordContent(fmt.Sprintf("(%d/%d)\n%s", i+1, len(parts), p))
 		}
 		if _, err := s.ChannelMessageSend(channelID, content); err != nil {
 			log.Printf("error: send chunk %d/%d channel=%s: %v", i+1, len(parts), channelID, err)
+			// Surface a short error so the thread is not left silent.
+			if _, err2 := s.ChannelMessageSend(channelID, sanitizeDiscordContent(
+				fmt.Sprintf("Failed to post reply chunk %d/%d: %v", i+1, len(parts), err),
+			)); err2 != nil {
+				log.Printf("error: send failure notice: %v", err2)
+			}
 		}
 	}
+}
+
+// sanitizeDiscordContent strips bytes Discord rejects (NUL) while keeping
+// #, ?, &, and other characters used in issue refs and query strings.
+func sanitizeDiscordContent(s string) string {
+	if s == "" {
+		return s
+	}
+	s = strings.ReplaceAll(s, "\x00", "")
+	if strings.TrimSpace(s) == "" {
+		return "(empty response)"
+	}
+	return s
 }
 
 func splitMessage(text string) []string {

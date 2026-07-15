@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 type Kind int
@@ -25,16 +28,10 @@ type Parsed struct {
 
 var mentionRE = regexp.MustCompile(`<@!?\d+>`)
 
+// ParseMessage extracts a task prompt from a Discord message body.
+// Special characters in the prompt (#, ?, &, URLs, fragments) are preserved.
 func ParseMessage(content, botUserID string) Parsed {
-	text := content
-	if botUserID != "" {
-		re := regexp.MustCompile(fmt.Sprintf(`<@!?%s>`, regexp.QuoteMeta(botUserID)))
-		text = re.ReplaceAllString(text, " ")
-	} else {
-		text = mentionRE.ReplaceAllString(text, " ")
-	}
-	text = strings.Join(strings.Fields(text), " ")
-	text = strings.TrimSpace(text)
+	text := normalizeUserPrompt(stripBotMention(content, botUserID))
 
 	if text == "" {
 		return Parsed{Kind: KindEmpty}
@@ -54,6 +51,60 @@ func ParseMessage(content, botUserID string) Parsed {
 	}
 
 	return Parsed{Kind: KindTask, Prompt: text}
+}
+
+func stripBotMention(content, botUserID string) string {
+	if botUserID != "" {
+		re := regexp.MustCompile(fmt.Sprintf(`<@!?%s>`, regexp.QuoteMeta(botUserID)))
+		return re.ReplaceAllString(content, " ")
+	}
+	return mentionRE.ReplaceAllString(content, " ")
+}
+
+// normalizeUserPrompt trims and collapses whitespace without altering #, ?, &,
+// or other non-space characters that appear in issue refs and URLs.
+func normalizeUserPrompt(s string) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r == 0:
+			return -1
+		case r == '\u00a0': // NBSP from some clients
+			return ' '
+		case unicode.IsSpace(r):
+			// Fields-style: any unicode space becomes a separator later.
+			return ' '
+		default:
+			return r
+		}
+	}, s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// messagePromptText builds prompt text from a Discord message, including embed
+// URLs/titles when content is empty or when Discord only surface-linked a URL.
+func messagePromptText(m *discordgo.Message) string {
+	if m == nil {
+		return ""
+	}
+	var parts []string
+	if c := strings.TrimSpace(m.Content); c != "" {
+		parts = append(parts, c)
+	}
+	for _, e := range m.Embeds {
+		if e == nil {
+			continue
+		}
+		if u := strings.TrimSpace(e.URL); u != "" {
+			parts = append(parts, u)
+		}
+		if t := strings.TrimSpace(e.Title); t != "" {
+			parts = append(parts, t)
+		}
+		if d := strings.TrimSpace(e.Description); d != "" {
+			parts = append(parts, d)
+		}
+	}
+	return normalizeUserPrompt(strings.Join(parts, "\n"))
 }
 
 func HelpText() string {

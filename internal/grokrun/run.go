@@ -36,6 +36,8 @@ type Options struct {
 	// OnTextDelta/OnThought enable streaming-json output.
 	OnTextDelta func(delta string)
 	OnThought   func(delta string)
+	// OnActivity receives tool/status lines when the CLI emits them.
+	OnActivity func(line string)
 }
 
 type Result struct {
@@ -119,6 +121,8 @@ type streamEvent struct {
 	Data       string `json:"data"`
 	Text       string `json:"text"`
 	Message    string `json:"message"`
+	Name       string `json:"name"`
+	Tool       string `json:"tool"`
 	SessionID  string `json:"sessionId"`
 	StopReason string `json:"stopReason"`
 	NumTurns   int    `json:"num_turns"`
@@ -132,14 +136,27 @@ func Run(ctx context.Context, opt Options) Result {
 		defer cancel()
 	}
 
-	stream := opt.OnTextDelta != nil || opt.OnThought != nil
+	stream := opt.OnTextDelta != nil || opt.OnThought != nil || opt.OnActivity != nil
 	format := "json"
 	if stream {
 		format = "streaming-json"
 	}
 
+	// Pass the prompt via a temp file + --verbatim so characters like #, ?, &,
+	// and URL query strings are not mangled by CLI/shell parsing of -p.
+	promptPath, cleanupPrompt, err := writePromptFile(opt.Prompt)
+	if err != nil {
+		return Result{
+			Text:      fmt.Sprintf("Failed to write prompt file: %v", err),
+			SessionID: opt.SessionID,
+			Code:      1,
+		}
+	}
+	defer cleanupPrompt()
+
 	args := []string{
-		"-p", opt.Prompt,
+		"--prompt-file", promptPath,
+		"--verbatim",
 		"--cwd", opt.Cwd,
 		"--output-format", format,
 		"--max-turns", fmt.Sprintf("%d", opt.MaxTurns),
@@ -171,14 +188,8 @@ func Run(ctx context.Context, opt Options) Result {
 	}
 	args = append(args, opt.ExtraArgs...)
 
-	logArgs := make([]string, len(args))
-	copy(logArgs, args)
-	for i := 0; i+1 < len(logArgs); i++ {
-		if logArgs[i] == "-p" && len(logArgs[i+1]) > 200 {
-			logArgs[i+1] = logArgs[i+1][:200] + "…"
-		}
-	}
-	log.Printf("grokrun: exec bin=%q cwd=%q format=%s args=%v", opt.GrokBin, opt.Cwd, format, logArgs)
+	log.Printf("grokrun: exec bin=%q cwd=%q format=%s promptFile=%s promptLen=%d promptPreview=%q args=%v",
+		opt.GrokBin, opt.Cwd, format, promptPath, len(opt.Prompt), truncate(opt.Prompt, 200), args)
 
 	cmd := exec.CommandContext(ctx, opt.GrokBin, args...)
 	cmd.Dir = opt.Cwd
@@ -212,7 +223,7 @@ func Run(ctx context.Context, opt Options) Result {
 		}
 	}
 
-	streamed, parseErr := consumeStream(stdout, opt.OnTextDelta, opt.OnThought)
+	streamed, parseErr := consumeStream(stdout, opt.OnTextDelta, opt.OnThought, opt.OnActivity)
 	waitErr := cmd.Wait()
 
 	text := streamed.Text
@@ -383,7 +394,7 @@ type streamOut struct {
 	NumTurns  int
 }
 
-func consumeStream(r io.Reader, onText, onThought func(string)) (out streamOut, err error) {
+func consumeStream(r io.Reader, onText, onThought, onActivity func(string)) (out streamOut, err error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 
@@ -420,7 +431,14 @@ func consumeStream(r io.Reader, onText, onThought func(string)) (out streamOut, 
 			if delta != "" && onThought != nil {
 				onThought(delta)
 			}
-		case "end":
+		case "tool", "tool_call", "tool_use", "tool_start", "status":
+			if line := activityLine(ev); line != "" && onActivity != nil {
+				onActivity(line)
+			}
+			if ev.SessionID != "" {
+				out.SessionID = ev.SessionID
+			}
+		case "end", "max_turns_reached":
 			if ev.SessionID != "" {
 				out.SessionID = ev.SessionID
 			}
@@ -429,6 +447,13 @@ func consumeStream(r io.Reader, onText, onThought func(string)) (out streamOut, 
 			}
 			if ev.NumTurns > 0 {
 				out.NumTurns = ev.NumTurns
+			}
+			if strings.EqualFold(ev.Type, "max_turns_reached") && b.Len() == 0 {
+				msg := "Reached max turns before a final reply."
+				b.WriteString(msg)
+				if onText != nil {
+					onText(msg)
+				}
 			}
 		case "error":
 			msg := ev.Message
@@ -457,6 +482,12 @@ func consumeStream(r io.Reader, onText, onThought func(string)) (out streamOut, 
 				out.SessionID = ev.SessionID
 			}
 		default:
+			if line := activityLine(ev); line != "" && onActivity != nil {
+				// Soft-show unknown non-text events when they look like activity.
+				if strings.Contains(strings.ToLower(ev.Type), "tool") {
+					onActivity(line)
+				}
+			}
 			if ev.SessionID != "" {
 				out.SessionID = ev.SessionID
 			}
@@ -469,6 +500,31 @@ func consumeStream(r io.Reader, onText, onThought func(string)) (out streamOut, 
 		err = fmt.Errorf("skipped %d malformed lines (e.g. %s)", len(parseNotes), parseNotes[0])
 	}
 	return out, err
+}
+
+func activityLine(ev streamEvent) string {
+	name := strings.TrimSpace(ev.Name)
+	if name == "" {
+		name = strings.TrimSpace(ev.Tool)
+	}
+	detail := strings.TrimSpace(ev.Data)
+	if detail == "" {
+		detail = strings.TrimSpace(ev.Text)
+	}
+	if detail == "" {
+		detail = strings.TrimSpace(ev.Message)
+	}
+	typ := strings.ToLower(strings.TrimSpace(ev.Type))
+	switch {
+	case name != "" && detail != "":
+		return fmt.Sprintf("%s: %s", name, truncate(detail, 60))
+	case name != "":
+		return "tool " + name
+	case detail != "" && (typ == "status" || strings.Contains(typ, "tool")):
+		return truncate(detail, 80)
+	default:
+		return ""
+	}
 }
 
 func enrichContext(res *Result, cwd string) {
@@ -531,6 +587,30 @@ func grokHome() string {
 }
 
 // encodeSessionDir matches Grok's session dir naming (%2FUsers%2F…).
+// writePromptFile stores the user/system prompt for --prompt-file so special
+// characters (#, ?, &, quotes, newlines) are delivered verbatim to the CLI.
+func writePromptFile(prompt string) (path string, cleanup func(), err error) {
+	prompt = strings.ReplaceAll(prompt, "\x00", "")
+	f, err := os.CreateTemp("", "grok-discord-prompt-*.txt")
+	if err != nil {
+		return "", func() {}, err
+	}
+	path = f.Name()
+	cleanup = func() {
+		_ = os.Remove(path)
+	}
+	if _, err := f.WriteString(prompt); err != nil {
+		_ = f.Close()
+		cleanup()
+		return "", func() {}, err
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return path, cleanup, nil
+}
+
 func encodeSessionDir(abs string) string {
 	var b strings.Builder
 	b.Grow(len(abs) * 3)
@@ -585,7 +665,6 @@ func SummarizeTitle(ctx context.Context, grokBin, model, taskPrompt, cwd string,
 		NoPlan:           true,
 		NoMemory:         true,
 		DisableWebSearch: true,
-		ExtraArgs:        []string{"--verbatim"},
 	})
 	if result.Code != 0 {
 		log.Printf("grokrun: summarize failed code=%d text=%q stderr=%q",

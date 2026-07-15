@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 func TestParseMessage(t *testing.T) {
@@ -32,6 +34,51 @@ func TestParseMessage(t *testing.T) {
 		if p.Kind != KindCancel {
 			t.Fatalf("%q: got %+v want KindCancel", in, p)
 		}
+	}
+}
+
+func TestParseMessagePreservesSpecialChars(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"<@123> fix issue #42", "fix issue #42"},
+		{"<@123> see https://ex.com/path?foo=1&bar=2", "see https://ex.com/path?foo=1&bar=2"},
+		{"<@123> check https://github.com/org/repo/issues/99#issuecomment-1", "check https://github.com/org/repo/issues/99#issuecomment-1"},
+		{"<@123> org/repo#123 please", "org/repo#123 please"},
+		{"<@123> a=1&b=2 still here", "a=1&b=2 still here"},
+	}
+	for _, tc := range cases {
+		p := ParseMessage(tc.in, "123")
+		if p.Kind != KindTask || p.Prompt != tc.want {
+			t.Fatalf("in %q: got kind=%v prompt=%q want %q", tc.in, p.Kind, p.Prompt, tc.want)
+		}
+	}
+}
+
+func TestMessagePromptTextIncludesEmbedURL(t *testing.T) {
+	m := &discordgo.Message{
+		Content: "",
+		Embeds: []*discordgo.MessageEmbed{
+			{URL: "https://ex.com/a?x=1&y=2", Title: "Example"},
+		},
+	}
+	got := messagePromptText(m)
+	if !strings.Contains(got, "https://ex.com/a?x=1&y=2") {
+		t.Fatalf("missing embed url: %q", got)
+	}
+	if !strings.Contains(got, "Example") {
+		t.Fatalf("missing title: %q", got)
+	}
+}
+
+func TestSanitizeDiscordContentKeepsHashAndQuery(t *testing.T) {
+	in := "See #42 and https://x.com?a=1&b=2"
+	if got := sanitizeDiscordContent(in); got != in {
+		t.Fatalf("got %q", got)
+	}
+	if got := sanitizeDiscordContent("ok\x00#1"); got != "ok#1" {
+		t.Fatalf("null strip: %q", got)
 	}
 }
 

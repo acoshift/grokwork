@@ -22,7 +22,7 @@ func TestConsumeStream(t *testing.T) {
 		texts = append(texts, d)
 	}, func(d string) {
 		thoughts = append(thoughts, d)
-	})
+	}, nil)
 	if out.Text != "Hello world" {
 		t.Fatalf("text=%q", out.Text)
 	}
@@ -48,12 +48,33 @@ func TestConsumeStream(t *testing.T) {
 
 func TestConsumeStreamErrorEvent(t *testing.T) {
 	raw := `{"type":"error","message":"boom"}` + "\n"
-	out, err := consumeStream(strings.NewReader(raw), nil, nil)
+	out, err := consumeStream(strings.NewReader(raw), nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out.Text != "boom" {
 		t.Fatalf("text=%q", out.Text)
+	}
+}
+
+func TestConsumeStreamToolActivity(t *testing.T) {
+	raw := strings.Join([]string{
+		`{"type":"tool","name":"bash","data":"git status"}`,
+		`{"type":"text","data":"ok"}`,
+		`{"type":"end","sessionId":"s1"}`,
+	}, "\n")
+	var acts []string
+	out, err := consumeStream(strings.NewReader(raw), nil, nil, func(s string) {
+		acts = append(acts, s)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Text != "ok" {
+		t.Fatalf("text=%q", out.Text)
+	}
+	if len(acts) != 1 || !strings.Contains(acts[0], "bash") {
+		t.Fatalf("acts=%v", acts)
 	}
 }
 
@@ -122,5 +143,34 @@ func TestEnrichContext(t *testing.T) {
 	}
 	if sum := res.ContextSummary(); sum != "148k/500k" {
 		t.Fatalf("summary=%q", sum)
+	}
+}
+
+func TestWritePromptFilePreservesSpecialChars(t *testing.T) {
+	prompt := "fix #42 and https://ex.com/a?x=1&b=2 with \"quotes\" and\nnewlines"
+	path, cleanup, err := writePromptFile(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != prompt {
+		t.Fatalf("got %q want %q", string(raw), prompt)
+	}
+	// NUL stripped
+	path2, cleanup2, err := writePromptFile("a\x00b#c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup2()
+	raw2, err := os.ReadFile(path2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw2) != "ab#c" {
+		t.Fatalf("nul strip got %q", string(raw2))
 	}
 }

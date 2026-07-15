@@ -172,7 +172,7 @@ func promptWithReferenced(userPrompt string, ref *discordgo.Message) string {
 	}
 	b.WriteString(":\n")
 
-	content := strings.TrimSpace(ref.Content)
+	content := messagePromptText(ref)
 	if content != "" {
 		b.WriteString("---\n")
 		b.WriteString(content)
