@@ -34,7 +34,6 @@ func TestRemoteWorkPromptPrefixNoWorktree(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, p)
 		}
 	}
-	// Worktree-specific branch line should be absent.
 	if strings.Contains(p, "Branch: ") {
 		t.Fatalf("unexpected worktree branch line: %s", p)
 	}

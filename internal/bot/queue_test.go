@@ -18,7 +18,6 @@ func TestClaimOrEnqueueAndDrain(t *testing.T) {
 		t.Fatalf("first claim: claimed=%v pos=%d err=%v", claimed, pos, err)
 	}
 
-	// Second task should queue.
 	job2 := &runJob{cancel: func() {}, start: time.Now(), project: "p"}
 	item2 := taskItem{threadID: threadID, proj: projectRef{Name: "p"}, parsed: Parsed{Prompt: "follow-up-1"}}
 	claimed, pos, err = b.claimOrEnqueue(threadID, job2, item2)
@@ -29,12 +28,10 @@ func TestClaimOrEnqueueAndDrain(t *testing.T) {
 		t.Fatalf("queueLen=%d want 1", n)
 	}
 
-	// Active job still visible.
 	if j, ok := b.getJob(threadID); !ok || j != job1 {
 		t.Fatalf("getJob: ok=%v job=%v", ok, j)
 	}
 
-	// Finish first run → get queued item; thread stays busy until released.
 	next, ok := b.finishRun(threadID)
 	if !ok || next.parsed.Prompt != "follow-up-1" {
 		t.Fatalf("finishRun next=%+v ok=%v", next, ok)
@@ -42,7 +39,6 @@ func TestClaimOrEnqueueAndDrain(t *testing.T) {
 	if n := b.queueLen(threadID); n != 0 {
 		t.Fatalf("queueLen after pop=%d", n)
 	}
-	// Still busy (old job left until replace).
 	if _, ok := b.getJob(threadID); !ok {
 		t.Fatal("expected still busy while draining")
 	}
@@ -53,7 +49,6 @@ func TestClaimOrEnqueueAndDrain(t *testing.T) {
 		t.Fatalf("replaceJob: ok=%v", ok)
 	}
 
-	// Drain last → idle.
 	if _, ok := b.finishRun(threadID); ok {
 		t.Fatal("expected no more queued")
 	}
@@ -102,7 +97,6 @@ func TestClearQueue(t *testing.T) {
 	if n := b.queueLen(threadID); n != 0 {
 		t.Fatalf("queueLen=%d", n)
 	}
-	// Active job untouched.
 	if _, ok := b.getJob(threadID); !ok {
 		t.Fatal("expected job still active")
 	}
@@ -115,7 +109,6 @@ func TestClaimOrEnqueueConcurrent(t *testing.T) {
 	var claimedCount, queuedCount, fullCount int
 	var mu sync.Mutex
 
-	// One claim + many concurrent enqueues.
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
 		go func() {

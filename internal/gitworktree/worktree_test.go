@@ -24,8 +24,6 @@ func TestEnsureReuseAndRemove(t *testing.T) {
 	if !IsRepo(tr.Path) {
 		t.Fatal("worktree not a repo")
 	}
-	// Write a file only in the worktree — main should not see it as untracked
-	// in the same path (different directories).
 	marker := filepath.Join(tr.Path, "only-wt.txt")
 	if err := os.WriteFile(marker, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
@@ -34,7 +32,6 @@ func TestEnsureReuseAndRemove(t *testing.T) {
 		t.Fatal("marker leaked into main worktree path")
 	}
 
-	// Reuse
 	tr2, err := Ensure(ctx, repo, data, "app", "111")
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +40,6 @@ func TestEnsureReuseAndRemove(t *testing.T) {
 		t.Fatalf("reuse path %q vs %q", tr2.Path, tr.Path)
 	}
 
-	// Second thread gets a different tree
 	trB, err := Ensure(ctx, repo, data, "app", "222")
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +54,6 @@ func TestEnsureReuseAndRemove(t *testing.T) {
 	if _, err := os.Stat(tr.Path); !os.IsNotExist(err) {
 		t.Fatalf("path still exists: %v", err)
 	}
-	// Branch should be gone
 	cmd := exec.Command("git", "-C", repo, "show-ref", "--verify", "--quiet", "refs/heads/"+tr.Branch)
 	if cmd.Run() == nil {
 		t.Fatal("branch still exists after remove")
@@ -151,7 +146,6 @@ func TestRemoveRefusesUnprotectedBranch(t *testing.T) {
 	repo := initTestRepo(t)
 	ctx := context.Background()
 
-	// Create a non-managed branch that must not be deleted.
 	run := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
@@ -174,8 +168,6 @@ func TestRemoveRefusesUnprotectedBranch(t *testing.T) {
 	if !strings.Contains(err.Error(), "unprotected") {
 		t.Fatalf("expected unprotected error, got %v", err)
 	}
-	// Default branch from init may be master or main; either must still exist
-	// as the only branch with a commit. Just ensure main-copy survived a bad call.
 	err = Remove(ctx, repo, "", "main-copy")
 	if err == nil {
 		t.Fatal("expected error refusing to delete main-copy")
@@ -185,7 +177,6 @@ func TestRemoveRefusesUnprotectedBranch(t *testing.T) {
 		t.Fatal("main-copy was deleted despite protection")
 	}
 
-	// Managed branch still deletable.
 	run("branch", "grok/discord/protect-test")
 	if err := Remove(ctx, repo, "", "grok/discord/protect-test"); err != nil {
 		t.Fatal(err)
@@ -213,7 +204,6 @@ func initTestRepo(t *testing.T) string {
 		}
 	}
 	run("init")
-	// Default branch name varies; ensure we have a commit.
 	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("hi\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

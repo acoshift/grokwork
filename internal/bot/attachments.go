@@ -21,7 +21,6 @@ const (
 	downloadTimeout    = 60 * time.Second
 )
 
-// savedAttachment is one Discord file written to disk for a Grok run.
 type savedAttachment struct {
 	Path        string
 	Filename    string
@@ -29,10 +28,8 @@ type savedAttachment struct {
 	Size        int64
 }
 
-// downloadAttachments saves Discord attachments under destDir.
-// Returns the list of saved files (may be empty). On partial failure after
-// writing some files, destDir may still contain those files — caller should
-// always RemoveAll(destDir) when done.
+// downloadAttachments writes files under destDir. Callers must RemoveAll(destDir)
+// even after partial failure.
 func downloadAttachments(ctx context.Context, attachments []*discordgo.MessageAttachment, destDir string) ([]savedAttachment, error) {
 	if len(attachments) == 0 {
 		return nil, nil
@@ -113,7 +110,7 @@ func downloadOne(ctx context.Context, client *http.Client, url, dest string, max
 	}
 	defer f.Close()
 
-	// +1 so we can detect oversize streams when Discord Size is wrong/missing.
+	// +1 detects oversize when Discord Size is wrong/missing.
 	limited := io.LimitReader(resp.Body, maxBytes+1)
 	n, err := io.Copy(f, limited)
 	if err != nil {
@@ -127,7 +124,6 @@ func downloadOne(ctx context.Context, client *http.Client, url, dest string, max
 	return n, resp.Header.Get("Content-Type"), nil
 }
 
-// promptWithAttachments appends a file list the model can open with tools.
 func promptWithAttachments(userPrompt string, files []savedAttachment) string {
 	userPrompt = strings.TrimSpace(userPrompt)
 	if len(files) == 0 {
@@ -152,7 +148,6 @@ func promptWithAttachments(userPrompt string, files []savedAttachment) string {
 	return strings.TrimSpace(b.String())
 }
 
-// promptWithReferenced prepends context from the Discord message being replied to.
 func promptWithReferenced(userPrompt string, ref *discordgo.Message) string {
 	userPrompt = strings.TrimSpace(userPrompt)
 	if ref == nil {
@@ -191,8 +186,6 @@ func promptWithReferenced(userPrompt string, ref *discordgo.Message) string {
 	return strings.TrimSpace(b.String())
 }
 
-// collectAttachments merges attachments from the mention message and optional reply target.
-// Dedupes by attachment ID when present.
 func collectAttachments(primary []*discordgo.MessageAttachment, related *discordgo.Message) []*discordgo.MessageAttachment {
 	seen := map[string]struct{}{}
 	out := make([]*discordgo.MessageAttachment, 0, len(primary)+4)
@@ -221,8 +214,6 @@ func collectAttachments(primary []*discordgo.MessageAttachment, related *discord
 	return out
 }
 
-// resolveReferencedMessage returns the message this one replies to, if any.
-// Uses the gateway payload when present; otherwise fetches via REST.
 func resolveReferencedMessage(s *discordgo.Session, m *discordgo.MessageCreate) (*discordgo.Message, error) {
 	if m == nil {
 		return nil, nil
@@ -233,8 +224,7 @@ func resolveReferencedMessage(s *discordgo.Session, m *discordgo.MessageCreate) 
 	if m.MessageReference == nil || m.MessageReference.MessageID == "" {
 		return nil, nil
 	}
-	// Deleted reference is often present as a non-nil MessageReference with
-	// a null referenced_message; still attempt fetch in case state is unknown.
+	// Gateway may omit ReferencedMessage; fetch via REST.
 	channelID := m.MessageReference.ChannelID
 	if channelID == "" {
 		channelID = m.ChannelID
@@ -256,7 +246,6 @@ func sanitizeFilename(name string) string {
 	if name == "." || name == ".." || name == string(filepath.Separator) {
 		name = "file"
 	}
-	// Keep a conservative set of characters for cross-platform paths.
 	var b strings.Builder
 	for _, r := range name {
 		switch {
@@ -273,7 +262,6 @@ func sanitizeFilename(name string) string {
 	if name == "" {
 		name = "file"
 	}
-	// Cap length but keep extension when possible.
 	const max = 120
 	if len(name) > max {
 		ext := filepath.Ext(name)

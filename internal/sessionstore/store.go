@@ -9,19 +9,15 @@ import (
 )
 
 type Entry struct {
-	SessionID string `json:"sessionId"`
-	Project   string `json:"project"`
-	// Cwd is the effective working directory for Grok (worktree path when isolated).
-	Cwd string `json:"cwd"`
-	// MainCwd is the configured project root (main checkout). Empty on older entries.
-	MainCwd string `json:"mainCwd,omitempty"`
-	// WorktreeBranch is set when this thread uses a git worktree.
+	SessionID      string `json:"sessionId"`
+	Project        string `json:"project"`
+	Cwd            string `json:"cwd"` // worktree path when isolated
+	MainCwd        string `json:"mainCwd,omitempty"`
 	WorktreeBranch string `json:"worktreeBranch,omitempty"`
 	LastUser       string `json:"lastUser,omitempty"`
 	UpdatedAt      string `json:"updatedAt"`
 }
 
-// Store maps Discord thread ID → Grok session metadata.
 type Store struct {
 	mu       sync.Mutex
 	filePath string

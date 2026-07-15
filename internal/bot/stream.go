@@ -13,11 +13,9 @@ import (
 
 const (
 	streamEditMinInterval = 1500 * time.Millisecond
-	// Leave room for a streaming suffix on the live message.
-	streamLiveBudget = 1800
+	streamLiveBudget      = 1800 // leave room for "_(streaming…)_"
 )
 
-// streamPoster posts/edits Grok text into a Discord thread as it streams.
 type streamPoster struct {
 	s         *discordgo.Session
 	channelID string
@@ -48,7 +46,6 @@ func (p *streamPoster) OnDelta(delta string) {
 	}
 }
 
-// Flush forces a Discord update with the current buffer.
 func (p *streamPoster) Flush() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -58,10 +55,7 @@ func (p *streamPoster) Flush() {
 	p.flushLocked(false)
 }
 
-// Finish performs a final edit of the live message (if any) and returns whether
-// the full text was already posted there (so the caller can skip sendChunks).
-// When the full text exceeds one Discord message, Finish leaves a short note on
-// the live message and returns false so the caller can sendChunks the full text.
+// Finish returns true if the full reply already lives in the stream message.
 func (p *streamPoster) Finish() (streamedFully bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -80,7 +74,6 @@ func (p *streamPoster) Finish() (streamedFully bool) {
 		}
 		return true
 	}
-	// Too long for one message: mark live msg and let caller sendChunks.
 	note := fmt.Sprintf("(stream preview — full reply follows, %d chars)", len(text))
 	preview := streamPreview(text, maxMsg-len(note)-2) + "\n\n" + note
 	if _, err := p.s.ChannelMessageEdit(p.channelID, p.msgID, preview); err != nil {
@@ -89,7 +82,6 @@ func (p *streamPoster) Finish() (streamedFully bool) {
 	return false
 }
 
-// Text returns the accumulated assistant text.
 func (p *streamPoster) Text() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -109,7 +101,6 @@ func (p *streamPoster) flushLocked(final bool) {
 		} else {
 			content += "\n\n_(streaming…)_"
 		}
-		// Cap for Discord.
 		if len(content) > maxMsg {
 			content = streamPreview(text, maxMsg-20) + "\n\n_(streaming…)_"
 		}
@@ -134,7 +125,6 @@ func (p *streamPoster) flushLocked(final bool) {
 	p.lastEdit = time.Now()
 }
 
-// streamPreview returns a Discord-safe prefix of s (rune-aware).
 func streamPreview(s string, budget int) string {
 	if budget <= 0 {
 		return ""
@@ -142,7 +132,6 @@ func streamPreview(s string, budget int) string {
 	if len(s) <= budget {
 		return s
 	}
-	// Prefer cutting at a newline near the budget.
 	cut := budget
 	if cut > len(s) {
 		cut = len(s)
@@ -151,14 +140,12 @@ func streamPreview(s string, budget int) string {
 	if i := strings.LastIndex(chunk, "\n"); i > budget/2 {
 		chunk = chunk[:i]
 	}
-	// Avoid splitting a UTF-8 rune.
 	for !utf8.ValidString(chunk) && len(chunk) > 0 {
 		chunk = chunk[:len(chunk)-1]
 	}
 	return strings.TrimRight(chunk, " \t") + "…"
 }
 
-// thoughtTracker builds a short activity line from thought deltas.
 type thoughtTracker struct {
 	mu   sync.Mutex
 	buf  strings.Builder
@@ -169,14 +156,12 @@ func (t *thoughtTracker) OnDelta(delta string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.buf.WriteString(delta)
-	// Keep a rolling window of recent thought text.
 	s := t.buf.String()
 	if len(s) > 400 {
 		s = s[len(s)-400:]
 		t.buf.Reset()
 		t.buf.WriteString(s)
 	}
-	// Prefer last non-empty line-ish snippet.
 	s = strings.Join(strings.Fields(s), " ")
 	if len(s) > 80 {
 		s = "…" + s[len(s)-79:]

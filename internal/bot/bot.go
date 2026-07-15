@@ -24,14 +24,12 @@ const (
 	maxFollowupQueue = 5 // pending tasks per thread (not counting the active run)
 )
 
-// runJob is an in-flight Grok run for one Discord thread.
 type runJob struct {
 	cancel  context.CancelFunc
 	start   time.Time
 	project string
 }
 
-// taskItem is a Grok task ready to run (or waiting in a thread's queue).
 type taskItem struct {
 	s        *discordgo.Session
 	m        *discordgo.MessageCreate
@@ -40,7 +38,6 @@ type taskItem struct {
 	threadID string
 }
 
-// threadState tracks the active run and follow-up queue for one Discord thread.
 type threadState struct {
 	mu    sync.Mutex
 	job   *runJob
@@ -62,8 +59,6 @@ func (b *Bot) stateFor(threadID string) *threadState {
 	return v.(*threadState)
 }
 
-// claimOrEnqueue starts the task immediately if the thread is idle, otherwise
-// appends it to the follow-up queue. claimed=true means the caller owns the run.
 func (b *Bot) claimOrEnqueue(threadID string, job *runJob, item taskItem) (claimed bool, queuePos int, err error) {
 	st := b.stateFor(threadID)
 	st.mu.Lock()
@@ -79,9 +74,6 @@ func (b *Bot) claimOrEnqueue(threadID string, job *runJob, item taskItem) (claim
 	return true, 0, nil
 }
 
-// finishRun ends the current job. If follow-ups remain, returns the next task
-// while keeping the thread marked busy so concurrent messages still enqueue.
-// Otherwise clears the job and returns ok=false.
 func (b *Bot) finishRun(threadID string) (next taskItem, ok bool) {
 	st := b.stateFor(threadID)
 	st.mu.Lock()
@@ -113,7 +105,6 @@ func (b *Bot) queueLen(threadID string) int {
 	return len(st.queue)
 }
 
-// clearQueue drops pending follow-ups (does not cancel an active run).
 func (b *Bot) clearQueue(threadID string) int {
 	st := b.stateFor(threadID)
 	st.mu.Lock()
@@ -128,9 +119,7 @@ var errQueueFull = fmt.Errorf("follow-up queue is full (max %d)", maxFollowupQue
 func (b *Bot) Register(s *discordgo.Session) {
 	s.AddHandler(b.onReady)
 	s.AddHandler(b.onMessage)
-	// Message Content is privileged — enable it in Developer Portal → Bot →
-	// Privileged Gateway Intents. Do not request GuildMembers (also privileged);
-	// role checks use m.Member from message events when present.
+	// MESSAGE CONTENT is a privileged intent (Developer Portal → Bot).
 	s.Identify.Intents = discordgo.IntentsGuilds |
 		discordgo.IntentsGuildMessages |
 		discordgo.IntentsMessageContent
@@ -184,8 +173,6 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	parsed := ParseMessage(m.Content, s.State.User.ID)
-	// Bare @mention with files only still counts as a task.
-	// Same for a bare @mention that replies to another message (e.g. an image).
 	if parsed.Kind == KindEmpty {
 		switch {
 		case len(m.Attachments) > 0:
@@ -323,7 +310,6 @@ func (b *Bot) resetThread(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if mainCwd == "" {
 			mainCwd = e.Cwd
 		}
-		// Prefer stored branch; fall back to naming convention.
 		branch := e.WorktreeBranch
 		path := ""
 		if e.WorktreeBranch != "" && e.Cwd != "" && e.Cwd != mainCwd {
@@ -354,8 +340,6 @@ func (b *Bot) resetThread(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
-// resolveRunCwd picks the directory Grok should use. When worktree isolation is
-// on and the project is a git repo, returns a per-thread worktree path.
 func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID string) (cwd, branch string, err error) {
 	cwd = proj.Cwd
 	if !b.cfg.WorktreeIsolationEnabled() {
@@ -366,7 +350,6 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		return cwd, "", nil
 	}
 
-	// Drop worktree/branch/session when this thread's PR was already merged or closed.
 	if cleaned, state, cErr := gitworktree.CleanupIfPRDone(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID); cErr != nil {
 		log.Printf("warn: worktree PR cleanup check thread=%s: %v", threadID, cErr)
 	} else if cleaned {
@@ -376,7 +359,6 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		}
 	}
 
-	// Reuse existing worktree from session when still valid.
 	if e, ok := b.sessions.Get(threadID); ok && e.WorktreeBranch != "" && e.Cwd != "" && e.Cwd != proj.Cwd {
 		if st, statErr := os.Stat(e.Cwd); statErr == nil && st.IsDir() && gitworktree.IsRepo(e.Cwd) {
 			log.Printf("task: reuse session worktree branch=%s", e.WorktreeBranch)
@@ -390,8 +372,6 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 	return tree.Path, tree.Branch, nil
 }
 
-// remoteWorkPromptPrefix instructs Grok for Discord (remote) sessions: never leave
-// work as local-only commits — push and open a PR when code changes are made.
 func remoteWorkPromptPrefix(branch string) string {
 	lines := []string{
 		"You are working remotely via Discord on a shared machine — not a local interactive session.",
@@ -454,7 +434,6 @@ type projectRef struct {
 	Cwd  string
 }
 
-// resolveProject maps the Discord parent channel → project via config.channels only.
 func (b *Bot) resolveProject(channelID string) (projectRef, error) {
 	mapped, ok := b.cfg.Channels[channelID]
 	if !ok || mapped == "" {
@@ -567,10 +546,9 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		return
 	}
 
-	// This goroutine owns the thread runner until the queue drains.
 	for {
 		b.executeTask(ctx, item, job)
-		cancel() // ensure job context is done even if executeTask returned early
+		cancel()
 
 		next, ok := b.finishRun(item.threadID)
 		if !ok {
@@ -591,7 +569,6 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	}
 }
 
-// executeTask runs one Grok task that already holds the thread claim.
 func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	s, m, parsed, proj, threadID := item.s, item.m, item.parsed, item.proj, item.threadID
 
@@ -631,8 +608,6 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 
 	prompt := parsed.Prompt
 
-	// Include the Discord reply target (text + files) when the user tags Grok
-	// in a follow-up message, e.g. post an image then reply "@Grok what is this?".
 	var related *discordgo.Message
 	if hasMessageReference(m) {
 		refMsg, refErr := resolveReferencedMessage(s, m)
@@ -723,7 +698,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		log.Printf("error: grok exit code=%d", result.Code)
 	}
 
-	// Persist session + worktree even when Grok fails so follow-ups reuse the tree.
+	// Keep session/worktree on failure so follow-ups can resume.
 	if result.SessionID != "" || wtBranch != "" {
 		sid := result.SessionID
 		if sid == "" {
@@ -763,8 +738,6 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		log.Printf("error: edit status: %v", err)
 	}
 
-	// Prefer streamed message when it already holds the full reply; otherwise
-	// post the complete text (multi-chunk if needed).
 	if !streamer.Finish() {
 		sendChunks(s, threadID, result.Text)
 	}
@@ -779,8 +752,6 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	log.Printf("task: finished msg=%s thread=%s", m.ID, threadID)
 }
 
-// progressLoop edits the status message with elapsed time (and optional thought
-// snippet) until stop is closed.
 func (b *Bot) progressLoop(s *discordgo.Session, threadID, msgID, project string, start time.Time, thoughts *thoughtTracker, stop <-chan struct{}) {
 	ticker := time.NewTicker(progressInterval)
 	defer ticker.Stop()
@@ -816,7 +787,6 @@ func workingStatus(project string, elapsed time.Duration, activity string) strin
 	return b.String()
 }
 
-// formatElapsed renders a compact duration for Discord status lines.
 func formatElapsed(d time.Duration) string {
 	if d < 0 {
 		d = 0
@@ -835,13 +805,10 @@ func formatElapsed(d time.Duration) string {
 	}
 }
 
-// ensureThread creates or reuses a thread. name is the final Discord title
-// (already summarized or locally trimmed).
 func (b *Bot) ensureThread(s *discordgo.Session, m *discordgo.MessageCreate, name string) (string, error) {
 	name = threadNameFromPrompt(name, m.Author.Username)
 
 	if isThread(s, m.ChannelID) {
-		// Keep follow-up replies in the same thread; only rename if still generic.
 		if shouldRetitleThread(s, m.ChannelID) {
 			if _, err := s.ChannelEdit(m.ChannelID, &discordgo.ChannelEdit{Name: name}); err != nil {
 				log.Printf("warn: rename thread %s: %v", m.ChannelID, err)
@@ -863,11 +830,9 @@ func (b *Bot) ensureThread(s *discordgo.Session, m *discordgo.MessageCreate, nam
 	return th.ID, nil
 }
 
-// threadNameFromPrompt builds a Discord thread title (max 100 chars).
 func threadNameFromPrompt(prompt, username string) string {
 	summary := strings.Join(strings.Fields(prompt), " ")
 	summary = strings.TrimSpace(summary)
-	// Drop common leading noise.
 	for _, p := range []string{"please ", "can you ", "could you ", "hey ", "hi "} {
 		if len(summary) > len(p) && strings.EqualFold(summary[:len(p)], p) {
 			summary = strings.TrimSpace(summary[len(p):])
@@ -881,7 +846,6 @@ func threadNameFromPrompt(prompt, username string) string {
 	if len(summary) <= max {
 		return summary
 	}
-	// Prefer cut on a word boundary.
 	cut := strings.LastIndex(summary[:max-1], " ")
 	if cut < max/3 {
 		cut = max - 1
@@ -898,7 +862,6 @@ func shouldRetitleThread(s *discordgo.Session, channelID string) bool {
 		}
 	}
 	name := strings.ToLower(strings.TrimSpace(ch.Name))
-	// Retitle only placeholder / username-style titles from older runs.
 	return name == "" ||
 		strings.HasPrefix(name, "grok:") ||
 		strings.HasPrefix(name, "task from ")
@@ -938,7 +901,6 @@ func mentionsUser(m *discordgo.MessageCreate, userID string) bool {
 			return true
 		}
 	}
-	// Fallback: content may still contain mention markup
 	return strings.Contains(m.Content, "<@"+userID+">") || strings.Contains(m.Content, "<@!"+userID+">")
 }
 
