@@ -38,6 +38,7 @@ cp config.example.json config.json
 | Field | Purpose |
 |--------|---------|
 | `discordToken` | Bot token (or `DISCORD_BOT_TOKEN` env) |
+| `discordClientId` | Optional application/client ID for the install URL (decoded from the token when empty) |
 | `allowedUserIds` | Who may invoke Grok (fail-closed if empty **and** no roles) |
 | `allowedRoleIds` | Optional role allowlist |
 | `projects` | Name → **absolute** path on this machine |
@@ -46,8 +47,21 @@ cp config.example.json config.json
 | `summarizeThreadTitle` | Call Grok once to name the Discord thread before work (default true) |
 | `summarizeTimeoutMs` | Timeout for the title summary call (default 45000) |
 | `worktreeIsolation` | Per-thread git worktree under `data/worktrees/` (default true; non-git projects use main cwd) |
+| `httpListen` | Private-network web UI bind address (default `:8787`; override with `GROK_DISCORD_HTTP_LISTEN`) |
 
 `config.json` is gitignored. Never commit tokens, user IDs, or private project paths.
+
+### Web UI (private network / Tailscale)
+
+While the process runs it also serves a small server-rendered admin UI (hime + `html/template` + stdlib SSE):
+
+| Path | View |
+|------|------|
+| `/` | Dashboard — live active runs / session counts (SSE refresh) |
+| `/history` | Thread list; open a thread to read each user/Grok turn |
+| `/config` | Add/remove projects, channel→project map, allowed users, and roles |
+
+Bind for Tailscale or LAN with `"httpListen": "0.0.0.0:8787"` (or a Tailscale IP). There is **no auth** on this UI — only expose it on a private network or VPN.
 
 ## 3. Run
 
@@ -123,7 +137,9 @@ While a task is running, the bot updates the status message every few seconds wi
 
 **Pull requests:** Discord runs are remote, so Grok is instructed to never leave changes as local-only commits. When it makes code changes it should commit on the thread branch (or a feature branch), `git push`, and open/update a PR with `gh pr create`, then include the PR URL in the reply. Requires `gh` auth on the host (`gh auth login` or `GH_TOKEN`) and push access to the project remotes.
 
-**Attachments:** files on the `@Grok` message are downloaded under `data/attachments/<messageId>/`, absolute paths are added to the prompt, and the directory is deleted when the run finishes. Limits: 10 files, 25 MiB each, 50 MiB total. A mention with only attachments (no text) still starts a task.
+**Attachments (user → Grok):** files on the `@Grok` message are downloaded under `data/attachments/<messageId>/`, absolute paths are added to the prompt, and the directory is deleted when the run finishes. Limits: 10 files, 25 MiB each, 50 MiB total. A mention with only attachments (no text) still starts a task.
+
+**Uploads (Grok → Discord):** when the thread has an isolated git worktree, Grok can attach artifacts by ending its reply with a `DISCORD_UPLOAD:` block listing paths **inside that worktree** (e.g. APK, Excel). Paths outside the worktree are rejected. Limits: 10 files, 25 MiB each. Requires the bot **Attach Files** permission (included in the Config page install URL).
 
 **Replies:** if you **reply** to another Discord message when tagging Grok (e.g. someone posts a screenshot, then you reply `@Grok what's wrong?`), the bot includes that referenced message’s text and downloads its attachments as well. A bare `@Grok` reply (no extra text) still starts a review task.
 
@@ -180,6 +196,7 @@ launchctl load ~/Library/LaunchAgents/com.example.grok-discord.plist
 |----------|---------|
 | `DISCORD_BOT_TOKEN` | Override token |
 | `GROK_DISCORD_CONFIG` | Path to config.json |
+| `GROK_DISCORD_HTTP_LISTEN` | Override `httpListen` for the web UI |
 | `GROK_DISCORD_DEBUG` | Post grok stderr into the thread |
 | `XAI_API_KEY` | Auth for headless grok if not logged in |
 
@@ -187,10 +204,12 @@ launchctl load ~/Library/LaunchAgents/com.example.grok-discord.plist
 
 ```
 main.go
-internal/config/       # config.json loader
-internal/bot/          # Discord handlers, prompt parsing
+internal/config/       # config.json loader + runtime add/persist
+internal/bot/          # Discord handlers, prompt parsing, status snapshot
+internal/web/          # private admin UI (hime, templates, SSE)
 internal/grokrun/      # exec grok -p
 internal/gitworktree/  # per-thread git worktree isolation
 internal/sessionstore/ # thread → session persistence
+internal/history/      # per-turn conversation log for the web UI
 config.example.json
 ```

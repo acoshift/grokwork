@@ -1,0 +1,430 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · Grok Discord</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet">
+  <style>
+    /* Grok official light theme tokens (from grok.com design system) */
+    :root {
+      --black: 0 0% 2%;
+      --white: 0 0% 99%;
+      --neutral-50: 0 0% 97%;
+      --neutral-100: 0 0% 95%;
+      --neutral-150: 0 0% 91%;
+      --neutral-200: 0 0% 87%;
+      --neutral-250: 0 0% 78%;
+      --neutral-300: 0 0% 62%;
+      --neutral-400: 0 0% 52%;
+      --neutral-500: 0 0% 39%;
+      --neutral-600: 0 0% 28%;
+      --neutral-700: 0 0% 21%;
+      --neutral-800: 0 0% 16%;
+      --neutral-900: 0 0% 13%;
+      --neutral-950: 0 0% 8%;
+      --neutral-1000: 0 0% 2%;
+      --blue-300: 227 85% 75%;
+      --blue-500: 227 56% 50%;
+      --green-100: 120 70% 87%;
+      --green-600: 136 100% 29%;
+      --red-50: 0 100% 98%;
+      --red-100: 0 100% 96%;
+      --red-500: 355 63% 44%;
+      --yellow-100: 48 88% 88%;
+      --yellow-700: 45 100% 29%;
+
+      --bg: hsl(var(--neutral-50));
+      --bg-secondary: #fdfdfc;
+      --surface: hsl(var(--white));
+      --surface-l1: hsl(var(--neutral-50));
+      --surface-l2: hsl(var(--neutral-100));
+      --surface-l3: hsl(var(--neutral-150));
+      --border: hsl(var(--black) / 10%);
+      --border-strong: hsl(var(--black) / 15%);
+      --text: hsl(var(--neutral-1000));
+      --muted: hsl(var(--neutral-500));
+      --muted-soft: hsl(var(--neutral-400));
+      --accent: hsl(var(--blue-500));
+      --accent-soft: hsl(var(--blue-500) / 10%);
+      --ok: hsl(var(--green-600));
+      --ok-bg: hsl(var(--green-100) / 45%);
+      --warn: hsl(var(--yellow-700));
+      --warn-bg: hsl(var(--yellow-100) / 55%);
+      --danger: hsl(var(--red-500));
+      --danger-bg: hsl(var(--red-50));
+      --button: hsl(var(--neutral-1000));
+      --button-fg: hsl(var(--white));
+      --button-hover: hsl(var(--neutral-800));
+      --radius: 0.5rem;
+      --font: "Inter", Roboto, "Open Sans", Arial, system-ui, sans-serif;
+      --mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: hsl(var(--blue-300)); text-decoration: underline; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; }
+    header.app {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; flex-wrap: wrap;
+      margin-bottom: 1.75rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    header.app .brand {
+      font-weight: 650; letter-spacing: -0.02em; font-size: 1.15rem;
+      color: var(--text);
+    }
+    header.app .brand span { color: var(--muted); font-weight: 500; }
+    nav { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    nav a {
+      padding: 0.4rem 0.85rem;
+      border-radius: 999px;
+      color: var(--muted);
+      border: 1px solid transparent;
+      text-decoration: none;
+      font-size: 0.92rem;
+      font-weight: 500;
+    }
+    nav a:hover {
+      color: var(--text);
+      background: var(--surface-l2);
+      text-decoration: none;
+    }
+    nav a.active {
+      color: var(--text);
+      background: var(--surface);
+      border-color: var(--border);
+      box-shadow: 0 1px 2px hsl(var(--black) / 4%);
+    }
+    h1 {
+      font-size: 1.45rem;
+      margin: 0 0 0.35rem;
+      letter-spacing: -0.025em;
+      font-weight: 650;
+    }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; font-size: 0.95rem; }
+    .flash {
+      background: var(--ok-bg);
+      border: 1px solid hsl(var(--green-600) / 25%);
+      color: var(--ok);
+      padding: 0.65rem 0.9rem;
+      border-radius: var(--radius);
+      margin-bottom: 1rem;
+    }
+    .flash.err {
+      background: var(--danger-bg);
+      border-color: hsl(var(--red-500) / 25%);
+      color: var(--danger);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.85rem;
+      margin-bottom: 1.5rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      padding: 1rem 1.1rem;
+      box-shadow: 0 1px 2px hsl(var(--black) / 3%);
+    }
+    .card .label {
+      color: var(--muted-soft);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 500;
+    }
+    .card .value {
+      font-size: 1.65rem;
+      font-weight: 650;
+      margin-top: 0.2rem;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+    .card .hint { color: var(--muted); font-size: 0.82rem; margin-top: 0.25rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      overflow: hidden;
+      box-shadow: 0 1px 2px hsl(var(--black) / 3%);
+    }
+    th, td {
+      text-align: left;
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.92rem;
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted-soft);
+      font-weight: 550;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: var(--surface-l1);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: hsl(var(--neutral-50) / 70%); }
+    code, .mono { font-family: var(--mono); font-size: 0.86em; }
+    .muted { color: var(--muted); }
+    .empty {
+      color: var(--muted);
+      padding: 1.25rem;
+      text-align: center;
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .section { margin-bottom: 1.75rem; }
+    .section h2 {
+      font-size: 1.05rem;
+      margin: 0 0 0.75rem;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+    }
+    form.inline {
+      display: grid;
+      gap: 0.65rem;
+      grid-template-columns: 1fr 1fr auto;
+      align-items: end;
+    }
+    @media (max-width: 700px) {
+      form.inline { grid-template-columns: 1fr; }
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+      font-weight: 500;
+    }
+    input[type=text] {
+      width: 100%;
+      height: 2.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      border-radius: var(--radius);
+      padding: 0.55rem 0.7rem;
+      font: inherit;
+      line-height: 1.35;
+    }
+    input[type=text]:hover { border-color: hsl(var(--black) / 22%); }
+    input[type=text]:focus {
+      outline: none;
+      border-color: hsl(var(--black) / 35%);
+      box-shadow: 0 0 0 3px hsl(var(--black) / 6%);
+    }
+    button, .btn {
+      background: var(--button);
+      color: var(--button-fg);
+      border: none;
+      border-radius: var(--radius);
+      padding: 0.55rem 1rem;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button:hover { background: var(--button-hover); }
+    button.btn-danger, .btn-danger {
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid hsl(var(--red-500) / 30%);
+      padding: 0.3rem 0.65rem;
+      font-size: 0.82rem;
+      font-weight: 550;
+    }
+    button.btn-danger:hover {
+      background: var(--danger-bg);
+      border-color: hsl(var(--red-500) / 45%);
+    }
+    .row-actions { width: 1%; white-space: nowrap; text-align: right; }
+    .row-actions form { display: inline; margin: 0; }
+    select {
+      width: 100%;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      color-scheme: light;
+      background-color: var(--surface);
+      background-image:
+        linear-gradient(45deg, transparent 50%, hsl(var(--neutral-500)) 50%),
+        linear-gradient(135deg, hsl(var(--neutral-500)) 50%, transparent 50%);
+      background-position:
+        calc(100% - 16px) calc(50% - 2px),
+        calc(100% - 11px) calc(50% - 2px);
+      background-size: 5px 5px, 5px 5px;
+      background-repeat: no-repeat;
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      border-radius: var(--radius);
+      padding: 0.55rem 2rem 0.55rem 0.7rem;
+      font: inherit;
+      line-height: 1.35;
+      height: 2.5rem;
+      cursor: pointer;
+    }
+    select:hover { border-color: hsl(var(--black) / 22%); }
+    select:focus {
+      outline: none;
+      border-color: hsl(var(--black) / 35%);
+      box-shadow: 0 0 0 3px hsl(var(--black) / 6%);
+    }
+    select:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    select option,
+    select optgroup {
+      background-color: hsl(var(--white));
+      color: var(--text);
+    }
+    select option:disabled {
+      color: var(--muted);
+    }
+    .invite-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    @media (max-width: 700px) {
+      .invite-row { grid-template-columns: 1fr; }
+    }
+    .invite-row input[type=text] {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      background: var(--surface-l1);
+    }
+    a.btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      padding: 0.55rem 1rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    a.btn:hover {
+      background: var(--surface-l2);
+      border-color: hsl(var(--black) / 22%);
+      color: var(--text);
+      text-decoration: none;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      background: var(--surface-l2);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .badge.live {
+      background: var(--ok-bg);
+      color: var(--ok);
+      border-color: hsl(var(--green-600) / 20%);
+    }
+    #sse-status { font-size: 0.82rem; color: var(--muted); }
+    #sse-status.ok { color: var(--ok); }
+    #sse-status.err { color: var(--danger); }
+    .turns { display: flex; flex-direction: column; gap: 1.25rem; }
+    .turn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      padding: 0.9rem 1rem 1rem;
+      box-shadow: 0 1px 2px hsl(var(--black) / 3%);
+    }
+    .turn-meta {
+      display: flex; flex-wrap: wrap; gap: 0.5rem 0.85rem;
+      align-items: center; margin-bottom: 0.75rem; font-size: 0.85rem;
+    }
+    .badge.status-done {
+      background: var(--ok-bg);
+      color: var(--ok);
+      border-color: hsl(var(--green-600) / 20%);
+    }
+    .badge.status-cancelled {
+      background: var(--warn-bg);
+      color: var(--warn);
+      border-color: hsl(var(--yellow-700) / 20%);
+    }
+    .badge.status-error {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-color: hsl(var(--red-500) / 20%);
+    }
+    .bubble { margin-top: 0.55rem; }
+    .bubble-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted-soft);
+      margin-bottom: 0.25rem;
+      font-weight: 550;
+    }
+    .bubble-body {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--mono);
+      font-size: 0.86rem;
+      line-height: 1.45;
+      background: var(--surface-l1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.7rem 0.8rem;
+      max-height: 28rem;
+      overflow: auto;
+      color: var(--text);
+    }
+    .bubble.user .bubble-body {
+      background: hsl(var(--blue-500) / 6%);
+      border-color: hsl(var(--blue-500) / 18%);
+    }
+    .bubble.assistant .bubble-body {
+      background: var(--surface-l2);
+      border-color: var(--border-strong);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="app">
+      <div class="brand">Grok Discord <span>· admin</span></div>
+      <nav>
+        <a href="{{route "dashboard"}}" class="{{if .IsDashboard}}active{{end}}">Dashboard</a>
+        <a href="{{route "history"}}" class="{{if .IsHistory}}active{{end}}">History</a>
+        <a href="{{route "config"}}" class="{{if .IsConfig}}active{{end}}">Config</a>
+      </nav>
+    </header>
+    {{template "content" .}}
+  </div>
+</body>
+</html>
+{{end}}

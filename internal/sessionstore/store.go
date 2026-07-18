@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -75,4 +76,53 @@ func (s *Store) Delete(threadID string) error {
 	defer s.mu.Unlock()
 	delete(s.entries, threadID)
 	return s.save()
+}
+
+// Listed is a session entry with its Discord thread id for history views.
+type Listed struct {
+	ThreadID string
+	Entry
+}
+
+// List returns all sessions sorted by UpdatedAt descending (newest first).
+func (s *Store) List() []Listed {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Listed, 0, len(s.entries))
+	for id, e := range s.entries {
+		out = append(out, Listed{ThreadID: id, Entry: e})
+	}
+	sortListed(out)
+	return out
+}
+
+// Count returns the number of stored sessions.
+func (s *Store) Count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.entries)
+}
+
+func sortListed(out []Listed) {
+	slices.SortFunc(out, func(a, b Listed) int {
+		// Newest first; empty timestamps last.
+		switch {
+		case a.UpdatedAt == b.UpdatedAt:
+			if a.ThreadID < b.ThreadID {
+				return -1
+			}
+			if a.ThreadID > b.ThreadID {
+				return 1
+			}
+			return 0
+		case a.UpdatedAt == "":
+			return 1
+		case b.UpdatedAt == "":
+			return -1
+		case a.UpdatedAt > b.UpdatedAt:
+			return -1
+		default:
+			return 1
+		}
+	})
 }

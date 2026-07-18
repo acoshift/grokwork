@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/acoshift/grok-discord/internal/config"
 	"github.com/acoshift/grok-discord/internal/gitworktree"
 	"github.com/acoshift/grok-discord/internal/grokrun"
+	"github.com/acoshift/grok-discord/internal/history"
 	"github.com/acoshift/grok-discord/internal/sessionstore"
 )
 
@@ -46,11 +48,82 @@ type threadState struct {
 type Bot struct {
 	cfg      *config.Config
 	sessions *sessionstore.Store
+	history  *history.Store
 	states   sync.Map // threadID → *threadState
 }
 
-func New(cfg *config.Config, sessions *sessionstore.Store) *Bot {
-	return &Bot{cfg: cfg, sessions: sessions}
+func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) *Bot {
+	return &Bot{cfg: cfg, sessions: sessions, history: hist}
+}
+
+// ActiveRun is a thread currently running a Grok job (dashboard).
+type ActiveRun struct {
+	ThreadID string    `json:"threadId"`
+	Project  string    `json:"project"`
+	Started  time.Time `json:"started"`
+	Elapsed  string    `json:"elapsed"`
+	QueueLen int       `json:"queueLen"`
+}
+
+// StatusSnapshot is a point-in-time view of bot activity for the web dashboard/SSE.
+type StatusSnapshot struct {
+	ActiveRuns   []ActiveRun `json:"activeRuns"`
+	ActiveCount  int         `json:"activeCount"`
+	QueuedTotal  int         `json:"queuedTotal"`
+	SessionCount int         `json:"sessionCount"`
+	ProjectCount int         `json:"projectCount"`
+	AllowUsers   int         `json:"allowUsers"`
+	AllowRoles   int         `json:"allowRoles"`
+	Time         time.Time   `json:"time"`
+}
+
+// StatusSnapshot collects active runs and session counts without Discord I/O.
+func (b *Bot) StatusSnapshot() StatusSnapshot {
+	now := time.Now()
+	snap := StatusSnapshot{
+		ActiveRuns:   make([]ActiveRun, 0),
+		SessionCount: b.sessions.Count(),
+		ProjectCount: len(b.cfg.ProjectNames()),
+		Time:         now,
+	}
+	snap.AllowUsers, snap.AllowRoles = b.cfg.AllowlistSizes()
+
+	b.states.Range(func(key, value any) bool {
+		threadID, _ := key.(string)
+		st, _ := value.(*threadState)
+		if st == nil {
+			return true
+		}
+		st.mu.Lock()
+		job := st.job
+		qlen := len(st.queue)
+		st.mu.Unlock()
+		if job == nil {
+			snap.QueuedTotal += qlen
+			return true
+		}
+		snap.ActiveRuns = append(snap.ActiveRuns, ActiveRun{
+			ThreadID: threadID,
+			Project:  job.project,
+			Started:  job.start,
+			Elapsed:  formatElapsed(now.Sub(job.start)),
+			QueueLen: qlen,
+		})
+		snap.QueuedTotal += qlen
+		return true
+	})
+	snap.ActiveCount = len(snap.ActiveRuns)
+	// Stable order for UI/tests.
+	slices.SortFunc(snap.ActiveRuns, func(a, b ActiveRun) int {
+		if a.ThreadID < b.ThreadID {
+			return -1
+		}
+		if a.ThreadID > b.ThreadID {
+			return 1
+		}
+		return 0
+	})
+	return snap
 }
 
 func (b *Bot) stateFor(threadID string) *threadState {
@@ -126,14 +199,13 @@ func (b *Bot) Register(s *discordgo.Session) {
 
 func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
 	log.Printf("ready: logged in as %s (id=%s)", r.User.String(), r.User.ID)
-	names := make([]string, 0, len(b.cfg.Projects))
-	for n := range b.cfg.Projects {
-		names = append(names, n)
-	}
+	names := b.cfg.ProjectNames()
+	users, roles := b.cfg.AllowlistSizes()
 	log.Printf("ready: projects=%s channels=%d allowUsers=%d allowRoles=%d",
-		strings.Join(names, ","), len(b.cfg.Channels), len(b.cfg.AllowedUsers), len(b.cfg.AllowedRoles))
-	for ch, proj := range b.cfg.Channels {
-		log.Printf("ready: channel %s → %s", ch, proj)
+		strings.Join(names, ","), b.cfg.ChannelCount(), users, roles)
+	snap := b.cfg.Snapshot()
+	for _, ch := range snap.Channels {
+		log.Printf("ready: channel %s → %s", ch.ChannelID, ch.Project)
 	}
 	_ = s.UpdateGameStatus(0, "@Grok <task>")
 }
@@ -392,6 +464,13 @@ func remoteWorkPromptPrefix(branch string) string {
 			"1. Commit on this branch only (never commit to main/master).",
 			"2. Push the branch to the remote (`git push -u origin HEAD`).",
 			"3. Open a pull request with `gh pr create` (or push to update an existing PR for this branch).",
+			"",
+			"Uploading files to Discord: only files inside THIS worktree can be attached.",
+			"If the user wants a build artifact, report, APK, Excel, etc. on Discord, write the file under the worktree, then end your reply with:",
+			"DISCORD_UPLOAD:",
+			"path/relative/to/worktree/file.apk",
+			"(one path per line; relative paths preferred; max 10 files, 25 MiB each).",
+			"Do not list paths outside this worktree — they will be rejected.",
 		)
 	} else {
 		lines = append(lines,
@@ -400,6 +479,9 @@ func remoteWorkPromptPrefix(branch string) string {
 			"2. Commit on that branch.",
 			"3. Push the branch and open a pull request with `gh pr create` (or update an existing PR).",
 			"If this is not a git repository, skip PR steps and say so.",
+			"",
+			"File upload to Discord is only available for threads with an isolated git worktree.",
+			"Do not promise Discord attachments when there is no worktree.",
 		)
 	}
 	lines = append(lines,
@@ -411,13 +493,14 @@ func remoteWorkPromptPrefix(branch string) string {
 }
 
 func (b *Bot) isAllowed(s *discordgo.Session, m *discordgo.MessageCreate) bool {
-	if len(b.cfg.AllowedUsers) == 0 && len(b.cfg.AllowedRoles) == 0 {
+	if !b.cfg.HasAllowlist() {
 		return false
 	}
-	if _, ok := b.cfg.AllowedUsers[m.Author.ID]; ok {
+	if b.cfg.UserAllowed(m.Author.ID) {
 		return true
 	}
-	if len(b.cfg.AllowedRoles) == 0 {
+	_, roleCount := b.cfg.AllowlistSizes()
+	if roleCount == 0 {
 		return false
 	}
 	member := m.Member
@@ -429,7 +512,7 @@ func (b *Bot) isAllowed(s *discordgo.Session, m *discordgo.MessageCreate) bool {
 		}
 	}
 	for _, roleID := range member.Roles {
-		if _, ok := b.cfg.AllowedRoles[roleID]; ok {
+		if b.cfg.RoleAllowed(roleID) {
 			return true
 		}
 	}
@@ -442,11 +525,11 @@ type projectRef struct {
 }
 
 func (b *Bot) resolveProject(channelID string) (projectRef, error) {
-	mapped, ok := b.cfg.Channels[channelID]
-	if !ok || mapped == "" {
+	mapped, ok := b.cfg.ChannelProject(channelID)
+	if !ok {
 		return projectRef{}, fmt.Errorf("this channel is not mapped to a project (admin: set `channels.%s` in config)", channelID)
 	}
-	cwd, ok := b.cfg.Projects[mapped]
+	cwd, ok := b.cfg.ProjectPath(mapped)
 	if !ok || cwd == "" {
 		return projectRef{}, fmt.Errorf("channel maps to project `%s`, but that project is missing from config.projects", mapped)
 	}
@@ -779,7 +862,64 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		}
 		sendChunks(s, threadID, "stderr:\n```\n"+errText+"\n```")
 	}
+
+	// Attach files requested via DISCORD_UPLOAD: markers — worktree only.
+	if wtBranch != "" && !result.Cancelled {
+		uploadText := result.Text
+		if uploadText == "" {
+			uploadText = streamer.Text()
+		}
+		uploadWorktreeFiles(s, threadID, runCwd, uploadText)
+	}
+
+	b.recordTurn(threadID, m, proj.Name, parsed.Prompt, result, elapsed)
 	log.Printf("task: finished msg=%s thread=%s", m.ID, threadID)
+}
+
+func (b *Bot) recordTurn(threadID string, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration) {
+	if b.history == nil {
+		return
+	}
+	status := "done"
+	switch {
+	case result.Cancelled:
+		status = "cancelled"
+	case result.Code != 0:
+		status = "error"
+	}
+	user, userID := "", ""
+	if m != nil && m.Author != nil {
+		user = m.Author.String()
+		userID = m.Author.ID
+	}
+	msgID := ""
+	if m != nil {
+		msgID = m.ID
+	}
+	// Prefer streamer/result text; keep a hard cap so history files stay manageable.
+	response := result.Text
+	const maxResponse = 200_000
+	if len(response) > maxResponse {
+		response = response[:maxResponse] + "\n…(truncated)"
+	}
+	prompt := userPrompt
+	if prompt == "" {
+		prompt = "(empty prompt)"
+	}
+	if err := b.history.Append(threadID, history.Turn{
+		User:      user,
+		UserID:    userID,
+		Prompt:    prompt,
+		Response:  response,
+		Status:    status,
+		ExitCode:  result.Code,
+		Elapsed:   formatElapsed(elapsed),
+		Project:   project,
+		SessionID: result.SessionID,
+		MessageID: msgID,
+	}); err != nil {
+		log.Printf("error: history append thread=%s: %v", threadID, err)
+	}
 }
 
 func (b *Bot) progressLoop(s *discordgo.Session, threadID, msgID, project string, start time.Time, thoughts *thoughtTracker, stop <-chan struct{}) {

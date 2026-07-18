@@ -1,0 +1,33 @@
+{{define "content"}}
+<h1 id="page-history">History</h1>
+<p class="sub">Thread conversations with per-turn user prompts and Grok replies ({{len .Threads}} threads).</p>
+
+{{if .Threads}}
+<table>
+  <thead>
+    <tr>
+      <th>Thread</th>
+      <th>Project</th>
+      <th>Turns</th>
+      <th>Last user</th>
+      <th>Updated</th>
+      <th>Last prompt</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Threads}}
+    <tr>
+      <td class="mono"><a href="/history/{{.ThreadID}}">{{.ThreadID}}</a></td>
+      <td>{{if .Project}}{{.Project}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td>{{.TurnCount}}</td>
+      <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td class="mono">{{if .UpdatedAt}}{{.UpdatedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td>{{if .LastPrompt}}{{.LastPrompt}}{{else}}<span class="muted">{{if eq .TurnCount 0}}no turns recorded yet{{else}}—{{end}}</span>{{end}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<div class="empty">No history yet. Turns are recorded after Discord threads run Grok tasks.</div>
+{{end}}
+{{end}}

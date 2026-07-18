@@ -1,0 +1,206 @@
+{{define "content"}}
+<h1 id="page-config">Config</h1>
+<p class="sub">Manage projects, channel map, and allowlists. Changes persist to the config file and apply immediately.</p>
+
+{{if .Flash}}
+<div class="flash">{{.Flash}}</div>
+{{end}}
+{{if .Error}}
+<div class="flash err">{{.Error}}</div>
+{{end}}
+
+<div class="section card" id="bot-invite">
+  <h2>Bot install URL</h2>
+  <p class="sub" style="margin-top:0">Invite this bot to a Discord server. Permissions match what Grok Discord needs (view channel, send messages, attach files, read history, threads).</p>
+  {{if .Config.InviteURL}}
+  <div class="invite-row">
+    <input id="invite-url" type="text" readonly value="{{.Config.InviteURL}}" onclick="this.select()">
+    <button type="button" id="copy-invite" class="btn">Copy</button>
+    <a class="btn" href="{{.Config.InviteURL}}" target="_blank" rel="noopener noreferrer">Open</a>
+  </div>
+  <p class="sub" style="margin:0.65rem 0 0">
+    Client ID: <span class="mono">{{.Config.ClientID}}</span>
+    · permissions <span class="mono">{{.Config.InvitePermissions}}</span>
+    · scope <span class="mono">bot</span>
+  </p>
+  <p class="sub" style="margin:0.35rem 0 0">Also enable <strong>Message Content Intent</strong> in the Developer Portal (Bot → Privileged Gateway Intents).</p>
+  <script>
+  (function () {
+    var btn = document.getElementById("copy-invite");
+    var input = document.getElementById("invite-url");
+    if (!btn || !input) return;
+    btn.addEventListener("click", function () {
+      input.select();
+      navigator.clipboard.writeText(input.value).then(function () {
+        var prev = btn.textContent;
+        btn.textContent = "Copied";
+        setTimeout(function () { btn.textContent = prev; }, 1500);
+      }).catch(function () {
+        document.execCommand("copy");
+      });
+    });
+  })();
+  </script>
+  {{else}}
+  <div class="flash err" style="margin:0">Could not build install URL{{if .Config.InviteError}}: {{.Config.InviteError}}{{end}}. Set a valid <span class="mono">discordToken</span> or <span class="mono">discordClientId</span> in config.json.</div>
+  {{end}}
+</div>
+
+<div class="section card">
+  <h2>Add project folder</h2>
+  <form class="inline" method="post" action="{{route "config.addProject"}}">
+    <div>
+      <label for="proj-name">Name</label>
+      <input id="proj-name" type="text" name="name" placeholder="myapp" required autocomplete="off">
+    </div>
+    <div>
+      <label for="proj-path">Absolute path</label>
+      <input id="proj-path" type="text" name="path" placeholder="/absolute/path/to/repo" required autocomplete="off">
+    </div>
+    <button type="submit">Add folder</button>
+  </form>
+</div>
+
+<div class="section card">
+  <h2>Add channel map</h2>
+  <form class="inline" method="post" action="{{route "config.addChannel"}}">
+    <div>
+      <label for="channel-id">Discord channel ID</label>
+      <input id="channel-id" type="text" name="channelId" placeholder="123456789012345678" required autocomplete="off">
+    </div>
+    <div>
+      <label for="channel-project">Project</label>
+      <select id="channel-project" name="project" required>
+        <option value="" disabled selected>Select project…</option>
+        {{range .Config.ProjectNames}}
+        <option value="{{.}}">{{.}}</option>
+        {{end}}
+      </select>
+    </div>
+    <button type="submit">Add channel</button>
+  </form>
+  {{if not .Config.ProjectNames}}
+  <p class="sub" style="margin:0.5rem 0 0">Add a project first, then map a channel to it.</p>
+  {{end}}
+</div>
+
+<div class="section card">
+  <h2>Add allowed user</h2>
+  <form class="inline" method="post" action="{{route "config.addUser"}}" style="grid-template-columns: 1fr auto;">
+    <div>
+      <label for="user-id">Discord user ID</label>
+      <input id="user-id" type="text" name="id" placeholder="123456789012345678" required autocomplete="off">
+    </div>
+    <button type="submit">Add user</button>
+  </form>
+</div>
+
+<div class="section card">
+  <h2>Add allowed role</h2>
+  <form class="inline" method="post" action="{{route "config.addRole"}}" style="grid-template-columns: 1fr auto;">
+    <div>
+      <label for="role-id">Discord role ID</label>
+      <input id="role-id" type="text" name="id" placeholder="123456789012345678" required autocomplete="off">
+    </div>
+    <button type="submit">Add role</button>
+  </form>
+</div>
+
+<div class="section">
+  <h2>Projects</h2>
+  {{if .Config.Projects}}
+  <table>
+    <thead><tr><th>Name</th><th>Path</th><th></th></tr></thead>
+    <tbody>
+      {{range .Config.Projects}}
+      <tr>
+        <td class="mono">{{.Name}}</td>
+        <td class="mono">{{.Path}}</td>
+        <td class="row-actions">
+          <form method="post" action="{{route "config.removeProject"}}" onsubmit="return confirm('Remove project {{.Name}}? Channel maps to this project will also be removed.');">
+            <input type="hidden" name="name" value="{{.Name}}">
+            <button type="submit" class="btn-danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <div class="empty">No projects configured.</div>
+  {{end}}
+</div>
+
+<div class="section">
+  <h2>Channel map</h2>
+  {{if .Config.Channels}}
+  <table>
+    <thead><tr><th>Channel ID</th><th>Project</th><th></th></tr></thead>
+    <tbody>
+      {{range .Config.Channels}}
+      <tr>
+        <td class="mono">{{.ChannelID}}</td>
+        <td>{{.Project}}</td>
+        <td class="row-actions">
+          <form method="post" action="{{route "config.removeChannel"}}" onsubmit="return confirm('Remove channel {{.ChannelID}}?');">
+            <input type="hidden" name="channelId" value="{{.ChannelID}}">
+            <button type="submit" class="btn-danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <div class="empty">No channels mapped.</div>
+  {{end}}
+</div>
+
+<div class="section">
+  <h2>Allowed users</h2>
+  {{if .Config.AllowedUserIDs}}
+  <table>
+    <thead><tr><th>User ID</th><th></th></tr></thead>
+    <tbody>
+      {{range .Config.AllowedUserIDs}}
+      <tr>
+        <td class="mono">{{.}}</td>
+        <td class="row-actions">
+          <form method="post" action="{{route "config.removeUser"}}" onsubmit="return confirm('Remove user {{.}}?');">
+            <input type="hidden" name="id" value="{{.}}">
+            <button type="submit" class="btn-danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <div class="empty">No allowed users.</div>
+  {{end}}
+</div>
+
+<div class="section">
+  <h2>Allowed roles</h2>
+  {{if .Config.AllowedRoleIDs}}
+  <table>
+    <thead><tr><th>Role ID</th><th></th></tr></thead>
+    <tbody>
+      {{range .Config.AllowedRoleIDs}}
+      <tr>
+        <td class="mono">{{.}}</td>
+        <td class="row-actions">
+          <form method="post" action="{{route "config.removeRole"}}" onsubmit="return confirm('Remove role {{.}}?');">
+            <input type="hidden" name="id" value="{{.}}">
+            <button type="submit" class="btn-danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <div class="empty">No allowed roles.</div>
+  {{end}}
+</div>
+{{end}}

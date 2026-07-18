@@ -1,5 +1,6 @@
 {
   "discordToken": "YOUR_BOT_TOKEN",
+  "discordClientId": "",
   "allowedUserIds": [
     "YOUR_DISCORD_USER_ID"
   ],
@@ -20,5 +21,6 @@
   "extraArgs": [],
   "summarizeThreadTitle": true,
   "summarizeTimeoutMs": 45000,
-  "worktreeIsolation": true
+  "worktreeIsolation": true,
+  "httpListen": ":8787"
 }

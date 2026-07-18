@@ -1,0 +1,218 @@
+package config
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
+	dir := t.TempDir()
+	projDir := filepath.Join(dir, "myproj")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.json")
+	initial := map[string]any{
+		"discordToken":   "test-token",
+		"allowedUserIds": []string{"user-1"},
+		"allowedRoleIds": []string{},
+		"projects":       map[string]string{"existing": projDir},
+		"channels":       map[string]string{"ch1": "existing"},
+		"httpListen":     "127.0.0.1:9876",
+	}
+	raw, err := json.MarshalIndent(initial, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GROK_DISCORD_CONFIG", cfgPath)
+	t.Setenv("DISCORD_BOT_TOKEN", "")
+	// Clear HTTP listen env so config file wins for ListenAddr when we check it.
+	t.Setenv("GROK_DISCORD_HTTP_LISTEN", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ListenAddr() != "127.0.0.1:9876" {
+		t.Fatalf("ListenAddr = %q, want 127.0.0.1:9876", cfg.ListenAddr())
+	}
+	if !cfg.UserAllowed("user-1") {
+		t.Fatal("expected user-1 allowed after load")
+	}
+
+	newProj := filepath.Join(dir, "newproj")
+	if err := os.MkdirAll(newProj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.AddProject("newproj", newProj); err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	if path, ok := cfg.ProjectPath("newproj"); !ok || path != newProj {
+		t.Fatalf("ProjectPath newproj = %q,%v", path, ok)
+	}
+
+	if err := cfg.AddAllowedUser("user-2"); err != nil {
+		t.Fatalf("AddAllowedUser: %v", err)
+	}
+	if !cfg.UserAllowed("user-2") {
+		t.Fatal("user-2 should be allowed in runtime")
+	}
+
+	if err := cfg.AddAllowedRole("role-9"); err != nil {
+		t.Fatalf("AddAllowedRole: %v", err)
+	}
+	if !cfg.RoleAllowed("role-9") {
+		t.Fatal("role-9 should be allowed in runtime")
+	}
+
+	// Re-read file and assert persistence (shipped Save path).
+	disk, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Projects       map[string]string `json:"projects"`
+		AllowedUserIDs []string          `json:"allowedUserIds"`
+		AllowedRoleIDs []string          `json:"allowedRoleIds"`
+	}
+	if err := json.Unmarshal(disk, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Projects["newproj"] != newProj {
+		t.Fatalf("disk projects[newproj]=%q", parsed.Projects["newproj"])
+	}
+	if !contains(parsed.AllowedUserIDs, "user-2") {
+		t.Fatalf("disk allowedUserIds missing user-2: %v", parsed.AllowedUserIDs)
+	}
+	if !contains(parsed.AllowedRoleIDs, "role-9") {
+		t.Fatalf("disk allowedRoleIds missing role-9: %v", parsed.AllowedRoleIDs)
+	}
+
+	snap := cfg.Snapshot()
+	foundProj := false
+	for _, p := range snap.Projects {
+		if p.Name == "newproj" && p.Path == newProj {
+			foundProj = true
+		}
+	}
+	if !foundProj {
+		t.Fatalf("snapshot projects: %+v", snap.Projects)
+	}
+	if !contains(snap.AllowedUserIDs, "user-2") || !contains(snap.AllowedRoleIDs, "role-9") {
+		t.Fatalf("snapshot allowlists: users=%v roles=%v", snap.AllowedUserIDs, snap.AllowedRoleIDs)
+	}
+
+	if err := cfg.AddChannel("ch-new", "newproj"); err != nil {
+		t.Fatalf("AddChannel: %v", err)
+	}
+	if name, ok := cfg.ChannelProject("ch-new"); !ok || name != "newproj" {
+		t.Fatalf("ChannelProject=%q %v", name, ok)
+	}
+
+	if err := cfg.RemoveAllowedUser("user-2"); err != nil {
+		t.Fatalf("RemoveAllowedUser: %v", err)
+	}
+	if cfg.UserAllowed("user-2") {
+		t.Fatal("user-2 still allowed")
+	}
+	if err := cfg.RemoveAllowedRole("role-9"); err != nil {
+		t.Fatalf("RemoveAllowedRole: %v", err)
+	}
+	if cfg.RoleAllowed("role-9") {
+		t.Fatal("role-9 still allowed")
+	}
+	if err := cfg.RemoveChannel("ch-new"); err != nil {
+		t.Fatalf("RemoveChannel: %v", err)
+	}
+	if _, ok := cfg.ChannelProject("ch-new"); ok {
+		t.Fatal("ch-new still mapped")
+	}
+
+	// Removing project cascades channel maps that point to it.
+	if err := cfg.AddChannel("ch1b", "newproj"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.RemoveProject("newproj"); err != nil {
+		t.Fatalf("RemoveProject: %v", err)
+	}
+	if _, ok := cfg.ProjectPath("newproj"); ok {
+		t.Fatal("newproj still present")
+	}
+	if _, ok := cfg.ChannelProject("ch1b"); ok {
+		t.Fatal("cascaded channel still present")
+	}
+
+	disk2, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed2 struct {
+		Projects       map[string]string `json:"projects"`
+		Channels       map[string]string `json:"channels"`
+		AllowedUserIDs []string          `json:"allowedUserIds"`
+		AllowedRoleIDs []string          `json:"allowedRoleIds"`
+	}
+	if err := json.Unmarshal(disk2, &parsed2); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := parsed2.Projects["newproj"]; ok {
+		t.Fatalf("disk still has newproj: %+v", parsed2.Projects)
+	}
+	if contains(parsed2.AllowedUserIDs, "user-2") || contains(parsed2.AllowedRoleIDs, "role-9") {
+		t.Fatalf("disk still has removed allowlist: %+v %+v", parsed2.AllowedUserIDs, parsed2.AllowedRoleIDs)
+	}
+	if _, ok := parsed2.Channels["ch-new"]; ok {
+		t.Fatalf("disk still has ch-new: %+v", parsed2.Channels)
+	}
+}
+
+func TestAddProjectValidation(t *testing.T) {
+	cfg := &Config{
+		Projects:     map[string]string{},
+		Channels:     map[string]string{},
+		AllowedUsers: map[string]struct{}{},
+		AllowedRoles: map[string]struct{}{},
+		ConfigPath:   filepath.Join(t.TempDir(), "config.json"),
+	}
+	if err := cfg.AddProject("", "/tmp/x"); err == nil {
+		t.Fatal("expected error for empty name")
+	}
+	if err := cfg.AddProject("p", "relative/path"); err == nil {
+		t.Fatal("expected error for relative path")
+	}
+	if err := cfg.AddAllowedUser(""); err == nil {
+		t.Fatal("expected error for empty user")
+	}
+	if err := cfg.AddAllowedRole(""); err == nil {
+		t.Fatal("expected error for empty role")
+	}
+	if err := cfg.AddChannel("ch", "missing"); err == nil {
+		t.Fatal("expected error for unknown project")
+	}
+	if err := cfg.RemoveProject("nope"); err == nil {
+		t.Fatal("expected error for missing project")
+	}
+}
+
+func TestListenAddrEnvOverride(t *testing.T) {
+	cfg := &Config{HTTPListen: ":1111"}
+	t.Setenv("GROK_DISCORD_HTTP_LISTEN", "0.0.0.0:9999")
+	if got := cfg.ListenAddr(); got != "0.0.0.0:9999" {
+		t.Fatalf("ListenAddr = %q", got)
+	}
+}
+
+func contains(ss []string, want string) bool {
+	for _, s := range ss {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}

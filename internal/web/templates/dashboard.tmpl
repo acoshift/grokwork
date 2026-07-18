@@ -1,0 +1,93 @@
+{{define "content"}}
+<h1 id="page-dashboard">Dashboard</h1>
+<p class="sub">Live operational status of the Grok Discord bridge. <span id="sse-status">connecting…</span></p>
+
+<div class="grid" id="stats">
+  <div class="card">
+    <div class="label">Active runs</div>
+    <div class="value" id="stat-active">{{.Status.ActiveCount}}</div>
+  </div>
+  <div class="card">
+    <div class="label">Queued</div>
+    <div class="value" id="stat-queued">{{.Status.QueuedTotal}}</div>
+  </div>
+  <div class="card">
+    <div class="label">Sessions</div>
+    <div class="value" id="stat-sessions">{{.Status.SessionCount}}</div>
+  </div>
+  <div class="card">
+    <div class="label">Projects</div>
+    <div class="value" id="stat-projects">{{.Status.ProjectCount}}</div>
+    <div class="hint">users {{.Status.AllowUsers}} · roles {{.Status.AllowRoles}}</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Active runs</h2>
+  <div id="runs-wrap">
+    {{if .Status.ActiveRuns}}
+    <table id="runs-table">
+      <thead>
+        <tr><th>Thread</th><th>Project</th><th>Elapsed</th><th>Queue</th></tr>
+      </thead>
+      <tbody id="runs-body">
+        {{range .Status.ActiveRuns}}
+        <tr>
+          <td class="mono">{{.ThreadID}}</td>
+          <td>{{.Project}}</td>
+          <td>{{.Elapsed}}</td>
+          <td>{{.QueueLen}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty" id="runs-empty">No active runs.</div>
+    {{end}}
+  </div>
+</div>
+
+<script>
+(function () {
+  const statusEl = document.getElementById("sse-status");
+  function setStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = cls || "";
+  }
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function render(data) {
+    document.getElementById("stat-active").textContent = data.activeCount;
+    document.getElementById("stat-queued").textContent = data.queuedTotal;
+    document.getElementById("stat-sessions").textContent = data.sessionCount;
+    document.getElementById("stat-projects").textContent = data.projectCount;
+    const wrap = document.getElementById("runs-wrap");
+    const runs = data.activeRuns || [];
+    if (!runs.length) {
+      wrap.innerHTML = '<div class="empty" id="runs-empty">No active runs.</div>';
+      return;
+    }
+    let rows = "";
+    for (const r of runs) {
+      rows += "<tr><td class=\"mono\">" + esc(r.threadId) + "</td><td>" + esc(r.project) +
+        "</td><td>" + esc(r.elapsed) + "</td><td>" + esc(r.queueLen) + "</td></tr>";
+    }
+    wrap.innerHTML = '<table id="runs-table"><thead><tr><th>Thread</th><th>Project</th><th>Elapsed</th><th>Queue</th></tr></thead><tbody id="runs-body">' +
+      rows + "</tbody></table>";
+  }
+  const es = new EventSource({{json .SSEPath}});
+  es.onopen = function () { setStatus("live", "ok"); };
+  es.onerror = function () { setStatus("reconnecting…", "err"); };
+  es.onmessage = function (ev) {
+    try {
+      render(JSON.parse(ev.data));
+      setStatus("live · " + new Date().toLocaleTimeString(), "ok");
+    } catch (e) {
+      setStatus("bad event", "err");
+    }
+  };
+})();
+</script>
+{{end}}

@@ -12,7 +12,9 @@ import (
 
 	"github.com/acoshift/grok-discord/internal/bot"
 	"github.com/acoshift/grok-discord/internal/config"
+	"github.com/acoshift/grok-discord/internal/history"
 	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grok-discord/internal/web"
 )
 
 func main() {
@@ -26,12 +28,27 @@ func main() {
 		log.Fatal(err)
 	}
 
+	hist, err := history.New(cfg.DataDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	b := bot.New(cfg, sessions, hist)
+
+	addr := cfg.ListenAddr()
+	webSrv := web.New(cfg, sessions, hist, b)
+	go func() {
+		log.Printf("web UI listening on http://%s (dashboard, history, config)", addr)
+		if err := webSrv.ListenAndServe(); err != nil {
+			log.Printf("web server stopped: %v", err)
+		}
+	}()
+
 	dg, err := discordgo.New("Bot " + cfg.DiscordToken)
 	if err != nil {
 		log.Fatalf("discord session: %v", err)
 	}
 
-	b := bot.New(cfg, sessions)
 	b.Register(dg)
 	dg.LogLevel = discordgo.LogWarning
 
@@ -54,4 +71,6 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 	fmt.Println("Shutting down…")
+	// Web stop is configured for near-instant close (no wait for SSE).
+	_ = webSrv.Shutdown()
 }

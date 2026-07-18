@@ -1,0 +1,40 @@
+{{define "content"}}
+<p class="sub" style="margin-bottom:0.5rem"><a href="{{route "history"}}">← History</a></p>
+<h1 id="page-history-detail">Thread conversation</h1>
+<p class="sub">
+  <span class="mono">{{.Thread.ThreadID}}</span>
+  {{if .Thread.Project}} · <strong>{{.Thread.Project}}</strong>{{end}}
+  · {{len .Thread.Turns}} turn{{if ne (len .Thread.Turns) 1}}s{{end}}
+</p>
+
+{{if .Thread.Turns}}
+<div class="turns" id="turns">
+  {{range $i, $t := .Thread.Turns}}
+  <article class="turn" id="turn-{{$i}}">
+    <header class="turn-meta">
+      <span class="badge">#{{add $i 1}}</span>
+      <span class="mono muted">{{$t.At}}</span>
+      {{if $t.User}}<span>{{$t.User}}</span>{{end}}
+      <span class="badge status-{{$t.Status}}">{{$t.Status}}</span>
+      {{if $t.Elapsed}}<span class="muted">{{$t.Elapsed}}</span>{{end}}
+      {{if $t.SessionID}}<span class="mono muted" title="session">{{$t.SessionID}}</span>{{end}}
+    </header>
+    <div class="bubble user">
+      <div class="bubble-label">User</div>
+      <pre class="bubble-body">{{$t.Prompt}}</pre>
+    </div>
+    <div class="bubble assistant">
+      <div class="bubble-label">Grok</div>
+      {{if $t.Response}}
+      <pre class="bubble-body">{{$t.Response}}</pre>
+      {{else}}
+      <pre class="bubble-body muted">(no response text)</pre>
+      {{end}}
+    </div>
+  </article>
+  {{end}}
+</div>
+{{else}}
+<div class="empty">No turns recorded for this thread yet. New runs will appear here after they finish.</div>
+{{end}}
+{{end}}
