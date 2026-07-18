@@ -61,7 +61,7 @@ While the process runs it also serves a small server-rendered admin UI (hime + `
 | `/` | Dashboard — live active runs / session counts (SSE refresh) |
 | `/history` | Thread list; open a thread to read each user/Grok turn |
 | `/worktrees` | List per-thread git worktrees; prune one or all past idle TTL |
-| `/config` | Add/remove projects, channel→project map, allowed users, and roles |
+| `/config` | Add/remove projects, channel→project map, allowed users/roles, worktree idle TTL, CI auto-fix, completion risk globs |
 
 Bind for Tailscale or LAN with `"httpListen": "0.0.0.0:8787"` (or a Tailscale IP). There is **no auth** on this UI — only expose it on a private network or VPN.
 

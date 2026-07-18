@@ -50,12 +50,76 @@
   <h2>Worktree idle cleanup</h2>
   <p class="sub" style="margin-top:0">Prune per-thread git worktrees after this many days without activity. <span class="mono">0</span> disables automatic cleanup. Default is <span class="mono">30</span>.</p>
   <form class="inline" method="post" action="{{route "config.settings"}}" style="grid-template-columns: 1fr auto;">
+    <input type="hidden" name="section" value="worktree">
     <div>
       <label for="worktree-idle-ttl">Idle TTL (days)</label>
       <input id="worktree-idle-ttl" type="number" name="worktreeIdleTTLDays" min="0" step="1" required value="{{.Config.WorktreeIdleTTLDays}}" autocomplete="off">
     </div>
     <button type="submit">Save</button>
   </form>
+</div>
+
+<div class="section card" id="ci-triage">
+  <h2>CI triage</h2>
+  <p class="sub" style="margin-top:0">
+    When a thread’s PR has failing checks, the bot posts a digest and offers <span class="mono">@Grok /fix-ci</span>.
+    Optionally auto-queue a fix (default off). Cap is per Discord thread session.
+  </p>
+  <form method="post" action="{{route "config.settings"}}">
+    <input type="hidden" name="section" value="ci">
+    <div class="inline" style="grid-template-columns: auto 1fr auto; align-items: end;">
+      <div style="padding-bottom: 0.45rem;">
+        <label style="display:flex; gap:0.5rem; align-items:center; cursor:pointer;">
+          <input type="checkbox" name="autoFixCI" value="1" {{if .Config.AutoFixCI}}checked{{end}}>
+          Auto-queue CI fix
+        </label>
+      </div>
+      <div>
+        <label for="auto-fix-ci-max">Max auto attempts</label>
+        <input id="auto-fix-ci-max" type="number" name="autoFixCIMax" min="0" step="1" required value="{{.Config.AutoFixCIMax}}" autocomplete="off">
+      </div>
+      <button type="submit">Save</button>
+    </div>
+    <p class="sub" style="margin:0.5rem 0 0"><span class="mono">0</span> for max uses the runtime default (2). Manual <span class="mono">/fix-ci</span> is always available.</p>
+  </form>
+</div>
+
+<div class="section card" id="risky-paths">
+  <h2>Completion risk paths</h2>
+  <p class="sub" style="margin-top:0">
+    Globs that flag paths on the completion summary card (migrations, auth, deploy, …).
+    One pattern per line; <span class="mono">**</span> and <span class="mono">*</span> supported. Lines starting with <span class="mono">#</span> are comments.
+  </p>
+  <form method="post" action="{{route "config.settings"}}">
+    <input type="hidden" name="section" value="risky">
+    <div style="margin-bottom: 0.65rem;">
+      <label style="display:flex; gap:0.5rem; align-items:center; cursor:pointer;">
+        <input type="checkbox" name="riskyPathUseDefault" value="1" id="risky-use-default" {{if .Config.RiskyPathUseDefault}}checked{{end}}>
+        Use built-in defaults
+      </label>
+    </div>
+    <div>
+      <label for="risky-globs">Custom globs</label>
+      <textarea id="risky-globs" name="riskyPathGlobs" rows="8" style="width:100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem;" placeholder="**/migrations/**&#10;**/auth/**&#10;**/.env*" {{if .Config.RiskyPathUseDefault}}disabled{{end}}>{{.Config.RiskyPathGlobsText}}</textarea>
+    </div>
+    <p class="sub" style="margin:0.5rem 0 0">
+      Uncheck defaults and leave the box empty to disable risk highlighting.
+      Uncheck defaults and enter patterns to override.
+    </p>
+    <div style="margin-top: 0.75rem;">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+  <script>
+  (function () {
+    var cb = document.getElementById("risky-use-default");
+    var ta = document.getElementById("risky-globs");
+    if (!cb || !ta) return;
+    cb.addEventListener("change", function () {
+      ta.disabled = cb.checked;
+    });
+  })();
+  </script>
 </div>
 
 <div class="section card">

@@ -214,7 +214,10 @@ func TestConfigAddsPersist(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	body := w.Body.String()
-	for _, want := range []string{"added", newProj, "user-added", "role-added", "ch-added", "Remove", "Add channel map", "Worktree idle cleanup", "worktreeIdleTTLDays"} {
+	for _, want := range []string{
+		"added", newProj, "user-added", "role-added", "ch-added", "Remove", "Add channel map",
+		"Worktree idle cleanup", "worktreeIdleTTLDays", "CI triage", "autoFixCI", "Completion risk paths",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("config page missing %q", want)
 		}
@@ -222,6 +225,7 @@ func TestConfigAddsPersist(t *testing.T) {
 
 	// Settings: idle TTL
 	reqTTL := httptest.NewRequest(http.MethodPost, "/config/settings", strings.NewReader(url.Values{
+		"section":             {"worktree"},
 		"worktreeIdleTTLDays": {"14"},
 	}.Encode()))
 	reqTTL.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -232,6 +236,38 @@ func TestConfigAddsPersist(t *testing.T) {
 	}
 	if cfg.WorktreeIdleTTLDaysValue() != 14 {
 		t.Fatalf("ttl days=%d", cfg.WorktreeIdleTTLDaysValue())
+	}
+
+	// Settings: CI triage
+	reqCI := httptest.NewRequest(http.MethodPost, "/config/settings", strings.NewReader(url.Values{
+		"section":      {"ci"},
+		"autoFixCI":    {"1"},
+		"autoFixCIMax": {"3"},
+	}.Encode()))
+	reqCI.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wCI := httptest.NewRecorder()
+	h.ServeHTTP(wCI, reqCI)
+	if wCI.Code != http.StatusSeeOther && wCI.Code != http.StatusFound {
+		t.Fatalf("ci settings status=%d body=%s", wCI.Code, wCI.Body.String())
+	}
+	if !cfg.AutoFixCIEnabled() || cfg.AutoFixCIMaxAttempts() != 3 {
+		t.Fatalf("autoFix=%v max=%d", cfg.AutoFixCIEnabled(), cfg.AutoFixCIMaxAttempts())
+	}
+
+	// Settings: risky globs custom
+	reqRisk := httptest.NewRequest(http.MethodPost, "/config/settings", strings.NewReader(url.Values{
+		"section":              {"risky"},
+		"riskyPathGlobs":       {"**/auth/**\n**/deploy/**"},
+		"riskyPathUseDefault":  {""},
+	}.Encode()))
+	reqRisk.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wRisk := httptest.NewRecorder()
+	h.ServeHTTP(wRisk, reqRisk)
+	if wRisk.Code != http.StatusSeeOther && wRisk.Code != http.StatusFound {
+		t.Fatalf("risky settings status=%d", wRisk.Code)
+	}
+	if !cfg.RiskyPathGlobsConfigured() || len(cfg.RiskyPathGlobsEffective()) != 2 {
+		t.Fatalf("risky globs=%v", cfg.RiskyPathGlobsEffective())
 	}
 
 	// Removes

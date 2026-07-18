@@ -209,6 +209,68 @@ func TestListenAddrEnvOverride(t *testing.T) {
 	}
 }
 
+func TestSetAutoFixCIAndRiskyGlobs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{
+		"discordToken":"t","allowedUserIds":["u"],
+		"projects":{"p":"/tmp"},"channels":{"c":"p"}
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Point loader via env.
+	t.Setenv("GROK_DISCORD_CONFIG", path)
+	cfg, err := Load()
+	if err != nil {
+		// projects path /tmp may warn; token is fine. If projects must exist, use abs temp.
+		_ = err
+	}
+	// Build config directly if Load fails on path checks.
+	if cfg == nil || err != nil {
+		cfg = &Config{
+			DiscordToken:   "t",
+			AllowedUserIDs: []string{"u"},
+			Projects:       map[string]string{"p": dir},
+			Channels:       map[string]string{"c": "p"},
+			ConfigPath:     path,
+			AllowedUsers:   map[string]struct{}{"u": {}},
+		}
+	}
+
+	if cfg.AutoFixCIEnabled() {
+		t.Fatal("default auto fix should be off")
+	}
+	if err := cfg.SetAutoFixCI(true, 3); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.AutoFixCIEnabled() || cfg.AutoFixCIMaxAttempts() != 3 {
+		t.Fatalf("auto=%v max=%d", cfg.AutoFixCIEnabled(), cfg.AutoFixCIMaxAttempts())
+	}
+	snap := cfg.Snapshot()
+	if !snap.AutoFixCI || snap.AutoFixCIMax != 3 {
+		t.Fatalf("snap=%+v", snap)
+	}
+
+	if err := cfg.SetRiskyPathGlobsFromText("**/auth/**\n# comment\n**/deploy/**", false); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.RiskyPathGlobsConfigured() || len(cfg.RiskyPathGlobsEffective()) != 2 {
+		t.Fatalf("globs=%v", cfg.RiskyPathGlobsEffective())
+	}
+	if err := cfg.SetRiskyPathGlobsFromText("", true); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RiskyPathGlobsConfigured() {
+		t.Fatal("expected defaults after useDefault")
+	}
+	if err := cfg.SetRiskyPathGlobsFromText("", false); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.RiskyPathGlobsConfigured() || len(cfg.RiskyPathGlobsEffective()) != 0 {
+		t.Fatalf("empty custom: %v", cfg.RiskyPathGlobsEffective())
+	}
+}
+
 func TestWorktreeIdleTTLDays(t *testing.T) {
 	cfg := &Config{
 		Projects:   map[string]string{},

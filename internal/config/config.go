@@ -81,6 +81,10 @@ type Snapshot struct {
 	Yolo                bool
 	WorktreeIsolation   bool
 	WorktreeIdleTTLDays int // effective value (default 30 when unset)
+	AutoFixCI           bool
+	AutoFixCIMax        int      // effective cap (default 2)
+	RiskyPathGlobsText  string   // configured globs, one per line (empty if using defaults)
+	RiskyPathUseDefault bool     // true when riskyPathGlobs is unset (nil)
 	ClientID            string
 	InviteURL           string
 	InviteError         string
@@ -344,6 +348,45 @@ func (c *Config) SetWorktreeIdleTTLDays(days int) error {
 	return c.saveLocked()
 }
 
+// SetAutoFixCI sets whether the PR poller auto-queues CI fixes and the per-session cap.
+// maxAttempts <= 0 stores 0 (runtime still applies default 2 via AutoFixCIMaxAttempts).
+func (c *Config) SetAutoFixCI(enabled bool, maxAttempts int) error {
+	if maxAttempts < 0 {
+		return fmt.Errorf("autoFixCIMax must be >= 0")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v := enabled
+	c.AutoFixCI = &v
+	c.AutoFixCIMax = maxAttempts
+	return c.saveLocked()
+}
+
+// SetRiskyPathGlobsFromText parses newline-separated globs.
+// useDefault true clears the override (built-in defaults).
+// useDefault false with empty text stores an empty list (no risk flags).
+func (c *Config) SetRiskyPathGlobsFromText(text string, useDefault bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if useDefault {
+		c.RiskyPathGlobs = nil
+		return c.saveLocked()
+	}
+	var globs []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		globs = append(globs, line)
+	}
+	if globs == nil {
+		globs = []string{} // explicit empty ≠ nil defaults
+	}
+	c.RiskyPathGlobs = globs
+	return c.saveLocked()
+}
+
 // AddProject registers a project folder (name → absolute path) and persists.
 func (c *Config) AddProject(name, absPath string) error {
 	name = strings.TrimSpace(name)
@@ -542,6 +585,15 @@ func (c *Config) Snapshot() Snapshot {
 	if c.WorktreeIdleTTLDays != nil {
 		idleDays = *c.WorktreeIdleTTLDays
 	}
+	autoFixMax := 2
+	if c.AutoFixCIMax > 0 {
+		autoFixMax = c.AutoFixCIMax
+	}
+	riskyDefault := c.RiskyPathGlobs == nil
+	riskyText := ""
+	if c.RiskyPathGlobs != nil {
+		riskyText = strings.Join(c.RiskyPathGlobs, "\n")
+	}
 	snap := Snapshot{
 		Projects:            projects,
 		Channels:            channels,
@@ -555,6 +607,10 @@ func (c *Config) Snapshot() Snapshot {
 		Yolo:                c.YoloEnabled(),
 		WorktreeIsolation:   c.WorktreeIsolationEnabled(),
 		WorktreeIdleTTLDays: idleDays,
+		AutoFixCI:           c.AutoFixCI != nil && *c.AutoFixCI,
+		AutoFixCIMax:        autoFixMax,
+		RiskyPathGlobsText:  riskyText,
+		RiskyPathUseDefault: riskyDefault,
 		InvitePermissions:   BotInvitePermissions,
 	}
 	// ClientID/InviteURL may read DiscordClientID/DiscordToken; unlock first.
