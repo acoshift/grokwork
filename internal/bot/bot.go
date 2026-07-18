@@ -901,6 +901,11 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		b.refreshPRAfterTask(s, threadID, repoDir, wtBranch, replyText)
 	}
 
+	// Completion summary: deterministic git diff --stat / name-status + risk flags.
+	if !result.Cancelled {
+		b.postCompletionSummary(s, threadID, proj.Name, runCwd, wtBranch, elapsed, result.Code, result.Cancelled)
+	}
+
 	log.Printf("task: finished msg=%s thread=%s", m.ID, threadID)
 }
 

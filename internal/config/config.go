@@ -39,6 +39,9 @@ type Config struct {
 	// HTTPListen is the address for the private-network web UI (e.g. ":8787", "0.0.0.0:8787").
 	// Empty uses default ":8787". Override with GROK_DISCORD_HTTP_LISTEN.
 	HTTPListen string `json:"httpListen,omitempty"`
+	// RiskyPathGlobs flags completion-card paths for review (**, * globs).
+	// nil/omitted → built-in defaults. Empty slice → no risk highlighting.
+	RiskyPathGlobs []string `json:"riskyPathGlobs,omitempty"`
 
 	mu           sync.RWMutex
 	AllowedUsers map[string]struct{} `json:"-"`
@@ -118,6 +121,31 @@ func (c *Config) WorktreeIdleTTL() time.Duration {
 		return 0
 	}
 	return time.Duration(days) * 24 * time.Hour
+}
+
+// RiskyPathGlobsConfigured reports whether riskyPathGlobs was set in config
+// (including explicitly empty). Unset (nil) means use bot defaults.
+func (c *Config) RiskyPathGlobsConfigured() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.RiskyPathGlobs != nil
+}
+
+// RiskyPathGlobsEffective returns configured globs, or nil when unset (caller uses defaults).
+// An explicit empty list means "no risk flags".
+func (c *Config) RiskyPathGlobsEffective() []string {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.RiskyPathGlobs == nil {
+		return nil // bot applies DefaultRiskyPathGlobs
+	}
+	return slices.Clone(c.RiskyPathGlobs)
 }
 
 // ListenAddr returns the HTTP bind address (env overrides config).
@@ -242,6 +270,7 @@ func (c *Config) saveLocked() error {
 		WorktreeIsolation    *bool             `json:"worktreeIsolation"`
 		WorktreeIdleTTLDays  *int              `json:"worktreeIdleTTLDays,omitempty"`
 		HTTPListen           string            `json:"httpListen,omitempty"`
+		RiskyPathGlobs       []string          `json:"riskyPathGlobs,omitempty"`
 	}{
 		DiscordToken:         c.DiscordToken,
 		DiscordClientID:      c.DiscordClientID,
@@ -260,6 +289,7 @@ func (c *Config) saveLocked() error {
 		WorktreeIsolation:    c.WorktreeIsolation,
 		WorktreeIdleTTLDays:  cloneIntPtr(c.WorktreeIdleTTLDays),
 		HTTPListen:           c.HTTPListen,
+		RiskyPathGlobs:       slices.Clone(c.RiskyPathGlobs),
 	}
 	raw, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
