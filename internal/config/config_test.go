@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -240,6 +241,9 @@ func TestSetAutoFixCIAndRiskyGlobs(t *testing.T) {
 	if cfg.AutoFixCIEnabled() {
 		t.Fatal("default auto fix should be off")
 	}
+	if err := cfg.SetAutoFixCI(true, 0); err == nil {
+		t.Fatal("expected error for max 0")
+	}
 	if err := cfg.SetAutoFixCI(true, 3); err != nil {
 		t.Fatal(err)
 	}
@@ -249,6 +253,14 @@ func TestSetAutoFixCIAndRiskyGlobs(t *testing.T) {
 	snap := cfg.Snapshot()
 	if !snap.AutoFixCI || snap.AutoFixCIMax != 3 {
 		t.Fatalf("snap=%+v", snap)
+	}
+	// Defaults mode still shows default patterns in the snapshot for the UI.
+	if err := cfg.SetRiskyPathGlobsFromText("", true); err != nil {
+		t.Fatal(err)
+	}
+	snap = cfg.Snapshot()
+	if !snap.RiskyPathUseDefault || !strings.Contains(snap.RiskyPathGlobsText, "migrations") {
+		t.Fatalf("default display snap=%+v", snap)
 	}
 
 	if err := cfg.SetRiskyPathGlobsFromText("**/auth/**\n# comment\n**/deploy/**", false); err != nil {

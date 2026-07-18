@@ -14,7 +14,30 @@ import (
 const (
 	defaultHTTPListen          = ":8787"
 	DefaultWorktreeIdleTTLDays = 30
+	DefaultAutoFixCIMax        = 2
 )
+
+// DefaultRiskyPathGlobs flags completion-card paths that usually need careful review.
+// Patterns use ** (any path prefix/suffix) and * (within one segment).
+var DefaultRiskyPathGlobs = []string{
+	"**/migrations/**",
+	"**/migration/**",
+	"**/*migration*",
+	"**/auth/**",
+	"**/deploy/**",
+	"**/deployment/**",
+	"**/.env",
+	"**/.env.*",
+	"**/secrets/**",
+	"**/*secret*",
+	"**/*credential*",
+	"**/Dockerfile*",
+	"**/*.tf",
+	"**/k8s/**",
+	"**/helm/**",
+	"**/crdb/**",
+	"**/gcp.json",
+}
 
 type Config struct {
 	DiscordToken string `json:"discordToken"`
@@ -167,15 +190,15 @@ func (c *Config) AutoFixCIEnabled() bool {
 	return c.AutoFixCI != nil && *c.AutoFixCI
 }
 
-// AutoFixCIMaxAttempts returns the auto-fix cap (default 2, minimum 1 when auto-fix is used).
+// AutoFixCIMaxAttempts returns the auto-fix cap (default DefaultAutoFixCIMax).
 func (c *Config) AutoFixCIMaxAttempts() int {
 	if c == nil {
-		return 2
+		return DefaultAutoFixCIMax
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.AutoFixCIMax <= 0 {
-		return 2
+		return DefaultAutoFixCIMax
 	}
 	return c.AutoFixCIMax
 }
@@ -349,10 +372,10 @@ func (c *Config) SetWorktreeIdleTTLDays(days int) error {
 }
 
 // SetAutoFixCI sets whether the PR poller auto-queues CI fixes and the per-session cap.
-// maxAttempts <= 0 stores 0 (runtime still applies default 2 via AutoFixCIMaxAttempts).
+// maxAttempts must be >= 1.
 func (c *Config) SetAutoFixCI(enabled bool, maxAttempts int) error {
-	if maxAttempts < 0 {
-		return fmt.Errorf("autoFixCIMax must be >= 0")
+	if maxAttempts < 1 {
+		return fmt.Errorf("autoFixCIMax must be >= 1")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -585,14 +608,18 @@ func (c *Config) Snapshot() Snapshot {
 	if c.WorktreeIdleTTLDays != nil {
 		idleDays = *c.WorktreeIdleTTLDays
 	}
-	autoFixMax := 2
+	autoFixMax := DefaultAutoFixCIMax
 	if c.AutoFixCIMax > 0 {
 		autoFixMax = c.AutoFixCIMax
 	}
+	// When using built-in defaults, still show them in the UI so unchecking
+	// "use defaults" does not save an empty list (which disables risk flags).
 	riskyDefault := c.RiskyPathGlobs == nil
 	riskyText := ""
 	if c.RiskyPathGlobs != nil {
 		riskyText = strings.Join(c.RiskyPathGlobs, "\n")
+	} else {
+		riskyText = strings.Join(DefaultRiskyPathGlobs, "\n")
 	}
 	snap := Snapshot{
 		Projects:            projects,

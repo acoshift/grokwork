@@ -276,84 +276,93 @@ func (s *Server) removeChannel(ctx *hime.Context) error {
 
 func (s *Server) updateSettings(ctx *hime.Context) error {
 	section := strings.TrimSpace(ctx.PostFormValue("section"))
-	switch section {
-	case "worktree", "":
-		// Empty section keeps backward-compatible form posts that only send TTL.
-		if section == "" && strings.TrimSpace(ctx.PostFormValue("worktreeIdleTTLDays")) == "" {
-			if strings.TrimSpace(ctx.PostFormValue("autoFixCIMax")) != "" {
-				section = "ci"
-			} else if _, ok := ctx.Request.PostForm["riskyPathGlobs"]; ok {
-				section = "risky"
-			}
+	if section == "" {
+		// Backward-compatible posts without section.
+		switch {
+		case strings.TrimSpace(ctx.PostFormValue("autoFixCIMax")) != "":
+			section = "ci"
+		case ctx.PostFormValue("riskyPathGlobs") != "" ||
+			ctx.PostFormValue("riskyPathUseDefault") != "":
+			section = "risky"
+		default:
+			section = "worktree"
 		}
 	}
 
 	switch section {
 	case "ci":
-		enabled := ctx.PostFormValue("autoFixCI") == "1" || strings.EqualFold(ctx.PostFormValue("autoFixCI"), "on")
-		rawMax := strings.TrimSpace(ctx.PostFormValue("autoFixCIMax"))
-		if rawMax == "" {
-			return s.configRedirect(ctx, "", fmt.Errorf("autoFixCIMax is required"))
-		}
-		maxAttempts, err := strconv.Atoi(rawMax)
-		if err != nil {
-			return s.configRedirect(ctx, "", fmt.Errorf("autoFixCIMax must be an integer"))
-		}
-		if err := s.cfg.SetAutoFixCI(enabled, maxAttempts); err != nil {
-			return s.configRedirect(ctx, "", err)
-		}
-		msg := "Auto CI fix disabled"
-		if enabled {
-			eff := maxAttempts
-			if eff <= 0 {
-				eff = 2
-			}
-			msg = fmt.Sprintf("Auto CI fix enabled (max %d attempt(s) per thread)", eff)
-		}
-		return s.configRedirect(ctx, msg, nil)
-
+		return s.updateCISettings(ctx)
 	case "risky":
-		useDefault := ctx.PostFormValue("riskyPathUseDefault") == "1" ||
-			strings.EqualFold(ctx.PostFormValue("riskyPathUseDefault"), "on")
-		text := ctx.PostFormValue("riskyPathGlobs")
-		if err := s.cfg.SetRiskyPathGlobsFromText(text, useDefault); err != nil {
-			return s.configRedirect(ctx, "", err)
-		}
-		msg := "Risky path globs set to built-in defaults"
-		if !useDefault {
-			n := 0
-			for _, line := range strings.Split(text, "\n") {
-				line = strings.TrimSpace(line)
-				if line != "" && !strings.HasPrefix(line, "#") {
-					n++
-				}
-			}
-			if n == 0 {
-				msg = "Risky path flags disabled (empty custom list)"
-			} else {
-				msg = fmt.Sprintf("Saved %d risky path glob(s)", n)
-			}
-		}
-		return s.configRedirect(ctx, msg, nil)
-
-	default: // worktree
-		raw := strings.TrimSpace(ctx.PostFormValue("worktreeIdleTTLDays"))
-		if raw == "" {
-			return s.configRedirect(ctx, "", fmt.Errorf("worktreeIdleTTLDays is required"))
-		}
-		days, err := strconv.Atoi(raw)
-		if err != nil {
-			return s.configRedirect(ctx, "", fmt.Errorf("worktreeIdleTTLDays must be an integer"))
-		}
-		if err := s.cfg.SetWorktreeIdleTTLDays(days); err != nil {
-			return s.configRedirect(ctx, "", err)
-		}
-		msg := fmt.Sprintf("Worktree idle TTL set to %d day(s)", days)
-		if days == 0 {
-			msg = "Worktree idle cleanup disabled"
-		}
-		return s.configRedirect(ctx, msg, nil)
+		return s.updateRiskyPathSettings(ctx)
+	case "worktree":
+		return s.updateWorktreeSettings(ctx)
+	default:
+		return s.configRedirect(ctx, "", fmt.Errorf("unknown settings section %q", section))
 	}
+}
+
+func (s *Server) updateCISettings(ctx *hime.Context) error {
+	enabled := ctx.PostFormValue("autoFixCI") == "1" || strings.EqualFold(ctx.PostFormValue("autoFixCI"), "on")
+	rawMax := strings.TrimSpace(ctx.PostFormValue("autoFixCIMax"))
+	if rawMax == "" {
+		return s.configRedirect(ctx, "", fmt.Errorf("autoFixCIMax is required"))
+	}
+	maxAttempts, err := strconv.Atoi(rawMax)
+	if err != nil {
+		return s.configRedirect(ctx, "", fmt.Errorf("autoFixCIMax must be an integer"))
+	}
+	if err := s.cfg.SetAutoFixCI(enabled, maxAttempts); err != nil {
+		return s.configRedirect(ctx, "", err)
+	}
+	msg := "Auto CI fix disabled"
+	if enabled {
+		msg = fmt.Sprintf("Auto CI fix enabled (max %d attempt(s) per thread)", maxAttempts)
+	}
+	return s.configRedirect(ctx, msg, nil)
+}
+
+func (s *Server) updateRiskyPathSettings(ctx *hime.Context) error {
+	useDefault := ctx.PostFormValue("riskyPathUseDefault") == "1" ||
+		strings.EqualFold(ctx.PostFormValue("riskyPathUseDefault"), "on")
+	text := ctx.PostFormValue("riskyPathGlobs")
+	if err := s.cfg.SetRiskyPathGlobsFromText(text, useDefault); err != nil {
+		return s.configRedirect(ctx, "", err)
+	}
+	msg := "Risky path globs set to built-in defaults"
+	if !useDefault {
+		n := 0
+		for _, line := range strings.Split(text, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				n++
+			}
+		}
+		if n == 0 {
+			msg = "Risky path flags disabled (empty custom list)"
+		} else {
+			msg = fmt.Sprintf("Saved %d risky path glob(s)", n)
+		}
+	}
+	return s.configRedirect(ctx, msg, nil)
+}
+
+func (s *Server) updateWorktreeSettings(ctx *hime.Context) error {
+	raw := strings.TrimSpace(ctx.PostFormValue("worktreeIdleTTLDays"))
+	if raw == "" {
+		return s.configRedirect(ctx, "", fmt.Errorf("worktreeIdleTTLDays is required"))
+	}
+	days, err := strconv.Atoi(raw)
+	if err != nil {
+		return s.configRedirect(ctx, "", fmt.Errorf("worktreeIdleTTLDays must be an integer"))
+	}
+	if err := s.cfg.SetWorktreeIdleTTLDays(days); err != nil {
+		return s.configRedirect(ctx, "", err)
+	}
+	msg := fmt.Sprintf("Worktree idle TTL set to %d day(s)", days)
+	if days == 0 {
+		msg = "Worktree idle cleanup disabled"
+	}
+	return s.configRedirect(ctx, msg, nil)
 }
 
 // mergeSessionRows adds session-store threads that have no history turns yet.

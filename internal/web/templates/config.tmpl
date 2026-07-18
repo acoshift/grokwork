@@ -76,11 +76,11 @@
       </div>
       <div>
         <label for="auto-fix-ci-max">Max auto attempts</label>
-        <input id="auto-fix-ci-max" type="number" name="autoFixCIMax" min="0" step="1" required value="{{.Config.AutoFixCIMax}}" autocomplete="off">
+        <input id="auto-fix-ci-max" type="number" name="autoFixCIMax" min="1" step="1" required value="{{.Config.AutoFixCIMax}}" autocomplete="off">
       </div>
       <button type="submit">Save</button>
     </div>
-    <p class="sub" style="margin:0.5rem 0 0"><span class="mono">0</span> for max uses the runtime default (2). Manual <span class="mono">/fix-ci</span> is always available.</p>
+    <p class="sub" style="margin:0.5rem 0 0">Max is per Discord thread session (default 2). Manual <span class="mono">/fix-ci</span> is always available.</p>
   </form>
 </div>
 
@@ -99,12 +99,12 @@
       </label>
     </div>
     <div>
-      <label for="risky-globs">Custom globs</label>
-      <textarea id="risky-globs" name="riskyPathGlobs" rows="8" style="width:100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem;" placeholder="**/migrations/**&#10;**/auth/**&#10;**/.env*" {{if .Config.RiskyPathUseDefault}}disabled{{end}}>{{.Config.RiskyPathGlobsText}}</textarea>
+      <label for="risky-globs">Globs</label>
+      <textarea id="risky-globs" name="riskyPathGlobs" rows="8" style="width:100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem;" placeholder="**/migrations/**&#10;**/auth/**&#10;**/.env*" {{if .Config.RiskyPathUseDefault}}readonly{{end}}>{{.Config.RiskyPathGlobsText}}</textarea>
     </div>
     <p class="sub" style="margin:0.5rem 0 0">
-      Uncheck defaults and leave the box empty to disable risk highlighting.
-      Uncheck defaults and enter patterns to override.
+      With defaults checked, the list is shown read-only (not stored as a custom override).
+      Uncheck defaults to edit; clear the box entirely to disable risk highlighting.
     </p>
     <div style="margin-top: 0.75rem;">
       <button type="submit">Save</button>
@@ -116,7 +116,7 @@
     var ta = document.getElementById("risky-globs");
     if (!cb || !ta) return;
     cb.addEventListener("change", function () {
-      ta.disabled = cb.checked;
+      ta.readOnly = cb.checked;
     });
   })();
   </script>

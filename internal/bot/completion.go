@@ -13,30 +13,12 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grok-discord/internal/config"
 	"github.com/acoshift/grok-discord/internal/gitworktree"
 )
 
-// DefaultRiskyPathGlobs flags paths that usually need careful review.
-// Patterns use ** (any path prefix/suffix) and * (within one segment).
-var DefaultRiskyPathGlobs = []string{
-	"**/migrations/**",
-	"**/migration/**",
-	"**/*migration*",
-	"**/auth/**",
-	"**/deploy/**",
-	"**/deployment/**",
-	"**/.env",
-	"**/.env.*",
-	"**/secrets/**",
-	"**/*secret*",
-	"**/*credential*",
-	"**/Dockerfile*",
-	"**/*.tf",
-	"**/k8s/**",
-	"**/helm/**",
-	"**/crdb/**",
-	"**/gcp.json",
-}
+// DefaultRiskyPathGlobs is the completion-card risk list (alias of config defaults).
+var DefaultRiskyPathGlobs = config.DefaultRiskyPathGlobs
 
 const (
 	maxCompletionNameLines = 12
@@ -60,11 +42,13 @@ type DiffSummary struct {
 }
 
 // CollectDiffSummary runs git in cwd against a detected base branch.
+// riskyGlobs nil or omitted by caller should pass DefaultRiskyPathGlobs;
+// an explicit empty slice disables risk highlighting.
 func CollectDiffSummary(ctx context.Context, cwd string, riskyGlobs []string) (DiffSummary, error) {
 	if cwd == "" || !gitworktree.IsRepo(cwd) {
 		return DiffSummary{}, fmt.Errorf("not a git repo")
 	}
-	if len(riskyGlobs) == 0 {
+	if riskyGlobs == nil {
 		riskyGlobs = DefaultRiskyPathGlobs
 	}
 
