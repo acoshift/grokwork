@@ -15,8 +15,8 @@
   {{if .Config.InviteURL}}
   <div class="invite-row">
     <input id="invite-url" type="text" readonly value="{{.Config.InviteURL}}" onclick="this.select()">
-    <button type="button" id="copy-invite" class="btn">Copy</button>
-    <a class="btn" href="{{.Config.InviteURL}}" target="_blank" rel="noopener noreferrer">Open</a>
+    <button type="button" id="copy-invite" class="btn btn-secondary">Copy</button>
+    <a class="btn btn-secondary" href="{{.Config.InviteURL}}" target="_blank" rel="noopener noreferrer">Open</a>
   </div>
   <p class="sub" style="margin:0.65rem 0 0">
     Client ID: <span class="mono">{{.Config.ClientID}}</span>
@@ -65,23 +65,21 @@
     When a thread’s PR has failing checks, the bot posts a digest and offers <span class="mono">@Grok /fix-ci</span>.
     Optionally auto-queue a fix (default off). Cap is per Discord thread session.
   </p>
-  <form method="post" action="{{route "config.settings"}}">
+  <form class="inline" method="post" action="{{route "config.settings"}}" style="grid-template-columns: auto 1fr auto;">
     <input type="hidden" name="section" value="ci">
-    <div class="inline" style="grid-template-columns: auto 1fr auto; align-items: end;">
-      <div style="padding-bottom: 0.45rem;">
-        <label style="display:flex; gap:0.5rem; align-items:center; cursor:pointer;">
-          <input type="checkbox" name="autoFixCI" value="1" {{if .Config.AutoFixCI}}checked{{end}}>
-          Auto-queue CI fix
-        </label>
-      </div>
-      <div>
-        <label for="auto-fix-ci-max">Max auto attempts</label>
-        <input id="auto-fix-ci-max" type="number" name="autoFixCIMax" min="1" step="1" required value="{{.Config.AutoFixCIMax}}" autocomplete="off">
-      </div>
-      <button type="submit">Save</button>
+    <div>
+      <label class="check">
+        <input type="checkbox" name="autoFixCI" value="1" {{if .Config.AutoFixCI}}checked{{end}}>
+        Auto-queue CI fix
+      </label>
     </div>
-    <p class="sub" style="margin:0.5rem 0 0">Max is per Discord thread session (default 2). Manual <span class="mono">/fix-ci</span> is always available.</p>
+    <div>
+      <label for="auto-fix-ci-max">Max auto attempts</label>
+      <input id="auto-fix-ci-max" type="number" name="autoFixCIMax" min="1" step="1" required value="{{.Config.AutoFixCIMax}}" autocomplete="off">
+    </div>
+    <button type="submit">Save</button>
   </form>
+  <p class="sub" style="margin:0.5rem 0 0">Max is per Discord thread session (default 2). Manual <span class="mono">/fix-ci</span> is always available.</p>
 </div>
 
 <div class="section card" id="risky-paths">
@@ -93,20 +91,20 @@
   <form method="post" action="{{route "config.settings"}}">
     <input type="hidden" name="section" value="risky">
     <div style="margin-bottom: 0.65rem;">
-      <label style="display:flex; gap:0.5rem; align-items:center; cursor:pointer;">
+      <label class="check">
         <input type="checkbox" name="riskyPathUseDefault" value="1" id="risky-use-default" {{if .Config.RiskyPathUseDefault}}checked{{end}}>
         Use built-in defaults
       </label>
     </div>
     <div>
       <label for="risky-globs">Globs</label>
-      <textarea id="risky-globs" name="riskyPathGlobs" rows="8" style="width:100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem;" placeholder="**/migrations/**&#10;**/auth/**&#10;**/.env*" {{if .Config.RiskyPathUseDefault}}readonly{{end}}>{{.Config.RiskyPathGlobsText}}</textarea>
+      <textarea id="risky-globs" name="riskyPathGlobs" rows="8" placeholder="**/migrations/**&#10;**/auth/**&#10;**/.env*" {{if .Config.RiskyPathUseDefault}}readonly{{end}}>{{.Config.RiskyPathGlobsText}}</textarea>
     </div>
     <p class="sub" style="margin:0.5rem 0 0">
       With defaults checked, the list is shown read-only (not stored as a custom override).
       Uncheck defaults to edit; clear the box entirely to disable risk highlighting.
     </p>
-    <div style="margin-top: 0.75rem;">
+    <div class="form-actions">
       <button type="submit">Save</button>
     </div>
   </form>
