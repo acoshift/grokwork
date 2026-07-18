@@ -17,6 +17,17 @@ type Entry struct {
 	WorktreeBranch string `json:"worktreeBranch,omitempty"`
 	LastUser       string `json:"lastUser,omitempty"`
 	UpdatedAt      string `json:"updatedAt"`
+
+	// PR status card (Discord thread ↔ GitHub PR).
+	PRURL         string `json:"prUrl,omitempty"`
+	PRNumber      int    `json:"prNumber,omitempty"`
+	PRState       string `json:"prState,omitempty"` // OPEN, MERGED, CLOSED (draft via PRIsDraft)
+	PRTitle       string `json:"prTitle,omitempty"`
+	PRChecks      string `json:"prChecks,omitempty"`
+	PRReview      string `json:"prReview,omitempty"`
+	PRHeadSHA     string `json:"prHeadSha,omitempty"`
+	PRIsDraft     bool   `json:"prIsDraft,omitempty"`
+	PRStatusMsgID string `json:"prStatusMsgId,omitempty"`
 }
 
 type Store struct {
@@ -69,6 +80,24 @@ func (s *Store) Set(threadID string, e Entry) error {
 	e.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	s.entries[threadID] = e
 	return s.save()
+}
+
+// Patch loads the entry, applies fn, and saves. Returns false if missing.
+// UpdatedAt is always refreshed when the entry exists.
+func (s *Store) Patch(threadID string, fn func(*Entry)) (Entry, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.entries[threadID]
+	if !ok {
+		return Entry{}, false, nil
+	}
+	fn(&e)
+	e.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	s.entries[threadID] = e
+	if err := s.save(); err != nil {
+		return Entry{}, true, err
+	}
+	return e, true, nil
 }
 
 func (s *Store) Delete(threadID string) error {

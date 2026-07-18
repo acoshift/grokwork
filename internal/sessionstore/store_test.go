@@ -56,3 +56,33 @@ func TestListAndCount(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPatchPRFields(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("t1", Entry{SessionID: "s1", Project: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	e, ok, err := s.Patch("t1", func(ent *Entry) {
+		ent.PRNumber = 42
+		ent.PRURL = "https://github.com/o/r/pull/42"
+		ent.PRState = "OPEN"
+		ent.PRStatusMsgID = "m1"
+	})
+	if err != nil || !ok {
+		t.Fatalf("Patch: ok=%v err=%v", ok, err)
+	}
+	if e.PRNumber != 42 || e.SessionID != "s1" || e.PRStatusMsgID != "m1" {
+		t.Fatalf("patched=%+v", e)
+	}
+	got, ok := s.Get("t1")
+	if !ok || got.PRNumber != 42 {
+		t.Fatalf("Get=%+v ok=%v", got, ok)
+	}
+	if _, ok, err := s.Patch("missing", func(*Entry) {}); err != nil || ok {
+		t.Fatalf("missing: ok=%v err=%v", ok, err)
+	}
+}

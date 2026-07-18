@@ -128,7 +128,7 @@ func HelpText() string {
 		"**Commands** (mention the bot first)",
 		"• `/projects` — show this channel's project",
 		"• `/reset` — forget this thread's session and remove its worktree",
-		"• `/status` — show this thread's session (and queue depth if busy)",
+		"• `/status` — show this thread's session, PR, and queue depth if busy",
 		"• `/cancel` — stop the current run (queued follow-ups still run)",
 		"• `/help` — this message",
 	}, "\n")

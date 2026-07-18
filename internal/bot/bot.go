@@ -14,6 +14,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grok-discord/internal/config"
+	"github.com/acoshift/grok-discord/internal/ghpr"
 	"github.com/acoshift/grok-discord/internal/gitworktree"
 	"github.com/acoshift/grok-discord/internal/grokrun"
 	"github.com/acoshift/grok-discord/internal/history"
@@ -209,6 +210,7 @@ func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
 	}
 	_ = s.UpdateGameStatus(0, "@Grok <task>")
 	b.startIdleWorktreeCleanup()
+	b.startPRStatusPoller(s)
 }
 
 func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -314,6 +316,11 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 			lines = append(lines, "**worktree:** `"+e.WorktreeBranch+"`")
 		} else {
 			lines = append(lines, "**worktree:** (none — main project cwd)")
+		}
+		if prLines := ghpr.FormatStatusLines(entryPRInfo(e)); len(prLines) > 0 {
+			lines = append(lines, prLines...)
+		} else {
+			lines = append(lines, "**pr:** (none yet)")
 		}
 		if _, err := s.ChannelMessageSendReply(m.ChannelID, strings.Join(lines, "\n"), ref(m)); err != nil {
 			log.Printf("error: reply status: %v", err)
@@ -645,6 +652,8 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 
 		next, ok := b.finishRun(item.threadID)
 		if !ok {
+			// Job released: safe to remove worktree if PR merged/closed during/after the run.
+			b.tryCleanupTerminalPR(item.threadID)
 			return
 		}
 		nextCtx, nextCancel := context.WithCancel(context.Background())
@@ -804,19 +813,23 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	// Keep session/worktree on failure so follow-ups can resume.
 	if result.SessionID != "" || wtBranch != "" {
 		sid := result.SessionID
-		if sid == "" {
-			if e, ok := b.sessions.Get(threadID); ok {
+		var prev sessionstore.Entry
+		if e, ok := b.sessions.Get(threadID); ok {
+			prev = e
+			if sid == "" {
 				sid = e.SessionID
 			}
 		}
-		if err := b.sessions.Set(threadID, sessionstore.Entry{
+		entry := sessionstore.Entry{
 			SessionID:      sid,
 			Project:        proj.Name,
 			Cwd:            runCwd,
 			MainCwd:        proj.Cwd,
 			WorktreeBranch: wtBranch,
 			LastUser:       m.Author.String(),
-		}); err != nil {
+		}
+		preservePRFields(&entry, prev)
+		if err := b.sessions.Set(threadID, entry); err != nil {
 			log.Printf("error: session save: %v", err)
 		}
 	}
@@ -874,6 +887,20 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	}
 
 	b.recordTurn(threadID, m, proj.Name, parsed.Prompt, result, elapsed)
+
+	// PR status card: parse reply / gh by branch, post or edit one message.
+	if !result.Cancelled {
+		replyText := result.Text
+		if replyText == "" {
+			replyText = streamer.Text()
+		}
+		repoDir := runCwd
+		if repoDir == "" {
+			repoDir = proj.Cwd
+		}
+		b.refreshPRAfterTask(s, threadID, repoDir, wtBranch, replyText)
+	}
+
 	log.Printf("task: finished msg=%s thread=%s", m.ID, threadID)
 }
 

@@ -139,6 +139,8 @@ While a task is running, the bot updates the status message every few seconds wi
 
 **Pull requests:** Discord runs are remote, so Grok is instructed to never leave changes as local-only commits. When it makes code changes it should commit on the thread branch (or a feature branch), `git push`, and open/update a PR with `gh pr create`, then include the PR URL in the reply. Requires `gh` auth on the host (`gh auth login` or `GH_TOKEN`) and push access to the project remotes.
 
+**PR status card:** after a run, the bot resolves the thread’s PR (URL in the reply, or `gh pr list --head` for the worktree branch), stores it on the session, and posts one editable status message (state, checks rollup, review decision, link). While the PR is open it is polled about every 90s; when the PR is **merged** or **closed**, the card is updated, the worktree/session are cleaned up eagerly (not only on the next task), and `@Grok /status` shows the same PR summary.
+
 **Attachments (user → Grok):** files on the `@Grok` message are downloaded under `data/attachments/<messageId>/`, absolute paths are added to the prompt, and the directory is deleted when the run finishes. Limits: 10 files, 25 MiB each, 50 MiB total. A mention with only attachments (no text) still starts a task.
 
 **Uploads (Grok → Discord):** when the thread has an isolated git worktree, Grok can attach artifacts by ending its reply with a `DISCORD_UPLOAD:` block listing paths **inside that worktree** (e.g. APK, Excel). Paths outside the worktree are rejected. Limits: 10 files, 25 MiB each. Requires the bot **Attach Files** permission (included in the Config page install URL).
