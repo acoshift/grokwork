@@ -132,8 +132,10 @@ func TestPagesRender(t *testing.T) {
 				`hx-select="#live-root"`,
 				`hx-swap="outerHTML show:none focus-scroll:false"`,
 				`hx-inherit="*"`,
-				`disableInheritance = true`,
-				`scrollIntoViewOnBoost = false`,
+				// Config is set from htmx script onload (inline defer is a no-op without src).
+				`disableInheritance=true`,
+				`scrollIntoViewOnBoost=false`,
+				`onload=`,
 				`boostScrollByPath`,
 			} {
 				if !strings.Contains(body, live) {

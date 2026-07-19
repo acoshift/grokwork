@@ -8,15 +8,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet">
-  <script src="/static/htmx.min.js" defer></script>
-  {{/* Must run after htmx.min.js (defer order).
-       disableInheritance: live-region hx-target/hx-select/hx-swap must not poison
-       child links (history rows, ← History). Shell re-enables via hx-inherit.
-       scrollIntoViewOnBoost: boost would force show:top even with show:none. */}}
-  <script defer>
-    htmx.config.disableInheritance = true;
-    htmx.config.scrollIntoViewOnBoost = false;
-  </script>
+  {{/* defer is ignored on inline scripts (no src), so config must run from
+       htmx's onload — otherwise disableInheritance never applies, live-region
+       hx-target/hx-select poison child links, and boosted history rows nest a
+       full page (double navbar). scrollIntoViewOnBoost: boost forces show:top
+       even with show:none. */}}
+  <script src="/static/htmx.min.js" defer
+          onload="htmx.config.disableInheritance=true;htmx.config.scrollIntoViewOnBoost=false;"></script>
   <script src="/static/sse.js" defer></script>
   <style>
     /* Grok official light theme tokens (from grok.com design system) */
