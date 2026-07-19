@@ -55,7 +55,7 @@ A task then flows through `handleTask` (async):
 - `internal/gitworktree` — only branches matching `grok/discord/` prefix may ever be deleted (`IsManagedBranch`); cleanup triggers are PR merged/closed (all tracked PRs terminal) and idle TTL (daily sweep, skips running/queued threads).
 - `internal/ghpr` — `gh` CLI wrapper for PR state/checks/reviews.
 - `internal/config` — mutable at runtime: the web config page edits and persists `config.json` while the bot runs, hence the RWMutex + `Snapshot()` accessors. Tri-state fields use pointers (`*bool`, `*int`) to distinguish "unset → default" from explicit false/0 (e.g. `Yolo` nil means true, `WorktreeIdleTTLDays` nil means 30 but 0 disables) — preserve this pattern when adding config.
-- `internal/web` — hime + embedded `html/template` + stdlib SSE. Shutdown is tuned to not wait for open SSE streams (`GraceTimeout = 1ms`); `live_test.go` boots the real TCP listener.
+- `internal/web` — hime (v1.6+ htmx helpers: `View("page#fragment")`, `HTMXAwareRedirect`, `NoCache`) + embedded `html/template` + stdlib SSE. Live-region endpoints render named template defines; full pages use the layout root. Shutdown is tuned to not wait for open SSE streams (`GraceTimeout = 1ms`); `live_test.go` boots the real TCP listener.
 - `internal/history` — per-turn JSON log per thread under `data/history/`, feeds the web history views.
 
 ### Discord-facing conventions

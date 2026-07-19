@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +37,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b}
 	app := hime.New()
 	app.Address(cfg.ListenAddr())
+	// POST forms under hx-boost still use 3xx; non-boosted htmx posts get HX-Redirect.
+	app.HTMXAwareRedirect = true
 	// SSE needs an unbounded write timeout; page requests finish quickly.
 	app.Server().WriteTimeout = 0
 	app.Server().ReadTimeout = 15 * time.Second
@@ -67,7 +68,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.removeChannel": "/config/channels/remove",
 		"config.settings":      "/config/settings",
 		"sse":                  "/events",
-		// Live partials (htmx domain swaps).
+		// Live partials (htmx SSE domain swaps) — separate URLs so each region
+		// can refresh independently. Fragments render via View("page#define").
 		"partial.dashboard.stats": "/partials/dashboard/stats",
 		"partial.dashboard.runs":  "/partials/dashboard/runs",
 		"partial.ship.stats":      "/partials/ship/stats",
@@ -81,7 +83,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 
 	app.TemplateFunc("add", func(a, b int) int { return a + b })
 
-	// Full pages (layout root). Page templates also define live partial blocks.
+	// One template set per page: layout root for full documents; named {{define}}s
+	// for SSE fragments (ctx.View("dashboard#dashboard_stats", …)).
 	tp := app.Template()
 	tp.FS(templateFS)
 	tp.Dir("templates")
@@ -92,19 +95,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("ship", "layout.tmpl", "ship.tmpl")
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
 	tp.ParseFiles("config", "layout.tmpl", "config.tmpl")
-
-	// Live partial roots — same page files, execute the named partial define only.
-	registerPartials(app, []partialDef{
-		{"partial_dashboard_stats", "dashboard.tmpl", "dashboard_stats"},
-		{"partial_dashboard_runs", "dashboard.tmpl", "dashboard_runs"},
-		{"partial_ship_stats", "ship.tmpl", "ship_stats"},
-		{"partial_ship_digest", "ship.tmpl", "ship_digest"},
-		{"partial_ship_table", "ship.tmpl", "ship_table"},
-		{"partial_history_table", "history.tmpl", "history_table"},
-		{"partial_history_turns", "history_detail.tmpl", "history_turns"},
-		{"partial_worktrees_table", "worktrees.tmpl", "worktrees_table"},
-		{"partial_config_lists", "config.tmpl", "config_lists"},
-	})
 
 	static, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -148,22 +138,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	return s
 }
 
-type partialDef struct {
-	name string // hime view name
-	file string // template file under templates/
-	root string // define name to execute
-}
-
-func registerPartials(app *hime.App, defs []partialDef) {
-	for _, d := range defs {
-		p := app.Template()
-		p.FS(templateFS)
-		p.Dir("templates")
-		p.Root(d.root)
-		p.ParseFiles(d.name, d.file)
-	}
-}
-
 // App returns the underlying hime app (for ListenAndServe / ServeHTTP).
 func (s *Server) App() *hime.App { return s.app }
 
@@ -203,12 +177,25 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 	return pageData{SSEPath: ctx.Route("sse")}
 }
 
+// viewPage renders a full layout document. Admin UI is always live/private data.
+func (s *Server) viewPage(ctx *hime.Context, name string, d pageData) error {
+	return ctx.NoCache().View(name, d)
+}
+
+// viewFragment renders a named {{define}} from a page template set (hime
+// "page#fragment" syntax). Used by SSE live-region endpoints that always want
+// content-only HTML, not ViewPartial (which returns a full document for
+// non-htmx / boosted / history-restore clients).
+func (s *Server) viewFragment(ctx *hime.Context, page, fragment string, d pageData) error {
+	return ctx.NoCache().View(page+"#"+fragment, d)
+}
+
 func (s *Server) dashboard(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Title = "Dashboard"
 	d.IsDashboard = true
 	d.Status = s.bot.StatusSnapshot()
-	return ctx.View("dashboard", d)
+	return s.viewPage(ctx, "dashboard", d)
 }
 
 func (s *Server) historyList(ctx *hime.Context) error {
@@ -222,7 +209,7 @@ func (s *Server) historyList(ctx *hime.Context) error {
 	d.Title = "History"
 	d.IsHistory = true
 	d.Threads = threads
-	return ctx.View("history", d)
+	return s.viewPage(ctx, "history", d)
 }
 
 func (s *Server) historyDetail(ctx *hime.Context) error {
@@ -245,7 +232,7 @@ func (s *Server) historyDetail(ctx *hime.Context) error {
 	d.Title = title
 	d.IsHistory = true
 	d.Thread = th
-	return ctx.View("history_detail", d)
+	return s.viewPage(ctx, "history_detail", d)
 }
 
 func (s *Server) shipPage(ctx *hime.Context) error {
@@ -255,7 +242,7 @@ func (s *Server) shipPage(ctx *hime.Context) error {
 	d.Title = "Ship board"
 	d.IsShip = true
 	d.Ship = s.bot.ListShipBoard(project, state)
-	return ctx.View("ship", d)
+	return s.viewPage(ctx, "ship", d)
 }
 
 func (s *Server) configPage(ctx *hime.Context) error {
@@ -265,7 +252,7 @@ func (s *Server) configPage(ctx *hime.Context) error {
 	d.Config = s.cfg.Snapshot()
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
-	return ctx.View("config", d)
+	return s.viewPage(ctx, "config", d)
 }
 
 func (s *Server) worktreesPage(ctx *hime.Context) error {
@@ -276,7 +263,7 @@ func (s *Server) worktreesPage(ctx *hime.Context) error {
 	d.IdleTTLDays = s.cfg.WorktreeIdleTTLDaysValue()
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
-	return ctx.View("worktrees", d)
+	return s.viewPage(ctx, "worktrees", d)
 }
 
 // --- Live partial handlers (content-only, no layout) ---
@@ -284,13 +271,13 @@ func (s *Server) worktreesPage(ctx *hime.Context) error {
 func (s *Server) partialDashboardStats(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Status = s.bot.StatusSnapshot()
-	return ctx.View("partial_dashboard_stats", d)
+	return s.viewFragment(ctx, "dashboard", "dashboard_stats", d)
 }
 
 func (s *Server) partialDashboardRuns(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Status = s.bot.StatusSnapshot()
-	return ctx.View("partial_dashboard_runs", d)
+	return s.viewFragment(ctx, "dashboard", "dashboard_runs", d)
 }
 
 func (s *Server) shipPartialData(ctx *hime.Context) pageData {
@@ -302,15 +289,15 @@ func (s *Server) shipPartialData(ctx *hime.Context) pageData {
 }
 
 func (s *Server) partialShipStats(ctx *hime.Context) error {
-	return ctx.View("partial_ship_stats", s.shipPartialData(ctx))
+	return s.viewFragment(ctx, "ship", "ship_stats", s.shipPartialData(ctx))
 }
 
 func (s *Server) partialShipDigest(ctx *hime.Context) error {
-	return ctx.View("partial_ship_digest", s.shipPartialData(ctx))
+	return s.viewFragment(ctx, "ship", "ship_digest", s.shipPartialData(ctx))
 }
 
 func (s *Server) partialShipTable(ctx *hime.Context) error {
-	return ctx.View("partial_ship_table", s.shipPartialData(ctx))
+	return s.viewFragment(ctx, "ship", "ship_table", s.shipPartialData(ctx))
 }
 
 func (s *Server) partialHistoryTable(ctx *hime.Context) error {
@@ -321,7 +308,7 @@ func (s *Server) partialHistoryTable(ctx *hime.Context) error {
 	threads = mergeSessionRows(threads, s.sessions.List())
 	d := s.basePage(ctx)
 	d.Threads = threads
-	return ctx.View("partial_history_table", d)
+	return s.viewFragment(ctx, "history", "history_table", d)
 }
 
 func (s *Server) partialHistoryTurns(ctx *hime.Context) error {
@@ -337,27 +324,27 @@ func (s *Server) partialHistoryTurns(ctx *hime.Context) error {
 	}
 	d := s.basePage(ctx)
 	d.Thread = th
-	return ctx.View("partial_history_turns", d)
+	return s.viewFragment(ctx, "history_detail", "history_turns", d)
 }
 
 func (s *Server) partialWorktreesTable(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Worktrees = s.bot.ListWorktrees()
 	d.IdleTTLDays = s.cfg.WorktreeIdleTTLDaysValue()
-	return ctx.View("partial_worktrees_table", d)
+	return s.viewFragment(ctx, "worktrees", "worktrees_table", d)
 }
 
 func (s *Server) partialConfigLists(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Config = s.cfg.Snapshot()
-	return ctx.View("partial_config_lists", d)
+	return s.viewFragment(ctx, "config", "config_lists", d)
 }
 
 func (s *Server) worktreesRedirect(ctx *hime.Context, okMsg string, err error) error {
 	if err != nil {
-		return ctx.Redirect(ctx.Route("worktrees") + "?err=" + url.QueryEscape(err.Error()))
+		return ctx.RedirectTo("worktrees", map[string]string{"err": err.Error()})
 	}
-	return ctx.Redirect(ctx.Route("worktrees") + "?ok=" + url.QueryEscape(okMsg))
+	return ctx.RedirectTo("worktrees", map[string]string{"ok": okMsg})
 }
 
 func (s *Server) pruneWorktree(ctx *hime.Context) error {
@@ -379,9 +366,9 @@ func (s *Server) pruneIdleWorktrees(ctx *hime.Context) error {
 
 func (s *Server) configRedirect(ctx *hime.Context, okMsg string, err error) error {
 	if err != nil {
-		return ctx.Redirect(ctx.Route("config") + "?err=" + url.QueryEscape(err.Error()))
+		return ctx.RedirectTo("config", map[string]string{"err": err.Error()})
 	}
-	return ctx.Redirect(ctx.Route("config") + "?ok=" + url.QueryEscape(okMsg))
+	return ctx.RedirectTo("config", map[string]string{"ok": okMsg})
 }
 
 func (s *Server) addProject(ctx *hime.Context) error {

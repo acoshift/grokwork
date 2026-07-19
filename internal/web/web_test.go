@@ -106,6 +106,9 @@ func TestPagesRender(t *testing.T) {
 			if w.Code != http.StatusOK {
 				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 			}
+			if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+				t.Fatalf("Cache-Control=%q want no-store", cc)
+			}
 			body := w.Body.String()
 			if !strings.Contains(body, tc.marker) {
 				t.Fatalf("missing marker %q in body (len=%d)", tc.marker, len(body))
@@ -140,7 +143,8 @@ func TestPagesRender(t *testing.T) {
 		})
 	}
 
-	// Domain partials return content-only HTML (no layout/nav/scripts).
+	// Domain partials return content-only HTML via hime View("page#define")
+	// (no layout/nav/scripts). Live admin data is Cache-Control: no-store.
 	t.Run("domain partials", func(t *testing.T) {
 		paths := []struct {
 			path   string
@@ -159,6 +163,8 @@ func TestPagesRender(t *testing.T) {
 		}
 		for _, tc := range paths {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			// SSE/htmx live regions send HX-Request; fragments stay content-only either way.
+			req.Header.Set("HX-Request", "true")
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
@@ -167,6 +173,9 @@ func TestPagesRender(t *testing.T) {
 			body := w.Body.String()
 			if !strings.Contains(body, tc.marker) {
 				t.Fatalf("%s missing marker %q body=%s", tc.path, tc.marker, body)
+			}
+			if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+				t.Fatalf("%s Cache-Control=%q want no-store", tc.path, cc)
 			}
 			for _, ban := range []string{
 				`id="sse-status"`,
@@ -543,6 +552,57 @@ func TestConfigAddsPersist(t *testing.T) {
 	if contains(disk.AllowedUserIDs, "user-added") || contains(disk.AllowedRoleIDs, "role-added") {
 		t.Fatalf("disk still has allowlist: %+v %+v", disk.AllowedUserIDs, disk.AllowedRoleIDs)
 	}
+}
+
+// HTMXAwareRedirect: non-boosted htmx POSTs get HX-Redirect + 204 (htmx does not
+// follow 3xx into a fragment). Boosted posts still get a normal 3xx.
+func TestHTMXAwareRedirect(t *testing.T) {
+	srv, _, dir := testServer(t)
+	h := srv.Handler()
+	newProj := filepath.Join(dir, "htmx-proj")
+	if err := os.MkdirAll(newProj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"name": {"htmx-proj"}, "path": {newProj}}.Encode()
+
+	t.Run("partial htmx POST", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/config/projects", strings.NewReader(form))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+		}
+		loc := w.Header().Get("HX-Redirect")
+		if !strings.HasPrefix(loc, "/config?") || !strings.Contains(loc, "ok=") {
+			t.Fatalf("HX-Redirect=%q", loc)
+		}
+		if w.Header().Get("Location") != "" {
+			t.Fatalf("unexpected Location=%q", w.Header().Get("Location"))
+		}
+	})
+
+	t.Run("boosted htmx POST", func(t *testing.T) {
+		// Second project so the name is unique.
+		form2 := url.Values{"name": {"htmx-boost"}, "path": {newProj}}.Encode()
+		req := httptest.NewRequest(http.MethodPost, "/config/projects", strings.NewReader(form2))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		req.Header.Set("HX-Boosted", "true")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+			t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+		}
+		if w.Header().Get("HX-Redirect") != "" {
+			t.Fatalf("boosted path should not set HX-Redirect, got %q", w.Header().Get("HX-Redirect"))
+		}
+		loc := w.Header().Get("Location")
+		if !strings.HasPrefix(loc, "/config?") {
+			t.Fatalf("Location=%q", loc)
+		}
+	})
 }
 
 func TestWorktreePruneRoutes(t *testing.T) {
