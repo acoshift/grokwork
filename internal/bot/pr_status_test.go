@@ -24,6 +24,8 @@ func TestPreservePRFields(t *testing.T) {
 		CINotifiedSHA:  "abc",
 		CIAutoFixCount: 1,
 		CIAutoFixSHA:   "abc",
+		Goal:           "fix it",
+		BriefMsgID:     "brief-1",
 	}
 	next := sessionstore.Entry{
 		SessionID: "s",
@@ -35,6 +37,9 @@ func TestPreservePRFields(t *testing.T) {
 	}
 	if next.CINotifiedSHA != "abc" || next.CIAutoFixCount != 1 || next.CIAutoFixSHA != "abc" {
 		t.Fatalf("ci fields not preserved: %+v", next)
+	}
+	if next.Goal != "fix it" || next.BriefMsgID != "brief-1" {
+		t.Fatalf("brief fields not preserved: %+v", next)
 	}
 	if next.SessionID != "s" {
 		t.Fatalf("clobbered session: %+v", next)

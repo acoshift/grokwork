@@ -403,6 +403,66 @@ func TestThoughtTrackerActivity(t *testing.T) {
 	}
 }
 
+func TestThoughtTrackerPhases(t *testing.T) {
+	var tr thoughtTracker
+	_, phases := tr.Progress()
+	if phases != "read → edit → test → PR" {
+		t.Fatalf("idle chips: %q", phases)
+	}
+
+	tr.OnActivity("read_file: internal/bot/stream.go")
+	act, phases := tr.Progress()
+	if !strings.Contains(act, "read_file") {
+		t.Fatalf("activity: %q", act)
+	}
+	if phases != "**read** → edit → test → PR" {
+		t.Fatalf("after read: %q", phases)
+	}
+
+	tr.OnActivity("search_replace: stream.go")
+	_, phases = tr.Progress()
+	if phases != "✓read → **edit** → test → PR" {
+		t.Fatalf("after edit: %q", phases)
+	}
+
+	tr.OnActivity("run_terminal_command: go test ./internal/bot")
+	_, phases = tr.Progress()
+	if phases != "✓read → ✓edit → **test** → PR" {
+		t.Fatalf("after test: %q", phases)
+	}
+
+	tr.OnActivity("run_terminal_command: gh pr create --title fix")
+	_, phases = tr.Progress()
+	if phases != "✓read → ✓edit → ✓test → **PR**" {
+		t.Fatalf("after pr: %q", phases)
+	}
+}
+
+func TestClassifyPhase(t *testing.T) {
+	cases := []struct {
+		line string
+		want int
+	}{
+		{"read_file: bot.go", phaseRead},
+		{"grep: TODO", phaseRead},
+		{"list_dir: .", phaseRead},
+		{"search_replace: a.go", phaseEdit},
+		{"write: out.txt", phaseEdit},
+		{"run_terminal_command: go test ./...", phaseTest},
+		{"run_terminal_command: npm test", phaseTest},
+		{"run_terminal_command: gh pr create", phasePR},
+		{"run_terminal_command: git push -u origin HEAD", phasePR},
+		{"run_terminal_command: ls -la", phaseRead},
+		{"run_terminal_command: echo hi", -1},
+		{"", -1},
+	}
+	for _, tc := range cases {
+		if got := classifyPhase(tc.line); got != tc.want {
+			t.Errorf("classifyPhase(%q)=%d want %d", tc.line, got, tc.want)
+		}
+	}
+}
+
 func truncateForTest(s string, n int) string {
 	if len(s) <= n {
 		return s

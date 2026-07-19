@@ -354,6 +354,8 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleClaim(s, m)
 	case KindHandOff:
 		b.handleHandOff(s, m)
+	case KindBrief:
+		b.handleBrief(s, m, parsed)
 	case KindTask:
 		log.Printf("task: starting async for msg=%s", m.ID)
 		go b.handleTask(s, m, parsed)
@@ -691,13 +693,13 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	// even on the first task (session used to be written only after grok exits).
 	b.bindThreadOwner(threadID, proj.Name, m)
 
-	status, err := s.ChannelMessageSend(threadID, workingStatus(proj.Name, 0, ""))
+	var thoughts thoughtTracker
+	status, err := s.ChannelMessageSend(threadID, workingStatus(proj.Name, 0, "", formatPhaseChips([phaseCount]bool{}, -1)))
 	if err != nil {
 		log.Printf("error: status message thread=%s: %v", threadID, err)
 		return
 	}
 
-	var thoughts thoughtTracker
 	streamer := newStreamPoster(s, threadID)
 
 	stopProgress := make(chan struct{})
@@ -846,6 +848,16 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			LastUser:       m.Author.String(),
 		}
 		preservePRFields(&entry, prev)
+		// Prefer latest goal/brief msg id if /brief raced in while this run finished.
+		// (preserveBriefFields only fills empties; here we overwrite with the live store.)
+		if fresh, ok := b.sessions.Get(threadID); ok {
+			if fresh.Goal != "" {
+				entry.Goal = fresh.Goal
+			}
+			if fresh.BriefMsgID != "" {
+				entry.BriefMsgID = fresh.BriefMsgID
+			}
+		}
 		if m.Author != nil {
 			ensureSessionOwner(&entry, m.Author.ID, m.Author.String())
 		}
@@ -926,6 +938,14 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		b.postCompletionSummary(s, threadID, proj.Name, runCwd, wtBranch, elapsed, result.Code, result.Cancelled)
 	}
 
+	// Continuity brief: update pinned card after each non-cancelled run.
+	if !result.Cancelled {
+		b.ensureThreadGoal(threadID, parsed.Prompt)
+		if _, err := b.refreshBriefCard(s, threadID, runCwd); err != nil {
+			log.Printf("brief: post-task refresh thread=%s: %v", threadID, err)
+		}
+	}
+
 	log.Printf("task: finished msg=%s thread=%s", m.ID, threadID)
 }
 
@@ -983,11 +1003,11 @@ func (b *Bot) progressLoop(s *discordgo.Session, threadID, msgID, project string
 		case <-stop:
 			return
 		case <-ticker.C:
-			activity := ""
+			activity, phases := "", formatPhaseChips([phaseCount]bool{}, -1)
 			if thoughts != nil {
-				activity = thoughts.Latest()
+				activity, phases = thoughts.Progress()
 			}
-			text := workingStatus(project, time.Since(start), activity)
+			text := workingStatus(project, time.Since(start), activity, phases)
 			if _, err := s.ChannelMessageEdit(threadID, msgID, text); err != nil {
 				log.Printf("warn: progress edit thread=%s: %v", threadID, err)
 			}
@@ -995,13 +1015,17 @@ func (b *Bot) progressLoop(s *discordgo.Session, threadID, msgID, project string
 	}
 }
 
-func workingStatus(project string, elapsed time.Duration, activity string) string {
+func workingStatus(project string, elapsed time.Duration, activity, phases string) string {
 	var b strings.Builder
 	if elapsed < time.Second {
 		fmt.Fprintf(&b, "Working in **%s**… · `@Grok /cancel` to stop", project)
 	} else {
 		fmt.Fprintf(&b, "Working in **%s**… · %s elapsed · `@Grok /cancel` to stop",
 			project, formatElapsed(elapsed))
+	}
+	phases = strings.TrimSpace(phases)
+	if phases != "" {
+		fmt.Fprintf(&b, "\n%s", phases)
 	}
 	activity = strings.TrimSpace(activity)
 	if activity != "" {
@@ -1110,6 +1134,8 @@ func kindName(k Kind) string {
 		return "claim"
 	case KindHandOff:
 		return "hand-off"
+	case KindBrief:
+		return "brief"
 	case KindTask:
 		return "task"
 	default:

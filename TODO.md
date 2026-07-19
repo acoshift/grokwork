@@ -24,6 +24,7 @@ Synthesized from multi-agent discussion (2026-07-18): collaboration, PR/CI ship 
 - [x] Completion summary card (git diff --stat / name-status, risk globs, PR link; after each non-cancelled run)
 - [x] CI fail → triage loop (digest per head SHA, `@Grok /fix-ci`, optional `autoFixCI` + cap)
 - [x] Thread ownership & hand-off (`owner` / co-owners, `/claim`, `/hand-off @user`, cancel/reset rights + mod override)
+- [x] Continuity / brief card (pinned; goal, done/left, branch, PR, files, questions; `/brief`, hand-off + post-run refresh)
 
 ## Design principles (team workflow)
 
@@ -73,7 +74,7 @@ Ship before broad eng-VPN rollout (trusted-but-fallible teammates).
 
 ### Collaboration & DX
 
-- [ ] **Continuity / brief card** — pin or update one message: goal, done/left, branch, PR, key files, open questions; refresh on `/brief` and hand-off
+- [x] **Continuity / brief card** — pin or update one message: goal, done/left, branch, PR, key files, open questions; refresh on `/brief` and hand-off
 - [ ] **Thread labels & lifecycle** — `open → in_progress → blocked → needs_review → done | abandoned`; auto on PR open/merge; `/board` filters
 - [ ] **Team activity board** — `@Grok /board [project]`: running, queued, waiting on human, stale; optional nightly digest channel
 - [ ] **Task templates / presets** — Investigate · Fix tests · Review PR · Minimal fix via `@Grok /start …` or short aliases; inject fixed preambles; freeform always allowed
@@ -119,7 +120,7 @@ Optional complement to mention + text parse — **not** required for team workfl
 - [ ] Searchable `/history` in Discord + fork-continue
 - [ ] Continue from web (deeplink + optional queue follow-up with audit)
 - [ ] Message context menu: **Ask Grok…** (preset + note on a screenshot/log)
-- [ ] Richer live progress (phase chips: read → edit → test → PR)
+- [x] Richer live progress (phase chips: read → edit → test → PR)
 - [ ] Network/command egress allowlist or OS sandbox (container/bubblewrap)
 - [ ] Dual-control for blast-radius config changes (add project path, full yolo)
 - [ ] History retention TTL / project-scoped visibility
@@ -133,7 +134,7 @@ Optional complement to mention + text parse — **not** required for team workfl
 | **A. Multi-person basics** | Ownership, claim/hand-off, queue author/replace | Threads feel intentional; less thrash |
 | **B. PR-aware thread** | ~~PR status card~~ → ~~completion diff card~~ → ~~CI triage~~ | Ship loop stays in Discord |
 | **C. Safe team mode** | Web auth, audit log, env filter, rate limits, attribution | OK to widen allowlist on shared host |
-| **D. Team artifacts** | Continuity card, labels, `/board`, templates, action buttons | Durable work items + one-tap controls |
+| **D. Team artifacts** | ~~Continuity card~~, labels, `/board`, templates, action buttons | Durable work items + one-tap controls |
 | **E. Review loop** | Issue bind, `/review`, `/comments`+`/address` | Close the inner review cycle |
 | **F. Slash (optional)** | Guild register + channel permission allowlist = `config.channels` | Mobile autocomplete without polluting unmapped channels |
 

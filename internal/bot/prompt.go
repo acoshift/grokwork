@@ -21,6 +21,7 @@ const (
 	KindFixCI
 	KindClaim
 	KindHandOff
+	KindBrief
 	KindTask
 )
 
@@ -56,10 +57,15 @@ func ParseMessage(content, botUserID string) Parsed {
 		return Parsed{Kind: KindFixCI}
 	case "/claim", "claim":
 		return Parsed{Kind: KindClaim}
+	case "/brief", "brief":
+		return Parsed{Kind: KindBrief, Prompt: text}
 	}
 
 	if isHandOffCommand(lower) {
 		return Parsed{Kind: KindHandOff, Prompt: text}
+	}
+	if isBriefCommand(lower) {
+		return Parsed{Kind: KindBrief, Prompt: text}
 	}
 
 	return Parsed{Kind: KindTask, Prompt: text}
@@ -72,6 +78,15 @@ func isHandOffCommand(lower string) bool {
 	}
 	// Args only with leading slash so free-form "hand-off notes…" stays a task.
 	return strings.HasPrefix(lower, "/hand-off ") || strings.HasPrefix(lower, "/handoff ")
+}
+
+func isBriefCommand(lower string) bool {
+	// "/brief …" always a command. Bare "brief goal …" / "brief set goal …" too.
+	// Free-form "brief notes for the team" stays a task.
+	if strings.HasPrefix(lower, "/brief ") {
+		return true
+	}
+	return strings.HasPrefix(lower, "brief goal ") || strings.HasPrefix(lower, "brief set goal ")
 }
 
 func stripBotMention(content, botUserID string) string {
@@ -149,6 +164,8 @@ func HelpText() string {
 		"**Commands** (mention the bot first)",
 		"• `/projects` — show this channel's project",
 		"• `/status` — show this thread's owner, session, PR, and queue depth if busy",
+		"• `/brief` — pin/update the continuity card (goal, done/left, branch, PR, files)",
+		"• `/brief goal <text>` — set the sticky goal, then refresh the card",
 		"• `/claim` — take ownership of this thread (anyone on the allowlist)",
 		"• `/hand-off @user` — transfer ownership and post a short hand-off card",
 		"• `/reset` — forget this thread's session and remove its worktree (owner/mod)",

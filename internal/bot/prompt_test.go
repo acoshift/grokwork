@@ -61,6 +61,27 @@ func TestParseMessage(t *testing.T) {
 	if p.Kind != KindTask {
 		t.Fatalf("hand-off notes… should be task, got %+v", p)
 	}
+
+	for _, in := range []string{"/brief", "brief"} {
+		p = ParseMessage("<@123> "+in, "123")
+		if p.Kind != KindBrief {
+			t.Fatalf("%q: got %+v want KindBrief", in, p)
+		}
+	}
+	p = ParseMessage("<@123> /brief goal ship auth", "123")
+	if p.Kind != KindBrief || !strings.Contains(p.Prompt, "goal ship auth") {
+		t.Fatalf("brief goal: got %+v", p)
+	}
+	// Bare "brief goal …" (no slash) is still the command.
+	p = ParseMessage("<@123> brief goal ship auth", "123")
+	if p.Kind != KindBrief {
+		t.Fatalf("brief goal without slash: got %+v", p)
+	}
+	// Free-form "brief notes…" without slash stays a task.
+	p = ParseMessage("<@123> brief notes for the team", "123")
+	if p.Kind != KindTask {
+		t.Fatalf("brief notes… should be task, got %+v", p)
+	}
 }
 
 func TestParseMessagePreservesSpecialChars(t *testing.T) {
@@ -174,16 +195,23 @@ func TestFormatElapsed(t *testing.T) {
 }
 
 func TestWorkingStatus(t *testing.T) {
-	got := workingStatus("app", 0, "")
+	got := workingStatus("app", 0, "", "")
 	if got != "Working in **app**… · `@Grok /cancel` to stop" {
 		t.Fatalf("initial: %q", got)
 	}
-	got = workingStatus("app", 45*time.Second, "")
+	got = workingStatus("app", 45*time.Second, "", "")
 	if got != "Working in **app**… · 45s elapsed · `@Grok /cancel` to stop" {
 		t.Fatalf("elapsed: %q", got)
 	}
-	got = workingStatus("app", 45*time.Second, "reading files")
+	got = workingStatus("app", 45*time.Second, "reading files", "read → edit → test → PR")
 	if !strings.Contains(got, "reading files") {
 		t.Fatalf("activity: %q", got)
+	}
+	if !strings.Contains(got, "read → edit → test → PR") {
+		t.Fatalf("phases: %q", got)
+	}
+	// Phases line sits above the activity italic line.
+	if i, j := strings.Index(got, "read →"), strings.Index(got, "_reading"); i < 0 || j < 0 || i > j {
+		t.Fatalf("expected phases above activity: %q", got)
 	}
 }

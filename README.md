@@ -21,7 +21,7 @@ Discord  @Grok fix payment timeout
 1. Open [Discord Developer Portal](https://discord.com/developers/applications) → **New Application**.
 2. **Bot** → **Add Bot** → copy token.
 3. Under **Privileged Gateway Intents**, enable **Message Content Intent** (required). Leave Server Members / Presence off unless you change the code.
-4. **OAuth2 → URL Generator**: scope `bot`; permissions: Send Messages, Create Public Threads, Send Messages in Threads, Read Message History.
+4. **OAuth2 → URL Generator**: scope `bot`; permissions: Send Messages, Create Public Threads, Send Messages in Threads, Read Message History, Manage Messages (needed to pin the continuity brief card).
 5. Invite the bot to your server.
 
 If you see `websocket: close 4014: Disallowed intent(s)`, the bot is requesting a privileged intent that is still off in the portal — turn **Message Content Intent** on and restart.
@@ -128,6 +128,8 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 | `@Grok <follow-up>` while busy | Queue the follow-up (up to 5); runs after the current task |
 | `@Grok /projects` | Show this channel’s mapped project |
 | `@Grok /status` | Show owner, project, session, worktree branch, PR, and queue depth |
+| `@Grok /brief` | Pin/update the continuity card (goal, done/left, branch, PR, key files) |
+| `@Grok /brief goal <text>` | Set the sticky goal, then refresh the brief card |
 | `@Grok /claim` | Take ownership of this thread |
 | `@Grok /hand-off @user` | Transfer ownership and post a short hand-off card |
 | `@Grok /reset` | Drop session + remove this thread’s git worktree (owner/mod) |
@@ -138,7 +140,9 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 
 **Thread ownership:** the first `@Grok` author on a thread becomes **owner** (stored on the session). Anyone on the allowlist may still queue tasks (soft open). `@Grok /cancel` and `@Grok /reset` require the owner, a co-owner, or a Discord moderator (Administrator, Manage Messages, or Manage Threads). `@Grok /claim` takes primary ownership (previous owner stays as co-owner). `@Grok /hand-off @user` transfers ownership and posts a short card (goal, status, PR, queue). Unowned legacy sessions stay open for cancel/reset until someone claims or the next task sets an owner.
 
-While a task is running, the bot updates the status message every few seconds with elapsed time (and a short thought/tool activity snippet when available). Assistant text streams into the thread via Grok’s `streaming-json` output: a live message shows the **latest** text (tail window), Discord edits run asynchronously so they never block reading Grok’s stdout, and when a reply outgrows one Discord message the bot seals that message and continues in a new one (finish does not re-post sealed chunks). Typing is pulsed while streaming. Use `/cancel` (or `/stop`) in that thread to kill the Grok process (the live stream is finalized without a stuck “streaming…” footer). Follow-ups sent while a run is active are queued in order (max 5) and start automatically when the current run finishes; the bot replies with `Queued (#N)`.
+**Continuity brief:** each thread keeps **one editable (and preferably pinned) brief card** with sticky goal, recent done turns, what’s left (queue/CI/PR), branch, PR links, key changed files, and open questions scraped from the last assistant reply. It refreshes after each non-cancelled run, on `@Grok /hand-off`, and on `@Grok /brief`. Goal defaults to the first task prompt; override with `@Grok /brief goal <text>`. Pinning needs **Manage Messages** for the bot (card still updates without pin).
+
+While a task is running, the bot updates the status message every few seconds with elapsed time, **phase chips** (`read → edit → test → PR`, bold = current, ✓ = seen), and a short thought/tool activity snippet. Tool activity is read live from the Grok session’s `updates.jsonl` (streaming-json only emits thought/text/end). Assistant text streams into the thread via Grok’s `streaming-json` output: a live message shows the **latest** text (tail window), Discord edits run asynchronously so they never block reading Grok’s stdout, and when a reply outgrows one Discord message the bot seals that message and continues in a new one (finish does not re-post sealed chunks). Typing is pulsed while streaming. Use `/cancel` (or `/stop`) in that thread to kill the Grok process (the live stream is finalized without a stuck “streaming…” footer). Follow-ups sent while a run is active are queued in order (max 5) and start automatically when the current run finishes; the bot replies with `Queued (#N)`.
 
 **Worktrees:** when `worktreeIsolation` is on (default) and the project is a git repo, each Discord thread gets its own worktree at `data/worktrees/<project>/<threadId>` on branch `grok/discord/<threadId>`, created from the main checkout’s `HEAD`. Grok runs with `--cwd` set to that worktree so concurrent threads do not share a working tree. `/reset` removes the worktree and deletes the branch. If the branch’s PR is already **merged** or **closed**, the next task in that thread automatically removes the worktree/branch (and session) and starts a fresh worktree from `HEAD`. Idle worktrees are also pruned after **`worktreeIdleTTLDays`** days without activity (default 30; session `updatedAt`, or directory mtime for orphans). Set to `0` to disable. A background sweep runs daily and skips threads that are currently running or queued. Set `"worktreeIsolation": false` to always use the main project path.
 

@@ -187,6 +187,9 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if _, err := s.ChannelMessageSendReply(m.ChannelID, card, ref(m)); err != nil {
 			log.Printf("error: reply handoff-card: %v", err)
 		}
+		if _, err := b.refreshBriefCard(s, m.ChannelID, e.Cwd); err != nil {
+			log.Printf("brief: handoff refresh thread=%s: %v", m.ChannelID, err)
+		}
 		return
 	}
 
@@ -215,6 +218,9 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 	card := b.formatHandOffCard(m.ChannelID, e, m.Author, target)
 	if _, err := s.ChannelMessageSendReply(m.ChannelID, card, ref(m)); err != nil {
 		log.Printf("error: reply handoff-card: %v", err)
+	}
+	if _, err := b.refreshBriefCard(s, m.ChannelID, e.Cwd); err != nil {
+		log.Printf("brief: handoff refresh thread=%s: %v", m.ChannelID, err)
 	}
 }
 
@@ -261,7 +267,10 @@ func (b *Bot) formatHandOffCard(threadID string, e sessionstore.Entry, from, to 
 		lines = append(lines, "**project:** "+e.Project)
 	}
 
-	goal := b.lastPromptPreview(threadID)
+	goal := strings.TrimSpace(e.Goal)
+	if goal == "" {
+		goal = b.lastPromptPreview(threadID)
+	}
 	if goal != "" {
 		lines = append(lines, "**goal:** "+goal)
 	}

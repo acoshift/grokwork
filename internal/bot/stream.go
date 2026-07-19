@@ -553,11 +553,24 @@ func (p *streamPoster) finalize() bool {
 	return p.unpostedLocked() == ""
 }
 
+// Live progress phases (read → edit → test → PR).
+const (
+	phaseRead = iota
+	phaseEdit
+	phaseTest
+	phasePR
+	phaseCount
+)
+
+var phaseLabels = [phaseCount]string{"read", "edit", "test", "PR"}
+
 type thoughtTracker struct {
 	mu       sync.Mutex
 	buf      strings.Builder
 	last     string
 	activity string
+	seen     [phaseCount]bool
+	current  int // only meaningful when seen[current]
 }
 
 func (t *thoughtTracker) OnDelta(delta string) {
@@ -585,6 +598,10 @@ func (t *thoughtTracker) OnActivity(line string) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if p := classifyPhase(line); p >= 0 {
+		t.seen[p] = true
+		t.current = p
+	}
 	if runeLen(line) > 80 {
 		r := []rune(line)
 		line = "…" + string(r[len(r)-79:])
@@ -602,4 +619,140 @@ func (t *thoughtTracker) Latest() string {
 		return t.activity
 	}
 	return t.last
+}
+
+// Progress returns the latest activity snippet and phase chip line for the
+// Discord status message.
+func (t *thoughtTracker) Progress() (activity, phases string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.activity != "" {
+		if t.last != "" {
+			activity = t.activity + " · " + t.last
+		} else {
+			activity = t.activity
+		}
+	} else {
+		activity = t.last
+	}
+	return activity, formatPhaseChips(t.seen, t.current)
+}
+
+func formatPhaseChips(seen [phaseCount]bool, current int) string {
+	parts := make([]string, 0, phaseCount)
+	for i, lab := range phaseLabels {
+		switch {
+		case seen[i] && i == current:
+			parts = append(parts, "**"+lab+"**")
+		case seen[i]:
+			parts = append(parts, "✓"+lab)
+		default:
+			parts = append(parts, lab)
+		}
+	}
+	return strings.Join(parts, " → ")
+}
+
+// classifyPhase maps a tool activity line to a progress phase.
+// Returns -1 when the tool does not clearly match a chip.
+func classifyPhase(line string) int {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return -1
+	}
+	name, detail := line, ""
+	if i := strings.Index(line, ":"); i >= 0 {
+		name = strings.TrimSpace(line[:i])
+		detail = strings.TrimSpace(line[i+1:])
+	}
+	name = strings.TrimPrefix(strings.ToLower(name), "tool ")
+	detailL := strings.ToLower(detail)
+	combined := name + " " + detailL
+
+	if isPRActivity(combined, detailL) {
+		return phasePR
+	}
+	if isTestActivity(name, detailL) {
+		return phaseTest
+	}
+	if isEditActivity(name, detailL) {
+		return phaseEdit
+	}
+	if isReadActivity(name, detailL) {
+		return phaseRead
+	}
+	return -1
+}
+
+func isPRActivity(combined, detail string) bool {
+	needles := []string{"gh pr", "pull request", "git push", "create pull request"}
+	for _, n := range needles {
+		if strings.Contains(combined, n) || strings.Contains(detail, n) {
+			return true
+		}
+	}
+	return false
+}
+
+func isTestActivity(name, detail string) bool {
+	if strings.Contains(name, "test") {
+		return true
+	}
+	needles := []string{
+		"go test", "npm test", "npm run test", "pnpm test", "yarn test",
+		"bun test", "pytest", "cargo test", "make test", "mvn test",
+		"gradle test", "vitest", "jest",
+	}
+	for _, n := range needles {
+		if strings.Contains(detail, n) {
+			return true
+		}
+	}
+	// Generic: bare `test` as a command token.
+	if strings.Contains(detail, " test ") || strings.HasPrefix(detail, "test ") ||
+		strings.HasSuffix(detail, " test") {
+		return true
+	}
+	return false
+}
+
+func isEditActivity(name, detail string) bool {
+	switch name {
+	case "search_replace", "write", "edit", "str_replace", "apply_patch",
+		"create_file", "delete_file", "rename", "write_file", "edit_file":
+		return true
+	}
+	if strings.Contains(name, "write") || strings.Contains(name, "edit") ||
+		strings.Contains(name, "replace") || strings.Contains(name, "patch") {
+		return true
+	}
+	// Shell edits (rare but useful).
+	if strings.Contains(detail, "sed -i") || strings.Contains(detail, "tee ") {
+		return true
+	}
+	return false
+}
+
+func isReadActivity(name, detail string) bool {
+	switch name {
+	case "read_file", "read", "grep", "list_dir", "glob", "web_search",
+		"web_fetch", "open_page", "open_page_with_find", "search_tool",
+		"list_directory", "find_files", "cat", "head", "tail":
+		return true
+	}
+	if strings.HasPrefix(name, "read") || strings.Contains(name, "search") ||
+		strings.Contains(name, "grep") || strings.Contains(name, "list") {
+		return true
+	}
+	// Shell inspection without mutation.
+	if name == "run_terminal_command" || name == "run_terminal_cmd" || name == "bash" || name == "shell" {
+		readCmds := []string{"cat ", "head ", "tail ", "less ", "rg ", "grep ", "find ", "ls ", "git log", "git show", "git diff", "git status"}
+		for _, c := range readCmds {
+			if strings.Contains(detail, c) || strings.HasPrefix(detail, strings.TrimSpace(c)) {
+				// Prefer not classifying pure git push/status mixups as read when PR wins already.
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -154,6 +156,15 @@ func Run(ctx context.Context, opt Options) Result {
 	}
 	defer cleanupPrompt()
 
+	// Know the session id before the process starts so we can tail updates.jsonl
+	// for tool activity (streaming-json does not emit tool events).
+	runSessionID := strings.TrimSpace(opt.SessionID)
+	newSession := false
+	if runSessionID == "" && stream && opt.OnActivity != nil {
+		runSessionID = newSessionID()
+		newSession = true
+	}
+
 	args := []string{
 		"--prompt-file", promptPath,
 		"--verbatim",
@@ -170,6 +181,8 @@ func Run(ctx context.Context, opt Options) Result {
 	}
 	if opt.SessionID != "" {
 		args = append(args, "--resume", opt.SessionID)
+	} else if newSession {
+		args = append(args, "-s", runSessionID)
 	}
 	if opt.Tools != nil {
 		args = append(args, "--tools", *opt.Tools)
@@ -209,7 +222,7 @@ func Run(ctx context.Context, opt Options) Result {
 	if err != nil {
 		return Result{
 			Text:      fmt.Sprintf("Failed to start grok stdout pipe: %v", err),
-			SessionID: opt.SessionID,
+			SessionID: runSessionID,
 			Code:      1,
 			Stderr:    stderr.String(),
 		}
@@ -217,17 +230,32 @@ func Run(ctx context.Context, opt Options) Result {
 	if err := cmd.Start(); err != nil {
 		return Result{
 			Text:      fmt.Sprintf("Failed to start grok: %v", err),
-			SessionID: opt.SessionID,
+			SessionID: runSessionID,
 			Code:      1,
 			Stderr:    stderr.String(),
 		}
 	}
 
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	var watchWG sync.WaitGroup
+	if opt.OnActivity != nil && runSessionID != "" {
+		watchWG.Add(1)
+		go func() {
+			defer watchWG.Done()
+			watchSessionTools(watchCtx, opt.Cwd, runSessionID, opt.OnActivity)
+		}()
+	}
+
 	streamed, parseErr := consumeStream(stdout, opt.OnTextDelta, opt.OnThought, opt.OnActivity)
 	waitErr := cmd.Wait()
+	stopWatch()
+	watchWG.Wait()
 
 	text := streamed.Text
 	sessionID := streamed.SessionID
+	if sessionID == "" {
+		sessionID = runSessionID
+	}
 	if sessionID == "" {
 		sessionID = opt.SessionID
 	}
@@ -709,4 +737,22 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// newSessionID returns a random UUID v4 string for Grok's -s flag.
+func newSessionID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand failure is effectively impossible; still emit UUID shape.
+		now := time.Now().UnixNano()
+		for i := 0; i < 8; i++ {
+			b[i] = byte(now >> (8 * i))
+		}
+		for i := 8; i < 16; i++ {
+			b[i] = byte(now >> (8 * (i - 8)))
+		}
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }

@@ -24,6 +24,11 @@ type Entry struct {
 	OwnerName  string   `json:"ownerName,omitempty"`
 	CoOwnerIDs []string `json:"coOwnerIds,omitempty"`
 
+	// Continuity / brief card: one pinned message (goal, progress, branch, PR, files).
+	// Goal is sticky (first task prompt unless set via /brief goal …).
+	Goal       string `json:"goal,omitempty"`
+	BriefMsgID string `json:"briefMsgId,omitempty"`
+
 	// PRs tracks one or more GitHub pull requests for this thread (multi-repo / multi-PR).
 	// Preferred source of truth; legacy single-PR fields below are kept in sync for older data.
 	PRs []TrackedPR `json:"prs,omitempty"`
