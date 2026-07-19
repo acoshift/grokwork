@@ -9,8 +9,12 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet">
   <script src="/static/htmx.min.js" defer></script>
-  {{/* Must run after htmx.min.js (defer order). Boost defaults to show:top otherwise. */}}
+  {{/* Must run after htmx.min.js (defer order).
+       disableInheritance: live-region hx-target/hx-select/hx-swap must not poison
+       child links (history rows, ← History). Shell re-enables via hx-inherit.
+       scrollIntoViewOnBoost: boost would force show:top even with show:none. */}}
   <script defer>
+    htmx.config.disableInheritance = true;
     htmx.config.scrollIntoViewOnBoost = false;
   </script>
   <script src="/static/sse.js" defer></script>
@@ -528,14 +532,16 @@
   {{/* Boost same-origin links/forms inside the shell: swap only #live-root so the
        sse-connect EventSource on this element stays open across in-app navigation
        (nav, table rows, back links, form redirects). target=_blank is not boosted.
-       Live-region partials must set hx-target="this" and hx-select="unset" so they
-       do not inherit this target/select and wipe #live-root on SSE refresh. */}}
+       hx-inherit="*" re-enables shell attrs for descendants under disableInheritance.
+       Live-region partials set their own hx-target/hx-select (not inherited by children)
+       so SSE swaps into the region instead of wiping #live-root. */}}
   <div class="wrap"
        hx-ext="sse"
        hx-boost="true"
        hx-target="#live-root"
        hx-select="#live-root"
        hx-swap="outerHTML show:none focus-scroll:false"
+       hx-inherit="*"
        {{if .SSEPath}}sse-connect="{{.SSEPath}}"{{end}}>
     <header class="app">
       <div class="brand">Grok Discord <span>· admin</span></div>
@@ -662,6 +668,32 @@
     document.body.addEventListener("htmx:pushedIntoHistory", updateNavActive);
     document.body.addEventListener("htmx:replacedInHistory", updateNavActive);
     document.body.addEventListener("htmx:historyRestore", updateNavActive);
+
+    // Per-path scroll for boosted navigations (e.g. history detail → list via
+    // "← History"). show:none keeps the *leaving* page's scrollY; without this
+    // the list jumps to top or to the detail offset. Browser back/forward uses
+    // htmx's own history-cache scroll and can ignore this map.
+    var boostScrollByPath = Object.create(null);
+    function pagePath() {
+      return location.pathname + location.search;
+    }
+    document.body.addEventListener("htmx:beforeRequest", function (e) {
+      var d = e.detail;
+      if (!d || !d.boosted) return;
+      boostScrollByPath[pagePath()] = window.scrollY || 0;
+    });
+    document.body.addEventListener("htmx:afterSettle", function (e) {
+      var d = e.detail;
+      if (!d || !d.boosted) return;
+      var elt = d.elt;
+      if (!elt || elt.id !== "live-root") return;
+      var path = pagePath();
+      if (!Object.prototype.hasOwnProperty.call(boostScrollByPath, path)) return;
+      var y = boostScrollByPath[path];
+      if (typeof y === "number") {
+        window.scrollTo(0, y);
+      }
+    });
 
     if (!{{json .SSEPath}}) {
       setStatus("offline", "err");
