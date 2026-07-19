@@ -312,11 +312,16 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if e.SessionID != "" {
 			sessionLine = "**session:** `" + e.SessionID + "`"
 		}
+		labelLine := "**label:** " + sessionstore.DisplayLabel(e.EffectiveLabel())
+		if e.LabelManual {
+			labelLine += " (manual)"
+		}
 		lines := []string{
 			"**project:** " + e.Project,
 			sessionLine,
 			"**updated:** " + e.UpdatedAt,
 			"**state:** " + state,
+			labelLine,
 		}
 		if e.HasOwner() {
 			ownerLine := fmt.Sprintf("**owner:** <@%s>", e.OwnerID)
@@ -367,6 +372,10 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleHandOff(s, m)
 	case KindBrief:
 		b.handleBrief(s, m, parsed)
+	case KindLabel:
+		b.handleLabel(s, m, parsed)
+	case KindBoard:
+		b.handleBoard(s, m, parsed)
 	case KindTask:
 		log.Printf("task: starting async for msg=%s", m.ID)
 		go b.handleTask(s, m, parsed)
@@ -706,6 +715,8 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	// Bind owner before the run so /cancel is gated for multi-person threads
 	// even on the first task (session used to be written only after grok exits).
 	b.bindThreadOwner(threadID, proj.Name, m)
+	// open → in_progress on first real work (manual labels stay sticky).
+	b.applyAutoLabelOnRunStart(threadID, proj.Name, m)
 
 	var thoughts thoughtTracker
 	status, err := discordSendComponents(s, threadID,
@@ -878,6 +889,8 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		if m.Author != nil {
 			ensureSessionOwner(&entry, m.Author.ID, m.Author.String())
 		}
+		// Keep lifecycle aligned with session/worktree even when no PR is discovered yet.
+		entry.ApplyAutoLabel(entry.SuggestAutoLabel(false))
 		if err := b.sessions.Set(threadID, entry); err != nil {
 			log.Printf("error: session save: %v", err)
 		}
@@ -1153,6 +1166,10 @@ func kindName(k Kind) string {
 		return "hand-off"
 	case KindBrief:
 		return "brief"
+	case KindLabel:
+		return "label"
+	case KindBoard:
+		return "board"
 	case KindTask:
 		return "task"
 	default:

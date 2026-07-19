@@ -82,6 +82,37 @@ func TestParseMessage(t *testing.T) {
 	if p.Kind != KindTask {
 		t.Fatalf("brief notes… should be task, got %+v", p)
 	}
+
+	for _, in := range []string{"/label", "label"} {
+		p = ParseMessage("<@123> "+in, "123")
+		if p.Kind != KindLabel {
+			t.Fatalf("%q: got %+v want KindLabel", in, p)
+		}
+	}
+	p = ParseMessage("<@123> /label blocked", "123")
+	if p.Kind != KindLabel || !strings.Contains(p.Prompt, "blocked") {
+		t.Fatalf("label blocked: got %+v", p)
+	}
+	// Bare "label notes…" without slash stays a task.
+	p = ParseMessage("<@123> label this carefully in the UI", "123")
+	if p.Kind != KindTask {
+		t.Fatalf("label free-form should be task, got %+v", p)
+	}
+
+	for _, in := range []string{"/board", "board"} {
+		p = ParseMessage("<@123> "+in, "123")
+		if p.Kind != KindBoard {
+			t.Fatalf("%q: got %+v want KindBoard", in, p)
+		}
+	}
+	p = ParseMessage("<@123> /board needs_review", "123")
+	if p.Kind != KindBoard || !strings.Contains(p.Prompt, "needs_review") {
+		t.Fatalf("board filter: got %+v", p)
+	}
+	p = ParseMessage("<@123> board the room with posters", "123")
+	if p.Kind != KindTask {
+		t.Fatalf("board free-form should be task, got %+v", p)
+	}
 }
 
 func TestParseMessagePreservesSpecialChars(t *testing.T) {

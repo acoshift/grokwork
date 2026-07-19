@@ -296,11 +296,13 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 		if _, _, pErr := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
 			ent.NormalizePRs()
 			ent.UpsertPR(pr)
+			ent.ApplyAutoLabel(ent.SuggestAutoLabel(false))
 		}); pErr != nil {
 			return pErr
 		}
 	} else if e.Project != "" || e.SessionID != "" {
 		e.UpsertPR(pr)
+		e.ApplyAutoLabel(e.SuggestAutoLabel(false))
 		if sErr := b.sessions.Set(threadID, e); sErr != nil {
 			return sErr
 		}
@@ -475,4 +477,5 @@ func preservePRFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	next.CIAutoFixSHA = prev.CIAutoFixSHA
 	preserveOwnershipFields(next, prev)
 	preserveBriefFields(next, prev)
+	preserveLabelFields(next, prev)
 }

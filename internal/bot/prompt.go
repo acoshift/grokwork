@@ -22,6 +22,8 @@ const (
 	KindClaim
 	KindHandOff
 	KindBrief
+	KindLabel
+	KindBoard
 	KindTask
 )
 
@@ -59,6 +61,10 @@ func ParseMessage(content, botUserID string) Parsed {
 		return Parsed{Kind: KindClaim}
 	case "/brief", "brief":
 		return Parsed{Kind: KindBrief, Prompt: text}
+	case "/label", "label":
+		return Parsed{Kind: KindLabel, Prompt: text}
+	case "/board", "board":
+		return Parsed{Kind: KindBoard, Prompt: text}
 	}
 
 	if isHandOffCommand(lower) {
@@ -66,6 +72,12 @@ func ParseMessage(content, botUserID string) Parsed {
 	}
 	if isBriefCommand(lower) {
 		return Parsed{Kind: KindBrief, Prompt: text}
+	}
+	if isLabelCommand(lower) {
+		return Parsed{Kind: KindLabel, Prompt: text}
+	}
+	if isBoardCommand(lower) {
+		return Parsed{Kind: KindBoard, Prompt: text}
 	}
 
 	return Parsed{Kind: KindTask, Prompt: text}
@@ -87,6 +99,16 @@ func isBriefCommand(lower string) bool {
 		return true
 	}
 	return strings.HasPrefix(lower, "brief goal ") || strings.HasPrefix(lower, "brief set goal ")
+}
+
+func isLabelCommand(lower string) bool {
+	// "/label …" always a command. Bare "label" alone is already handled; bare
+	// "label blocked" would steal free-form tasks — require leading slash for args.
+	return strings.HasPrefix(lower, "/label ")
+}
+
+func isBoardCommand(lower string) bool {
+	return strings.HasPrefix(lower, "/board ")
 }
 
 func stripBotMention(content, botUserID string) string {
@@ -163,9 +185,11 @@ func HelpText() string {
 		"",
 		"**Commands** (mention the bot first)",
 		"• `/projects` — show this channel's project",
-		"• `/status` — show this thread's owner, session, PR, and queue depth if busy",
+		"• `/status` — show this thread's owner, session, label, PR, and queue depth if busy",
 		"• `/brief` — pin/update the continuity card (goal, done/left, branch, PR, files)",
 		"• `/brief goal <text>` — set the sticky goal, then refresh the card",
+		"• `/label` — show lifecycle label; `/label <open|in_progress|blocked|needs_review|done|abandoned>` sets manual; `/label auto` re-enables auto",
+		"• `/board [project] [label|all]` — team board of threads by lifecycle label",
 		"• `/claim` — take ownership of this thread (anyone on the allowlist)",
 		"• `/hand-off @user` — transfer ownership and post a short hand-off card",
 		"• `/reset` — forget this thread's session and remove its worktree (owner/mod)",

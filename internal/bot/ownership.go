@@ -247,6 +247,12 @@ func (b *Bot) formatHandOffCard(threadID string, e sessionstore.Entry, from, to 
 	if goal != "" {
 		lines = append(lines, "**goal:** "+goal)
 	}
+	lab := sessionstore.DisplayLabel(e.EffectiveLabel())
+	if e.LabelManual {
+		lines = append(lines, "**label:** "+lab+" (manual)")
+	} else {
+		lines = append(lines, "**label:** "+lab)
+	}
 	lines = append(lines, "**status:** "+state)
 
 	if e.WorktreeBranch != "" {

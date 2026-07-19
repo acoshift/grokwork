@@ -31,6 +31,8 @@ type BriefCardInput struct {
 	OwnerID   string
 	OwnerName string
 	Goal      string
+	Label     string // lifecycle: open / in progress / …
+	LabelMode string // auto | manual (empty = omit)
 	Status    string // idle / running · …
 	Turns     int
 	Done      []string // recent completed turn previews
@@ -66,6 +68,14 @@ func FormatBriefCard(in BriefCardInput) string {
 		goal = "(not set — first `@Grok` task or `/brief goal …`)"
 	}
 	lines = append(lines, "**goal:** "+goal)
+
+	if lab := strings.TrimSpace(in.Label); lab != "" {
+		if in.LabelMode == "manual" {
+			lines = append(lines, "**label:** "+lab+" (manual)")
+		} else {
+			lines = append(lines, "**label:** "+lab)
+		}
+	}
 
 	status := strings.TrimSpace(in.Status)
 	if status == "" {
@@ -346,8 +356,12 @@ func (b *Bot) collectBriefInput(threadID string, e sessionstore.Entry, cwd strin
 		OwnerID:   e.OwnerID,
 		OwnerName: e.OwnerName,
 		Goal:      strings.TrimSpace(e.Goal),
+		Label:     sessionstore.DisplayLabel(e.EffectiveLabel()),
 		Branch:    e.WorktreeBranch,
 		Queue:     b.queueLen(threadID),
+	}
+	if e.LabelManual {
+		in.LabelMode = "manual"
 	}
 
 	state := "idle"

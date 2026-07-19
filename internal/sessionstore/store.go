@@ -29,6 +29,11 @@ type Entry struct {
 	Goal       string `json:"goal,omitempty"`
 	BriefMsgID string `json:"briefMsgId,omitempty"`
 
+	// Lifecycle label: open → in_progress → blocked → needs_review → done | abandoned.
+	// Empty means open. LabelManual pauses auto updates until /label auto (terminal PR states still apply).
+	Label       string `json:"label,omitempty"`
+	LabelManual bool   `json:"labelManual,omitempty"`
+
 	// PRs tracks one or more GitHub pull requests for this thread (multi-repo / multi-PR).
 	// Preferred source of truth; legacy single-PR fields below are kept in sync for older data.
 	PRs []TrackedPR `json:"prs,omitempty"`
