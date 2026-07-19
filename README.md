@@ -21,7 +21,7 @@ Discord  @Grok fix payment timeout
 1. Open [Discord Developer Portal](https://discord.com/developers/applications) → **New Application**.
 2. **Bot** → **Add Bot** → copy token.
 3. Under **Privileged Gateway Intents**, enable **Message Content Intent** (required). Leave Server Members / Presence off unless you change the code.
-4. **OAuth2 → URL Generator**: scope `bot`; permissions: View Channel, Send Messages, Manage Messages (pin brief card), Attach Files, Read Message History, Create Public Threads, Send Messages in Threads. Or use the install URL on the admin Config page (same bit set).
+4. **OAuth2 → URL Generator**: scope `bot`; permissions: View Channel, Send Messages, Manage Messages, **Pin Messages** (brief card), Attach Files, Read Message History, Create Public Threads, Send Messages in Threads. Or use the install URL on the admin Config page (same bit set). Pinning is a separate permission from Manage Messages.
 5. Invite / re-authorize the bot so those permissions land on its role (changing the URL alone does not upgrade an already-joined bot).
 
 If you see `websocket: close 4014: Disallowed intent(s)`, the bot is requesting a privileged intent that is still off in the portal — turn **Message Content Intent** on and restart.
@@ -145,7 +145,7 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 
 **Thread ownership:** the first `@Grok` author on a thread becomes **owner** (stored on the session). Anyone on the allowlist may still queue tasks (soft open). `@Grok /cancel` and `@Grok /reset` require the owner, a co-owner, or a Discord moderator (Administrator, Manage Messages, or Manage Threads). `@Grok /claim` takes primary ownership (previous owner stays as co-owner). `@Grok /hand-off @user` transfers ownership and posts a short card (goal, status, PR, queue). Unowned legacy sessions stay open for cancel/reset until someone claims or the next task sets an owner.
 
-**Continuity brief:** each thread keeps **one editable (and preferably pinned) brief card** with sticky goal, recent done turns, what’s left (queue/CI/PR), branch, PR links, key changed files, and open questions scraped from the last assistant reply. It refreshes after each non-cancelled run, on `@Grok /hand-off`, and on `@Grok /brief`. Goal defaults to the first task prompt; override with `@Grok /brief goal <text>`. Pinning needs **Manage Messages** for the bot (card still updates without pin).
+**Continuity brief:** each thread keeps **one editable (and preferably pinned) brief card** with sticky goal, recent done turns, what’s left (queue/CI/PR), branch, PR links, key changed files, and open questions scraped from the last assistant reply. It refreshes after each non-cancelled run, on `@Grok /hand-off`, and on `@Grok /brief`. Goal defaults to the first task prompt; override with `@Grok /brief goal <text>`. Pinning needs **Pin Messages** for the bot (card still updates without pin). Manage Messages alone is not enough — Discord split pin into its own permission.
 
 **Lifecycle labels:** each thread has a label `open → in_progress → blocked → needs_review → done | abandoned` (empty = open). Auto: first task → `in_progress`; ready (non-draft) open PR → `needs_review`; all PRs merged → `done`; all closed without merge → `abandoned`. Draft-only PRs stay `in_progress`. `@Grok /label blocked` (etc.) sets a **manual** label and pauses auto until `@Grok /label auto` (merge/close still force terminal labels). Shown on `/status`, brief, and hand-off.
 

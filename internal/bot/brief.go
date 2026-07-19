@@ -178,8 +178,8 @@ func (b *Bot) handleBrief(s *discordgo.Session, m *discordgo.MessageCreate, pars
 	if pinned {
 		ack = "Brief card updated and pinned."
 	} else {
-		// Pin needs Manage Messages; card still works unpinned.
-		ack = "Brief card updated (not pinned — bot needs **Manage Messages**; re-authorize via the admin Config page install URL)."
+		// Pin needs Pin Messages (1<<51); Manage Messages alone is not enough.
+		ack = "Brief card updated (not pinned — bot needs **Pin Messages**; re-authorize via the admin Config page install URL, or enable Pin Messages on the bot role)."
 	}
 	if _, err := s.ChannelMessageSendReply(threadID, ack, ref(m)); err != nil {
 		log.Printf("error: reply brief-ok: %v", err)
@@ -332,7 +332,7 @@ func (b *Bot) refreshBriefCard(s *discordgo.Session, threadID, cwd string) (pinn
 	}
 
 	if pinErr := s.ChannelMessagePin(threadID, msgID); pinErr != nil {
-		// Pin needs Manage Messages; still useful as an editable message without pin.
+		// Pin needs Pin Messages (split from Manage Messages); card still works unpinned.
 		log.Printf("brief: pin thread=%s msg=%s: %v", threadID, msgID, pinErr)
 		return false, nil
 	}

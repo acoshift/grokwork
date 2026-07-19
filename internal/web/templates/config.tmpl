@@ -13,7 +13,7 @@
   <h2>Bot install / permission update URL</h2>
   <p class="sub" style="margin-top:0">
     Invite this bot or <strong>re-authorize</strong> it on a server already joined so the role picks up the current permission set.
-    Required: View Channel, Send Messages, <strong>Manage Messages</strong> (pin continuity brief card), Attach Files, Read Message History, Create Public Threads, Send Messages in Threads.
+    Required: View Channel, Send Messages, Manage Messages, <strong>Pin Messages</strong> (continuity brief card), Attach Files, Read Message History, Create Public Threads, Send Messages in Threads.
   </p>
   {{if .Config.InviteURL}}
   <div class="invite-row">
@@ -28,7 +28,7 @@
   </p>
   <p class="sub" style="margin:0.35rem 0 0">
     Changing the URL alone does not upgrade an already-joined bot — open the link above, pick the server, and approve again.
-    Brief pin failures (<span class="mono">Missing Permissions</span> / code <span class="mono">50013</span>) mean Manage Messages is still missing on the bot role.
+    Brief pin failures (<span class="mono">Missing Permissions</span> / code <span class="mono">50013</span>) mean <strong>Pin Messages</strong> is still missing on the bot role (Discord split this from Manage Messages).
   </p>
   <p class="sub" style="margin:0.35rem 0 0">Also enable <strong>Message Content Intent</strong> in the Developer Portal (Bot → Privileged Gateway Intents).</p>
   {{else}}

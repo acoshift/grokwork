@@ -8,15 +8,19 @@ import (
 )
 
 // Discord permission bits used by this bot (Developer Portal → Bot → invite).
-// View Channel | Send Messages | Manage Messages (pin brief card) | Attach Files |
-// Read Message History | Create Public Threads | Send Messages in Threads
+// View Channel | Send Messages | Manage Messages | Pin Messages (brief card) |
+// Attach Files | Read Message History | Create Public Threads | Send Messages in Threads
+//
+// PIN_MESSAGES (1<<51) is required to pin/unpin. Discord split it out of
+// MANAGE_MESSAGES; Manage Messages alone is no longer enough for pins.
 const BotInvitePermissions int64 = (1 << 10) | // VIEW_CHANNEL
 	(1 << 11) | // SEND_MESSAGES
-	(1 << 13) | // MANAGE_MESSAGES — pin continuity brief card
+	(1 << 13) | // MANAGE_MESSAGES
 	(1 << 15) | // ATTACH_FILES
 	(1 << 16) | // READ_MESSAGE_HISTORY
 	(1 << 35) | // CREATE_PUBLIC_THREADS
-	(1 << 38) // SEND_MESSAGES_IN_THREADS
+	(1 << 38) | // SEND_MESSAGES_IN_THREADS
+	(1 << 51) // PIN_MESSAGES — pin continuity brief card
 
 // BotInviteScopes is the OAuth2 scope for the install URL.
 const BotInviteScopes = "bot"

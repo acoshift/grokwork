@@ -49,10 +49,13 @@ func TestBuildInviteURL(t *testing.T) {
 	if !strings.Contains(u, "permissions=") {
 		t.Fatalf("missing permissions: %s", u)
 	}
-	// Permission bits used by this bot (includes MANAGE_MESSAGES for brief pin).
-	want := int64((1 << 10) | (1 << 11) | (1 << 13) | (1 << 15) | (1 << 16) | (1 << 35) | (1 << 38))
+	// Includes PIN_MESSAGES (1<<51); Manage Messages alone no longer allows pin.
+	want := int64((1 << 10) | (1 << 11) | (1 << 13) | (1 << 15) | (1 << 16) | (1 << 35) | (1 << 38) | (1 << 51))
 	if BotInvitePermissions != want {
 		t.Fatalf("permissions=%d want %d", BotInvitePermissions, want)
+	}
+	if BotInvitePermissions&(1<<51) == 0 {
+		t.Fatal("missing PIN_MESSAGES bit")
 	}
 }
 
