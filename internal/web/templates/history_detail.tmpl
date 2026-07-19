@@ -1,6 +1,17 @@
 {{define "content"}}
 <p class="sub" style="margin-bottom:0.5rem"><a href="{{route "history"}}">← History</a></p>
 <h1 id="page-history-detail">Thread conversation</h1>
+<div class="live-region"
+     id="live-history-turns"
+     hx-get="/partials/history/turns/{{.Thread.ThreadID}}"
+     hx-trigger="sse:history"
+     hx-swap="innerHTML"
+     hx-sync="this:replace">
+  {{template "history_turns" .}}
+</div>
+{{end}}
+
+{{define "history_turns"}}
 <p class="sub">
   <span class="mono">{{.Thread.ThreadID}}</span>
   {{if .Thread.Project}} · <strong>{{.Thread.Project}}</strong>{{end}}

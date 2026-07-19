@@ -21,6 +21,17 @@
   </form>
 </div>
 
+<div class="live-region"
+     id="live-worktrees-table"
+     hx-get="{{route "partial.worktrees.table"}}"
+     hx-trigger="sse:worktrees"
+     hx-swap="innerHTML"
+     hx-sync="this:replace">
+  {{template "worktrees_table" .}}
+</div>
+{{end}}
+
+{{define "worktrees_table"}}
 <div class="section">
   <h2>All worktrees <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Worktrees}})</span></h2>
   {{if .Worktrees}}

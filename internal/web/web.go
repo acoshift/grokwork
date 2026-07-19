@@ -2,10 +2,8 @@ package web
 
 import (
 	"embed"
-	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -68,11 +66,21 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.removeChannel": "/config/channels/remove",
 		"config.settings":      "/config/settings",
 		"sse":                  "/events",
+		// Live partials (htmx domain swaps).
+		"partial.dashboard.stats":  "/partials/dashboard/stats",
+		"partial.dashboard.runs":   "/partials/dashboard/runs",
+		"partial.ship.stats":       "/partials/ship/stats",
+		"partial.ship.digest":      "/partials/ship/digest",
+		"partial.ship.table":       "/partials/ship/table",
+		"partial.history.table":    "/partials/history/table",
+		"partial.history.turns":    "/partials/history/turns/",
+		"partial.worktrees.table":  "/partials/worktrees/table",
+		"partial.config.lists":     "/partials/config/lists",
 	})
 
 	app.TemplateFunc("add", func(a, b int) int { return a + b })
 
-	// Full pages (layout root).
+	// Full pages (layout root). Page templates also define live partial blocks.
 	tp := app.Template()
 	tp.FS(templateFS)
 	tp.Dir("templates")
@@ -84,18 +92,18 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
 	tp.ParseFiles("config", "layout.tmpl", "config.tmpl")
 
-	// Content-only fragments for htmx live swaps (HX-Request).
-	// Same page templates, root is the "content" define — no layout/CSS/nav.
-	frag := app.Template()
-	frag.FS(templateFS)
-	frag.Dir("templates")
-	frag.Root("content")
-	frag.ParseFiles("dashboard_frag", "dashboard.tmpl")
-	frag.ParseFiles("history_frag", "history.tmpl")
-	frag.ParseFiles("history_detail_frag", "history_detail.tmpl")
-	frag.ParseFiles("ship_frag", "ship.tmpl")
-	frag.ParseFiles("worktrees_frag", "worktrees.tmpl")
-	frag.ParseFiles("config_frag", "config.tmpl")
+	// Live partial roots — same page files, execute the named partial define only.
+	registerPartials(app, []partialDef{
+		{"partial_dashboard_stats", "dashboard.tmpl", "dashboard_stats"},
+		{"partial_dashboard_runs", "dashboard.tmpl", "dashboard_runs"},
+		{"partial_ship_stats", "ship.tmpl", "ship_stats"},
+		{"partial_ship_digest", "ship.tmpl", "ship_digest"},
+		{"partial_ship_table", "ship.tmpl", "ship_table"},
+		{"partial_history_table", "history.tmpl", "history_table"},
+		{"partial_history_turns", "history_detail.tmpl", "history_turns"},
+		{"partial_worktrees_table", "worktrees.tmpl", "worktrees_table"},
+		{"partial_config_lists", "config.tmpl", "config_lists"},
+	})
 
 	static, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -121,11 +129,37 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/channels", hime.Handler(s.addChannel))
 	mux.Handle("POST /config/channels/remove", hime.Handler(s.removeChannel))
 	mux.Handle("POST /config/settings", hime.Handler(s.updateSettings))
+	// Domain partials for change-aware live updates.
+	mux.Handle("GET /partials/dashboard/stats", hime.Handler(s.partialDashboardStats))
+	mux.Handle("GET /partials/dashboard/runs", hime.Handler(s.partialDashboardRuns))
+	mux.Handle("GET /partials/ship/stats", hime.Handler(s.partialShipStats))
+	mux.Handle("GET /partials/ship/digest", hime.Handler(s.partialShipDigest))
+	mux.Handle("GET /partials/ship/table", hime.Handler(s.partialShipTable))
+	mux.Handle("GET /partials/history/table", hime.Handler(s.partialHistoryTable))
+	mux.Handle("GET /partials/history/turns/{threadID}", hime.Handler(s.partialHistoryTurns))
+	mux.Handle("GET /partials/worktrees/table", hime.Handler(s.partialWorktreesTable))
+	mux.Handle("GET /partials/config/lists", hime.Handler(s.partialConfigLists))
 	mux.Handle("GET /events", http.HandlerFunc(s.sse))
 
 	app.Handler(mux)
 	s.app = app
 	return s
+}
+
+type partialDef struct {
+	name string // hime view name
+	file string // template file under templates/
+	root string // define name to execute
+}
+
+func registerPartials(app *hime.App, defs []partialDef) {
+	for _, d := range defs {
+		p := app.Template()
+		p.FS(templateFS)
+		p.Dir("templates")
+		p.Root(d.root)
+		p.ParseFiles(d.name, d.file)
+	}
 }
 
 // App returns the underlying hime app (for ListenAndServe / ServeHTTP).
@@ -160,29 +194,11 @@ type pageData struct {
 	Worktrees   []bot.WorktreeInfo
 	IdleTTLDays int
 	Config      config.Snapshot
-	SSEPath     string
-	// LivePath is the path+query used by htmx to re-fetch this page's content fragment.
-	LivePath string
-}
-
-func isHTMX(ctx *hime.Context) bool {
-	return ctx.Request.Header.Get("HX-Request") == "true"
+	SSEPath string
 }
 
 func (s *Server) basePage(ctx *hime.Context) pageData {
-	return pageData{
-		SSEPath:  ctx.Route("sse"),
-		LivePath: ctx.Request.URL.RequestURI(),
-	}
-}
-
-// renderPage serves the full layout, or only the content fragment when htmx
-// requests a live swap (HX-Request).
-func (s *Server) renderPage(ctx *hime.Context, name string, data pageData) error {
-	if isHTMX(ctx) {
-		return ctx.View(name+"_frag", data)
-	}
-	return ctx.View(name, data)
+	return pageData{SSEPath: ctx.Route("sse")}
 }
 
 func (s *Server) dashboard(ctx *hime.Context) error {
@@ -190,7 +206,7 @@ func (s *Server) dashboard(ctx *hime.Context) error {
 	d.Title = "Dashboard"
 	d.IsDashboard = true
 	d.Status = s.bot.StatusSnapshot()
-	return s.renderPage(ctx, "dashboard", d)
+	return ctx.View("dashboard", d)
 }
 
 func (s *Server) historyList(ctx *hime.Context) error {
@@ -204,7 +220,7 @@ func (s *Server) historyList(ctx *hime.Context) error {
 	d.Title = "History"
 	d.IsHistory = true
 	d.Threads = threads
-	return s.renderPage(ctx, "history", d)
+	return ctx.View("history", d)
 }
 
 func (s *Server) historyDetail(ctx *hime.Context) error {
@@ -227,7 +243,7 @@ func (s *Server) historyDetail(ctx *hime.Context) error {
 	d.Title = title
 	d.IsHistory = true
 	d.Thread = th
-	return s.renderPage(ctx, "history_detail", d)
+	return ctx.View("history_detail", d)
 }
 
 func (s *Server) shipPage(ctx *hime.Context) error {
@@ -237,7 +253,7 @@ func (s *Server) shipPage(ctx *hime.Context) error {
 	d.Title = "Ship board"
 	d.IsShip = true
 	d.Ship = s.bot.ListShipBoard(project, state)
-	return s.renderPage(ctx, "ship", d)
+	return ctx.View("ship", d)
 }
 
 func (s *Server) configPage(ctx *hime.Context) error {
@@ -247,7 +263,7 @@ func (s *Server) configPage(ctx *hime.Context) error {
 	d.Config = s.cfg.Snapshot()
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
-	return s.renderPage(ctx, "config", d)
+	return ctx.View("config", d)
 }
 
 func (s *Server) worktreesPage(ctx *hime.Context) error {
@@ -258,7 +274,81 @@ func (s *Server) worktreesPage(ctx *hime.Context) error {
 	d.IdleTTLDays = s.cfg.WorktreeIdleTTLDaysValue()
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
-	return s.renderPage(ctx, "worktrees", d)
+	return ctx.View("worktrees", d)
+}
+
+// --- Live partial handlers (content-only, no layout) ---
+
+func (s *Server) partialDashboardStats(ctx *hime.Context) error {
+	d := s.basePage(ctx)
+	d.Status = s.bot.StatusSnapshot()
+	return ctx.View("partial_dashboard_stats", d)
+}
+
+func (s *Server) partialDashboardRuns(ctx *hime.Context) error {
+	d := s.basePage(ctx)
+	d.Status = s.bot.StatusSnapshot()
+	return ctx.View("partial_dashboard_runs", d)
+}
+
+func (s *Server) shipPartialData(ctx *hime.Context) pageData {
+	project := strings.TrimSpace(ctx.FormValue("project"))
+	state := strings.TrimSpace(ctx.FormValue("state"))
+	d := s.basePage(ctx)
+	d.Ship = s.bot.ListShipBoard(project, state)
+	return d
+}
+
+func (s *Server) partialShipStats(ctx *hime.Context) error {
+	return ctx.View("partial_ship_stats", s.shipPartialData(ctx))
+}
+
+func (s *Server) partialShipDigest(ctx *hime.Context) error {
+	return ctx.View("partial_ship_digest", s.shipPartialData(ctx))
+}
+
+func (s *Server) partialShipTable(ctx *hime.Context) error {
+	return ctx.View("partial_ship_table", s.shipPartialData(ctx))
+}
+
+func (s *Server) partialHistoryTable(ctx *hime.Context) error {
+	threads, err := s.history.List()
+	if err != nil {
+		return ctx.Status(http.StatusInternalServerError).Error("history list: " + err.Error())
+	}
+	threads = mergeSessionRows(threads, s.sessions.List())
+	d := s.basePage(ctx)
+	d.Threads = threads
+	return ctx.View("partial_history_table", d)
+}
+
+func (s *Server) partialHistoryTurns(ctx *hime.Context) error {
+	threadID := ctx.PathValue("threadID")
+	th, err := s.history.Get(threadID)
+	if err != nil {
+		return ctx.Status(http.StatusBadRequest).Error(err.Error())
+	}
+	if th.Project == "" {
+		if e, ok := s.sessions.Get(threadID); ok {
+			th.Project = e.Project
+		}
+	}
+	d := s.basePage(ctx)
+	d.Thread = th
+	return ctx.View("partial_history_turns", d)
+}
+
+func (s *Server) partialWorktreesTable(ctx *hime.Context) error {
+	d := s.basePage(ctx)
+	d.Worktrees = s.bot.ListWorktrees()
+	d.IdleTTLDays = s.cfg.WorktreeIdleTTLDaysValue()
+	return ctx.View("partial_worktrees_table", d)
+}
+
+func (s *Server) partialConfigLists(ctx *hime.Context) error {
+	d := s.basePage(ctx)
+	d.Config = s.cfg.Snapshot()
+	return ctx.View("partial_config_lists", d)
 }
 
 func (s *Server) worktreesRedirect(ctx *hime.Context, okMsg string, err error) error {
@@ -444,72 +534,4 @@ func mergeSessionRows(hist []history.Summary, sessions []sessionstore.Listed) []
 		})
 	}
 	return hist
-}
-
-// sseTick is the lightweight SSE payload. Clients use "tick" events as a signal
-// for htmx to re-fetch the current page's content fragment. StatusSnapshot
-// fields are kept so existing tests and any custom clients still work.
-type sseTick struct {
-	bot.StatusSnapshot
-	Tick int64 `json:"tick"`
-}
-
-// sse streams live ticks as Server-Sent Events (stdlib text/event-stream).
-// The first event is unnamed (event type "message") for connect/tests;
-// subsequent ticks use event type "tick" so htmx only refreshes on the ticker.
-func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
-
-	var n int64
-	send := func(event string) bool {
-		n++
-		payload := sseTick{
-			StatusSnapshot: s.bot.StatusSnapshot(),
-			Tick:           n,
-		}
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			log.Printf("web sse marshal: %v", err)
-			return false
-		}
-		if event != "" {
-			if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
-				return false
-			}
-		}
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
-			return false
-		}
-		flusher.Flush()
-		return true
-	}
-
-	// Immediate first event so clients and tests do not wait on the ticker.
-	if !send("") {
-		return
-	}
-
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			if !send("tick") {
-				return
-			}
-		}
-	}
 }

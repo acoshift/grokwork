@@ -535,12 +535,8 @@
         <span id="sse-status" title="Live updates via SSE">connecting…</span>
       </div>
     </header>
-    {{/* SSE tick → htmx GET of this page with HX-Request → content fragment only. */}}
-    <div id="live-root"
-         hx-get="{{.LivePath}}"
-         hx-trigger="sse:tick"
-         hx-swap="innerHTML"
-         hx-sync="this:replace">
+    {{/* Page content hosts per-domain live-region partials (sse:dashboard/ship/…). */}}
+    <div id="live-root">
       {{template "content" .}}
     </div>
   </div>
@@ -563,7 +559,7 @@
       return false;
     }
 
-    // Event delegation so handlers survive #live-root swaps.
+    // Event delegation so handlers survive live-region swaps.
     document.addEventListener("click", function (e) {
       var copyBtn = e.target.closest("[data-copy-target]");
       if (!copyBtn) return;
@@ -604,10 +600,10 @@
       }
     });
 
-    // Pause live swaps while the user is editing a form field.
+    // Pause domain partial swaps while a field is focused (e.g. ship digest select).
     document.body.addEventListener("htmx:beforeRequest", function (e) {
       var elt = e.detail && e.detail.elt;
-      if (elt && elt.id === "live-root" && isEditing()) {
+      if (elt && elt.classList && elt.classList.contains("live-region") && isEditing()) {
         e.preventDefault();
         setStatus("live · paused while editing", "ok");
       }
@@ -621,13 +617,13 @@
     });
     document.body.addEventListener("htmx:afterSwap", function (e) {
       var elt = e.detail && e.detail.elt;
-      if (elt && elt.id === "live-root") {
+      if (elt && elt.classList && elt.classList.contains("live-region")) {
         setStatus("live · " + new Date().toLocaleTimeString(), "ok");
       }
     });
     document.body.addEventListener("htmx:responseError", function (e) {
       var elt = e.detail && e.detail.elt;
-      if (elt && elt.id === "live-root") {
+      if (elt && elt.classList && elt.classList.contains("live-region")) {
         setStatus("refresh failed", "err");
       }
     });

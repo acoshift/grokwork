@@ -2,25 +2,13 @@
 <h1 id="page-ship">Ship board</h1>
 <p class="sub">All bot-tracked pull requests for leads — filter by project and state. Status comes from the session store (updated by the Discord PR poller), not a live <span class="mono">gh</span> call.</p>
 
-<div class="grid">
-  <div class="card">
-    <div class="label">Open</div>
-    <div class="value">{{.Ship.Open}}</div>
-    <div class="hint">{{.Ship.Draft}} draft</div>
-  </div>
-  <div class="card">
-    <div class="label">CI failing</div>
-    <div class="value">{{.Ship.ChecksFailing}}</div>
-  </div>
-  <div class="card">
-    <div class="label">Changes requested</div>
-    <div class="value">{{.Ship.ChangesRequested}}</div>
-  </div>
-  <div class="card">
-    <div class="label">Approved</div>
-    <div class="value">{{.Ship.Approved}}</div>
-    <div class="hint">merged {{.Ship.Merged}} · closed {{.Ship.Closed}}</div>
-  </div>
+<div class="live-region"
+     id="live-ship-stats"
+     hx-get="{{route "partial.ship.stats"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
+     hx-trigger="sse:ship"
+     hx-swap="innerHTML"
+     hx-sync="this:replace">
+  {{template "ship_stats" .}}
 </div>
 
 <div class="section card">
@@ -53,13 +41,58 @@
 <div class="section">
   <h2>Lead digest</h2>
   <p class="sub" style="margin-top:0">Plain-text summary of open PRs in the current view — copy for standups or lead chat.</p>
-  <textarea id="ship-digest" readonly rows="10" aria-label="Lead digest">{{.Ship.Digest}}</textarea>
-  <div class="form-actions">
-    <button type="button" class="btn-secondary" data-copy-target="ship-digest" data-copy-status="copy-status">Copy digest</button>
-    <span class="muted" id="copy-status" style="font-size:0.85rem;"></span>
+  <div class="live-region"
+       id="live-ship-digest"
+       hx-get="{{route "partial.ship.digest"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
+       hx-trigger="sse:ship"
+       hx-swap="innerHTML"
+       hx-sync="this:replace">
+    {{template "ship_digest" .}}
   </div>
 </div>
 
+<div class="live-region"
+     id="live-ship-table"
+     hx-get="{{route "partial.ship.table"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
+     hx-trigger="sse:ship"
+     hx-swap="innerHTML"
+     hx-sync="this:replace">
+  {{template "ship_table" .}}
+</div>
+{{end}}
+
+{{define "ship_stats"}}
+<div class="grid">
+  <div class="card">
+    <div class="label">Open</div>
+    <div class="value">{{.Ship.Open}}</div>
+    <div class="hint">{{.Ship.Draft}} draft</div>
+  </div>
+  <div class="card">
+    <div class="label">CI failing</div>
+    <div class="value">{{.Ship.ChecksFailing}}</div>
+  </div>
+  <div class="card">
+    <div class="label">Changes requested</div>
+    <div class="value">{{.Ship.ChangesRequested}}</div>
+  </div>
+  <div class="card">
+    <div class="label">Approved</div>
+    <div class="value">{{.Ship.Approved}}</div>
+    <div class="hint">merged {{.Ship.Merged}} · closed {{.Ship.Closed}}</div>
+  </div>
+</div>
+{{end}}
+
+{{define "ship_digest"}}
+<textarea id="ship-digest" readonly rows="10" aria-label="Lead digest">{{.Ship.Digest}}</textarea>
+<div class="form-actions">
+  <button type="button" class="btn-secondary" data-copy-target="ship-digest" data-copy-status="copy-status">Copy digest</button>
+  <span class="muted" id="copy-status" style="font-size:0.85rem;"></span>
+</div>
+{{end}}
+
+{{define "ship_table"}}
 <div class="section">
   <h2>Pull requests <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Ship.Rows}} shown · {{.Ship.Total}} tracked{{if .Ship.ProjectFilter}} in {{.Ship.ProjectFilter}}{{end}})</span></h2>
   {{if .Ship.Rows}}
@@ -147,5 +180,4 @@
   </div>
   {{end}}
 </div>
-
 {{end}}

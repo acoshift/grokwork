@@ -113,15 +113,15 @@ func TestPagesRender(t *testing.T) {
 			if !strings.Contains(body, "Grok Discord") {
 				t.Fatal("missing brand")
 			}
-			// Every page is live-updated via htmx + SSE.
+			// Layout hosts SSE; pages host domain live-regions.
 			for _, live := range []string{
 				`id="live-root"`,
 				`id="sse-status"`,
-				`hx-trigger="sse:tick"`,
 				`hx-ext="sse"`,
 				`sse-connect=`,
 				"/events",
 				"/static/htmx.min.js",
+				"live-region",
 			} {
 				if !strings.Contains(body, live) {
 					t.Fatalf("path %s missing live marker %q", tc.path, live)
@@ -130,22 +130,25 @@ func TestPagesRender(t *testing.T) {
 		})
 	}
 
-	// HX-Request returns content fragment only (no layout/nav/scripts).
-	t.Run("htmx fragment", func(t *testing.T) {
+	// Domain partials return content-only HTML (no layout/nav/scripts).
+	t.Run("domain partials", func(t *testing.T) {
 		paths := []struct {
 			path   string
 			marker string
+			domain string // hx-trigger domain expected on full page, empty for partial-only
 		}{
-			{"/", `id="page-dashboard"`},
-			{"/ship", `id="page-ship"`},
-			{"/history", `id="page-history"`},
-			{"/history/thread-99", `id="page-history-detail"`},
-			{"/worktrees", `id="page-worktrees"`},
-			{"/config", `id="page-config"`},
+			{"/partials/dashboard/stats", `id="stats"`, "dashboard"},
+			{"/partials/dashboard/runs", `id="runs-wrap"`, "dashboard"},
+			{"/partials/ship/stats", "CI failing", "ship"},
+			{"/partials/ship/digest", `id="ship-digest"`, "ship"},
+			{"/partials/ship/table", "Pull requests", "ship"},
+			{"/partials/history/table", "thread-99", "history"},
+			{"/partials/history/turns/thread-99", `id="turns"`, "history"},
+			{"/partials/worktrees/table", "All worktrees", "worktrees"},
+			{"/partials/config/lists", "Projects", "config"},
 		}
 		for _, tc := range paths {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
-			req.Header.Set("HX-Request", "true")
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
@@ -153,17 +156,40 @@ func TestPagesRender(t *testing.T) {
 			}
 			body := w.Body.String()
 			if !strings.Contains(body, tc.marker) {
-				t.Fatalf("%s missing marker %q", tc.path, tc.marker)
+				t.Fatalf("%s missing marker %q body=%s", tc.path, tc.marker, body)
 			}
 			for _, ban := range []string{
 				`id="sse-status"`,
 				"<nav>",
-				"Grok Discord · admin",
 				"/static/htmx.min.js",
 				`hx-ext="sse"`,
 			} {
 				if strings.Contains(body, ban) {
-					t.Fatalf("%s fragment should not include %q (got full page?)", tc.path, ban)
+					t.Fatalf("%s partial should not include %q (got full page?)", tc.path, ban)
+				}
+			}
+		}
+
+		// Full pages bind the right domain events.
+		pageDomains := []struct {
+			path   string
+			events []string
+		}{
+			{"/", []string{`hx-trigger="sse:dashboard"`}},
+			{"/ship", []string{`hx-trigger="sse:ship"`}},
+			{"/history", []string{`hx-trigger="sse:history"`}},
+			{"/history/thread-99", []string{`hx-trigger="sse:history"`}},
+			{"/worktrees", []string{`hx-trigger="sse:worktrees"`}},
+			{"/config", []string{`hx-trigger="sse:config"`}},
+		}
+		for _, tc := range pageDomains {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			body := w.Body.String()
+			for _, ev := range tc.events {
+				if !strings.Contains(body, ev) {
+					t.Fatalf("%s missing %q", tc.path, ev)
 				}
 			}
 		}

@@ -153,6 +153,17 @@
   </form>
 </div>
 
+<div class="live-region"
+     id="live-config-lists"
+     hx-get="{{route "partial.config.lists"}}"
+     hx-trigger="sse:config"
+     hx-swap="innerHTML"
+     hx-sync="this:replace">
+  {{template "config_lists" .}}
+</div>
+{{end}}
+
+{{define "config_lists"}}
 <div class="section">
   <h2>Projects</h2>
   {{if .Config.Projects}}
