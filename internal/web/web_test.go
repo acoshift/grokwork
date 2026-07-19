@@ -113,14 +113,75 @@ func TestPagesRender(t *testing.T) {
 			if !strings.Contains(body, "Grok Discord") {
 				t.Fatal("missing brand")
 			}
-			// Every page is live-updated via layout SSE client.
-			for _, live := range []string{`id="live-root"`, `id="sse-status"`, "EventSource", "/events"} {
+			// Every page is live-updated via htmx + SSE.
+			for _, live := range []string{
+				`id="live-root"`,
+				`id="sse-status"`,
+				`hx-trigger="sse:tick"`,
+				`hx-ext="sse"`,
+				`sse-connect=`,
+				"/events",
+				"/static/htmx.min.js",
+			} {
 				if !strings.Contains(body, live) {
 					t.Fatalf("path %s missing live marker %q", tc.path, live)
 				}
 			}
 		})
 	}
+
+	// HX-Request returns content fragment only (no layout/nav/scripts).
+	t.Run("htmx fragment", func(t *testing.T) {
+		paths := []struct {
+			path   string
+			marker string
+		}{
+			{"/", `id="page-dashboard"`},
+			{"/ship", `id="page-ship"`},
+			{"/history", `id="page-history"`},
+			{"/history/thread-99", `id="page-history-detail"`},
+			{"/worktrees", `id="page-worktrees"`},
+			{"/config", `id="page-config"`},
+		}
+		for _, tc := range paths {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.Header.Set("HX-Request", "true")
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("%s status=%d body=%s", tc.path, w.Code, w.Body.String())
+			}
+			body := w.Body.String()
+			if !strings.Contains(body, tc.marker) {
+				t.Fatalf("%s missing marker %q", tc.path, tc.marker)
+			}
+			for _, ban := range []string{
+				`id="sse-status"`,
+				"<nav>",
+				"Grok Discord · admin",
+				"/static/htmx.min.js",
+				`hx-ext="sse"`,
+			} {
+				if strings.Contains(body, ban) {
+					t.Fatalf("%s fragment should not include %q (got full page?)", tc.path, ban)
+				}
+			}
+		}
+	})
+
+	t.Run("static assets", func(t *testing.T) {
+		for _, path := range []string{"/static/htmx.min.js", "/static/sse.js"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("%s status=%d", path, w.Code)
+			}
+			if w.Body.Len() < 100 {
+				t.Fatalf("%s body too small: %d", path, w.Body.Len())
+			}
+		}
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/history", nil)
 	w := httptest.NewRecorder()

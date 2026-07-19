@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/url"
@@ -21,6 +22,9 @@ import (
 
 //go:embed templates/*
 var templateFS embed.FS
+
+//go:embed static/*
+var staticFS embed.FS
 
 // Server is the private-network admin UI.
 type Server struct {
@@ -68,6 +72,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 
 	app.TemplateFunc("add", func(a, b int) int { return a + b })
 
+	// Full pages (layout root).
 	tp := app.Template()
 	tp.FS(templateFS)
 	tp.Dir("templates")
@@ -79,7 +84,26 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
 	tp.ParseFiles("config", "layout.tmpl", "config.tmpl")
 
+	// Content-only fragments for htmx live swaps (HX-Request).
+	// Same page templates, root is the "content" define — no layout/CSS/nav.
+	frag := app.Template()
+	frag.FS(templateFS)
+	frag.Dir("templates")
+	frag.Root("content")
+	frag.ParseFiles("dashboard_frag", "dashboard.tmpl")
+	frag.ParseFiles("history_frag", "history.tmpl")
+	frag.ParseFiles("history_detail_frag", "history_detail.tmpl")
+	frag.ParseFiles("ship_frag", "ship.tmpl")
+	frag.ParseFiles("worktrees_frag", "worktrees.tmpl")
+	frag.ParseFiles("config_frag", "config.tmpl")
+
+	static, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		panic("web: static fs: " + err.Error())
+	}
+
 	mux := http.NewServeMux()
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
 	mux.Handle("GET /{$}", hime.Handler(s.dashboard))
 	mux.Handle("GET /history", hime.Handler(s.historyList))
 	mux.Handle("GET /history/{threadID}", hime.Handler(s.historyDetail))
@@ -137,10 +161,28 @@ type pageData struct {
 	IdleTTLDays int
 	Config      config.Snapshot
 	SSEPath     string
+	// LivePath is the path+query used by htmx to re-fetch this page's content fragment.
+	LivePath string
+}
+
+func isHTMX(ctx *hime.Context) bool {
+	return ctx.Request.Header.Get("HX-Request") == "true"
 }
 
 func (s *Server) basePage(ctx *hime.Context) pageData {
-	return pageData{SSEPath: ctx.Route("sse")}
+	return pageData{
+		SSEPath:  ctx.Route("sse"),
+		LivePath: ctx.Request.URL.RequestURI(),
+	}
+}
+
+// renderPage serves the full layout, or only the content fragment when htmx
+// requests a live swap (HX-Request).
+func (s *Server) renderPage(ctx *hime.Context, name string, data pageData) error {
+	if isHTMX(ctx) {
+		return ctx.View(name+"_frag", data)
+	}
+	return ctx.View(name, data)
 }
 
 func (s *Server) dashboard(ctx *hime.Context) error {
@@ -148,7 +190,7 @@ func (s *Server) dashboard(ctx *hime.Context) error {
 	d.Title = "Dashboard"
 	d.IsDashboard = true
 	d.Status = s.bot.StatusSnapshot()
-	return ctx.View("dashboard", d)
+	return s.renderPage(ctx, "dashboard", d)
 }
 
 func (s *Server) historyList(ctx *hime.Context) error {
@@ -162,7 +204,7 @@ func (s *Server) historyList(ctx *hime.Context) error {
 	d.Title = "History"
 	d.IsHistory = true
 	d.Threads = threads
-	return ctx.View("history", d)
+	return s.renderPage(ctx, "history", d)
 }
 
 func (s *Server) historyDetail(ctx *hime.Context) error {
@@ -185,7 +227,7 @@ func (s *Server) historyDetail(ctx *hime.Context) error {
 	d.Title = title
 	d.IsHistory = true
 	d.Thread = th
-	return ctx.View("history_detail", d)
+	return s.renderPage(ctx, "history_detail", d)
 }
 
 func (s *Server) shipPage(ctx *hime.Context) error {
@@ -195,7 +237,7 @@ func (s *Server) shipPage(ctx *hime.Context) error {
 	d.Title = "Ship board"
 	d.IsShip = true
 	d.Ship = s.bot.ListShipBoard(project, state)
-	return ctx.View("ship", d)
+	return s.renderPage(ctx, "ship", d)
 }
 
 func (s *Server) configPage(ctx *hime.Context) error {
@@ -205,7 +247,7 @@ func (s *Server) configPage(ctx *hime.Context) error {
 	d.Config = s.cfg.Snapshot()
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
-	return ctx.View("config", d)
+	return s.renderPage(ctx, "config", d)
 }
 
 func (s *Server) worktreesPage(ctx *hime.Context) error {
@@ -216,7 +258,7 @@ func (s *Server) worktreesPage(ctx *hime.Context) error {
 	d.IdleTTLDays = s.cfg.WorktreeIdleTTLDaysValue()
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
-	return ctx.View("worktrees", d)
+	return s.renderPage(ctx, "worktrees", d)
 }
 
 func (s *Server) worktreesRedirect(ctx *hime.Context, okMsg string, err error) error {
@@ -404,16 +446,17 @@ func mergeSessionRows(hist []history.Summary, sessions []sessionstore.Listed) []
 	return hist
 }
 
-// sseTick is the lightweight SSE payload. Clients use each event as a signal to
-// re-fetch the current page HTML (all pages live-update the same way).
-// StatusSnapshot fields are kept so existing tests and any custom clients still work.
+// sseTick is the lightweight SSE payload. Clients use "tick" events as a signal
+// for htmx to re-fetch the current page's content fragment. StatusSnapshot
+// fields are kept so existing tests and any custom clients still work.
 type sseTick struct {
 	bot.StatusSnapshot
 	Tick int64 `json:"tick"`
 }
 
 // sse streams live ticks as Server-Sent Events (stdlib text/event-stream).
-// Every admin page connects and re-fetches its HTML on each tick.
+// The first event is unnamed (event type "message") for connect/tests;
+// subsequent ticks use event type "tick" so htmx only refreshes on the ticker.
 func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -429,7 +472,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	var n int64
-	send := func() bool {
+	send := func(event string) bool {
 		n++
 		payload := sseTick{
 			StatusSnapshot: s.bot.StatusSnapshot(),
@@ -440,6 +483,11 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 			log.Printf("web sse marshal: %v", err)
 			return false
 		}
+		if event != "" {
+			if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
+				return false
+			}
+		}
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
 			return false
 		}
@@ -448,7 +496,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Immediate first event so clients and tests do not wait on the ticker.
-	if !send() {
+	if !send("") {
 		return
 	}
 
@@ -459,7 +507,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			if !send() {
+			if !send("tick") {
 				return
 			}
 		}

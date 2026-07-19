@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/sse.js" defer></script>
   <style>
     /* Grok official light theme tokens (from grok.com design system) */
     :root {
@@ -519,7 +521,7 @@
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <div class="wrap" hx-ext="sse" {{if .SSEPath}}sse-connect="{{.SSEPath}}"{{end}}>
     <header class="app">
       <div class="brand">Grok Discord <span>· admin</span></div>
       <div class="header-end">
@@ -533,17 +535,18 @@
         <span id="sse-status" title="Live updates via SSE">connecting…</span>
       </div>
     </header>
-    <div id="live-root">
+    {{/* SSE tick → htmx GET of this page with HX-Request → content fragment only. */}}
+    <div id="live-root"
+         hx-get="{{.LivePath}}"
+         hx-trigger="sse:tick"
+         hx-swap="innerHTML"
+         hx-sync="this:replace">
       {{template "content" .}}
     </div>
   </div>
   <script>
   (function () {
     var statusEl = document.getElementById("sse-status");
-    var liveRoot = document.getElementById("live-root");
-    var ssePath = {{json .SSEPath}};
-    var refreshing = false;
-    var lastHTML = liveRoot ? liveRoot.innerHTML : "";
 
     function setStatus(text, cls) {
       if (!statusEl) return;
@@ -558,40 +561,6 @@
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
       if (el.isContentEditable) return true;
       return false;
-    }
-
-    function refresh() {
-      if (!liveRoot || refreshing) return;
-      if (isEditing()) {
-        setStatus("live · paused while editing", "ok");
-        return;
-      }
-      refreshing = true;
-      fetch(location.pathname + location.search, {
-        headers: { "Accept": "text/html", "X-Live-Refresh": "1" },
-        credentials: "same-origin",
-        cache: "no-store"
-      }).then(function (res) {
-        if (!res.ok) throw new Error("status " + res.status);
-        return res.text();
-      }).then(function (html) {
-        if (isEditing()) return;
-        var doc = new DOMParser().parseFromString(html, "text/html");
-        var next = doc.getElementById("live-root");
-        if (!next) return;
-        var nextHTML = next.innerHTML;
-        if (nextHTML === lastHTML) return;
-        var y = window.scrollY;
-        liveRoot.innerHTML = nextHTML;
-        lastHTML = nextHTML;
-        var t = doc.querySelector("title");
-        if (t && t.textContent) document.title = t.textContent;
-        window.scrollTo(0, y);
-      }).catch(function () {
-        setStatus("refresh failed", "err");
-      }).finally(function () {
-        refreshing = false;
-      });
     }
 
     // Event delegation so handlers survive #live-root swaps.
@@ -635,23 +604,37 @@
       }
     });
 
-    if (!ssePath) {
-      setStatus("offline", "err");
-      return;
-    }
-    var es = new EventSource(ssePath);
-    var firstTick = true;
-    es.onopen = function () { setStatus("live", "ok"); };
-    es.onerror = function () { setStatus("reconnecting…", "err"); };
-    es.onmessage = function () {
-      setStatus("live · " + new Date().toLocaleTimeString(), "ok");
-      // Skip the immediate first tick (page was just rendered).
-      if (firstTick) {
-        firstTick = false;
-        return;
+    // Pause live swaps while the user is editing a form field.
+    document.body.addEventListener("htmx:beforeRequest", function (e) {
+      var elt = e.detail && e.detail.elt;
+      if (elt && elt.id === "live-root" && isEditing()) {
+        e.preventDefault();
+        setStatus("live · paused while editing", "ok");
       }
-      refresh();
-    };
+    });
+
+    document.body.addEventListener("htmx:sseOpen", function () {
+      setStatus("live", "ok");
+    });
+    document.body.addEventListener("htmx:sseError", function () {
+      setStatus("reconnecting…", "err");
+    });
+    document.body.addEventListener("htmx:afterSwap", function (e) {
+      var elt = e.detail && e.detail.elt;
+      if (elt && elt.id === "live-root") {
+        setStatus("live · " + new Date().toLocaleTimeString(), "ok");
+      }
+    });
+    document.body.addEventListener("htmx:responseError", function (e) {
+      var elt = e.detail && e.detail.elt;
+      if (elt && elt.id === "live-root") {
+        setStatus("refresh failed", "err");
+      }
+    });
+
+    if (!{{json .SSEPath}}) {
+      setStatus("offline", "err");
+    }
   })();
   </script>
 </body>
