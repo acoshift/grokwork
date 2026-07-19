@@ -42,6 +42,25 @@ func TestParseMessage(t *testing.T) {
 			t.Fatalf("%q: got %+v want KindFixCI", in, p)
 		}
 	}
+
+	for _, in := range []string{"/claim", "claim"} {
+		p = ParseMessage("<@123> "+in, "123")
+		if p.Kind != KindClaim {
+			t.Fatalf("%q: got %+v want KindClaim", in, p)
+		}
+	}
+
+	for _, in := range []string{"/hand-off <@999>", "/handoff <@999>", "/hand-off", "hand-off", "handoff"} {
+		p = ParseMessage("<@123> "+in, "123")
+		if p.Kind != KindHandOff {
+			t.Fatalf("%q: got %+v want KindHandOff", in, p)
+		}
+	}
+	// Free-form text that starts with "hand-off " (no slash) is a normal task.
+	p = ParseMessage("<@123> hand-off notes for later", "123")
+	if p.Kind != KindTask {
+		t.Fatalf("hand-off notes… should be task, got %+v", p)
+	}
 }
 
 func TestParseMessagePreservesSpecialChars(t *testing.T) {

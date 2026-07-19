@@ -57,6 +57,39 @@ func TestListAndCount(t *testing.T) {
 	}
 }
 
+func TestOwnershipHelpers(t *testing.T) {
+	var e Entry
+	if e.HasOwner() || e.CanControl("u1") {
+		t.Fatal("empty entry should be unowned")
+	}
+	e.SetOwner("u1", "alice")
+	if !e.HasOwner() || !e.IsOwner("u1") || e.OwnerName != "alice" {
+		t.Fatalf("SetOwner: %+v", e)
+	}
+	e.AddCoOwner("u2")
+	e.AddCoOwner("u2") // dedupe
+	e.AddCoOwner("u1") // no-op (owner)
+	if !e.IsCoOwner("u2") || e.IsCoOwner("u1") || len(e.CoOwnerIDs) != 1 {
+		t.Fatalf("co-owners: %+v", e.CoOwnerIDs)
+	}
+	if !e.CanControl("u1") || !e.CanControl("u2") || e.CanControl("u3") {
+		t.Fatalf("CanControl: owner=%v co=%v other=%v", e.CanControl("u1"), e.CanControl("u2"), e.CanControl("u3"))
+	}
+
+	e.HandOff("u3", "carol")
+	if e.OwnerID != "u3" || e.OwnerName != "carol" {
+		t.Fatalf("HandOff owner: %+v", e)
+	}
+	if !e.IsCoOwner("u1") || !e.IsCoOwner("u2") {
+		t.Fatalf("HandOff co-owners: %+v", e.CoOwnerIDs)
+	}
+	// Claim-style SetOwner removes claimer from co-owners.
+	e.SetOwner("u2", "bob")
+	if e.IsCoOwner("u2") || e.OwnerID != "u2" {
+		t.Fatalf("SetOwner clears co-owner slot: %+v", e)
+	}
+}
+
 func TestPatchPRFields(t *testing.T) {
 	dir := t.TempDir()
 	s, err := New(dir)

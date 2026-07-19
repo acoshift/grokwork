@@ -127,12 +127,16 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 | `@Grok <follow-up>` in thread | Resume session (same project) |
 | `@Grok <follow-up>` while busy | Queue the follow-up (up to 5); runs after the current task |
 | `@Grok /projects` | Show this channel’s mapped project |
-| `@Grok /reset` | Drop session + remove this thread’s git worktree |
-| `@Grok /status` | Show project, session, worktree branch, and queue depth |
-| `@Grok /cancel` | Stop the in-progress run (queued follow-ups still run) |
+| `@Grok /status` | Show owner, project, session, worktree branch, PR, and queue depth |
+| `@Grok /claim` | Take ownership of this thread |
+| `@Grok /hand-off @user` | Transfer ownership and post a short hand-off card |
+| `@Grok /reset` | Drop session + remove this thread’s git worktree (owner/mod) |
+| `@Grok /cancel` | Stop the in-progress run (owner/mod; queued follow-ups still run) |
 | `@Grok /fix-ci` | Fetch failing CI checks for this thread’s PR and queue a minimal fix |
 | `@Grok <task>` + attachments | Download files for Grok to read (logs, screenshots, patches) |
 | Reply to a message with `@Grok <task>` | Include the referenced message text + attachments (e.g. image, then ask Grok) |
+
+**Thread ownership:** the first `@Grok` author on a thread becomes **owner** (stored on the session). Anyone on the allowlist may still queue tasks (soft open). `@Grok /cancel` and `@Grok /reset` require the owner, a co-owner, or a Discord moderator (Administrator, Manage Messages, or Manage Threads). `@Grok /claim` takes primary ownership (previous owner stays as co-owner). `@Grok /hand-off @user` transfers ownership and posts a short card (goal, status, PR, queue). Unowned legacy sessions stay open for cancel/reset until someone claims or the next task sets an owner.
 
 While a task is running, the bot updates the status message every few seconds with elapsed time (and a short thought/tool activity snippet when available). Assistant text streams into the thread via Grok’s `streaming-json` output: a live message shows the **latest** text (tail window), Discord edits run asynchronously so they never block reading Grok’s stdout, and when a reply outgrows one Discord message the bot seals that message and continues in a new one (finish does not re-post sealed chunks). Typing is pulsed while streaming. Use `/cancel` (or `/stop`) in that thread to kill the Grok process (the live stream is finalized without a stuck “streaming…” footer). Follow-ups sent while a run is active are queued in order (max 5) and start automatically when the current run finishes; the bot replies with `Queued (#N)`.
 

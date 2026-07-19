@@ -473,4 +473,5 @@ func preservePRFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	next.CINotifiedSHA = prev.CINotifiedSHA
 	next.CIAutoFixCount = prev.CIAutoFixCount
 	next.CIAutoFixSHA = prev.CIAutoFixSHA
+	preserveOwnershipFields(next, prev)
 }

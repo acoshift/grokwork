@@ -23,6 +23,7 @@ Synthesized from multi-agent discussion (2026-07-18): collaboration, PR/CI ship 
 - [x] Multi-PR per thread (multiple URLs/repos, per-PR cards, poll + CI + cleanup when all terminal)
 - [x] Completion summary card (git diff --stat / name-status, risk globs, PR link; after each non-cancelled run)
 - [x] CI fail → triage loop (digest per head SHA, `@Grok /fix-ci`, optional `autoFixCI` + cap)
+- [x] Thread ownership & hand-off (`owner` / co-owners, `/claim`, `/hand-off @user`, cancel/reset rights + mod override)
 
 ## Design principles (team workflow)
 
@@ -37,14 +38,15 @@ Synthesized from multi-agent discussion (2026-07-18): collaboration, PR/CI ship 
 
 ## Next (P0 — multi-person daily use)
 
-### 1. Thread ownership & hand-off
+### 1. Thread ownership & hand-off — done
 
 Stop “who owns this thread?” thrash when multiple engineers share a channel.
 
-- Session metadata: `owner` (first `@Grok` author), optional co-owners / watchers
-- `@Grok /claim`, `@Grok /hand-off @user` with a short hand-off card (goal, last status, PR, queue)
-- Soft default: open queue for anyone; optional strict lock later
-- Cancel/reset rights: owner + moderator role (see Safety)
+- [x] Session metadata: `owner` (first `@Grok` author), co-owners on claim/hand-off
+- [x] `@Grok /claim`, `@Grok /hand-off @user` with a short hand-off card (goal, last status, PR, queue)
+- [x] Soft default: open queue for anyone; optional strict lock later
+- [x] Cancel/reset rights: owner + co-owner + Discord mod (Manage Messages / Manage Threads / Admin)
+- [ ] Watchers (notify on complete) — see P1
 
 ### 2. Queue discipline (anti-thrash)
 
@@ -64,7 +66,7 @@ Ship before broad eng-VPN rollout (trusted-but-fallible teammates).
 - [ ] Filtered process env for Grok children (no inherited host cloud superpowers by default)
 - [ ] Immutable audit log: who, prompt, tools, commits, PR URL, canceler
 - [ ] Rate limits + global concurrency caps (per-user and host-wide)
-- [ ] Thread ownership for cancel/reset + moderator override
+- [x] Thread ownership for cancel/reset + moderator override
 - [ ] PR/commit attribution: prompter + thread URL in PR body / commit trailer; host remains pusher only
 
 ## Soon (P1 — durable team artifacts & ship loop)

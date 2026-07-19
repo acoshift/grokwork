@@ -306,11 +306,31 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 				state += fmt.Sprintf(" · %d queued", n)
 			}
 		}
+		sessionLine := "**session:** (none yet)"
+		if e.SessionID != "" {
+			sessionLine = "**session:** `" + e.SessionID + "`"
+		}
 		lines := []string{
 			"**project:** " + e.Project,
-			"**session:** `" + e.SessionID + "`",
+			sessionLine,
 			"**updated:** " + e.UpdatedAt,
 			"**state:** " + state,
+		}
+		if e.HasOwner() {
+			ownerLine := fmt.Sprintf("**owner:** <@%s>", e.OwnerID)
+			if e.OwnerName != "" {
+				ownerLine = fmt.Sprintf("**owner:** %s (<@%s>)", e.OwnerName, e.OwnerID)
+			}
+			lines = append(lines, ownerLine)
+			if len(e.CoOwnerIDs) > 0 {
+				parts := make([]string, 0, len(e.CoOwnerIDs))
+				for _, id := range e.CoOwnerIDs {
+					parts = append(parts, "<@"+id+">")
+				}
+				lines = append(lines, "**co-owners:** "+strings.Join(parts, ", "))
+			}
+		} else {
+			lines = append(lines, "**owner:** (none — first `@Grok` task or `/claim`)")
 		}
 		if e.WorktreeBranch != "" {
 			lines = append(lines, "**worktree:** `"+e.WorktreeBranch+"`")
@@ -330,6 +350,10 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleCancel(s, m)
 	case KindFixCI:
 		b.handleFixCI(s, m)
+	case KindClaim:
+		b.handleClaim(s, m)
+	case KindHandOff:
+		b.handleHandOff(s, m)
 	case KindTask:
 		log.Printf("task: starting async for msg=%s", m.ID)
 		go b.handleTask(s, m, parsed)
@@ -355,6 +379,10 @@ func (b *Bot) handleCancel(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /cancel` inside a Grok thread that is running.", ref(m)); err != nil {
 			log.Printf("error: reply cancel-not-thread: %v", err)
 		}
+		return
+	}
+	if e, ok := b.sessions.Get(m.ChannelID); ok && !b.canControlThread(s, m, e) {
+		b.denyControl(s, m, e, "cancel")
 		return
 	}
 	job, ok := b.getJob(m.ChannelID)
@@ -385,6 +413,10 @@ func plural(n int) string {
 }
 
 func (b *Bot) resetThread(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if e, ok := b.sessions.Get(m.ChannelID); ok && !b.canControlThread(s, m, e) {
+		b.denyControl(s, m, e, "reset")
+		return
+	}
 	if _, busy := b.getJob(m.ChannelID); busy {
 		if _, err := s.ChannelMessageSendReply(m.ChannelID, "A run is in progress — `@Grok /cancel` first, then `/reset`.", ref(m)); err != nil {
 			log.Printf("error: reply reset-busy: %v", err)
@@ -655,6 +687,10 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	s, m, parsed, proj, threadID := item.s, item.m, item.parsed, item.proj, item.threadID
 
+	// Bind owner before the run so /cancel is gated for multi-person threads
+	// even on the first task (session used to be written only after grok exits).
+	b.bindThreadOwner(threadID, proj.Name, m)
+
 	status, err := s.ChannelMessageSend(threadID, workingStatus(proj.Name, 0, ""))
 	if err != nil {
 		log.Printf("error: status message thread=%s: %v", threadID, err)
@@ -810,6 +846,9 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			LastUser:       m.Author.String(),
 		}
 		preservePRFields(&entry, prev)
+		if m.Author != nil {
+			ensureSessionOwner(&entry, m.Author.ID, m.Author.String())
+		}
 		if err := b.sessions.Set(threadID, entry); err != nil {
 			log.Printf("error: session save: %v", err)
 		}
@@ -1067,6 +1106,10 @@ func kindName(k Kind) string {
 		return "cancel"
 	case KindFixCI:
 		return "fix-ci"
+	case KindClaim:
+		return "claim"
+	case KindHandOff:
+		return "hand-off"
 	case KindTask:
 		return "task"
 	default:

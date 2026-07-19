@@ -19,6 +19,8 @@ const (
 	KindStatus
 	KindCancel
 	KindFixCI
+	KindClaim
+	KindHandOff
 	KindTask
 )
 
@@ -38,7 +40,8 @@ func ParseMessage(content, botUserID string) Parsed {
 		return Parsed{Kind: KindEmpty}
 	}
 
-	switch strings.ToLower(text) {
+	lower := strings.ToLower(text)
+	switch lower {
 	case "/help", "help":
 		return Parsed{Kind: KindHelp}
 	case "/projects", "projects":
@@ -51,9 +54,24 @@ func ParseMessage(content, botUserID string) Parsed {
 		return Parsed{Kind: KindCancel}
 	case "/fix-ci", "fix-ci", "/fixci", "fixci":
 		return Parsed{Kind: KindFixCI}
+	case "/claim", "claim":
+		return Parsed{Kind: KindClaim}
+	}
+
+	if isHandOffCommand(lower) {
+		return Parsed{Kind: KindHandOff, Prompt: text}
 	}
 
 	return Parsed{Kind: KindTask, Prompt: text}
+}
+
+func isHandOffCommand(lower string) bool {
+	switch lower {
+	case "/hand-off", "/handoff", "hand-off", "handoff":
+		return true
+	}
+	// Args only with leading slash so free-form "hand-off notes…" stays a task.
+	return strings.HasPrefix(lower, "/hand-off ") || strings.HasPrefix(lower, "/handoff ")
 }
 
 func stripBotMention(content, botUserID string) string {
@@ -130,10 +148,14 @@ func HelpText() string {
 		"",
 		"**Commands** (mention the bot first)",
 		"• `/projects` — show this channel's project",
-		"• `/reset` — forget this thread's session and remove its worktree",
-		"• `/status` — show this thread's session, PR, and queue depth if busy",
+		"• `/status` — show this thread's owner, session, PR, and queue depth if busy",
+		"• `/claim` — take ownership of this thread (anyone on the allowlist)",
+		"• `/hand-off @user` — transfer ownership and post a short hand-off card",
+		"• `/reset` — forget this thread's session and remove its worktree (owner/mod)",
 		"• `/fix-ci` — fetch failing CI checks and queue a minimal fix on this PR branch",
-		"• `/cancel` — stop the current run (queued follow-ups still run)",
+		"• `/cancel` — stop the current run (owner/mod; queued follow-ups still run)",
 		"• `/help` — this message",
+		"",
+		"Anyone may queue tasks (soft open). Cancel/reset: thread owner, co-owners, or Discord mods (Manage Messages / Manage Threads / Admin).",
 	}, "\n")
 }

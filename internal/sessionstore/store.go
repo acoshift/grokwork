@@ -18,6 +18,12 @@ type Entry struct {
 	LastUser       string `json:"lastUser,omitempty"`
 	UpdatedAt      string `json:"updatedAt"`
 
+	// Thread ownership: first @Grok author; /claim and /hand-off update these.
+	// Cancel/reset require owner, co-owner, or Discord moderator override.
+	OwnerID    string   `json:"ownerId,omitempty"`
+	OwnerName  string   `json:"ownerName,omitempty"`
+	CoOwnerIDs []string `json:"coOwnerIds,omitempty"`
+
 	// PRs tracks one or more GitHub pull requests for this thread (multi-repo / multi-PR).
 	// Preferred source of truth; legacy single-PR fields below are kept in sync for older data.
 	PRs []TrackedPR `json:"prs,omitempty"`
