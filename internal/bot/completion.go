@@ -293,6 +293,8 @@ type CompletionCardInput struct {
 	Branch   string
 	PRURL    string
 	PRNumber int
+	// ExtraPRs lists all tracked PRs when more than one (full labels).
+	ExtraPRs []string
 	Diff     DiffSummary
 	Queued   int
 }
@@ -369,7 +371,12 @@ func FormatCompletionCard(in CompletionCardInput) string {
 		}
 		lines = append(lines, "**risk:** "+risk)
 	}
-	if in.PRURL != "" {
+	if len(in.ExtraPRs) > 1 {
+		lines = append(lines, fmt.Sprintf("**prs:** %d", len(in.ExtraPRs)))
+		for _, p := range in.ExtraPRs {
+			lines = append(lines, "• "+p)
+		}
+	} else if in.PRURL != "" {
 		if in.PRNumber > 0 {
 			lines = append(lines, fmt.Sprintf("**pr:** #%d · %s", in.PRNumber, in.PRURL))
 		} else {
@@ -447,12 +454,30 @@ func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd
 		status = fmt.Sprintf("Exit %d", resultCode)
 	}
 
-	prURL, prNum := "", 0
+	var prURL string
+	var prNum int
+	var extraPRs []string
 	if e, ok := b.sessions.Get(threadID); ok {
-		prURL = e.PRURL
-		prNum = e.PRNumber
+		e.NormalizePRs()
 		if branch == "" {
 			branch = e.WorktreeBranch
+		}
+		if p, ok := e.PrimaryPR(); ok {
+			prURL = p.URL
+			prNum = p.Number
+		}
+		if len(e.PRs) > 1 {
+			for _, p := range e.PRs {
+				label := fmt.Sprintf("#%d", p.Number)
+				if p.Owner != "" && p.Repo != "" {
+					label = fmt.Sprintf("%s/%s#%d", p.Owner, p.Repo, p.Number)
+				}
+				if p.URL != "" {
+					extraPRs = append(extraPRs, label+" · "+p.URL)
+				} else {
+					extraPRs = append(extraPRs, label)
+				}
+			}
 		}
 	}
 
@@ -463,6 +488,7 @@ func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd
 		Branch:   branch,
 		PRURL:    prURL,
 		PRNumber: prNum,
+		ExtraPRs: extraPRs,
 		Diff:     diff,
 		Queued:   b.queueLen(threadID),
 	})

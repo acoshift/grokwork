@@ -18,7 +18,11 @@ type Entry struct {
 	LastUser       string `json:"lastUser,omitempty"`
 	UpdatedAt      string `json:"updatedAt"`
 
-	// PR status card (Discord thread ↔ GitHub PR).
+	// PRs tracks one or more GitHub pull requests for this thread (multi-repo / multi-PR).
+	// Preferred source of truth; legacy single-PR fields below are kept in sync for older data.
+	PRs []TrackedPR `json:"prs,omitempty"`
+
+	// Legacy single-PR fields (mirrored from PrimaryPR for backward compatibility).
 	PRURL         string `json:"prUrl,omitempty"`
 	PRNumber      int    `json:"prNumber,omitempty"`
 	PRState       string `json:"prState,omitempty"` // OPEN, MERGED, CLOSED (draft via PRIsDraft)
@@ -29,10 +33,10 @@ type Entry struct {
 	PRIsDraft     bool   `json:"prIsDraft,omitempty"`
 	PRStatusMsgID string `json:"prStatusMsgId,omitempty"`
 
-	// CI triage (debounced digest + optional auto-fix).
-	CINotifiedSHA  string `json:"ciNotifiedSha,omitempty"`  // head SHA we already posted a CI digest for
-	CIAutoFixCount int    `json:"ciAutoFixCount,omitempty"` // auto-queued fix attempts this session
-	CIAutoFixSHA   string `json:"ciAutoFixSha,omitempty"`   // last head SHA we auto-queued a fix for
+	// Legacy CI triage fields (mirrored from primary PR).
+	CINotifiedSHA  string `json:"ciNotifiedSha,omitempty"`
+	CIAutoFixCount int    `json:"ciAutoFixCount,omitempty"`
+	CIAutoFixSHA   string `json:"ciAutoFixSha,omitempty"`
 }
 
 type Store struct {

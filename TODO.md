@@ -20,6 +20,7 @@ Synthesized from multi-agent discussion (2026-07-18): collaboration, PR/CI ship 
 - [x] Queue follow-ups when a thread is busy (instead of reject)
 - [x] Idle worktree TTL cleanup (`worktreeIdleTTLDays`, default 30; daily sweep; config page)
 - [x] Thread PR status card (session PR fields, Discord card, `gh` poller, eager cleanup on MERGED/CLOSED, `/status`)
+- [x] Multi-PR per thread (multiple URLs/repos, per-PR cards, poll + CI + cleanup when all terminal)
 - [x] Completion summary card (git diff --stat / name-status, risk globs, PR link; after each non-cancelled run)
 - [x] CI fail → triage loop (digest per head SHA, `@Grok /fix-ci`, optional `autoFixCI` + cap)
 

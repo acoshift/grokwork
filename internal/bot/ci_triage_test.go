@@ -12,9 +12,16 @@ func TestBuildFixCIPrompt(t *testing.T) {
 		{Name: "test", Bucket: "fail", Link: "https://example.com/1"},
 		{Name: "lint", Bucket: "fail"},
 	}
-	p := buildFixCIPrompt(9, "deadbeefcafebabe", "grok/discord/1", failed, "FAIL: boom")
+	info := ghpr.Info{
+		Number:  9,
+		URL:     "https://github.com/o/r/pull/9",
+		Owner:   "o",
+		Repo:    "r",
+		HeadSHA: "deadbeefcafebabe",
+	}
+	p := buildFixCIPrompt(info, "grok/discord/1", failed, "FAIL: boom")
 	for _, want := range []string{
-		"#9", "deadbee", "grok/discord/1", "test", "lint",
+		"o/r#9", "deadbee", "grok/discord/1", "test", "lint",
 		"gh pr checks", "do not merge", "FAIL: boom",
 	} {
 		if !strings.Contains(p, want) {

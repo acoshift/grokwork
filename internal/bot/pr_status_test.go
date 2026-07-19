@@ -50,12 +50,40 @@ func TestEntryPRInfoStatusLines(t *testing.T) {
 		PRChecks:  "✓ 2",
 		PRReview:  "REVIEW_REQUIRED",
 	}
-	lines := ghpr.FormatStatusLines(entryPRInfo(e))
+	e.NormalizePRs()
+	lines := ghpr.FormatMultiStatusLines(entryPRInfos(e))
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{"#9", "OPEN", "✓ 2", "REVIEW_REQUIRED"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in %q", want, joined)
 		}
+	}
+}
+
+func TestMultiPRUpsertAndStatus(t *testing.T) {
+	e := sessionstore.Entry{SessionID: "s", Project: "p"}
+	e.UpsertPR(sessionstore.TrackedPR{
+		URL: "https://github.com/acoshift/a/pull/1", Number: 1, State: "OPEN", Owner: "acoshift", Repo: "a",
+	})
+	e.UpsertPR(sessionstore.TrackedPR{
+		URL: "https://github.com/acoshift/b/pull/2", Number: 2, State: "OPEN", Owner: "acoshift", Repo: "b",
+	})
+	if len(e.PRs) != 2 {
+		t.Fatalf("prs=%d", len(e.PRs))
+	}
+	if !e.HasOpenPR() || e.AllPRsTerminal() {
+		t.Fatal("expected open PRs")
+	}
+	e.UpsertPR(sessionstore.TrackedPR{
+		URL: "https://github.com/acoshift/a/pull/1", Number: 1, State: "MERGED", Owner: "acoshift", Repo: "a",
+	})
+	if len(e.OpenPRs()) != 1 {
+		t.Fatalf("open=%d", len(e.OpenPRs()))
+	}
+	lines := ghpr.FormatMultiStatusLines(entryPRInfos(e))
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "2 tracked") || !strings.Contains(joined, "acoshift/b#2") {
+		t.Fatalf("status=%q", joined)
 	}
 }
 

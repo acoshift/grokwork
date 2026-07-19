@@ -42,7 +42,7 @@ func (b *Bot) runPRStatusPoller(s *discordgo.Session) {
 	}
 }
 
-// pollPRStatuses refreshes cards for sessions with a known PR. Returns update count.
+// pollPRStatuses refreshes cards for sessions with tracked PRs. Returns update count.
 func (b *Bot) pollPRStatuses(s *discordgo.Session) int {
 	if s == nil {
 		return 0
@@ -50,53 +50,70 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) int {
 	updated := 0
 	for _, listed := range b.sessions.List() {
 		e := listed.Entry
+		e.NormalizePRs()
 		threadID := listed.ThreadID
-		if e.PRNumber <= 0 && e.PRURL == "" {
+		if !e.HasAnyPR() {
 			continue
 		}
 		if b.isThreadBusy(threadID) {
 			continue
 		}
-		// Terminal sessions still on disk: finish eager cleanup (e.g. deferred while busy).
-		if ghpr.IsTerminal(e.PRState) {
-			if err := b.cleanupAfterTerminalPR(threadID, entryPRInfo(e)); err != nil {
+
+		// All PRs terminal: eager worktree/session cleanup.
+		if e.AllPRsTerminal() {
+			if err := b.cleanupWhenAllPRsDone(threadID); err != nil {
 				log.Printf("pr-status: terminal cleanup thread=%s: %v", threadID, err)
 				continue
 			}
 			updated++
 			continue
 		}
+
 		repoDir := prRepoDir(e)
 		if repoDir == "" {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		info, err := b.resolvePRInfo(ctx, repoDir, e, "")
-		cancel()
-		if err != nil {
-			log.Printf("pr-status: poll thread=%s: %v", threadID, err)
-			continue
-		}
-		if err := b.applyPRInfo(s, threadID, info); err != nil {
-			log.Printf("pr-status: apply thread=%s: %v", threadID, err)
-			continue
-		}
-		// applyPRInfo does not remove worktrees (may run while job still held); do it now if idle.
-		if ghpr.IsTerminal(info.State) {
-			if err := b.cleanupAfterTerminalPR(threadID, info); err != nil {
-				log.Printf("pr-status: cleanup after poll thread=%s: %v", threadID, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		for _, pr := range e.PRs {
+			if ghpr.IsTerminal(pr.State) {
+				continue // keep terminal cards as-is until all done
+			}
+			sel := pr.Selector()
+			if sel == "" {
 				continue
 			}
-		} else {
-			// Open PR: debounced CI failure digest (+ optional auto-fix).
-			b.maybeHandleCIFailure(s, threadID, info)
+			info, err := ghpr.View(ctx, repoDir, sel)
+			if err != nil {
+				log.Printf("pr-status: poll thread=%s pr=%s: %v", threadID, sel, err)
+				continue
+			}
+			if err := b.applyPRInfo(s, threadID, info); err != nil {
+				log.Printf("pr-status: apply thread=%s: %v", threadID, err)
+				continue
+			}
+			if !ghpr.IsTerminal(info.State) {
+				b.maybeHandleCIFailure(s, threadID, info)
+			}
+			updated++
 		}
-		updated++
+		cancel()
+
+		// Re-check after updates: all may now be terminal.
+		if e2, ok := b.sessions.Get(threadID); ok {
+			e2.NormalizePRs()
+			if e2.AllPRsTerminal() && !b.isThreadBusy(threadID) {
+				if err := b.cleanupWhenAllPRsDone(threadID); err != nil {
+					log.Printf("pr-status: cleanup after poll thread=%s: %v", threadID, err)
+				}
+			}
+		}
 	}
 	return updated
 }
 
-// refreshPRAfterTask discovers/updates the PR status card after a Grok run.
+// refreshPRAfterTask discovers/updates PR status cards after a Grok run.
+// Supports multiple PR URLs in the reply plus the worktree branch PR.
 func (b *Bot) refreshPRAfterTask(s *discordgo.Session, threadID, repoDir, branch, replyText string) {
 	if s == nil || threadID == "" {
 		return
@@ -110,152 +127,225 @@ func (b *Bot) refreshPRAfterTask(s *discordgo.Session, threadID, repoDir, branch
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	var prev sessionstore.Entry
 	if e, ok := b.sessions.Get(threadID); ok {
 		prev = e
+		prev.NormalizePRs()
 		if branch == "" {
 			branch = e.WorktreeBranch
 		}
 	}
-	if branch != "" {
-		prev.WorktreeBranch = branch
-	}
 
-	info, err := b.resolvePRInfo(ctx, repoDir, prev, replyText)
-	if err != nil {
-		// No PR yet is normal for investigate-only runs.
-		if prev.PRNumber == 0 && prev.PRURL == "" {
-			log.Printf("pr-status: no PR yet thread=%s: %v", threadID, err)
+	infos := b.discoverPRInfos(ctx, repoDir, prev, branch, replyText)
+	if len(infos) == 0 {
+		if !prev.HasAnyPR() {
+			log.Printf("pr-status: no PR yet thread=%s", threadID)
 			return
 		}
-		log.Printf("pr-status: refresh thread=%s: %v", threadID, err)
-		return
+		// Refresh already-tracked open PRs even if this reply had no URL.
+		for _, pr := range prev.PRs {
+			if ghpr.IsTerminal(pr.State) {
+				continue
+			}
+			sel := pr.Selector()
+			if sel == "" {
+				continue
+			}
+			info, err := ghpr.View(ctx, repoDir, sel)
+			if err != nil {
+				log.Printf("pr-status: refresh tracked %s: %v", sel, err)
+				continue
+			}
+			infos = append(infos, info)
+		}
 	}
-	if err := b.applyPRInfo(s, threadID, info); err != nil {
-		log.Printf("pr-status: apply after task thread=%s: %v", threadID, err)
+	for _, info := range infos {
+		if err := b.applyPRInfo(s, threadID, info); err != nil {
+			log.Printf("pr-status: apply after task thread=%s pr=#%d: %v", threadID, info.Number, err)
+		}
 	}
 }
 
-// tryCleanupTerminalPR removes worktree/session when the thread is idle and PR is terminal.
-// Call after finishRun releases the job so cleanup is not skipped while a run is "active".
+// discoverPRInfos collects PRs from reply URLs and optional worktree branch.
+func (b *Bot) discoverPRInfos(ctx context.Context, repoDir string, prev sessionstore.Entry, branch, replyText string) []ghpr.Info {
+	seen := map[string]struct{}{}
+	var out []ghpr.Info
+	add := func(info ghpr.Info) {
+		if info.Number <= 0 && info.URL == "" {
+			return
+		}
+		key := strings.ToLower(strings.TrimRight(info.URL, "/"))
+		if key == "" {
+			key = fmt.Sprintf("%s/%s#%d", info.Owner, info.Repo, info.Number)
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, info)
+	}
+
+	// 1) All PR URLs in the model reply (multi-PR / multi-repo).
+	if replyText != "" {
+		for _, u := range ghpr.ParseGitHubPRURLs(replyText) {
+			info, err := ghpr.View(ctx, repoDir, u.URL)
+			if err != nil {
+				log.Printf("pr-status: view by URL %s: %v", u.URL, err)
+				// Still track minimally from the URL so we can retry later.
+				add(ghpr.Info{
+					Number: u.Number,
+					URL:    u.URL,
+					Owner:  u.Owner,
+					Repo:   u.Repo,
+					State:  "OPEN",
+				})
+				continue
+			}
+			add(info)
+		}
+	}
+
+	// 2) Worktree branch PR (primary project repo).
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		branch = strings.TrimSpace(prev.WorktreeBranch)
+	}
+	if branch != "" {
+		if info, err := ghpr.ViewByHead(ctx, repoDir, branch); err == nil {
+			add(info)
+		}
+	}
+
+	// 3) Already-tracked PRs not rediscovered (refresh).
+	for _, pr := range prev.PRs {
+		sel := pr.Selector()
+		if sel == "" {
+			continue
+		}
+		key := strings.ToLower(strings.TrimRight(pr.URL, "/"))
+		if key == "" {
+			key = pr.PRKey()
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		if info, err := ghpr.View(ctx, repoDir, sel); err == nil {
+			add(info)
+		}
+	}
+	return out
+}
+
+// tryCleanupTerminalPR removes worktree/session when idle and all tracked PRs are terminal.
 func (b *Bot) tryCleanupTerminalPR(threadID string) {
 	e, ok := b.sessions.Get(threadID)
-	if !ok || !ghpr.IsTerminal(e.PRState) {
+	if !ok {
+		return
+	}
+	e.NormalizePRs()
+	if !e.AllPRsTerminal() {
+		if e.HasOpenPR() {
+			return
+		}
+		// No PRs at all — nothing to do on this path.
 		return
 	}
 	if b.isThreadBusy(threadID) {
-		log.Printf("pr-status: defer terminal cleanup (busy) thread=%s state=%s", threadID, e.PRState)
+		log.Printf("pr-status: defer terminal cleanup (busy) thread=%s", threadID)
 		return
 	}
-	if err := b.cleanupAfterTerminalPR(threadID, entryPRInfo(e)); err != nil {
+	if err := b.cleanupWhenAllPRsDone(threadID); err != nil {
 		log.Printf("pr-status: tryCleanup thread=%s: %v", threadID, err)
 	}
 }
 
-func (b *Bot) resolvePRInfo(ctx context.Context, repoDir string, prev sessionstore.Entry, replyText string) (ghpr.Info, error) {
-	// 1) PR URLs in the model reply.
-	if replyText != "" {
-		if urls := ghpr.ParseGitHubPRURLs(replyText); len(urls) > 0 {
-			info, err := ghpr.View(ctx, repoDir, urls[0].URL)
-			if err == nil {
-				return info, nil
-			}
-			log.Printf("pr-status: view by URL %s: %v", urls[0].URL, err)
-		}
-	}
-
-	// 2) Existing session PR.
-	if prev.PRURL != "" {
-		if info, err := ghpr.View(ctx, repoDir, prev.PRURL); err == nil {
-			return info, nil
-		} else {
-			log.Printf("pr-status: view by stored URL: %v", err)
-		}
-	}
-	if prev.PRNumber > 0 {
-		if info, err := ghpr.View(ctx, repoDir, fmt.Sprintf("%d", prev.PRNumber)); err == nil {
-			return info, nil
-		} else {
-			log.Printf("pr-status: view by number %d: %v", prev.PRNumber, err)
-		}
-	}
-
-	// 3) Branch head (worktree branch).
-	branch := strings.TrimSpace(prev.WorktreeBranch)
-	if branch != "" {
-		return ghpr.ViewByHead(ctx, repoDir, branch)
-	}
-	return ghpr.Info{}, fmt.Errorf("no PR URL, number, or branch")
-}
-
-// applyPRInfo persists PR fields and upserts the Discord card.
-// It does not remove worktrees: callers must invoke tryCleanupTerminalPR / cleanupAfterTerminalPR
-// only when the thread is idle. (executeTask still holds the job when refresh runs.)
+// applyPRInfo upserts one PR into the session and updates its Discord card.
 func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info) error {
-	if info.Number <= 0 {
+	if info.Number <= 0 && info.URL == "" {
 		return fmt.Errorf("empty PR info")
 	}
 
-	// Ensure a session row exists so the card msg id can be stored.
 	e, ok := b.sessions.Get(threadID)
 	if !ok {
 		e = sessionstore.Entry{}
 	}
-	prevState := e.PRState
-	prevMsg := e.PRStatusMsgID
+	e.NormalizePRs()
 
-	e.PRURL = info.URL
-	e.PRNumber = info.Number
-	e.PRState = info.State
-	e.PRTitle = info.Title
-	e.PRChecks = info.Checks
-	e.PRReview = info.ReviewDecision
-	e.PRHeadSHA = info.HeadSHA
-	e.PRIsDraft = info.IsDraft
+	pr := trackedFromInfo(info)
+	prevState := ""
+	if existing, found := e.FindPR(pr.Selector()); found {
+		prevState = existing.State
+		pr.StatusMsgID = existing.StatusMsgID
+		pr.CINotifiedSHA = existing.CINotifiedSHA
+		pr.CIAutoFixCount = existing.CIAutoFixCount
+		pr.CIAutoFixSHA = existing.CIAutoFixSHA
+	}
 
 	card := ghpr.FormatCard(info)
-	msgID, err := b.upsertPRStatusMessage(s, threadID, prevMsg, card)
+	msgID, err := b.upsertPRStatusMessage(s, threadID, pr.StatusMsgID, card)
 	if err != nil {
 		log.Printf("pr-status: card thread=%s: %v", threadID, err)
 	} else {
-		e.PRStatusMsgID = msgID
+		pr.StatusMsgID = msgID
 	}
 
 	if ok {
 		if _, _, pErr := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
-			ent.PRURL = e.PRURL
-			ent.PRNumber = e.PRNumber
-			ent.PRState = e.PRState
-			ent.PRTitle = e.PRTitle
-			ent.PRChecks = e.PRChecks
-			ent.PRReview = e.PRReview
-			ent.PRHeadSHA = e.PRHeadSHA
-			ent.PRIsDraft = e.PRIsDraft
-			ent.PRStatusMsgID = e.PRStatusMsgID
+			ent.NormalizePRs()
+			ent.UpsertPR(pr)
 		}); pErr != nil {
 			return pErr
 		}
 	} else if e.Project != "" || e.SessionID != "" {
+		e.UpsertPR(pr)
 		if sErr := b.sessions.Set(threadID, e); sErr != nil {
 			return sErr
 		}
 	} else {
-		// No session yet — still try to show the card once without persisting.
 		return nil
 	}
 
-	// Announce once when we learn the PR finished (state transition).
 	if ghpr.IsTerminal(info.State) && !ghpr.IsTerminal(prevState) {
-		note := fmt.Sprintf("PR **#%d** is **%s**. Worktree will be cleaned when this thread is idle.",
-			info.Number, ghpr.DisplayState(info))
+		label := fmt.Sprintf("#%d", info.Number)
+		if info.Owner != "" && info.Repo != "" {
+			label = fmt.Sprintf("%s/%s#%d", info.Owner, info.Repo, info.Number)
+		}
+		note := fmt.Sprintf("PR **%s** is **%s**.", label, ghpr.DisplayState(info))
+		// Only mention cleanup when this was the last open PR.
+		if e2, ok := b.sessions.Get(threadID); ok {
+			e2.NormalizePRs()
+			if e2.AllPRsTerminal() {
+				note += " Worktree will be cleaned when this thread is idle (all PRs finished)."
+			} else if n := len(e2.OpenPRs()); n > 0 {
+				note += fmt.Sprintf(" %d other PR(s) still open on this thread.", n)
+			}
+		}
 		if _, sendErr := discordSend(s, threadID, note); sendErr != nil {
 			log.Printf("pr-status: announce terminal thread=%s: %v", threadID, sendErr)
 		}
 	}
 	return nil
+}
+
+func trackedFromInfo(info ghpr.Info) sessionstore.TrackedPR {
+	pr := sessionstore.TrackedPR{
+		URL:     info.URL,
+		Number:  info.Number,
+		State:   info.State,
+		Title:   info.Title,
+		Checks:  info.Checks,
+		Review:  info.ReviewDecision,
+		HeadSHA: info.HeadSHA,
+		HeadRef: info.HeadRef,
+		IsDraft: info.IsDraft,
+		Owner:   info.Owner,
+		Repo:    info.Repo,
+	}
+	pr.FillOwnerRepoFromURL()
+	return pr
 }
 
 func (b *Bot) upsertPRStatusMessage(s *discordgo.Session, threadID, msgID, content string) (string, error) {
@@ -277,7 +367,8 @@ func (b *Bot) upsertPRStatusMessage(s *discordgo.Session, threadID, msgID, conte
 	return msg.ID, nil
 }
 
-func (b *Bot) cleanupAfterTerminalPR(threadID string, info ghpr.Info) error {
+// cleanupWhenAllPRsDone removes worktree + session after every tracked PR is terminal.
+func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 	if b.isThreadBusy(threadID) {
 		return fmt.Errorf("thread busy")
 	}
@@ -285,6 +376,11 @@ func (b *Bot) cleanupAfterTerminalPR(threadID string, info ghpr.Info) error {
 	if !ok {
 		return nil
 	}
+	e.NormalizePRs()
+	if e.HasOpenPR() {
+		return fmt.Errorf("open PRs remain")
+	}
+
 	mainCwd := e.MainCwd
 	if mainCwd == "" {
 		mainCwd = e.Cwd
@@ -303,7 +399,6 @@ func (b *Bot) cleanupAfterTerminalPR(threadID string, info ghpr.Info) error {
 
 	if mainCwd != "" && gitworktree.IsRepo(mainCwd) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		// Prefer full CleanupIfPRDone (also deletes remote branch) when possible.
 		cleaned, state, err := gitworktree.CleanupIfPRDone(ctx, mainCwd, b.cfg.DataDir, e.Project, threadID)
 		if err != nil {
 			log.Printf("pr-status: CleanupIfPRDone thread=%s: %v — trying Remove", threadID, err)
@@ -313,11 +408,10 @@ func (b *Bot) cleanupAfterTerminalPR(threadID string, info ghpr.Info) error {
 		} else if cleaned {
 			log.Printf("pr-status: cleaned worktree after PR %s thread=%s", state, threadID)
 		} else {
-			// PR known terminal to us but gh list might disagree (URL-only); still remove local tree.
 			if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {
 				log.Printf("pr-status: Remove (fallback) thread=%s: %v", threadID, rmErr)
 			} else {
-				log.Printf("pr-status: removed worktree (fallback) thread=%s pr=%d %s", threadID, info.Number, info.State)
+				log.Printf("pr-status: removed worktree (fallback) thread=%s prs=%d", threadID, len(e.PRs))
 			}
 		}
 		cancel()
@@ -326,12 +420,11 @@ func (b *Bot) cleanupAfterTerminalPR(threadID string, info ghpr.Info) error {
 	if delErr := b.sessions.Delete(threadID); delErr != nil {
 		return delErr
 	}
-	log.Printf("pr-status: session deleted after PR %s #%d thread=%s", info.State, info.Number, threadID)
+	log.Printf("pr-status: session deleted after all PRs terminal thread=%s count=%d", threadID, len(e.PRs))
 	return nil
 }
 
 func prRepoDir(e sessionstore.Entry) string {
-	// Prefer worktree (has the branch); fall back to main checkout.
 	if e.Cwd != "" && gitworktree.IsRepo(e.Cwd) {
 		return e.Cwd
 	}
@@ -341,21 +434,33 @@ func prRepoDir(e sessionstore.Entry) string {
 	return ""
 }
 
-func entryPRInfo(e sessionstore.Entry) ghpr.Info {
-	return ghpr.Info{
-		Number:         e.PRNumber,
-		URL:            e.PRURL,
-		Title:          e.PRTitle,
-		State:          e.PRState,
-		IsDraft:        e.PRIsDraft,
-		ReviewDecision: e.PRReview,
-		HeadSHA:        e.PRHeadSHA,
-		Checks:         e.PRChecks,
+func entryPRInfos(e sessionstore.Entry) []ghpr.Info {
+	e.NormalizePRs()
+	out := make([]ghpr.Info, 0, len(e.PRs))
+	for _, p := range e.PRs {
+		out = append(out, ghpr.Info{
+			Number:         p.Number,
+			URL:            p.URL,
+			Title:          p.Title,
+			State:          p.State,
+			IsDraft:        p.IsDraft,
+			ReviewDecision: p.Review,
+			HeadSHA:        p.HeadSHA,
+			HeadRef:        p.HeadRef,
+			Checks:         p.Checks,
+			Owner:          p.Owner,
+			Repo:           p.Repo,
+		})
 	}
+	return out
 }
 
 // preservePRFields copies PR card fields from prev onto next (session Set overwrites whole entry).
 func preservePRFields(next *sessionstore.Entry, prev sessionstore.Entry) {
+	prev.NormalizePRs()
+	if len(prev.PRs) > 0 {
+		next.PRs = append([]sessionstore.TrackedPR(nil), prev.PRs...)
+	}
 	next.PRURL = prev.PRURL
 	next.PRNumber = prev.PRNumber
 	next.PRState = prev.PRState

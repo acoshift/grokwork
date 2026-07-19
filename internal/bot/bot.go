@@ -317,7 +317,8 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		} else {
 			lines = append(lines, "**worktree:** (none — main project cwd)")
 		}
-		if prLines := ghpr.FormatStatusLines(entryPRInfo(e)); len(prLines) > 0 {
+		e.NormalizePRs()
+		if prLines := ghpr.FormatMultiStatusLines(entryPRInfos(e)); len(prLines) > 0 {
 			lines = append(lines, prLines...)
 		} else {
 			lines = append(lines, "**pr:** (none yet)")

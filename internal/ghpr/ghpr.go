@@ -23,6 +23,8 @@ type Info struct {
 	HeadSHA        string
 	HeadRef        string
 	Checks         string // human rollup, e.g. "✓ 3 · ✗ 1 · … 2"
+	Owner          string
+	Repo           string
 }
 
 // Runner runs a command in dir and returns stdout. Tests inject fakes.
@@ -119,8 +121,12 @@ func DisplayState(info Info) string {
 
 // FormatCard builds the Discord status card body (no embeds).
 func FormatCard(info Info) string {
+	label := fmt.Sprintf("#%d", info.Number)
+	if info.Owner != "" && info.Repo != "" {
+		label = fmt.Sprintf("%s/%s#%d", info.Owner, info.Repo, info.Number)
+	}
 	lines := []string{
-		fmt.Sprintf("**PR** · #%d · **%s**", info.Number, DisplayState(info)),
+		fmt.Sprintf("**PR** · %s · **%s**", label, DisplayState(info)),
 	}
 	if t := strings.TrimSpace(info.Title); t != "" {
 		lines = append(lines, "**title:** "+truncateRunes(t, 120))
@@ -146,7 +152,11 @@ func FormatStatusLines(info Info) []string {
 	if info.Number <= 0 && info.URL == "" {
 		return nil
 	}
-	line := fmt.Sprintf("**pr:** #%d · %s", info.Number, DisplayState(info))
+	label := fmt.Sprintf("#%d", info.Number)
+	if info.Owner != "" && info.Repo != "" {
+		label = fmt.Sprintf("%s/%s#%d", info.Owner, info.Repo, info.Number)
+	}
+	line := fmt.Sprintf("**pr:** %s · %s", label, DisplayState(info))
 	if info.URL != "" {
 		line += " · " + info.URL
 	}
@@ -156,6 +166,32 @@ func FormatStatusLines(info Info) []string {
 	}
 	if r := strings.TrimSpace(info.ReviewDecision); r != "" {
 		out = append(out, "**review:** "+humanReview(r))
+	}
+	return out
+}
+
+// FormatMultiStatusLines lists several PRs for @Grok /status.
+func FormatMultiStatusLines(infos []Info) []string {
+	if len(infos) == 0 {
+		return nil
+	}
+	if len(infos) == 1 {
+		return FormatStatusLines(infos[0])
+	}
+	out := []string{fmt.Sprintf("**prs:** %d tracked", len(infos))}
+	for _, info := range infos {
+		label := fmt.Sprintf("#%d", info.Number)
+		if info.Owner != "" && info.Repo != "" {
+			label = fmt.Sprintf("%s/%s#%d", info.Owner, info.Repo, info.Number)
+		}
+		line := fmt.Sprintf("• %s · %s", label, DisplayState(info))
+		if c := strings.TrimSpace(info.Checks); c != "" {
+			line += " · " + c
+		}
+		if info.URL != "" {
+			line += " · " + info.URL
+		}
+		out = append(out, line)
 	}
 	return out
 }
@@ -207,7 +243,12 @@ func ViewWith(ctx context.Context, run Runner, repoDir, selector string) (Info, 
 	if err != nil {
 		return Info{}, err
 	}
-	if sum, cErr := ChecksSummaryWith(ctx, run, repoDir, info.Number); cErr == nil {
+	fillOwnerRepo(&info)
+	sel := info.URL
+	if sel == "" {
+		sel = selector
+	}
+	if sum, cErr := ChecksSummaryWith(ctx, run, repoDir, sel); cErr == nil {
 		info.Checks = sum
 	}
 	return info, nil
@@ -252,7 +293,12 @@ func ViewByHeadWith(ctx context.Context, run Runner, repoDir, branch string) (In
 		}
 	}
 	info := pick.toInfo()
-	if sum, cErr := ChecksSummaryWith(ctx, run, repoDir, info.Number); cErr == nil {
+	fillOwnerRepo(&info)
+	sel := info.URL
+	if sel == "" {
+		sel = strconv.Itoa(info.Number)
+	}
+	if sum, cErr := ChecksSummaryWith(ctx, run, repoDir, sel); cErr == nil {
 		info.Checks = sum
 	}
 	return info, nil
@@ -267,38 +313,56 @@ type Check struct {
 }
 
 // ChecksSummary returns a short pass/fail/pending rollup for the PR.
-func ChecksSummary(ctx context.Context, repoDir string, number int) (string, error) {
-	return ChecksSummaryWith(ctx, defaultRunner, repoDir, number)
+// selector is a PR number, URL, or branch (passed to gh pr checks).
+func ChecksSummary(ctx context.Context, repoDir string, selector string) (string, error) {
+	return ChecksSummaryWith(ctx, defaultRunner, repoDir, selector)
 }
 
 // ChecksSummaryWith is ChecksSummary with an injectable runner.
-func ChecksSummaryWith(ctx context.Context, run Runner, repoDir string, number int) (string, error) {
-	checks, err := ListChecksWith(ctx, run, repoDir, number)
+func ChecksSummaryWith(ctx context.Context, run Runner, repoDir, selector string) (string, error) {
+	checks, err := ListChecksWith(ctx, run, repoDir, selector)
 	if err != nil {
 		return "", err
 	}
 	return SummarizeChecks(checks), nil
 }
 
-// ListChecks returns all check rows for a PR.
-func ListChecks(ctx context.Context, repoDir string, number int) ([]Check, error) {
-	return ListChecksWith(ctx, defaultRunner, repoDir, number)
+// ListChecks returns all check rows for a PR (number or URL selector).
+func ListChecks(ctx context.Context, repoDir, selector string) ([]Check, error) {
+	return ListChecksWith(ctx, defaultRunner, repoDir, selector)
 }
 
 // ListChecksWith is ListChecks with an injectable runner.
-func ListChecksWith(ctx context.Context, run Runner, repoDir string, number int) ([]Check, error) {
+func ListChecksWith(ctx context.Context, run Runner, repoDir, selector string) ([]Check, error) {
 	if run == nil {
 		run = defaultRunner
 	}
-	if number <= 0 {
-		return nil, fmt.Errorf("invalid PR number")
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return nil, fmt.Errorf("empty PR selector")
 	}
-	raw, err := run(ctx, repoDir, "gh", "pr", "checks", strconv.Itoa(number),
+	raw, err := run(ctx, repoDir, "gh", "pr", "checks", selector,
 		"--json", "name,state,bucket,link")
 	if err != nil {
 		return nil, err
 	}
 	return ParseChecksJSON(raw)
+}
+
+func fillOwnerRepo(info *Info) {
+	if info == nil {
+		return
+	}
+	m := githubPRURLRE.FindStringSubmatch(info.URL)
+	if len(m) < 4 {
+		return
+	}
+	if info.Owner == "" {
+		info.Owner = m[1]
+	}
+	if info.Repo == "" {
+		info.Repo = m[2]
+	}
 }
 
 type checkRow struct {
@@ -551,7 +615,7 @@ type viewJSON struct {
 }
 
 func (v viewJSON) toInfo() Info {
-	return Info{
+	info := Info{
 		Number:         v.Number,
 		URL:            v.URL,
 		Title:          v.Title,
@@ -561,6 +625,8 @@ func (v viewJSON) toInfo() Info {
 		HeadSHA:        v.HeadRefOid,
 		HeadRef:        v.HeadRefName,
 	}
+	fillOwnerRepo(&info)
+	return info
 }
 
 func parseViewJSON(raw []byte) (Info, error) {
