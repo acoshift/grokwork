@@ -26,6 +26,7 @@ Synthesized from multi-agent discussion (2026-07-18): collaboration, PR/CI ship 
 - [x] Thread ownership & hand-off (`owner` / co-owners, `/claim`, `/hand-off @user`, cancel/reset rights + mod override)
 - [x] Continuity / brief card (pinned; goal, done/left, branch, PR, files, questions; `/brief`, hand-off + post-run refresh)
 - [x] Issue / ticket binding (`#N` / issue URL auto-parse, `/link` `/unlink`, PR body Fixes/Refs + title prefix)
+- [x] PR event timeline (poller state machine: approve, changes requested, CI green, merged/closed)
 
 ## Design principles (team workflow)
 
@@ -88,7 +89,7 @@ Ship before broad eng-VPN rollout (trusted-but-fallible teammates).
 - [x] **Issue / ticket binding** — parse `#N` / issue URL; `/link`; PR body `Fixes`/`Refs` convention; title prefix
 - [ ] **Review request from Discord** — `/ready`, `/review @user` with Discord→GitHub login map; optional `#code-review` radar post
 - [ ] **Review comments → address loop** — `/comments` list unresolved; `/address` fix + push; offer `/rereview`
-- [ ] **PR event timeline** — poller state machine first (approve, changes requested, CI green, merged); webhook later on private HTTP
+- [x] **PR event timeline** — poller state machine first (approve, changes requested, CI green, merged); webhook later on private HTTP
 - [ ] **Path scope (monorepo)** — `/scope api/ mapi/`; inject into prompt; warn if diff escapes scope
 - [ ] **Worktree fleet in Discord** — `/worktrees` list; fetch + create from `origin/main` (not stale local HEAD); idle warn before prune
 - [ ] **Project conventions blurb** — inject from config or repo `GROK_DISCORD.md` (hard-capped); `/conventions`
@@ -183,7 +184,7 @@ Optional complement to mention + text parse — **not** required for team workfl
 | Slice | Includes | Outcome |
 |-------|----------|---------|
 | **A. Multi-person basics** | Ownership, claim/hand-off, queue author/replace | Threads feel intentional; less thrash |
-| **B. PR-aware thread** | ~~PR status card~~ → ~~completion diff card~~ → ~~CI triage~~ | Ship loop stays in Discord |
+| **B. PR-aware thread** | ~~PR status card~~ → ~~completion diff card~~ → ~~CI triage~~ → ~~PR event timeline~~ | Ship loop stays in Discord |
 | **C. Safe team mode** | Web auth, audit log, env filter, rate limits, attribution | OK to widen allowlist on shared host |
 | **D. Team artifacts** | ~~Continuity card~~, ~~labels + `/board`~~, templates, action buttons | Durable work items + one-tap controls |
 | **E. Review loop** | ~~Issue bind~~, `/review`, `/comments`+`/address` | Close the inner review cycle |

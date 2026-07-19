@@ -284,6 +284,8 @@ func (b *Bot) tryCleanupTerminalPR(threadID string) {
 }
 
 // applyPRInfo upserts one PR into the session and updates its Discord card.
+// On poller/task refresh it also posts a short PR event timeline when state
+// transitions (approve, changes requested, CI green, merged/closed).
 func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info) error {
 	if info.Number <= 0 && info.URL == "" {
 		return fmt.Errorf("empty PR info")
@@ -296,9 +298,13 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 	e.NormalizePRs()
 
 	pr := trackedFromInfo(info)
-	prevState := ""
+	var prevSnap ghpr.Snapshot
 	if existing, found := e.FindPR(pr.Selector()); found {
-		prevState = existing.State
+		prevSnap = ghpr.Snapshot{
+			State:  existing.State,
+			Review: existing.Review,
+			Checks: existing.Checks,
+		}
 		pr.StatusMsgID = existing.StatusMsgID
 		pr.CINotifiedSHA = existing.CINotifiedSHA
 		pr.CIAutoFixCount = existing.CIAutoFixCount
@@ -331,26 +337,43 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 		return nil
 	}
 
-	if ghpr.IsTerminal(info.State) && !ghpr.IsTerminal(prevState) {
-		label := fmt.Sprintf("#%d", info.Number)
-		if info.Owner != "" && info.Repo != "" {
-			label = fmt.Sprintf("%s/%s#%d", info.Owner, info.Repo, info.Number)
-		}
-		note := fmt.Sprintf("PR **%s** is **%s**.", label, ghpr.DisplayState(info))
-		// Only mention cleanup when this was the last open PR.
+	b.announcePRTimeline(s, threadID, prevSnap, info)
+	return nil
+}
+
+// announcePRTimeline posts discrete PR lifecycle events when the poller (or
+// post-task refresh) detects a transition. Quiet on first seed except terminal.
+func (b *Bot) announcePRTimeline(s *discordgo.Session, threadID string, prev ghpr.Snapshot, info ghpr.Info) {
+	if s == nil || threadID == "" {
+		return
+	}
+	events := ghpr.DiffTimeline(prev, ghpr.SnapshotFromInfo(info))
+	if len(events) == 0 {
+		return
+	}
+	note := ghpr.FormatTimeline(info, events)
+	if note == "" {
+		return
+	}
+	if ghpr.HasTerminalTimeline(events) {
 		if e2, ok := b.sessions.Get(threadID); ok {
 			e2.NormalizePRs()
 			if e2.AllPRsTerminal() {
-				note += " Worktree will be cleaned when this thread is idle (all PRs finished)."
+				note += "\nWorktree will be cleaned when this thread is idle (all PRs finished)."
 			} else if n := len(e2.OpenPRs()); n > 0 {
-				note += fmt.Sprintf(" %d other PR(s) still open on this thread.", n)
+				note += fmt.Sprintf("\n%d other PR(s) still open on this thread.", n)
 			}
 		}
-		if _, sendErr := discordSend(s, threadID, note); sendErr != nil {
-			log.Printf("pr-status: announce terminal thread=%s: %v", threadID, sendErr)
-		}
 	}
-	return nil
+	if _, sendErr := discordSend(s, threadID, note); sendErr != nil {
+		log.Printf("pr-status: timeline thread=%s: %v", threadID, sendErr)
+		return
+	}
+	kinds := make([]string, 0, len(events))
+	for _, ev := range events {
+		kinds = append(kinds, string(ev.Kind))
+	}
+	log.Printf("pr-status: timeline thread=%s pr=#%d events=%s", threadID, info.Number, strings.Join(kinds, ","))
 }
 
 func trackedFromInfo(info ghpr.Info) sessionstore.TrackedPR {
