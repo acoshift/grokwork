@@ -523,7 +523,9 @@
 <body>
   {{/* Boost same-origin links/forms inside the shell: swap only #live-root so the
        sse-connect EventSource on this element stays open across in-app navigation
-       (nav, table rows, back links, form redirects). target=_blank is not boosted. */}}
+       (nav, table rows, back links, form redirects). target=_blank is not boosted.
+       Live-region partials must set hx-target="this" and hx-select="unset" so they
+       do not inherit this target/select and wipe #live-root on SSE refresh. */}}
   <div class="wrap"
        hx-ext="sse"
        hx-boost="true"

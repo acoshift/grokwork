@@ -21,10 +21,13 @@
   </form>
 </div>
 
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
      id="live-worktrees-table"
      hx-get="{{route "partial.worktrees.table"}}"
      hx-trigger="sse:worktrees"
+     hx-target="this"
+     hx-select="unset"
      hx-swap="innerHTML"
      hx-sync="this:replace">
   {{template "worktrees_table" .}}

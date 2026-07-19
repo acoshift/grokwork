@@ -2,10 +2,13 @@
 <h1 id="page-dashboard">Dashboard</h1>
 <p class="sub">Live operational status of the Grok Discord bridge.</p>
 
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
      id="live-dashboard-stats"
      hx-get="{{route "partial.dashboard.stats"}}"
      hx-trigger="sse:dashboard"
+     hx-target="this"
+     hx-select="unset"
      hx-swap="innerHTML"
      hx-sync="this:replace">
   {{template "dashboard_stats" .}}
@@ -17,6 +20,8 @@
        id="live-dashboard-runs"
        hx-get="{{route "partial.dashboard.runs"}}"
        hx-trigger="sse:dashboard"
+       hx-target="this"
+       hx-select="unset"
        hx-swap="innerHTML"
        hx-sync="this:replace">
     {{template "dashboard_runs" .}}

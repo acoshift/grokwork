@@ -2,10 +2,13 @@
 <h1 id="page-ship">Ship board</h1>
 <p class="sub">All bot-tracked pull requests for leads — filter by project and state. Status comes from the session store (updated by the Discord PR poller), not a live <span class="mono">gh</span> call.</p>
 
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
      id="live-ship-stats"
      hx-get="{{route "partial.ship.stats"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
      hx-trigger="sse:ship"
+     hx-target="this"
+     hx-select="unset"
      hx-swap="innerHTML"
      hx-sync="this:replace">
   {{template "ship_stats" .}}
@@ -45,6 +48,8 @@
        id="live-ship-digest"
        hx-get="{{route "partial.ship.digest"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
        hx-trigger="sse:ship"
+       hx-target="this"
+       hx-select="unset"
        hx-swap="innerHTML"
        hx-sync="this:replace">
     {{template "ship_digest" .}}
@@ -55,6 +60,8 @@
      id="live-ship-table"
      hx-get="{{route "partial.ship.table"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
      hx-trigger="sse:ship"
+     hx-target="this"
+     hx-select="unset"
      hx-swap="innerHTML"
      hx-sync="this:replace">
   {{template "ship_table" .}}

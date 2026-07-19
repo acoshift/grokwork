@@ -229,10 +229,13 @@
   </form>
 </div>
 
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
      id="live-config-lists"
      hx-get="{{route "partial.config.lists"}}"
      hx-trigger="sse:config"
+     hx-target="this"
+     hx-select="unset"
      hx-swap="innerHTML"
      hx-sync="this:replace">
   {{template "config_lists" .}}

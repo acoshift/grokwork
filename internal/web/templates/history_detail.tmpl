@@ -1,10 +1,13 @@
 {{define "content"}}
 <p class="sub" style="margin-bottom:0.5rem"><a href="{{route "history"}}">← History</a></p>
 <h1 id="page-history-detail">Thread conversation</h1>
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
      id="live-history-turns"
      hx-get="/partials/history/turns/{{.Thread.ThreadID}}"
      hx-trigger="sse:history"
+     hx-target="this"
+     hx-select="unset"
      hx-swap="innerHTML"
      hx-sync="this:replace">
   {{template "history_turns" .}}

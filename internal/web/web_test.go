@@ -198,6 +198,14 @@ func TestPagesRender(t *testing.T) {
 					t.Fatalf("%s missing %q", tc.path, ev)
 				}
 			}
+			// Live regions must not inherit shell hx-target/hx-select (#live-root),
+			// or SSE partials wipe the whole page (partial HTML has no #live-root).
+			if strings.Count(body, `class="live-region"`) == 0 {
+				t.Fatalf("%s: expected live-region", tc.path)
+			}
+			if !strings.Contains(body, `hx-target="this"`) || !strings.Contains(body, `hx-select="unset"`) {
+				t.Fatalf("%s: live-region must set hx-target=this and hx-select=unset", tc.path)
+			}
 		}
 	})
 

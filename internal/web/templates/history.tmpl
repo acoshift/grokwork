@@ -1,9 +1,12 @@
 {{define "content"}}
 <h1 id="page-history">History</h1>
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
      id="live-history-table"
      hx-get="{{route "partial.history.table"}}"
      hx-trigger="sse:history"
+     hx-target="this"
+     hx-select="unset"
      hx-swap="innerHTML"
      hx-sync="this:replace">
   {{template "history_table" .}}
