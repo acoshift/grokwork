@@ -179,6 +179,15 @@ Optional complement to mention + text parse — **not** required for team workfl
 - [ ] Split PR by scope (`/split-pr`)
 - [ ] Optional human push approval after local commits (`requirePushApproval`)
 
+### Engineering / Discord library
+
+**Stay on `discordgo` for now** (v0.29.x). It is under-maintained / lags Discord API bits (e.g. no `PIN_MESSAGES` = `1<<51` — we own that in `BotInvitePermissions`), but still receives occasional commits and covers our surface (gateway, REST, threads, components/modals). The brief-pin 403 was our invite bitset, not a library bug.
+
+- [ ] **Do not migrate until a real trigger** — gateway/API breakage we can’t patch in a day; repeated need for new Discord features missing upstream; or multi-month silence that blocks us
+- [ ] **If migrating: prefer [disgo](https://github.com/disgoorg/disgo)** over arikawa/disgord (active, modular gateway/rest/events; pre-v1 so expect breaks). Full rewrite ~23 files under `internal/bot/` + `main.go` — multi-day, high regression risk on stream/action bar/brief/ownership
+- [ ] **Cheap risk reduction meanwhile:** keep owning lagging permission/flag constants locally; optionally thicken Discord ports (`Messenger`-style) so a future swap is adapters, not every handler
+- [ ] Revisit ~6–12 months or on the next Discord API hard break
+
 ## Suggested build slices
 
 | Slice | Includes | Outcome |
