@@ -521,15 +521,20 @@
   </style>
 </head>
 <body>
-  <div class="wrap" hx-ext="sse" {{if .SSEPath}}sse-connect="{{.SSEPath}}"{{end}}>
+  {{/* Boost same-origin links/forms inside the shell: swap only #live-root so the
+       sse-connect EventSource on this element stays open across in-app navigation
+       (nav, table rows, back links, form redirects). target=_blank is not boosted. */}}
+  <div class="wrap"
+       hx-ext="sse"
+       hx-boost="true"
+       hx-target="#live-root"
+       hx-select="#live-root"
+       hx-swap="outerHTML show:none"
+       {{if .SSEPath}}sse-connect="{{.SSEPath}}"{{end}}>
     <header class="app">
       <div class="brand">Grok Discord <span>· admin</span></div>
       <div class="header-end">
-        {{/* Boost nav only: swap #live-root so the parent sse-connect socket stays open. */}}
-        <nav hx-boost="true"
-             hx-target="#live-root"
-             hx-select="#live-root"
-             hx-swap="outerHTML show:none">
+        <nav>
           <a href="{{route "dashboard"}}" class="{{if .IsDashboard}}active{{end}}">Dashboard</a>
           <a href="{{route "ship"}}" class="{{if .IsShip}}active{{end}}">Ship</a>
           <a href="{{route "history"}}" class="{{if .IsHistory}}active{{end}}">History</a>
