@@ -114,14 +114,19 @@ func TestPagesRender(t *testing.T) {
 				t.Fatal("missing brand")
 			}
 			// Layout hosts SSE; pages host domain live-regions.
+			// Nav is hx-boosted into #live-root so the SSE socket survives menu clicks.
 			for _, live := range []string{
 				`id="live-root"`,
+				`hx-history-elt`,
 				`id="sse-status"`,
 				`hx-ext="sse"`,
 				`sse-connect=`,
 				"/events",
 				"/static/htmx.min.js",
 				"live-region",
+				`hx-boost="true"`,
+				`hx-target="#live-root"`,
+				`hx-select="#live-root"`,
 			} {
 				if !strings.Contains(body, live) {
 					t.Fatalf("path %s missing live marker %q", tc.path, live)

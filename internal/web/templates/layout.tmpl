@@ -525,7 +525,11 @@
     <header class="app">
       <div class="brand">Grok Discord <span>· admin</span></div>
       <div class="header-end">
-        <nav>
+        {{/* Boost nav only: swap #live-root so the parent sse-connect socket stays open. */}}
+        <nav hx-boost="true"
+             hx-target="#live-root"
+             hx-select="#live-root"
+             hx-swap="outerHTML">
           <a href="{{route "dashboard"}}" class="{{if .IsDashboard}}active{{end}}">Dashboard</a>
           <a href="{{route "ship"}}" class="{{if .IsShip}}active{{end}}">Ship</a>
           <a href="{{route "history"}}" class="{{if .IsHistory}}active{{end}}">History</a>
@@ -535,8 +539,9 @@
         <span id="sse-status" title="Live updates via SSE">connecting…</span>
       </div>
     </header>
-    {{/* Page content hosts per-domain live-region partials (sse:dashboard/ship/…). */}}
-    <div id="live-root">
+    {{/* Page content hosts per-domain live-region partials (sse:dashboard/ship/…).
+         hx-history-elt: back/forward restores only this region, not the SSE shell. */}}
+    <div id="live-root" hx-history-elt>
       {{template "content" .}}
     </div>
   </div>
@@ -627,6 +632,25 @@
         setStatus("refresh failed", "err");
       }
     });
+
+    // Nav active class is server-rendered on full load; keep it in sync after
+    // boosted SPA navigations (and browser back/forward restores).
+    function updateNavActive() {
+      var path = location.pathname || "/";
+      document.querySelectorAll("nav a[href]").forEach(function (a) {
+        var href = a.getAttribute("href") || "";
+        var active;
+        if (href === "/") {
+          active = path === "/";
+        } else {
+          active = path === href || path.indexOf(href + "/") === 0;
+        }
+        a.classList.toggle("active", !!active);
+      });
+    }
+    document.body.addEventListener("htmx:pushedIntoHistory", updateNavActive);
+    document.body.addEventListener("htmx:replacedInHistory", updateNavActive);
+    document.body.addEventListener("htmx:historyRestore", updateNavActive);
 
     if (!{{json .SSEPath}}) {
       setStatus("offline", "err");
