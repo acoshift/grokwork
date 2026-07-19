@@ -1,12 +1,34 @@
 package bot
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
+
+func TestHelpTextFitsDiscordChunks(t *testing.T) {
+	// Discord content max is 2000; we reserve headroom via maxMsg and the multi-part prefix.
+	const discordMax = 2000
+	parts := splitMessage(HelpText())
+	if len(parts) == 0 {
+		t.Fatal("expected at least one part")
+	}
+	for i, p := range parts {
+		content := p
+		if len(parts) > 1 {
+			content = fmt.Sprintf("(%d/%d)\n%s", i+1, len(parts), p)
+		}
+		if n := len([]rune(content)); n > discordMax {
+			t.Fatalf("help chunk %d/%d is %d runes (limit %d)", i+1, len(parts), n, discordMax)
+		}
+		if len(content) > discordMax {
+			t.Fatalf("help chunk %d/%d is %d bytes (limit %d)", i+1, len(parts), len(content), discordMax)
+		}
+	}
+}
 
 func TestParseMessage(t *testing.T) {
 	p := ParseMessage("<@123> project:app fix bug", "123")

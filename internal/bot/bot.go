@@ -271,9 +271,7 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	switch parsed.Kind {
 	case KindEmpty, KindHelp:
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, HelpText(), ref(m)); err != nil {
-			log.Printf("error: reply help: %v", err)
-		}
+		sendChunksReply(s, m.ChannelID, HelpText(), ref(m))
 	case KindProjects:
 		parentID := parentChannelID(s, m.ChannelID)
 		msg := b.channelProjectHelp(parentID)
@@ -1255,6 +1253,13 @@ func ref(m *discordgo.MessageCreate) *discordgo.MessageReference {
 }
 
 func sendChunks(s *discordgo.Session, channelID, text string) {
+	sendChunksReply(s, channelID, text, nil)
+}
+
+// sendChunksReply posts text in Discord-safe chunks (≤ maxMsg). When reference is
+// non-nil, the first chunk is a reply to that message; remaining chunks are plain
+// channel messages so the full body can exceed Discord's 2000-char content limit.
+func sendChunksReply(s *discordgo.Session, channelID, text string, reference *discordgo.MessageReference) {
 	parts := splitMessage(text)
 	log.Printf("reply: channel=%s parts=%d totalLen=%d", channelID, len(parts), len(text))
 	for i, p := range parts {
@@ -1262,7 +1267,13 @@ func sendChunks(s *discordgo.Session, channelID, text string) {
 		if len(parts) > 1 {
 			content = fmt.Sprintf("(%d/%d)\n%s", i+1, len(parts), p)
 		}
-		if _, err := discordSend(s, channelID, content); err != nil {
+		var err error
+		if i == 0 && reference != nil {
+			_, err = discordSendReply(s, channelID, content, reference)
+		} else {
+			_, err = discordSend(s, channelID, content)
+		}
+		if err != nil {
 			log.Printf("error: send chunk %d/%d channel=%s: %v", i+1, len(parts), channelID, err)
 			// Surface a short error so the thread is not left silent.
 			if _, err2 := discordSend(s, channelID,
