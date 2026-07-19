@@ -25,5 +25,7 @@
   "worktreeIdleTTLDays": 30,
   "httpListen": ":8787",
   "autoFixCI": false,
-  "autoFixCIMax": 2
+  "autoFixCIMax": 2,
+  "boardStaleDays": 3,
+  "boardDigestChannel": ""
 }

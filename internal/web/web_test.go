@@ -443,6 +443,22 @@ func TestConfigAddsPersist(t *testing.T) {
 		t.Fatalf("risky globs=%v", cfg.RiskyPathGlobsEffective())
 	}
 
+	// Settings: team board
+	reqBoard := httptest.NewRequest(http.MethodPost, "/config/settings", strings.NewReader(url.Values{
+		"section":            {"board"},
+		"boardStaleDays":     {"7"},
+		"boardDigestChannel": {"999888777"},
+	}.Encode()))
+	reqBoard.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wBoard := httptest.NewRecorder()
+	h.ServeHTTP(wBoard, reqBoard)
+	if wBoard.Code != http.StatusSeeOther && wBoard.Code != http.StatusFound {
+		t.Fatalf("board settings status=%d body=%s", wBoard.Code, wBoard.Body.String())
+	}
+	if cfg.BoardStaleDaysValue() != 7 || cfg.BoardDigestChannelValue() != "999888777" {
+		t.Fatalf("board stale=%d channel=%q", cfg.BoardStaleDaysValue(), cfg.BoardDigestChannelValue())
+	}
+
 	// Removes
 	removes := []postCase{
 		{

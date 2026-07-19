@@ -213,6 +213,7 @@ func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
 	_ = s.UpdateGameStatus(0, "@Grok <task>")
 	b.startIdleWorktreeCleanup()
 	b.startPRStatusPoller(s)
+	b.startBoardDigest(s)
 }
 
 func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {

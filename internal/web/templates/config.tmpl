@@ -65,6 +65,27 @@
   </form>
 </div>
 
+<div class="section card" id="team-board">
+  <h2>Team activity board</h2>
+  <p class="sub" style="margin-top:0">
+    <span class="mono">@Grok /board</span> groups threads by activity (running, queued, waiting on human, stale).
+    Stale is based on session inactivity. Optional nightly digest posts the board into a Discord channel.
+  </p>
+  <form class="inline" method="post" action="{{route "config.settings"}}" style="grid-template-columns: 1fr 2fr auto;">
+    <input type="hidden" name="section" value="board">
+    <div>
+      <label for="board-stale-days">Stale after (days)</label>
+      <input id="board-stale-days" type="number" name="boardStaleDays" min="1" step="1" required value="{{.Config.BoardStaleDays}}" autocomplete="off">
+    </div>
+    <div>
+      <label for="board-digest-channel">Nightly digest channel ID</label>
+      <input id="board-digest-channel" type="text" name="boardDigestChannel" value="{{.Config.BoardDigestChannel}}" placeholder="optional Discord channel ID" autocomplete="off">
+    </div>
+    <button type="submit">Save</button>
+  </form>
+  <p class="sub" style="margin:0.5rem 0 0">Default stale threshold is <span class="mono">3</span> days. Leave the channel empty to disable the digest.</p>
+</div>
+
 <div class="section card" id="ci-triage">
   <h2>CI triage</h2>
   <p class="sub" style="margin-top:0">

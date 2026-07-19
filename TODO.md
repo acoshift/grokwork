@@ -78,7 +78,7 @@ Ship before broad eng-VPN rollout (trusted-but-fallible teammates).
 
 - [x] **Continuity / brief card** — pin or update one message: goal, done/left, branch, PR, key files, open questions; refresh on `/brief` and hand-off
 - [x] **Thread labels & lifecycle** — `open → in_progress → blocked → needs_review → done | abandoned`; auto on PR open/merge; `/label`, `/board` filters
-- [ ] **Team activity board** — `@Grok /board [project]`: running, queued, waiting on human, stale; optional nightly digest channel
+- [x] **Team activity board** — `@Grok /board [project]`: running, queued, waiting on human, stale; optional nightly digest channel
 - [ ] **Task templates / presets** — Investigate · Fix tests · Review PR · Minimal fix via `@Grok /start …` or short aliases; inject fixed preambles; freeform always allowed
 - [x] **Run action bar** — buttons on status/done: Cancel · Continue (modal) · Reset (confirm) · History (admin path; no slash required)
 - [ ] **Notification hygiene** — `notifyOnDone: never | errors | always | long_only`; parent channel quiet, thread local
@@ -186,7 +186,7 @@ Optional complement to mention + text parse — **not** required for team workfl
 | **A. Multi-person basics** | Ownership, claim/hand-off, queue author/replace | Threads feel intentional; less thrash |
 | **B. PR-aware thread** | ~~PR status card~~ → ~~completion diff card~~ → ~~CI triage~~ → ~~PR event timeline~~ | Ship loop stays in Discord |
 | **C. Safe team mode** | Web auth, audit log, env filter, rate limits, attribution | OK to widen allowlist on shared host |
-| **D. Team artifacts** | ~~Continuity card~~, ~~labels + `/board`~~, templates, action buttons | Durable work items + one-tap controls |
+| **D. Team artifacts** | ~~Continuity card~~, ~~labels + `/board`~~, ~~team activity board~~, templates, action buttons | Durable work items + one-tap controls |
 | **E. Review loop** | ~~Issue bind~~, `/review`, `/comments`+`/address` | Close the inner review cycle |
 | **F. Slash (optional)** | Guild register + channel permission allowlist = `config.channels` | Mobile autocomplete without polluting unmapped channels |
 | **G. Linear bridge** | L1 bind+prompt → L2 attachments/comments → L3 webhooks → (optional) L4 agent | Tickets stay in Linear; execution stays Discord+Grok |

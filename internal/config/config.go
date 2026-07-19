@@ -17,6 +17,8 @@ const (
 	DefaultAutoFixCIMax        = 2
 	DefaultMaxTurns            = 40
 	DefaultTimeoutMs           = 30 * 60 * 1000 // 30 minutes
+	// DefaultBoardStaleDays is days of inactivity before a thread is "stale" on /board.
+	DefaultBoardStaleDays = 3
 	// MinTimeoutMs is the smallest allowed per-run timeout (1 second).
 	MinTimeoutMs = 1000
 	// MaxTimeoutMs caps the per-run timeout at 24 hours.
@@ -76,6 +78,12 @@ type Config struct {
 	AutoFixCI *bool `json:"autoFixCI,omitempty"`
 	// AutoFixCIMax is the max auto-queued fix attempts per thread session (default 2).
 	AutoFixCIMax int `json:"autoFixCIMax,omitempty"`
+	// BoardStaleDays is days without session activity before /board lists a thread as stale.
+	// nil/omitted → DefaultBoardStaleDays (3). Minimum 1.
+	BoardStaleDays *int `json:"boardStaleDays,omitempty"`
+	// BoardDigestChannel is an optional Discord channel ID for the nightly team board post.
+	// Empty/omitted disables the digest.
+	BoardDigestChannel string `json:"boardDigestChannel,omitempty"`
 
 	mu           sync.RWMutex
 	AllowedUsers map[string]struct{} `json:"-"`
@@ -112,9 +120,11 @@ type Snapshot struct {
 	WorktreeIsolation   bool
 	WorktreeIdleTTLDays int // effective value (default 30 when unset)
 	AutoFixCI           bool
-	AutoFixCIMax        int      // effective cap (default 2)
-	RiskyPathGlobsText  string   // configured globs, one per line (empty if using defaults)
-	RiskyPathUseDefault bool     // true when riskyPathGlobs is unset (nil)
+	AutoFixCIMax        int    // effective cap (default 2)
+	RiskyPathGlobsText  string // configured globs, one per line (empty if using defaults)
+	RiskyPathUseDefault bool   // true when riskyPathGlobs is unset (nil)
+	BoardStaleDays      int    // effective (default 3)
+	BoardDigestChannel  string // empty = digest disabled
 	ClientID            string
 	InviteURL           string
 	InviteError         string
@@ -208,6 +218,45 @@ func (c *Config) AutoFixCIMaxAttempts() int {
 		return DefaultAutoFixCIMax
 	}
 	return c.AutoFixCIMax
+}
+
+// BoardStaleDaysValue returns days of inactivity for the /board stale bucket.
+// Omitted config uses DefaultBoardStaleDays; values < 1 fall back to the default.
+func (c *Config) BoardStaleDaysValue() int {
+	if c == nil {
+		return DefaultBoardStaleDays
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.BoardStaleDays == nil || *c.BoardStaleDays < 1 {
+		return DefaultBoardStaleDays
+	}
+	return *c.BoardStaleDays
+}
+
+// BoardDigestChannelValue returns the Discord channel ID for the nightly board digest, or "".
+func (c *Config) BoardDigestChannelValue() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return strings.TrimSpace(c.BoardDigestChannel)
+}
+
+// SetBoardSettings sets board stale threshold and optional digest channel, then persists.
+// staleDays must be >= 1. digestChannel empty disables the nightly post.
+func (c *Config) SetBoardSettings(staleDays int, digestChannel string) error {
+	if staleDays < 1 {
+		return fmt.Errorf("boardStaleDays must be >= 1")
+	}
+	digestChannel = strings.TrimSpace(digestChannel)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	d := staleDays
+	c.BoardStaleDays = &d
+	c.BoardDigestChannel = digestChannel
+	return c.saveLocked()
 }
 
 // ListenAddr returns the HTTP bind address (env overrides config).
@@ -335,6 +384,8 @@ func (c *Config) saveLocked() error {
 		RiskyPathGlobs       []string          `json:"riskyPathGlobs,omitempty"`
 		AutoFixCI            *bool             `json:"autoFixCI,omitempty"`
 		AutoFixCIMax         int               `json:"autoFixCIMax,omitempty"`
+		BoardStaleDays       *int              `json:"boardStaleDays,omitempty"`
+		BoardDigestChannel   string            `json:"boardDigestChannel,omitempty"`
 	}{
 		DiscordToken:         c.DiscordToken,
 		DiscordClientID:      c.DiscordClientID,
@@ -356,6 +407,8 @@ func (c *Config) saveLocked() error {
 		RiskyPathGlobs:       slices.Clone(c.RiskyPathGlobs),
 		AutoFixCI:            c.AutoFixCI,
 		AutoFixCIMax:         c.AutoFixCIMax,
+		BoardStaleDays:       cloneIntPtr(c.BoardStaleDays),
+		BoardDigestChannel:   c.BoardDigestChannel,
 	}
 	raw, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
@@ -665,6 +718,10 @@ func (c *Config) Snapshot() Snapshot {
 	if c.AutoFixCIMax > 0 {
 		autoFixMax = c.AutoFixCIMax
 	}
+	boardStale := DefaultBoardStaleDays
+	if c.BoardStaleDays != nil && *c.BoardStaleDays >= 1 {
+		boardStale = *c.BoardStaleDays
+	}
 	// When using built-in defaults, still show them in the UI so unchecking
 	// "use defaults" does not save an empty list (which disables risk flags).
 	riskyDefault := c.RiskyPathGlobs == nil
@@ -700,6 +757,8 @@ func (c *Config) Snapshot() Snapshot {
 		AutoFixCIMax:        autoFixMax,
 		RiskyPathGlobsText:  riskyText,
 		RiskyPathUseDefault: riskyDefault,
+		BoardStaleDays:      boardStale,
+		BoardDigestChannel:  strings.TrimSpace(c.BoardDigestChannel),
 		InvitePermissions:   BotInvitePermissions,
 	}
 	// ClientID/InviteURL may read DiscordClientID/DiscordToken; unlock first.

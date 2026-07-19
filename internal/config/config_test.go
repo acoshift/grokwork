@@ -371,6 +371,57 @@ func TestWorktreeIdleTTLDays(t *testing.T) {
 	}
 }
 
+func TestBoardSettings(t *testing.T) {
+	cfg := &Config{
+		Projects:   map[string]string{},
+		Channels:   map[string]string{},
+		ConfigPath: filepath.Join(t.TempDir(), "config.json"),
+	}
+	if cfg.BoardStaleDaysValue() != DefaultBoardStaleDays {
+		t.Fatalf("default stale=%d", cfg.BoardStaleDaysValue())
+	}
+	if cfg.BoardDigestChannelValue() != "" {
+		t.Fatal("default digest channel should be empty")
+	}
+	if err := cfg.SetBoardSettings(5, "1234567890"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BoardStaleDaysValue() != 5 {
+		t.Fatalf("stale=%d", cfg.BoardStaleDaysValue())
+	}
+	if cfg.BoardDigestChannelValue() != "1234567890" {
+		t.Fatalf("channel=%q", cfg.BoardDigestChannelValue())
+	}
+	snap := cfg.Snapshot()
+	if snap.BoardStaleDays != 5 || snap.BoardDigestChannel != "1234567890" {
+		t.Fatalf("snapshot %+v", snap)
+	}
+	if err := cfg.SetBoardSettings(0, ""); err == nil {
+		t.Fatal("expected error for staleDays < 1")
+	}
+	if err := cfg.SetBoardSettings(3, ""); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BoardDigestChannelValue() != "" {
+		t.Fatal("empty channel should clear digest")
+	}
+
+	disk, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		BoardStaleDays     *int   `json:"boardStaleDays"`
+		BoardDigestChannel string `json:"boardDigestChannel"`
+	}
+	if err := json.Unmarshal(disk, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.BoardStaleDays == nil || *parsed.BoardStaleDays != 3 {
+		t.Fatalf("disk stale=%v", parsed.BoardStaleDays)
+	}
+}
+
 func contains(ss []string, want string) bool {
 	for _, s := range ss {
 		if s == want {

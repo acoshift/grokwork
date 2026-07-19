@@ -48,6 +48,8 @@ cp config.example.json config.json
 | `summarizeTimeoutMs` | Timeout for the title summary call (default 45000) |
 | `worktreeIsolation` | Per-thread git worktree under `data/worktrees/` (default true; non-git projects use main cwd) |
 | `worktreeIdleTTLDays` | Days of inactivity before pruning idle worktrees (default `30`; `0` disables). Editable on the Config page |
+| `boardStaleDays` | Days without session activity before `/board` lists a thread as **stale** (default `3`). Editable on the Config page |
+| `boardDigestChannel` | Optional Discord channel ID for a nightly team board post (empty = disabled). Editable on the Config page |
 | `httpListen` | Private-network web UI bind address (default `:8787`; override with `GROK_DISCORD_HTTP_LISTEN`) |
 
 `config.json` is gitignored. Never commit tokens, user IDs, or private project paths.
@@ -62,7 +64,7 @@ While the process runs it also serves a small server-rendered admin UI (hime + `
 | `/ship` | Ship board — all bot-tracked PRs per project, CI/review status, copyable lead digest |
 | `/history` | Thread list; open a thread to read each user/Grok turn |
 | `/worktrees` | List per-thread git worktrees; prune one or all past idle TTL |
-| `/config` | Add/remove projects, channel→project map, allowed users/roles, worktree idle TTL, CI auto-fix, completion risk globs |
+| `/config` | Add/remove projects, channel→project map, allowed users/roles, worktree idle TTL, team board digest, CI auto-fix, completion risk globs |
 
 Bind for Tailscale or LAN with `"httpListen": "0.0.0.0:8787"` (or a Tailscale IP). There is **no auth** on this UI — only expose it on a private network or VPN.
 
@@ -132,7 +134,7 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 | `@Grok /brief` | Pin/update the continuity card (goal, label, done/left, branch, PR, key files) |
 | `@Grok /brief goal <text>` | Set the sticky goal, then refresh the brief card |
 | `@Grok /label` | Show lifecycle label; `/label <state>` sets manual; `/label auto` re-enables auto |
-| `@Grok /board [project] [label or all]` | Team board of threads grouped by lifecycle label |
+| `@Grok /board [project] [running\|queued\|waiting\|stale\|label\|all]` | Team activity board (running, queued, waiting on human, stale) |
 | `@Grok /claim` | Take ownership of this thread |
 | `@Grok /hand-off @user` | Transfer ownership and post a short hand-off card |
 | `@Grok /reset` | Drop session + remove this thread’s git worktree (owner/mod) |
@@ -145,7 +147,9 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 
 **Continuity brief:** each thread keeps **one editable (and preferably pinned) brief card** with sticky goal, recent done turns, what’s left (queue/CI/PR), branch, PR links, key changed files, and open questions scraped from the last assistant reply. It refreshes after each non-cancelled run, on `@Grok /hand-off`, and on `@Grok /brief`. Goal defaults to the first task prompt; override with `@Grok /brief goal <text>`. Pinning needs **Manage Messages** for the bot (card still updates without pin).
 
-**Lifecycle labels:** each thread has a label `open → in_progress → blocked → needs_review → done | abandoned` (empty = open). Auto: first task → `in_progress`; ready (non-draft) open PR → `needs_review`; all PRs merged → `done`; all closed without merge → `abandoned`. Draft-only PRs stay `in_progress`. `@Grok /label blocked` (etc.) sets a **manual** label and pauses auto until `@Grok /label auto` (merge/close still force terminal labels). Shown on `/status`, brief, and hand-off. `@Grok /board` lists active threads by label; filter with `/board needs_review`, `/board <project>`, or `/board all`.
+**Lifecycle labels:** each thread has a label `open → in_progress → blocked → needs_review → done | abandoned` (empty = open). Auto: first task → `in_progress`; ready (non-draft) open PR → `needs_review`; all PRs merged → `done`; all closed without merge → `abandoned`. Draft-only PRs stay `in_progress`. `@Grok /label blocked` (etc.) sets a **manual** label and pauses auto until `@Grok /label auto` (merge/close still force terminal labels). Shown on `/status`, brief, and hand-off.
+
+**Team activity board:** `@Grok /board` lists non-terminal threads grouped by **activity**: **running** (active Grok job), **queued** (follow-ups waiting), **waiting on human** (blocked / needs review / changes requested / CI failing), **stale** (no session activity for `boardStaleDays`, default 3), and **active** (everything else). Filter with `/board waiting`, `/board stale`, `/board <project>`, lifecycle label (`/board needs_review`), or `/board all` (includes done/abandoned). Optional nightly digest posts the same card to `boardDigestChannel` (Config page or `config.json`).
 
 **Issue / ticket binding:** tasks that mention `#42`, `owner/repo#42`, or a GitHub issue URL are bound on the session (max 5). Close-intent wording (`fix` / `closes` / `resolve` near the ref) stores **Fixes**; otherwise **Refs**. `@Grok /link #42` (or `/link fix #42`, full issue URL) binds manually; `/unlink #42` and `/link clear` remove. Bound issues appear on `/status`, brief, and hand-off; Discord thread titles get a `#N` prefix when retitled; the Grok remote-work prompt requires PR body lines (`Fixes #N` / `Refs #N`) and a matching title prefix when opening a PR. One-way GitHub parse only (no Linear/Jira sync).
 

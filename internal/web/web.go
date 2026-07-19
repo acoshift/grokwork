@@ -67,15 +67,15 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.settings":      "/config/settings",
 		"sse":                  "/events",
 		// Live partials (htmx domain swaps).
-		"partial.dashboard.stats":  "/partials/dashboard/stats",
-		"partial.dashboard.runs":   "/partials/dashboard/runs",
-		"partial.ship.stats":       "/partials/ship/stats",
-		"partial.ship.digest":      "/partials/ship/digest",
-		"partial.ship.table":       "/partials/ship/table",
-		"partial.history.table":    "/partials/history/table",
-		"partial.history.turns":    "/partials/history/turns/",
-		"partial.worktrees.table":  "/partials/worktrees/table",
-		"partial.config.lists":     "/partials/config/lists",
+		"partial.dashboard.stats": "/partials/dashboard/stats",
+		"partial.dashboard.runs":  "/partials/dashboard/runs",
+		"partial.ship.stats":      "/partials/ship/stats",
+		"partial.ship.digest":     "/partials/ship/digest",
+		"partial.ship.table":      "/partials/ship/table",
+		"partial.history.table":   "/partials/history/table",
+		"partial.history.turns":   "/partials/history/turns/",
+		"partial.worktrees.table": "/partials/worktrees/table",
+		"partial.config.lists":    "/partials/config/lists",
 	})
 
 	app.TemplateFunc("add", func(a, b int) int { return a + b })
@@ -194,7 +194,7 @@ type pageData struct {
 	Worktrees   []bot.WorktreeInfo
 	IdleTTLDays int
 	Config      config.Snapshot
-	SSEPath string
+	SSEPath     string
 }
 
 func (s *Server) basePage(ctx *hime.Context) pageData {
@@ -448,6 +448,8 @@ func (s *Server) updateSettings(ctx *hime.Context) error {
 		return s.updateWorktreeSettings(ctx)
 	case "run":
 		return s.updateRunSettings(ctx)
+	case "board":
+		return s.updateBoardSettings(ctx)
 	default:
 		return s.configRedirect(ctx, "", fmt.Errorf("unknown settings section %q", section))
 	}
@@ -538,6 +540,28 @@ func (s *Server) updateWorktreeSettings(ctx *hime.Context) error {
 	msg := fmt.Sprintf("Worktree idle TTL set to %d day(s)", days)
 	if days == 0 {
 		msg = "Worktree idle cleanup disabled"
+	}
+	return s.configRedirect(ctx, msg, nil)
+}
+
+func (s *Server) updateBoardSettings(ctx *hime.Context) error {
+	rawDays := strings.TrimSpace(ctx.PostFormValue("boardStaleDays"))
+	if rawDays == "" {
+		return s.configRedirect(ctx, "", fmt.Errorf("boardStaleDays is required"))
+	}
+	days, err := strconv.Atoi(rawDays)
+	if err != nil {
+		return s.configRedirect(ctx, "", fmt.Errorf("boardStaleDays must be an integer"))
+	}
+	channel := strings.TrimSpace(ctx.PostFormValue("boardDigestChannel"))
+	if err := s.cfg.SetBoardSettings(days, channel); err != nil {
+		return s.configRedirect(ctx, "", err)
+	}
+	msg := fmt.Sprintf("Board stale threshold set to %d day(s)", days)
+	if channel == "" {
+		msg += "; nightly digest disabled"
+	} else {
+		msg += fmt.Sprintf("; digest channel %s", channel)
 	}
 	return s.configRedirect(ctx, msg, nil)
 }
