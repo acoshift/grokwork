@@ -529,7 +529,7 @@
         <nav hx-boost="true"
              hx-target="#live-root"
              hx-select="#live-root"
-             hx-swap="outerHTML">
+             hx-swap="outerHTML show:none">
           <a href="{{route "dashboard"}}" class="{{if .IsDashboard}}active{{end}}">Dashboard</a>
           <a href="{{route "ship"}}" class="{{if .IsShip}}active{{end}}">Ship</a>
           <a href="{{route "history"}}" class="{{if .IsHistory}}active{{end}}">History</a>
