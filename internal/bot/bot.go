@@ -192,7 +192,9 @@ var errQueueFull = fmt.Errorf("follow-up queue is full (max %d)", maxFollowupQue
 func (b *Bot) Register(s *discordgo.Session) {
 	s.AddHandler(b.onReady)
 	s.AddHandler(b.onMessage)
+	s.AddHandler(b.onInteraction)
 	// MESSAGE CONTENT is a privileged intent (Developer Portal → Bot).
+	// Interactions (buttons/modals) arrive without an extra intent.
 	s.Identify.Intents = discordgo.IntentsGuilds |
 		discordgo.IntentsGuildMessages |
 		discordgo.IntentsMessageContent
@@ -343,7 +345,16 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		} else {
 			lines = append(lines, "**pr:** (none yet)")
 		}
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, strings.Join(lines, "\n"), ref(m)); err != nil {
+		statusBody := strings.Join(lines, "\n")
+		if _, err := s.ChannelMessageSendComplex(m.ChannelID, &discordgo.MessageSend{
+			Content:    sanitizeDiscordContent(statusBody),
+			Reference:  ref(m),
+			Components: actionBarDone(m.ChannelID),
+			Flags:      discordgo.MessageFlagsSuppressEmbeds,
+			AllowedMentions: &discordgo.MessageAllowedMentions{
+				Parse: []discordgo.AllowedMentionType{},
+			},
+		}); err != nil {
 			log.Printf("error: reply status: %v", err)
 		}
 	case KindCancel:
@@ -387,24 +398,37 @@ func (b *Bot) handleCancel(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.denyControl(s, m, e, "cancel")
 		return
 	}
-	job, ok := b.getJob(m.ChannelID)
+	who := ""
+	if m.Author != nil {
+		who = m.Author.String()
+	}
+	msg, ok := b.cancelCurrentRun(m.ChannelID, who)
 	if !ok {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "No run in progress for this thread.", ref(m)); err != nil {
+		if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
 			log.Printf("error: reply cancel-idle: %v", err)
 		}
 		return
 	}
-	n := b.queueLen(m.ChannelID)
-	log.Printf("cancel: thread=%s project=%s elapsed=%s queued=%d user=%s",
-		m.ChannelID, job.project, formatElapsed(time.Since(job.start)), n, m.Author.String())
-	job.cancel()
-	msg := "Cancelling current run…"
-	if n > 0 {
-		msg = fmt.Sprintf("Cancelling current run… (%d follow-up%s still queued)", n, plural(n))
-	}
 	if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply cancel: %v", err)
 	}
+}
+
+// cancelCurrentRun cancels the active job if any. ok is false when idle.
+func (b *Bot) cancelCurrentRun(threadID, who string) (msg string, ok bool) {
+	job, running := b.getJob(threadID)
+	if !running {
+		return "No run in progress for this thread.", false
+	}
+	n := b.queueLen(threadID)
+	log.Printf("cancel: thread=%s project=%s elapsed=%s queued=%d user=%s",
+		threadID, job.project, formatElapsed(time.Since(job.start)), n, who)
+	job.cancel()
+	msg = "Cancelling current run…"
+	if n > 0 {
+		msg = fmt.Sprintf("Cancelling current run… (%d follow-up%s still queued)", n, plural(n))
+	}
+	return msg, true
 }
 
 func plural(n int) string {
@@ -419,17 +443,28 @@ func (b *Bot) resetThread(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.denyControl(s, m, e, "reset")
 		return
 	}
-	if _, busy := b.getJob(m.ChannelID); busy {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "A run is in progress — `@Grok /cancel` first, then `/reset`.", ref(m)); err != nil {
-			log.Printf("error: reply reset-busy: %v", err)
+	msg, err := b.resetThreadCore(m.ChannelID)
+	if err != nil {
+		if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); sendErr != nil {
+			log.Printf("error: reply reset: %v", sendErr)
 		}
 		return
 	}
-	if n := b.clearQueue(m.ChannelID); n > 0 {
-		log.Printf("reset: cleared %d queued follow-up(s) thread=%s", n, m.ChannelID)
+	if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); sendErr != nil {
+		log.Printf("error: reply reset: %v", sendErr)
+	}
+}
+
+// resetThreadCore clears session + worktree. msg is always set; err is non-nil on busy/failure.
+func (b *Bot) resetThreadCore(threadID string) (msg string, err error) {
+	if _, busy := b.getJob(threadID); busy {
+		return "A run is in progress — Cancel first, then Reset.", fmt.Errorf("busy")
+	}
+	if n := b.clearQueue(threadID); n > 0 {
+		log.Printf("reset: cleared %d queued follow-up(s) thread=%s", n, threadID)
 	}
 
-	if e, ok := b.sessions.Get(m.ChannelID); ok {
+	if e, ok := b.sessions.Get(threadID); ok {
 		mainCwd := e.MainCwd
 		if mainCwd == "" {
 			mainCwd = e.Cwd
@@ -440,28 +475,27 @@ func (b *Bot) resetThread(s *discordgo.Session, m *discordgo.MessageCreate) {
 			path = e.Cwd
 		}
 		if path == "" && mainCwd != "" {
-			path = gitworktree.WorktreePath(b.cfg.DataDir, e.Project, m.ChannelID)
+			path = gitworktree.WorktreePath(b.cfg.DataDir, e.Project, threadID)
 		}
 		if branch == "" {
-			branch = gitworktree.BranchName(m.ChannelID)
+			branch = gitworktree.BranchName(threadID)
 		}
 		if mainCwd != "" && (path != "" || branch != "") {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			if err := gitworktree.Remove(ctx, mainCwd, path, branch); err != nil {
-				log.Printf("warn: worktree cleanup on reset thread=%s: %v", m.ChannelID, err)
+			if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {
+				log.Printf("warn: worktree cleanup on reset thread=%s: %v", threadID, rmErr)
 			} else {
-				log.Printf("reset: removed worktree thread=%s branch=%s", m.ChannelID, branch)
+				log.Printf("reset: removed worktree thread=%s branch=%s", threadID, branch)
 			}
 			cancel()
 		}
 	}
 
-	if err := b.sessions.Delete(m.ChannelID); err != nil {
-		log.Printf("error: session delete: %v", err)
+	if delErr := b.sessions.Delete(threadID); delErr != nil {
+		log.Printf("error: session delete: %v", delErr)
+		return "Could not clear session: " + delErr.Error(), delErr
 	}
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, "Session cleared for this thread (worktree removed if any).", ref(m)); err != nil {
-		log.Printf("error: reply reset: %v", err)
-	}
+	return "Session cleared for this thread (worktree removed if any).", nil
 }
 
 func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID string) (cwd, branch string, err error) {
@@ -538,30 +572,10 @@ func remoteWorkPromptPrefix(branch string) string {
 }
 
 func (b *Bot) isAllowed(s *discordgo.Session, m *discordgo.MessageCreate) bool {
-	if !b.cfg.HasAllowlist() {
+	if m == nil || m.Author == nil {
 		return false
 	}
-	if b.cfg.UserAllowed(m.Author.ID) {
-		return true
-	}
-	_, roleCount := b.cfg.AllowlistSizes()
-	if roleCount == 0 {
-		return false
-	}
-	member := m.Member
-	if member == nil {
-		var err error
-		member, err = s.GuildMember(m.GuildID, m.Author.ID)
-		if err != nil {
-			return false
-		}
-	}
-	for _, roleID := range member.Roles {
-		if b.cfg.RoleAllowed(roleID) {
-			return true
-		}
-	}
-	return false
+	return b.isAllowedUser(s, m.GuildID, m.Author.ID, m.Member)
 }
 
 type projectRef struct {
@@ -694,7 +708,10 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	b.bindThreadOwner(threadID, proj.Name, m)
 
 	var thoughts thoughtTracker
-	status, err := s.ChannelMessageSend(threadID, workingStatus(proj.Name, 0, "", formatPhaseChips([phaseCount]bool{}, -1)))
+	status, err := discordSendComponents(s, threadID,
+		workingStatus(proj.Name, 0, "", formatPhaseChips([phaseCount]bool{}, -1)),
+		actionBarRunning(threadID),
+	)
 	if err != nil {
 		log.Printf("error: status message thread=%s: %v", threadID, err)
 		return
@@ -716,7 +733,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		close(stopProgress)
 		progressWG.Wait()
 		log.Printf("error: worktree thread=%s: %v", threadID, wtErr)
-		if _, editErr := s.ChannelMessageEdit(threadID, status.ID, "Failed · worktree"); editErr != nil {
+		if editErr := discordEditComponents(s, threadID, status.ID, "Failed · worktree", actionBarDone(threadID), true); editErr != nil {
 			log.Printf("error: edit status: %v", editErr)
 		}
 		sendChunks(s, threadID, "Could not create git worktree: "+wtErr.Error())
@@ -761,7 +778,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			progressWG.Wait()
 			log.Printf("error: attachments: %v", dlErr)
 			msg := "Could not download attachments: " + dlErr.Error()
-			if _, editErr := s.ChannelMessageEdit(threadID, status.ID, "Failed · attachments"); editErr != nil {
+			if editErr := discordEditComponents(s, threadID, status.ID, "Failed · attachments", actionBarDone(threadID), true); editErr != nil {
 				log.Printf("error: edit status: %v", editErr)
 			}
 			sendChunks(s, threadID, msg)
@@ -882,7 +899,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	if ctxSum := result.ContextSummary(); ctxSum != "" {
 		header += " · ctx " + ctxSum
 	}
-	if _, err := s.ChannelMessageEdit(threadID, status.ID, header); err != nil {
+	if err := discordEditComponents(s, threadID, status.ID, header, actionBarDone(threadID), true); err != nil {
 		log.Printf("error: edit status: %v", err)
 	}
 
@@ -1018,9 +1035,9 @@ func (b *Bot) progressLoop(s *discordgo.Session, threadID, msgID, project string
 func workingStatus(project string, elapsed time.Duration, activity, phases string) string {
 	var b strings.Builder
 	if elapsed < time.Second {
-		fmt.Fprintf(&b, "Working in **%s**… · `@Grok /cancel` to stop", project)
+		fmt.Fprintf(&b, "Working in **%s**… · Cancel button or `@Grok /cancel`", project)
 	} else {
-		fmt.Fprintf(&b, "Working in **%s**… · %s elapsed · `@Grok /cancel` to stop",
+		fmt.Fprintf(&b, "Working in **%s**… · %s elapsed · Cancel button or `@Grok /cancel`",
 			project, formatElapsed(elapsed))
 	}
 	phases = strings.TrimSpace(phases)

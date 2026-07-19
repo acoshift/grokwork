@@ -78,7 +78,7 @@ Ship before broad eng-VPN rollout (trusted-but-fallible teammates).
 - [ ] **Thread labels & lifecycle** — `open → in_progress → blocked → needs_review → done | abandoned`; auto on PR open/merge; `/board` filters
 - [ ] **Team activity board** — `@Grok /board [project]`: running, queued, waiting on human, stale; optional nightly digest channel
 - [ ] **Task templates / presets** — Investigate · Fix tests · Review PR · Minimal fix via `@Grok /start …` or short aliases; inject fixed preambles; freeform always allowed
-- [ ] **Run action bar** — buttons on status/done: Cancel · Continue (modal) · Reset (confirm) · Open history (no slash required)
+- [x] **Run action bar** — buttons on status/done: Cancel · Continue (modal) · Reset (confirm) · History (admin path; no slash required)
 - [ ] **Notification hygiene** — `notifyOnDone: never | errors | always | long_only`; parent channel quiet, thread local
 - [ ] **Watchers** — `@Grok /watch` or 👀; mention once on complete/fail (not every stream edit)
 

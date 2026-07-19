@@ -173,6 +173,9 @@ func HelpText() string {
 		"• `/cancel` — stop the current run (owner/mod; queued follow-ups still run)",
 		"• `/help` — this message",
 		"",
+		"**Run action bar** — buttons on the live status / done message and `/status`:",
+		"Cancel · Continue (modal) · Reset (confirm) · History (admin UI path)",
+		"",
 		"Anyone may queue tasks (soft open). Cancel/reset: thread owner, co-owners, or Discord mods (Manage Messages / Manage Threads / Admin).",
 	}, "\n")
 }

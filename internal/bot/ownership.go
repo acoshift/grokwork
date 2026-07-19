@@ -19,13 +19,7 @@ func (b *Bot) canControlThread(s *discordgo.Session, m *discordgo.MessageCreate,
 	if m == nil || m.Author == nil {
 		return false
 	}
-	if !e.HasOwner() {
-		return true
-	}
-	if e.CanControl(m.Author.ID) {
-		return true
-	}
-	return b.isModerator(s, m)
+	return b.canControlUser(s, m.ChannelID, m.Author.ID, e)
 }
 
 // isModerator is true for Administrator, Manage Messages, or Manage Threads in this channel.
@@ -33,32 +27,11 @@ func (b *Bot) isModerator(s *discordgo.Session, m *discordgo.MessageCreate) bool
 	if s == nil || m == nil || m.Author == nil {
 		return false
 	}
-	perms, err := s.UserChannelPermissions(m.Author.ID, m.ChannelID)
-	if err != nil {
-		log.Printf("warn: UserChannelPermissions user=%s channel=%s: %v", m.Author.ID, m.ChannelID, err)
-		return false
-	}
-	const modBits = discordgo.PermissionAdministrator |
-		discordgo.PermissionManageMessages |
-		discordgo.PermissionManageThreads
-	return perms&modBits != 0
+	return b.isModeratorUser(s, m.ChannelID, m.Author.ID)
 }
 
 func (b *Bot) denyControl(s *discordgo.Session, m *discordgo.MessageCreate, e sessionstore.Entry, action string) {
-	owner := e.OwnerName
-	if owner == "" {
-		owner = e.OwnerID
-	}
-	msg := fmt.Sprintf(
-		"Only the thread owner (<@%s>), co-owners, or a Discord mod can %s. Ask them, or `@Grok /claim` to take ownership.",
-		e.OwnerID, action,
-	)
-	if owner != "" && owner != e.OwnerID {
-		msg = fmt.Sprintf(
-			"Only the thread owner (**%s** / <@%s>), co-owners, or a Discord mod can %s. Ask them, or `@Grok /claim` to take ownership.",
-			owner, e.OwnerID, action,
-		)
-	}
+	msg := denyControlText(e, action)
 	if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply deny-%s: %v", action, err)
 	}

@@ -196,11 +196,11 @@ func TestFormatElapsed(t *testing.T) {
 
 func TestWorkingStatus(t *testing.T) {
 	got := workingStatus("app", 0, "", "")
-	if got != "Working in **app**… · `@Grok /cancel` to stop" {
+	if got != "Working in **app**… · Cancel button or `@Grok /cancel`" {
 		t.Fatalf("initial: %q", got)
 	}
 	got = workingStatus("app", 45*time.Second, "", "")
-	if got != "Working in **app**… · 45s elapsed · `@Grok /cancel` to stop" {
+	if got != "Working in **app**… · 45s elapsed · Cancel button or `@Grok /cancel`" {
 		t.Fatalf("elapsed: %q", got)
 	}
 	got = workingStatus("app", 45*time.Second, "reading files", "read → edit → test → PR")

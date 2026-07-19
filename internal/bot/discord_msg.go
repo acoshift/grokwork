@@ -103,20 +103,34 @@ func isMostlyURL(s string) bool {
 // contain URLs (and partial URLs mid-stream) do not thrash Discord's embed crawler
 // or fail when Embed Links is missing / rate-limited.
 func discordSend(s *discordgo.Session, channelID, content string) (*discordgo.Message, error) {
+	return discordSendComponents(s, channelID, content, nil)
+}
+
+func discordSendComponents(s *discordgo.Session, channelID, content string, components []discordgo.MessageComponent) (*discordgo.Message, error) {
 	content = sanitizeDiscordContent(content)
-	return s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+	msg := &discordgo.MessageSend{
 		Content: content,
 		Flags:   discordgo.MessageFlagsSuppressEmbeds,
 		AllowedMentions: &discordgo.MessageAllowedMentions{
 			// Do not ping roles/everyone from model output.
 			Parse: []discordgo.AllowedMentionType{},
 		},
-	})
+	}
+	if len(components) > 0 {
+		msg.Components = components
+	}
+	return s.ChannelMessageSendComplex(channelID, msg)
 }
 
 func discordEdit(s *discordgo.Session, channelID, msgID, content string) error {
+	return discordEditComponents(s, channelID, msgID, content, nil, false)
+}
+
+// discordEditComponents edits content and optionally replaces or clears components.
+// When setComponents is false, existing buttons are left unchanged (field omitted).
+func discordEditComponents(s *discordgo.Session, channelID, msgID, content string, components []discordgo.MessageComponent, setComponents bool) error {
 	content = sanitizeDiscordContent(content)
-	_, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
+	edit := &discordgo.MessageEdit{
 		Channel: channelID,
 		ID:      msgID,
 		Content: &content,
@@ -124,7 +138,16 @@ func discordEdit(s *discordgo.Session, channelID, msgID, content string) error {
 		AllowedMentions: &discordgo.MessageAllowedMentions{
 			Parse: []discordgo.AllowedMentionType{},
 		},
-	})
+	}
+	if setComponents {
+		// Empty slice clears buttons; non-empty replaces the action row(s).
+		comps := components
+		if comps == nil {
+			comps = []discordgo.MessageComponent{}
+		}
+		edit.Components = &comps
+	}
+	_, err := s.ChannelMessageEditComplex(edit)
 	return err
 }
 
