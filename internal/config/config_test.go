@@ -300,6 +300,12 @@ func TestSetGrokRunLimits(t *testing.T) {
 	if err := cfg.SetGrokRunLimits(10, 0); err == nil {
 		t.Fatal("expected error for timeoutMs 0")
 	}
+	if err := cfg.SetGrokRunLimits(10, 999); err == nil {
+		t.Fatal("expected error for timeoutMs below 1s")
+	}
+	if err := cfg.SetGrokRunLimits(10, MaxTimeoutMs+1); err == nil {
+		t.Fatal("expected error for timeoutMs above 24h")
+	}
 	if err := cfg.SetGrokRunLimits(25, 900_000); err != nil {
 		t.Fatal(err)
 	}

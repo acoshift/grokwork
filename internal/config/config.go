@@ -17,6 +17,10 @@ const (
 	DefaultAutoFixCIMax        = 2
 	DefaultMaxTurns            = 40
 	DefaultTimeoutMs           = 30 * 60 * 1000 // 30 minutes
+	// MinTimeoutMs is the smallest allowed per-run timeout (1 second).
+	MinTimeoutMs = 1000
+	// MaxTimeoutMs caps the per-run timeout at 24 hours.
+	MaxTimeoutMs = 24 * 60 * 60 * 1000
 )
 
 // DefaultRiskyPathGlobs flags completion-card paths that usually need careful review.
@@ -388,13 +392,17 @@ func (c *Config) TimeoutMsValue() int {
 }
 
 // SetGrokRunLimits sets maxTurns and timeoutMs for Grok task runs and persists.
-// Both must be >= 1. Applies to subsequent runs (in-flight runs keep their limits).
+// maxTurns must be >= 1; timeoutMs must be in [MinTimeoutMs, MaxTimeoutMs].
+// Applies to subsequent runs (in-flight runs keep their limits).
 func (c *Config) SetGrokRunLimits(maxTurns, timeoutMs int) error {
 	if maxTurns < 1 {
 		return fmt.Errorf("maxTurns must be >= 1")
 	}
-	if timeoutMs < 1 {
-		return fmt.Errorf("timeoutMs must be >= 1")
+	if timeoutMs < MinTimeoutMs {
+		return fmt.Errorf("timeoutMs must be >= %d (1 second)", MinTimeoutMs)
+	}
+	if timeoutMs > MaxTimeoutMs {
+		return fmt.Errorf("timeoutMs must be <= %d (24 hours)", MaxTimeoutMs)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

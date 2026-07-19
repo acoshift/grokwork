@@ -44,11 +44,12 @@
     </div>
     <div>
       <label for="timeout-ms">Timeout (ms)</label>
-      <input id="timeout-ms" type="number" name="timeoutMs" min="1" step="1000" required value="{{.Config.TimeoutMs}}" autocomplete="off">
+      {{/* min=1000 and step=1: min=1+step=1000 made default 1800000 fail HTML5 validation. */}}
+      <input id="timeout-ms" type="number" name="timeoutMs" min="1000" max="86400000" step="1" required value="{{.Config.TimeoutMs}}" autocomplete="off" title="1000–86400000 ms (1 second–24 hours)">
     </div>
     <button type="submit">Save</button>
   </form>
-  <p class="sub" style="margin:0.5rem 0 0">Examples: 15 min = <span class="mono">900000</span>, 30 min = <span class="mono">1800000</span>, 1 h = <span class="mono">3600000</span>.</p>
+  <p class="sub" style="margin:0.5rem 0 0">Range: 1 s–24 h. Examples: 15 min = <span class="mono">900000</span>, 30 min = <span class="mono">1800000</span>, 1 h = <span class="mono">3600000</span>.</p>
 </div>
 
 <div class="section card">
