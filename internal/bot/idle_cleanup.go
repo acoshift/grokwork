@@ -21,30 +21,40 @@ var idleCleanupOnce sync.Once
 
 func (b *Bot) startIdleWorktreeCleanup() {
 	idleCleanupOnce.Do(func() {
+		ttl := b.cfg.WorktreeIdleTTL()
+		log.Printf("bg: starting idle-worktree sweeper interval=%s ttl=%s initial_delay=30s",
+			idleCleanupInterval, ttl)
 		go b.runIdleWorktreeCleanup()
 	})
 }
 
 func (b *Bot) runIdleWorktreeCleanup() {
+	log.Printf("bg: idle-worktree sweeper running (waiting 30s before first sweep)")
 	// Brief delay so gateway ready / first messages aren't competing with a sweep.
 	time.Sleep(30 * time.Second)
-	if n := b.sweepIdleWorktrees(); n > 0 {
-		log.Printf("idle-worktree: initial sweep removed %d", n)
-	}
+	b.runIdleSweepCycle("initial")
 
 	ticker := time.NewTicker(idleCleanupInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		if n := b.sweepIdleWorktrees(); n > 0 {
-			log.Printf("idle-worktree: sweep removed %d", n)
-		}
+		b.runIdleSweepCycle("tick")
 	}
+}
+
+func (b *Bot) runIdleSweepCycle(reason string) {
+	ttl := b.cfg.WorktreeIdleTTL()
+	log.Printf("bg: idle-worktree sweep start reason=%s ttl=%s", reason, ttl)
+	start := time.Now()
+	n := b.sweepIdleWorktrees()
+	log.Printf("bg: idle-worktree sweep done reason=%s removed=%d elapsed=%s",
+		reason, n, time.Since(start).Round(time.Millisecond))
 }
 
 // sweepIdleWorktrees applies the configured TTL (0 disables).
 func (b *Bot) sweepIdleWorktrees() int {
 	ttl := b.cfg.WorktreeIdleTTL()
 	if ttl <= 0 {
+		log.Printf("bg: idle-worktree sweep skipped (ttl disabled)")
 		return 0
 	}
 	return b.pruneIdleWorktrees(time.Now(), ttl)

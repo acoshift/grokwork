@@ -23,40 +23,60 @@ var prStatusPollerOnce sync.Once
 
 func (b *Bot) startPRStatusPoller(s *discordgo.Session) {
 	prStatusPollerOnce.Do(func() {
+		log.Printf("bg: starting pr-status poller interval=%s initial_delay=45s", prStatusPollInterval)
 		go b.runPRStatusPoller(s)
 	})
 }
 
 func (b *Bot) runPRStatusPoller(s *discordgo.Session) {
+	log.Printf("bg: pr-status poller running (waiting 45s before first poll)")
 	// Stagger after idle sweeper so ready is not flooded.
 	time.Sleep(45 * time.Second)
-	if n := b.pollPRStatuses(s); n > 0 {
-		log.Printf("pr-status: initial poll updated %d", n)
-	}
+	b.runPRStatusPollCycle(s, "initial")
 
 	ticker := time.NewTicker(prStatusPollInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		if n := b.pollPRStatuses(s); n > 0 {
-			log.Printf("pr-status: poll updated %d", n)
-		}
+		b.runPRStatusPollCycle(s, "tick")
 	}
 }
 
-// pollPRStatuses refreshes cards for sessions with tracked PRs. Returns update count.
-func (b *Bot) pollPRStatuses(s *discordgo.Session) int {
+func (b *Bot) runPRStatusPollCycle(s *discordgo.Session, reason string) {
+	log.Printf("bg: pr-status poll start reason=%s", reason)
+	start := time.Now()
+	stats := b.pollPRStatuses(s)
+	log.Printf("bg: pr-status poll done reason=%s sessions=%d with_pr=%d open=%d busy=%d updated=%d elapsed=%s",
+		reason, stats.Sessions, stats.WithPR, stats.Open, stats.Busy, stats.Updated,
+		time.Since(start).Round(time.Millisecond))
+}
+
+// prPollStats summarizes one pollPRStatuses pass.
+type prPollStats struct {
+	Sessions int
+	WithPR   int
+	Open     int
+	Busy     int
+	Updated  int
+}
+
+// pollPRStatuses refreshes cards for sessions with tracked PRs.
+func (b *Bot) pollPRStatuses(s *discordgo.Session) prPollStats {
+	var stats prPollStats
 	if s == nil {
-		return 0
+		return stats
 	}
-	updated := 0
-	for _, listed := range b.sessions.List() {
+	list := b.sessions.List()
+	stats.Sessions = len(list)
+	for _, listed := range list {
 		e := listed.Entry
 		e.NormalizePRs()
 		threadID := listed.ThreadID
 		if !e.HasAnyPR() {
 			continue
 		}
+		stats.WithPR++
 		if b.isThreadBusy(threadID) {
+			stats.Busy++
 			continue
 		}
 
@@ -66,9 +86,10 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) int {
 				log.Printf("pr-status: terminal cleanup thread=%s: %v", threadID, err)
 				continue
 			}
-			updated++
+			stats.Updated++
 			continue
 		}
+		stats.Open++
 
 		// Prefer a real git worktree; fall back to project/session path so full
 		// PR URLs still work when the configured project root is a multi-repo
@@ -97,7 +118,7 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) int {
 			if !ghpr.IsTerminal(info.State) {
 				b.maybeHandleCIFailure(s, threadID, info)
 			}
-			updated++
+			stats.Updated++
 		}
 		cancel()
 
@@ -111,7 +132,7 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) int {
 			}
 		}
 	}
-	return updated
+	return stats
 }
 
 // refreshPRAfterTask discovers/updates PR status cards after a Grok run.

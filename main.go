@@ -38,9 +38,9 @@ func main() {
 	addr := cfg.ListenAddr()
 	webSrv := web.New(cfg, sessions, hist, b)
 	go func() {
-		log.Printf("web UI listening on http://%s (dashboard, history, config)", addr)
+		log.Printf("bg: web UI listening on http://%s (dashboard, ship, history, worktrees, config)", addr)
 		if err := webSrv.ListenAndServe(); err != nil {
-			log.Printf("web server stopped: %v", err)
+			log.Printf("bg: web server stopped: %v", err)
 		}
 	}()
 
