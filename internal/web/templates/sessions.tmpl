@@ -18,12 +18,12 @@
   <tbody>
     {{range .Threads}}
     <tr>
-      <td class="mono"><a href="/sessions/{{.ThreadID}}">{{.ThreadID}}</a></td>
+      <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}">{{.ThreadID}}</a></td>
       <td>{{if .Project}}{{.Project}}{{else}}<span class="muted">—</span>{{end}}</td>
-      <td>{{.TurnCount}}</td>
+      <td class="mono">{{.TurnCount}}</td>
       <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
-      <td class="mono">{{if .UpdatedAt}}{{.UpdatedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
-      <td>{{if .LastPrompt}}{{.LastPrompt}}{{else}}<span class="muted">{{if eq .TurnCount 0}}no turns recorded yet{{else}}—{{end}}</span>{{end}}</td>
+      <td class="mono muted">{{if .UpdatedAt}}{{.UpdatedAt}}{{else}}—{{end}}</td>
+      <td>{{if .LastPrompt}}<span class="clamp muted">{{.LastPrompt}}</span>{{else}}<span class="muted">{{if eq .TurnCount 0}}no turns recorded yet{{else}}—{{end}}</span>{{end}}</td>
     </tr>
     {{end}}
   </tbody>

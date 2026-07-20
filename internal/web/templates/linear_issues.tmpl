@@ -11,8 +11,8 @@
     {{range .LinearIssues}}
       <tr>
         <td class="mono"><a href="/projects/{{$.Project}}/linear/{{.Identifier}}">{{.Identifier}}</a></td>
-        <td>{{.Title}}</td>
-        <td>{{.State}}</td>
+        <td><a class="pr-title" href="/projects/{{$.Project}}/linear/{{.Identifier}}">{{.Title}}</a></td>
+        <td><span class="badge">{{.State}}</span></td>
       </tr>
     {{end}}
     </tbody>

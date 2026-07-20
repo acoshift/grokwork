@@ -1,8 +1,8 @@
 {{define "content"}}
+<p class="sub" style="margin-bottom:0.5rem"><a href="/projects/{{.Project}}/linear">← Linear list</a></p>
 <h1 id="page-linear-detail">{{.LinearIssue.Identifier}}</h1>
 <p class="sub">
-  <a href="/projects/{{.Project}}/linear">← Linear list</a>
-  {{if .LinearIssue.URL}} · <a href="{{.LinearIssue.URL}}" target="_blank" rel="noopener">Open in Linear</a>{{end}}
+  {{if .LinearIssue.URL}}<a href="{{.LinearIssue.URL}}" target="_blank" rel="noopener">Open in Linear ↗</a>{{end}}
 </p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
@@ -18,25 +18,27 @@
   <p class="sub">Starts or reuses a Discord work unit for this Linear issue (Fixes bind). Do not merge from Grok.</p>
   {{if .ShowFixPicker}}
   <p class="flash">Multiple sessions already bind this issue. Pick one, or force a new thread.</p>
+  <div class="table-scroll">
   <table class="table">
     <thead><tr><th>Thread</th><th>Label</th><th>Goal</th><th></th></tr></thead>
     <tbody>
     {{range .FixHits}}
       <tr>
         <td class="mono">{{.ThreadID}}</td>
-        <td><span class="badge">{{.Label}}</span>{{if .Busy}} · busy{{end}}</td>
+        <td><span class="badge">{{.Label}}</span>{{if .Busy}} <span class="badge live">busy</span>{{end}}</td>
         <td>{{.Goal}}</td>
-        <td>
+        <td class="row-actions">
           <form method="post" action="/projects/{{$.Project}}/linear/{{$.LinearIssue.Identifier}}/fix" style="display:inline">
             {{template "csrf" $}}
             <input type="hidden" name="thread_id" value="{{.ThreadID}}">
-            <button type="submit">Continue</button>
+            <button type="submit" class="btn-secondary" style="height:2rem;font-size:0.82rem;">Continue</button>
           </form>
         </td>
       </tr>
     {{end}}
     </tbody>
   </table>
+  </div>
   {{end}}
   <form method="post" action="/projects/{{.Project}}/linear/{{.LinearIssue.Identifier}}/fix">
     {{template "csrf" $}}

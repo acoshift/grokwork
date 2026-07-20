@@ -1,25 +1,25 @@
 {{define "content"}}
+<p class="sub" style="margin-bottom:0.5rem">
+  {{if .PRNumber}}
+  <a href="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}{{if .Project}}?project={{urlquery .Project}}{{end}}">← PR</a>
+  {{else if .ThreadID}}
+  <a href="/sessions/{{.ThreadID}}">← Session</a>
+  {{end}}
+</p>
 <h1 id="page-diff">{{.Title}}</h1>
 <p class="sub">
-  {{if .PRNumber}}
-    <a href="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}{{if .Project}}?project={{urlquery .Project}}{{end}}">← PR</a>
-  {{else if .ThreadID}}
-    <a href="/sessions/{{.ThreadID}}">← Session</a>
-    · base <span class="mono">{{.DiffBase}}</span>
-  {{end}}
-  · {{.Diff.FormatStat}}
-  {{if .Diff.Truncated}} · <span class="badge">truncated</span>{{end}}
+  {{if and .ThreadID (not .PRNumber)}}base <span class="mono">{{.DiffBase}}</span> · {{end}}
+  {{.Diff.FormatStat}}
+  {{if .Diff.Truncated}} · <span class="badge status-warn">truncated</span>{{end}}
 </p>
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
 {{if .Diff.Files}}
   {{range .Diff.Files}}
-  <div class="section card" style="margin-bottom:1rem;">
-    <h2 class="mono" style="font-size:0.95rem;">{{if .PathNew}}{{.PathNew}}{{else}}{{.PathOld}}{{end}}</h2>
+  <div class="section card diff-file" style="margin-bottom:1rem;">
+    <h2 class="mono" style="font-size:0.92rem;">{{if .PathNew}}{{.PathNew}}{{else}}{{.PathOld}}{{end}}</h2>
     {{range .Hunks}}
-    <pre class="bubble-body" style="margin-top:0.5rem;font-size:0.8rem;"><code>{{.Header}}
-{{range .Lines}}{{.}}
-{{end}}</code></pre>
+    <pre class="bubble-body" style="margin-top:0.5rem;font-size:0.8rem;"><code><span class="dl hunk">{{.Header}}</span>{{range .Lines}}<span class="dl {{diffClass .}}">{{.}}</span>{{end}}</code></pre>
     {{else}}
     <p class="muted">No hunks (name-only or empty).</p>
     {{end}}

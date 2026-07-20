@@ -1,8 +1,8 @@
 {{define "content"}}
+<p class="sub" style="margin-bottom:0.5rem"><a href="/projects/{{.Project}}/issues?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}">← Issues</a></p>
 <h1 id="page-issue-detail">{{.ActiveOwner}}/{{.ActiveRepo}}#{{.Issue.Number}}</h1>
 <p class="sub">
-  <a href="/projects/{{.Project}}/issues?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}">← Issues</a>
-  {{if .Issue.URL}} · <a href="{{.Issue.URL}}" target="_blank" rel="noopener">GitHub</a>{{end}}
+  {{if .Issue.URL}}<a href="{{.Issue.URL}}" target="_blank" rel="noopener">Open on GitHub ↗</a>{{end}}
 </p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
@@ -10,7 +10,7 @@
 <div class="section card">
   <h2>{{.Issue.Title}}</h2>
   <p class="sub" style="margin:0">
-    <span class="badge">{{.Issue.State}}</span>
+    {{if eq .Issue.State "open" "OPEN"}}<span class="badge live">{{.Issue.State}}</span>{{else}}<span class="badge">{{.Issue.State}}</span>{{end}}
     · <span class="mono">{{.Issue.Author}}</span>
     {{range .Issue.Labels}} · <span class="badge">{{.}}</span>{{end}}
     {{if .Issue.Truncated}} · <span class="muted">body truncated</span>{{end}}
@@ -24,22 +24,23 @@
   <p class="sub">Starts or reuses a Discord work unit for this issue (Fixes bind). Grok opens/updates a PR; it does not merge.</p>
   {{if .ShowFixPicker}}
   <p class="flash">Multiple sessions already bind this issue. Pick one, or force a new thread.</p>
+  <div class="table-scroll">
   <table class="table">
     <thead><tr><th>Thread</th><th>Label</th><th>Goal</th><th>Owner</th><th></th></tr></thead>
     <tbody>
     {{range .FixHits}}
       <tr>
         <td class="mono">{{.ThreadID}}</td>
-        <td><span class="badge">{{.Label}}</span>{{if .Busy}} · busy{{end}}</td>
+        <td><span class="badge">{{.Label}}</span>{{if .Busy}} <span class="badge live">busy</span>{{end}}</td>
         <td>{{.Goal}}</td>
         <td>{{.OwnerName}}</td>
-        <td>
+        <td class="row-actions">
           <form method="post" action="/projects/{{$.Project}}/issues/{{$.Issue.Number}}/fix" style="display:inline">
             {{template "csrf" $}}
             <input type="hidden" name="owner" value="{{$.ActiveOwner}}">
             <input type="hidden" name="repo" value="{{$.ActiveRepo}}">
             <input type="hidden" name="thread_id" value="{{.ThreadID}}">
-            <button type="submit">Continue</button>
+            <button type="submit" class="btn-secondary" style="height:2rem;font-size:0.82rem;">Continue</button>
           </form>
         </td>
       </tr>
@@ -48,6 +49,7 @@
     {{end}}
     </tbody>
   </table>
+  </div>
   {{end}}
   <form method="post" action="/projects/{{.Project}}/issues/{{.Issue.Number}}/fix">
     {{template "csrf" $}}
@@ -76,7 +78,7 @@
 {{end}}
 
 <div class="section">
-  <h2>Comments ({{len .Issue.Comments}})</h2>
+  <h2>Comments <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Issue.Comments}})</span></h2>
   {{range .Issue.Comments}}
   <div class="card" style="margin-bottom:0.75rem;">
     <div class="muted mono" style="font-size:0.85rem;">{{.Author}}</div>

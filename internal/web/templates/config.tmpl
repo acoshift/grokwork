@@ -2,6 +2,20 @@
 <h1 id="page-config">Config</h1>
 <p class="sub">Manage projects, channel map, and allowlists. Changes persist to the config file and apply immediately.</p>
 
+<div class="anchor-nav">
+  <a href="#bot-invite">Bot invite</a>
+  <a href="#grok-run-limits">Run limits</a>
+  <a href="#worktree-cleanup">Worktrees</a>
+  <a href="#team-board">Board</a>
+  <a href="#ci-triage">CI triage</a>
+  <a href="#risky-paths">Risk paths</a>
+  <a href="#projects">Projects</a>
+  <a href="#project-integrations">GitHub &amp; Discord</a>
+  <a href="#linear">Linear</a>
+  <a href="#channels">Channels</a>
+  <a href="#access">Access</a>
+</div>
+
 {{if .Flash}}
 <div class="flash">{{.Flash}}</div>
 {{end}}
@@ -60,7 +74,7 @@
   <p class="sub" style="margin:0.5rem 0 0">Range: 1 s–24 h. Examples: 15 min = <span class="mono">900000</span>, 30 min = <span class="mono">1800000</span>, 1 h = <span class="mono">3600000</span>.</p>
 </div>
 
-<div class="section card">
+<div class="section card" id="worktree-cleanup">
   <h2>Worktree idle cleanup</h2>
   <p class="sub" style="margin-top:0">Prune per-thread git worktrees after this many days without activity. <span class="mono">0</span> disables automatic cleanup. Default is <span class="mono">30</span>.</p>
   <form class="inline" method="post" action="{{route "config.settings"}}" style="grid-template-columns: 1fr auto;">
@@ -149,7 +163,7 @@
   </form>
 </div>
 
-<div class="section card">
+<div class="section card" id="projects">
   <h2>Add project folder</h2>
   <form class="inline" method="post" action="{{route "config.addProject"}}">
     {{template "csrf" $}}
@@ -165,7 +179,7 @@
   </form>
 </div>
 
-<div class="section card">
+<div class="section card" id="default-guild">
   <h2>Default Discord guild (fallback)</h2>
   <p class="sub" style="margin-top:0">
     Used only when a project has no guild of its own. Prefer setting the guild on each project below for multi-server setups.
@@ -180,7 +194,7 @@
   </form>
 </div>
 
-<div class="section card">
+<div class="section card" id="project-integrations">
   <h2>GitHub repos &amp; Discord (per project)</h2>
   <p class="sub" style="margin:0 0 0.75rem">
     Multi-repo catalog (one <span class="mono">owner/repo</span> per line). Leave repos blank to discover from git remotes.
@@ -222,7 +236,7 @@
   {{end}}
 </div>
 
-<div class="section card">
+<div class="section card" id="linear">
   <h2>Linear (per project)</h2>
   <p class="sub" style="margin:0 0 0.75rem">Opt-in ticket binding. API key is per project (different Linear workspaces allowed). Empty API key field leaves the stored key unchanged. Env alternative: <span class="mono">LINEAR_API_KEY_&lt;PROJECT&gt;</span>.</p>
   <form class="inline" method="post" action="{{route "config.setProjectLinear"}}" style="grid-template-columns: 1fr 1fr 1fr 1fr auto; align-items: end;">
@@ -245,8 +259,8 @@
       <input id="lin-key" type="password" name="apiKey" placeholder="leave blank to keep" autocomplete="off">
     </div>
     <div>
-      <label><input type="checkbox" name="enabled" value="1"> Enabled</label>
-      <label style="display:block;margin-top:0.35rem"><input type="checkbox" name="clearApiKey" value="1"> Clear API key</label>
+      <label class="check" style="min-height:0"><input type="checkbox" name="enabled" value="1"> Enabled</label>
+      <label class="check" style="min-height:0;margin-top:0.35rem"><input type="checkbox" name="clearApiKey" value="1"> Clear API key</label>
     </div>
     <button type="submit">Save Linear</button>
   </form>
@@ -255,7 +269,7 @@
   {{end}}
 </div>
 
-<div class="section card">
+<div class="section card" id="channels">
   <h2>Add channel map</h2>
   <form class="inline" method="post" action="{{route "config.addChannel"}}">
     {{template "csrf" $}}
@@ -279,9 +293,10 @@
   {{end}}
 </div>
 
-<div class="section card">
-  <h2>Add allowed user</h2>
-  <form class="inline" method="post" action="{{route "config.addUser"}}" style="grid-template-columns: 1fr auto;">
+<div class="section card" id="access">
+  <h2>Allowlist</h2>
+  <p class="sub" style="margin-top:0">Discord users and roles allowed to task the bot. When both lists are empty the bot is fail-closed (nobody can run tasks).</p>
+  <form class="inline" method="post" action="{{route "config.addUser"}}" style="grid-template-columns: 1fr auto; margin-bottom:0.65rem;">
     {{template "csrf" $}}
     <div>
       <label for="user-id">Discord user ID</label>
@@ -289,10 +304,6 @@
     </div>
     <button type="submit">Add user</button>
   </form>
-</div>
-
-<div class="section card">
-  <h2>Add allowed role</h2>
   <form class="inline" method="post" action="{{route "config.addRole"}}" style="grid-template-columns: 1fr auto;">
     {{template "csrf" $}}
     <div>
@@ -327,7 +338,7 @@
       {{range .Config.Projects}}
       <tr>
         <td class="mono">{{.Name}}</td>
-        <td class="mono">{{.Path}}</td>
+        <td class="mono muted">{{.Path}}</td>
         <td class="mono">
           {{if .LinearEnabled}}
             on{{if .LinearTeamKey}} · {{.LinearTeamKey}}{{end}}{{if .LinearAPIKeySet}} · key set{{else}} · no key{{end}}
@@ -337,7 +348,7 @@
         </td>
         <td class="row-actions">
           <form method="post" action="{{route "config.removeProject"}}" onsubmit="return confirm('Remove project {{.Name}}? Channel maps to this project will also be removed.');">
-    {{template "csrf" $}}
+            {{template "csrf" $}}
             <input type="hidden" name="name" value="{{.Name}}">
             <button type="submit" class="btn-danger">Remove</button>
           </form>
@@ -365,7 +376,7 @@
         <td>{{.Project}}</td>
         <td class="row-actions">
           <form method="post" action="{{route "config.removeChannel"}}" onsubmit="return confirm('Remove channel {{.ChannelID}}?');">
-    {{template "csrf" $}}
+            {{template "csrf" $}}
             <input type="hidden" name="channelId" value="{{.ChannelID}}">
             <button type="submit" class="btn-danger">Remove</button>
           </form>
@@ -392,7 +403,7 @@
         <td class="mono">{{.}}</td>
         <td class="row-actions">
           <form method="post" action="{{route "config.removeUser"}}" onsubmit="return confirm('Remove user {{.}}?');">
-    {{template "csrf" $}}
+            {{template "csrf" $}}
             <input type="hidden" name="id" value="{{.}}">
             <button type="submit" class="btn-danger">Remove</button>
           </form>
@@ -419,7 +430,7 @@
         <td class="mono">{{.}}</td>
         <td class="row-actions">
           <form method="post" action="{{route "config.removeRole"}}" onsubmit="return confirm('Remove role {{.}}?');">
-    {{template "csrf" $}}
+            {{template "csrf" $}}
             <input type="hidden" name="id" value="{{.}}">
             <button type="submit" class="btn-danger">Remove</button>
           </form>

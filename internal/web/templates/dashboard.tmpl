@@ -34,14 +34,17 @@
   <div class="card">
     <div class="label">Active runs</div>
     <div class="value" id="stat-active">{{.Status.ActiveCount}}</div>
+    <div class="hint">{{if gt .Status.ActiveCount 0}}<span class="badge live">running</span>{{else}}idle{{end}}</div>
   </div>
   <div class="card">
     <div class="label">Queued</div>
     <div class="value" id="stat-queued">{{.Status.QueuedTotal}}</div>
+    <div class="hint">follow-ups waiting</div>
   </div>
   <div class="card">
     <div class="label">Sessions</div>
     <div class="value" id="stat-sessions">{{.Status.SessionCount}}</div>
+    <div class="hint"><a href="{{route "sessions"}}">all work units</a></div>
   </div>
   <div class="card">
     <div class="label">Projects</div>
@@ -62,17 +65,17 @@
     <tbody id="runs-body">
       {{range .Status.ActiveRuns}}
       <tr>
-        <td class="mono">{{.ThreadID}}</td>
+        <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}">{{.ThreadID}}</a></td>
         <td>{{.Project}}</td>
-        <td>{{.Elapsed}}</td>
-        <td>{{.QueueLen}}</td>
+        <td class="mono">{{.Elapsed}}</td>
+        <td>{{if gt .QueueLen 0}}<span class="badge">{{.QueueLen}} queued</span>{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
       {{end}}
     </tbody>
   </table>
   </div>
   {{else}}
-  <div class="empty" id="runs-empty">No active runs.</div>
+  <div class="empty" id="runs-empty">No active runs. Tag <span class="mono">@Grok</span> in a mapped Discord channel to start one.</div>
   {{end}}
 </div>
 {{end}}

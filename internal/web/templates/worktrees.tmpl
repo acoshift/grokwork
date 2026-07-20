@@ -11,13 +11,13 @@
 
 <div class="section card">
   <h2>Idle cleanup</h2>
-  <p class="sub" style="margin-top:0">
-    Configured TTL: <span class="mono">{{.IdleTTLDays}}</span> day(s)
-    {{if eq .IdleTTLDays 0}}(disabled){{end}}.
-    Run a one-shot prune of worktrees past that threshold.
-  </p>
-  <form method="post" action="{{route "worktrees.pruneIdle"}}" onsubmit="return confirm('Prune all worktrees idle longer than {{.IdleTTLDays}} day(s)?');">
+  <form method="post" action="{{route "worktrees.pruneIdle"}}" class="inline" style="grid-template-columns: 1fr auto;" onsubmit="return confirm('Prune all worktrees idle longer than {{.IdleTTLDays}} day(s)?');">
     {{template "csrf" $}}
+    <p class="sub" style="margin:0">
+      Configured TTL: <span class="mono">{{.IdleTTLDays}}</span> day(s)
+      {{if eq .IdleTTLDays 0}}(disabled){{end}}.
+      Run a one-shot prune of worktrees past that threshold.
+    </p>
     <button type="submit" {{if eq .IdleTTLDays 0}}disabled title="Set worktreeIdleTTLDays &gt; 0 on Config"{{end}}>Prune idle now</button>
   </form>
 </div>
@@ -55,10 +55,10 @@
     <tbody>
       {{range .Worktrees}}
       <tr>
-        <td class="mono"><a href="/sessions/{{.ThreadID}}">{{.ThreadID}}</a></td>
+        <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}">{{.ThreadID}}</a></td>
         <td>{{if .Project}}{{.Project}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono">{{if .Branch}}{{.Branch}}{{else}}<span class="muted">—</span>{{end}}</td>
-        <td class="mono">{{if .LastActiveAt}}{{.LastActiveAt}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="mono muted">{{if .LastActiveAt}}{{.LastActiveAt}}{{else}}—{{end}}</td>
         <td>{{if .IdleFor}}{{.IdleFor}}{{else}}<span class="muted">—</span>{{end}}{{if .IdlePastTTL}} <span class="badge status-warn">past TTL</span>{{end}}</td>
         <td>
           {{if .Busy}}<span class="badge live">busy</span>{{end}}
@@ -70,7 +70,7 @@
           <button type="button" class="btn-danger" disabled title="Thread is busy">Prune</button>
           {{else}}
           <form method="post" action="{{route "worktrees.prune"}}" onsubmit="return confirm('Prune worktree for thread {{.ThreadID}}? This removes the worktree, branch, and session.');">
-    {{template "csrf" $}}
+            {{template "csrf" $}}
             <input type="hidden" name="threadId" value="{{.ThreadID}}">
             <button type="submit" class="btn-danger">Prune</button>
           </form>

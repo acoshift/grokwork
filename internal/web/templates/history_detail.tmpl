@@ -19,6 +19,7 @@
   <span class="mono">{{.Thread.ThreadID}}</span>
   {{if .Thread.Project}} · <strong>{{.Thread.Project}}</strong>{{end}}
   · {{len .Thread.Turns}} turn{{if ne (len .Thread.Turns) 1}}s{{end}}
+  · <a href="/sessions/{{.Thread.ThreadID}}">Work unit</a>
 </p>
 
 {{if .Thread.Turns}}
@@ -26,10 +27,10 @@
   {{range $i, $t := .Thread.Turns}}
   <article class="turn" id="turn-{{$i}}">
     <header class="turn-meta">
-      <span class="badge">#{{add $i 1}}</span>
-      <span class="mono muted">{{$t.At}}</span>
-      {{if $t.User}}<span>{{$t.User}}</span>{{end}}
+      <span class="mono muted">#{{add $i 1}}</span>
       <span class="badge status-{{$t.Status}}">{{$t.Status}}</span>
+      {{if $t.User}}<span>{{$t.User}}</span>{{end}}
+      <span class="mono muted">{{$t.At}}</span>
       {{if $t.ExitCode}}<span class="mono muted" title="exit code">exit {{$t.ExitCode}}</span>{{end}}
       {{if $t.Elapsed}}<span class="muted">{{$t.Elapsed}}</span>{{end}}
       {{if $t.SessionID}}<span class="mono muted" title="session">{{$t.SessionID}}</span>{{end}}

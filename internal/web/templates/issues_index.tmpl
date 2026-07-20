@@ -2,9 +2,9 @@
 <h1 id="page-issues">Issues</h1>
 <p class="sub">Pick a project to browse GitHub issues (multi-repo picker on the project page). Linear links appear when enabled.</p>
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
-<div class="section card">
-  <h2>Projects</h2>
+<div class="section">
   {{if .Config.ProjectNames}}
+  <div class="table-scroll">
   <table>
     <thead><tr><th>Project</th><th>GitHub issues</th><th>Linear</th></tr></thead>
     <tbody>
@@ -23,6 +23,7 @@
     {{end}}
     </tbody>
   </table>
+  </div>
   {{else}}
   <div class="empty">No projects configured.</div>
   {{end}}

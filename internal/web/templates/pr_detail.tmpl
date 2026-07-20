@@ -1,9 +1,9 @@
 {{define "content"}}
+<p class="sub" style="margin-bottom:0.5rem"><a href="{{route "ship"}}">← Ship board</a></p>
 <h1 id="page-pr-detail">{{.ActiveOwner}}/{{.ActiveRepo}}#{{.PRNumber}}</h1>
 <p class="sub">
-  <a href="{{route "ship"}}">← Ship board</a>
-  · <a href="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/diff{{if .Project}}?project={{urlquery .Project}}{{end}}">Diff</a>
-  {{if .PR.URL}} · <a href="{{.PR.URL}}" target="_blank" rel="noopener">GitHub</a>{{end}}
+  <a href="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/diff{{if .Project}}?project={{urlquery .Project}}{{end}}">View diff</a>
+  {{if .PR.URL}} · <a href="{{.PR.URL}}" target="_blank" rel="noopener">Open on GitHub ↗</a>{{end}}
 </p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
@@ -11,16 +11,16 @@
 <div class="section card">
   <h2>{{.PR.Title}}</h2>
   <p class="sub" style="margin:0">
-    <span class="badge">{{.PR.State}}</span>
-    {{if .PR.IsDraft}} · draft{{end}}
+    {{if eq .PR.State "OPEN"}}<span class="badge live">{{.PR.State}}</span>{{else if eq .PR.State "MERGED"}}<span class="badge status-done">{{.PR.State}}</span>{{else if eq .PR.State "CLOSED"}}<span class="badge status-cancelled">{{.PR.State}}</span>{{else}}<span class="badge">{{.PR.State}}</span>{{end}}
+    {{if .PR.IsDraft}} <span class="badge">draft</span>{{end}}
     · review <span class="mono">{{.PR.ReviewDecision}}</span>
     · checks <span class="mono">{{.PR.Checks}}</span>
     · mergeable <span class="mono">{{.PR.Mergeable}}</span>
   </p>
-  <p class="sub">
+  <p class="sub" style="margin:0.45rem 0 0">
     <span class="mono">{{.PR.Author}}</span>
-    · {{.PR.HeadRef}} → {{.PR.BaseRef}}
-    · +{{.PR.Additions}}/−{{.PR.Deletions}} · {{.PR.ChangedFiles}} files
+    · <span class="mono">{{.PR.HeadRef}} → {{.PR.BaseRef}}</span>
+    · <span class="mono" style="color:var(--ok)">+{{.PR.Additions}}</span>/<span class="mono" style="color:var(--danger)">−{{.PR.Deletions}}</span> · {{.PR.ChangedFiles}} files
   </p>
   <pre class="bubble-body" style="margin-top:1rem;white-space:pre-wrap;">{{.PR.Body}}</pre>
 </div>
@@ -31,32 +31,34 @@
   <p class="sub">Starts or reuses a Discord work unit for this PR. Grok pushes fixes; it does not merge.</p>
   {{if .ShowFixPicker}}
   <p class="flash">Multiple sessions already bind this PR. Pick one, or force a new thread.</p>
+  <div class="table-scroll">
   <table class="table">
     <thead><tr><th>Thread</th><th>Label</th><th>Goal</th><th></th></tr></thead>
     <tbody>
     {{range .FixHits}}
       <tr>
         <td class="mono">{{.ThreadID}}</td>
-        <td><span class="badge">{{.Label}}</span>{{if .Busy}} · busy{{end}}</td>
+        <td><span class="badge">{{.Label}}</span>{{if .Busy}} <span class="badge live">busy</span>{{end}}</td>
         <td>{{.Goal}}</td>
-        <td>
+        <td class="row-actions">
           <form method="post" action="/prs/{{$.ActiveOwner}}/{{$.ActiveRepo}}/{{$.PRNumber}}/address-ci" style="display:inline">
             {{template "csrf" $}}
             <input type="hidden" name="project" value="{{$.Project}}">
             <input type="hidden" name="thread_id" value="{{.ThreadID}}">
-            <button type="submit">Continue (CI)</button>
+            <button type="submit" class="btn-secondary" style="height:2rem;font-size:0.82rem;">Continue (CI)</button>
           </form>
           <form method="post" action="/prs/{{$.ActiveOwner}}/{{$.ActiveRepo}}/{{$.PRNumber}}/address-review" style="display:inline">
             {{template "csrf" $}}
             <input type="hidden" name="project" value="{{$.Project}}">
             <input type="hidden" name="thread_id" value="{{.ThreadID}}">
-            <button type="submit">Continue (review)</button>
+            <button type="submit" class="btn-secondary" style="height:2rem;font-size:0.82rem;">Continue (review)</button>
           </form>
         </td>
       </tr>
     {{end}}
     </tbody>
   </table>
+  </div>
   {{end}}
   <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-ci" style="margin-bottom:0.75rem;">
     {{template "csrf" $}}

@@ -7,51 +7,47 @@
 </p>
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
-<div class="section card">
-  <h2>Repo &amp; filters</h2>
-  <form method="get" action="/projects/{{.Project}}/issues" class="inline" style="grid-template-columns: 2fr 1fr auto;" id="issues-filter">
-    <div>
-      <label for="repo-pick">Repository</label>
-      <select id="repo-pick" name="repo_full">
-        {{range .RepoCatalog}}
-        <option value="{{.Owner}}/{{.Repo}}" {{if and (eq .Owner $.ActiveOwner) (eq .Repo $.ActiveRepo)}}selected{{end}}>{{.Owner}}/{{.Repo}}</option>
-        {{end}}
-      </select>
-      <input type="hidden" name="owner" id="issues-owner" value="{{.ActiveOwner}}">
-      <input type="hidden" name="repo" id="issues-repo" value="{{.ActiveRepo}}">
-    </div>
-    <div>
-      <label for="state">State</label>
-      <select id="state" name="state">
-        <option value="open" {{if eq .IssueState "open"}}selected{{end}}>Open</option>
-        <option value="closed" {{if eq .IssueState "closed"}}selected{{end}}>Closed</option>
-        <option value="all" {{if eq .IssueState "all"}}selected{{end}}>All</option>
-      </select>
-    </div>
-    <button type="submit">Apply</button>
-  </form>
-  <script>
-  (function(){
-    var form=document.getElementById('issues-filter');
-    if(!form) return;
-    var sel=document.getElementById('repo-pick');
-    function sync(){
-      var p=(sel.value||'/').split('/');
-      document.getElementById('issues-owner').value=p[0]||'';
-      document.getElementById('issues-repo').value=p[1]||'';
-    }
-    sel.addEventListener('change', sync);
-    form.addEventListener('submit', sync);
-    sync();
-  })();
-  </script>
-  {{if not .RepoCatalog}}
-  <p class="sub" style="margin-top:0.75rem">No repos in catalog. Set <span class="mono">projects.{{.Project}}.github.repos</span> on Config, or ensure git remotes exist.</p>
-  {{end}}
-</div>
+<form method="get" action="/projects/{{.Project}}/issues" class="toolbar" id="issues-filter">
+  <div class="field" style="flex-basis:18rem">
+    <label for="repo-pick">Repository</label>
+    <select id="repo-pick" name="repo_full" data-autosubmit>
+      {{range .RepoCatalog}}
+      <option value="{{.Owner}}/{{.Repo}}" {{if and (eq .Owner $.ActiveOwner) (eq .Repo $.ActiveRepo)}}selected{{end}}>{{.Owner}}/{{.Repo}}</option>
+      {{end}}
+    </select>
+    <input type="hidden" name="owner" id="issues-owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" id="issues-repo" value="{{.ActiveRepo}}">
+  </div>
+  <div class="field">
+    <label for="state">State</label>
+    <select id="state" name="state" data-autosubmit>
+      <option value="open" {{if eq .IssueState "open"}}selected{{end}}>Open</option>
+      <option value="closed" {{if eq .IssueState "closed"}}selected{{end}}>Closed</option>
+      <option value="all" {{if eq .IssueState "all"}}selected{{end}}>All</option>
+    </select>
+  </div>
+  <button type="submit" class="btn-secondary">Apply</button>
+</form>
+<script>
+(function(){
+  var form=document.getElementById('issues-filter');
+  if(!form) return;
+  var sel=document.getElementById('repo-pick');
+  function sync(){
+    var p=(sel.value||'/').split('/');
+    document.getElementById('issues-owner').value=p[0]||'';
+    document.getElementById('issues-repo').value=p[1]||'';
+  }
+  sel.addEventListener('change', sync);
+  form.addEventListener('submit', sync);
+  sync();
+})();
+</script>
+{{if not .RepoCatalog}}
+<p class="sub">No repos in catalog. Set <span class="mono">projects.{{.Project}}.github.repos</span> on Config, or ensure git remotes exist.</p>
+{{end}}
 
 <div class="section">
-  <h2>Issues</h2>
   {{if .Issues}}
   <div class="table-scroll">
   <table>
@@ -60,9 +56,9 @@
     {{range .Issues}}
       <tr>
         <td class="mono"><a href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">#{{.Number}}</a></td>
-        <td>{{.Title}}</td>
-        <td>{{.State}}</td>
-        <td class="mono">{{.Author}}</td>
+        <td><a class="pr-title" href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.Title}}</a></td>
+        <td>{{if eq .State "open" "OPEN"}}<span class="badge live">{{.State}}</span>{{else}}<span class="badge">{{.State}}</span>{{end}}</td>
+        <td class="mono muted">{{.Author}}</td>
       </tr>
     {{end}}
     </tbody>

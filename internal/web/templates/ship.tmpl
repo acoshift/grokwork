@@ -14,47 +14,29 @@
   {{template "ship_stats" .}}
 </div>
 
-<div class="section card">
-  <h2>Filters</h2>
-  <form method="get" action="{{route "ship"}}" class="inline" style="grid-template-columns: 1fr 1fr auto;">
-    <div>
-      <label for="project">Project</label>
-      <select id="project" name="project">
-        <option value="" {{if eq .Ship.ProjectFilter ""}}selected{{end}}>All projects</option>
-        {{range .Ship.Projects}}
-        <option value="{{.}}" {{if eq $.Ship.ProjectFilter .}}selected{{end}}>{{.}}</option>
-        {{end}}
-      </select>
-    </div>
-    <div>
-      <label for="state">State</label>
-      <select id="state" name="state">
-        <option value="open" {{if eq .Ship.StateFilter "open"}}selected{{end}}>Open (default)</option>
-        <option value="failing" {{if eq .Ship.StateFilter "failing"}}selected{{end}}>CI failing</option>
-        <option value="draft" {{if eq .Ship.StateFilter "draft"}}selected{{end}}>Draft</option>
-        <option value="merged" {{if eq .Ship.StateFilter "merged"}}selected{{end}}>Merged</option>
-        <option value="closed" {{if eq .Ship.StateFilter "closed"}}selected{{end}}>Closed</option>
-        <option value="all" {{if eq .Ship.StateFilter "all"}}selected{{end}}>All</option>
-      </select>
-    </div>
-    <button type="submit">Apply</button>
-  </form>
-</div>
-
-<div class="section">
-  <h2>Lead digest</h2>
-  <p class="sub" style="margin-top:0">Plain-text summary of open PRs in the current view — copy for standups or lead chat.</p>
-  <div class="live-region"
-       id="live-ship-digest"
-       hx-get="{{route "partial.ship.digest"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
-       hx-trigger="sse:ship"
-       hx-target="this"
-       hx-select="unset"
-       hx-swap="innerHTML"
-       hx-sync="this:replace">
-    {{template "ship_digest" .}}
+<form method="get" action="{{route "ship"}}" class="toolbar" id="ship-filters">
+  <div class="field">
+    <label for="project">Project</label>
+    <select id="project" name="project" data-autosubmit>
+      <option value="" {{if eq .Ship.ProjectFilter ""}}selected{{end}}>All projects</option>
+      {{range .Ship.Projects}}
+      <option value="{{.}}" {{if eq $.Ship.ProjectFilter .}}selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
   </div>
-</div>
+  <div class="field">
+    <label for="state">State</label>
+    <select id="state" name="state" data-autosubmit>
+      <option value="open" {{if eq .Ship.StateFilter "open"}}selected{{end}}>Open (default)</option>
+      <option value="failing" {{if eq .Ship.StateFilter "failing"}}selected{{end}}>CI failing</option>
+      <option value="draft" {{if eq .Ship.StateFilter "draft"}}selected{{end}}>Draft</option>
+      <option value="merged" {{if eq .Ship.StateFilter "merged"}}selected{{end}}>Merged</option>
+      <option value="closed" {{if eq .Ship.StateFilter "closed"}}selected{{end}}>Closed</option>
+      <option value="all" {{if eq .Ship.StateFilter "all"}}selected{{end}}>All</option>
+    </select>
+  </div>
+  <button type="submit" class="btn-secondary">Apply</button>
+</form>
 
 <div class="live-region"
      id="live-ship-table"
@@ -65,6 +47,27 @@
      hx-swap="innerHTML"
      hx-sync="this:replace">
   {{template "ship_table" .}}
+</div>
+
+<div class="section">
+  <details class="digest">
+    <summary>
+      <h2>Lead digest</h2>
+      <span class="muted">plain-text summary of the current view — copy for standups or lead chat</span>
+    </summary>
+    <div class="digest-body">
+      <div class="live-region"
+           id="live-ship-digest"
+           hx-get="{{route "partial.ship.digest"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
+           hx-trigger="sse:ship"
+           hx-target="this"
+           hx-select="unset"
+           hx-swap="innerHTML"
+           hx-sync="this:replace">
+        {{template "ship_digest" .}}
+      </div>
+    </div>
+  </details>
 </div>
 {{end}}
 
@@ -78,10 +81,12 @@
   <div class="card">
     <div class="label">CI failing</div>
     <div class="value">{{.Ship.ChecksFailing}}</div>
+    <div class="hint">{{if gt .Ship.ChecksFailing 0}}<span class="badge status-error">needs attention</span>{{else}}all green{{end}}</div>
   </div>
   <div class="card">
     <div class="label">Changes requested</div>
     <div class="value">{{.Ship.ChangesRequested}}</div>
+    <div class="hint">waiting on Grok or owner</div>
   </div>
   <div class="card">
     <div class="label">Approved</div>
@@ -120,23 +125,16 @@
     <tbody>
       {{range .Ship.Rows}}
       <tr>
-        <td>
-          {{if .URL}}
+        <td class="pr-cell">
           {{if and .GHOwner .GHRepo .Number}}
-          <a href="/prs/{{.GHOwner}}/{{.GHRepo}}/{{.Number}}?project={{urlquery .Project}}">{{.GHOwner}}/{{.GHRepo}}#{{.Number}}</a>
-          {{if .URL}} <a href="{{.URL}}" target="_blank" rel="noopener" class="muted" title="Open on GitHub">↗</a>{{end}}
-          {{else if .Number}}
-          <a href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}</a>
-          {{else}}
-          <a href="{{.URL}}" target="_blank" rel="noopener">PR</a>
-          {{end}}
+          <a class="pr-title" href="/prs/{{.GHOwner}}/{{.GHRepo}}/{{.Number}}?project={{urlquery .Project}}">{{if .Title}}{{.Title}}{{else if .Goal}}{{.Goal}}{{else}}{{.GHOwner}}/{{.GHRepo}}#{{.Number}}{{end}}</a>
+          <div class="pr-ref mono">{{.GHOwner}}/{{.GHRepo}}#{{.Number}}{{if .URL}} <a href="{{.URL}}" target="_blank" rel="noopener" title="Open on GitHub">↗</a>{{end}}</div>
+          {{else if .URL}}
+          <a class="pr-title" href="{{.URL}}" target="_blank" rel="noopener">{{if .Title}}{{.Title}}{{else if .Number}}#{{.Number}}{{else}}PR{{end}}</a>
+          {{if .Goal}}<div class="pr-ref">{{.Goal}}</div>{{end}}
           {{else}}
           <span class="mono">{{if .Number}}#{{.Number}}{{else}}—{{end}}</span>
-          {{end}}
-          {{if .Title}}
-          <div class="muted" style="margin-top:0.2rem;font-size:0.86rem;">{{.Title}}</div>
-          {{else if .Goal}}
-          <div class="muted" style="margin-top:0.2rem;font-size:0.86rem;">{{.Goal}}</div>
+          {{if .Title}}<div class="pr-ref">{{.Title}}</div>{{else if .Goal}}<div class="pr-ref">{{.Goal}}</div>{{end}}
           {{end}}
         </td>
         <td>
@@ -180,7 +178,7 @@
           <span class="badge">{{.Label}}</span>
           {{if .LabelManual}} <span class="muted" style="font-size:0.75rem;">manual</span>{{end}}
         </td>
-        <td class="mono"><a href="/sessions/{{.ThreadID}}">{{.ThreadID}}</a></td>
+        <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}">{{.ThreadID}}</a></td>
       </tr>
       {{end}}
     </tbody>
