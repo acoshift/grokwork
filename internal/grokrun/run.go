@@ -682,7 +682,7 @@ func grokHome() string {
 // characters (#, ?, &, quotes, newlines) are delivered verbatim to the CLI.
 func writePromptFile(prompt string) (path string, cleanup func(), err error) {
 	prompt = strings.ReplaceAll(prompt, "\x00", "")
-	f, err := os.CreateTemp("", "grok-discord-prompt-*.txt")
+	f, err := os.CreateTemp("", "grokwork-prompt-*.txt")
 	if err != nil {
 		return "", func() {}, err
 	}

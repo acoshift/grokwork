@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/history"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 func testBotSessions(t *testing.T) (*Bot, *sessionstore.Store) {

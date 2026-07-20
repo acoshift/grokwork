@@ -10,9 +10,9 @@ import (
 
 	"github.com/moonrhythm/hime"
 
-	"github.com/acoshift/grok-discord/internal/audit"
-	"github.com/acoshift/grok-discord/internal/bot"
-	"github.com/acoshift/grok-discord/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/audit"
+	"github.com/acoshift/grokwork/internal/bot"
+	"github.com/acoshift/grokwork/internal/ghpr"
 )
 
 func (s *Server) postPRAddressCI(ctx *hime.Context) error {

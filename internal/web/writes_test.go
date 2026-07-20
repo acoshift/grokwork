@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acoshift/grok-discord/internal/audit"
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/audit"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 func writeEnabledServer(t *testing.T) (*Server, *config.Config, *[]string) {

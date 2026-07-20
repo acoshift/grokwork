@@ -9,8 +9,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 const (

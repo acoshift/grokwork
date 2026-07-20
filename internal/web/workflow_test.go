@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/linear"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/linear"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // assertNavActive checks the top-nav item with the given label has class active

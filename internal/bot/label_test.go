@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 func TestParseLabelArg(t *testing.T) {

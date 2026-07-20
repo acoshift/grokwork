@@ -11,13 +11,13 @@ import (
 
 	"github.com/moonrhythm/hime"
 
-	"github.com/acoshift/grok-discord/internal/audit"
-	"github.com/acoshift/grok-discord/internal/bot"
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/ghpr"
-	"github.com/acoshift/grok-discord/internal/history"
-	"github.com/acoshift/grok-discord/internal/linear"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/audit"
+	"github.com/acoshift/grokwork/internal/bot"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/linear"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 //go:embed templates/*

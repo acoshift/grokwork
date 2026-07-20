@@ -5,7 +5,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // ApplyPRTerminalState finds every session tracking owner/repo#number, sets State

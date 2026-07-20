@@ -3,7 +3,7 @@ package bot
 import (
 	"strings"
 
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // FindByPR returns candidate units for project + GitHub PR (bound PRs[] only).

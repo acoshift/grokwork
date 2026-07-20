@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acoshift/grok-discord/internal/bot"
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/gitworktree"
-	"github.com/acoshift/grok-discord/internal/history"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/bot"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 func testServer(t *testing.T) (*Server, *config.Config, string) {

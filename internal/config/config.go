@@ -71,7 +71,7 @@ type Config struct {
 	// nil/omitted → DefaultWorktreeIdleTTLDays (30). 0 disables idle cleanup.
 	WorktreeIdleTTLDays *int `json:"worktreeIdleTTLDays,omitempty"`
 	// HTTPListen is the address for the private-network web UI (e.g. ":8787", "0.0.0.0:8787").
-	// Empty uses default ":8787". Override with GROK_DISCORD_HTTP_LISTEN.
+	// Empty uses default ":8787". Override with GROK_WORK_HTTP_LISTEN (or legacy GROK_DISCORD_HTTP_LISTEN).
 	HTTPListen string `json:"httpListen,omitempty"`
 	// WebPublicBaseURL is the absolute public origin for OAuth redirect_uri
 	// (e.g. "http://100.x.y.z:8787"). Required when webAuth.enabled.
@@ -293,7 +293,7 @@ func (c *Config) SetBoardSettings(staleDays int, digestChannel string) error {
 
 // ListenAddr returns the HTTP bind address (env overrides config).
 func (c *Config) ListenAddr() string {
-	if v := strings.TrimSpace(os.Getenv("GROK_DISCORD_HTTP_LISTEN")); v != "" {
+	if v := EnvPrefersWork("HTTP_LISTEN"); v != "" {
 		return v
 	}
 	c.mu.RLock()
@@ -305,7 +305,7 @@ func (c *Config) ListenAddr() string {
 }
 
 func Load() (*Config, error) {
-	path := os.Getenv("GROK_DISCORD_CONFIG")
+	path := EnvPrefersWork("CONFIG")
 	if path == "" {
 		wd, err := os.Getwd()
 		if err != nil {

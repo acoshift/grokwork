@@ -57,16 +57,12 @@ func (c *Config) DiscordClientSecretValue() string {
 	if secret != "" {
 		return secret
 	}
-	for _, key := range []string{
+	// Plain Discord name first, then product dual-env names.
+	return firstEnv(
 		"DISCORD_CLIENT_SECRET",
 		"GROK_WORK_DISCORD_CLIENT_SECRET",
 		"GROK_DISCORD_CLIENT_SECRET",
-	} {
-		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-			return v
-		}
-	}
-	return ""
+	)
 }
 
 // WebPublicBaseURLValue returns the public base URL for OAuth redirect_uri construction.
@@ -80,13 +76,8 @@ func (c *Config) WebPublicBaseURLValue() string {
 	if base != "" {
 		return strings.TrimRight(base, "/")
 	}
-	for _, key := range []string{
-		"GROK_WORK_PUBLIC_BASE_URL",
-		"GROK_DISCORD_PUBLIC_BASE_URL",
-	} {
-		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-			return strings.TrimRight(v, "/")
-		}
+	if v := EnvPrefersWork("PUBLIC_BASE_URL"); v != "" {
+		return strings.TrimRight(v, "/")
 	}
 	return ""
 }
@@ -105,15 +96,7 @@ func (c *Config) SessionSecretValue() string {
 	if secret != "" {
 		return secret
 	}
-	for _, key := range []string{
-		"GROK_WORK_SESSION_SECRET",
-		"GROK_DISCORD_SESSION_SECRET",
-	} {
-		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-			return v
-		}
-	}
-	return ""
+	return EnvPrefersWork("SESSION_SECRET")
 }
 
 // WebAuthAdminIDs returns a copy of admin Discord user IDs (after bootstrap merge).
@@ -302,17 +285,15 @@ func (c *Config) applyWebAuthBootstrap() {
 	if c.WebAuth == nil {
 		c.WebAuth = &WebAuthConfig{}
 	}
-	// Bootstrap admin when list empty.
+	// Bootstrap admin when list empty (GROK_WORK_* preferred, GROK_DISCORD_* legacy).
 	if len(c.WebAuth.AdminDiscordIDs) == 0 {
-		for _, key := range []string{
-			"GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID",
-			"GROK_DISCORD_BOOTSTRAP_ADMIN_DISCORD_ID",
-		} {
-			if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-				c.WebAuth.AdminDiscordIDs = []string{v}
-				fmt.Fprintf(os.Stderr, "[info] webAuth: bootstrapped admin Discord id from %s\n", key)
-				break
+		if v := EnvPrefersWork("BOOTSTRAP_ADMIN_DISCORD_ID"); v != "" {
+			c.WebAuth.AdminDiscordIDs = []string{v}
+			src := "GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID"
+			if strings.TrimSpace(os.Getenv("GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID")) == "" {
+				src = "GROK_DISCORD_BOOTSTRAP_ADMIN_DISCORD_ID"
 			}
+			fmt.Fprintf(os.Stderr, "[info] webAuth: bootstrapped admin Discord id from %s\n", src)
 		}
 	}
 	// Normalize ID slices (trim empties).

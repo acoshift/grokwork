@@ -1,4 +1,4 @@
-module github.com/acoshift/grok-discord
+module github.com/acoshift/grokwork
 
 go 1.26.5
 

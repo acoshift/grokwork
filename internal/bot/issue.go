@@ -9,8 +9,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/acoshift/grok-discord/internal/linear"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/linear"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // preserveIssueFields copies bound issues when session Set overwrites the entry.

@@ -4,16 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A single Go process that bridges Discord and the `grok` CLI: users tag `@Grok <task>` in a mapped channel, the bot runs Grok Build headless (`grok -p … --cwd <project>`) against a local checkout, and streams the reply into a Discord thread. It also serves a private-network admin web UI (no auth — dashboard, history, worktrees, config) on `:8787`.
+**Grok Work** (`grokwork`): a single Go process that bridges Discord and the `grok` CLI. Users tag `@Grok <task>` in a mapped channel; the bot runs Grok Build headless (`grok -p … --cwd <project>`) against a local checkout and streams the reply into a Discord thread. It also serves a private-network admin web UI (OAuth-optional; dashboard, ship, issues, sessions, worktrees, config) on `:8787`.
+
+Module: `github.com/acoshift/grokwork`. Binary: `grokwork`. Env prefers `GROK_WORK_*` with legacy `GROK_DISCORD_*` still accepted.
 
 ## Commands
 
 ```bash
-go build ./...                        # build everything
+go build -o grokwork .                # binary
+go build ./...                        # packages
 go vet ./...                          # vet
 go test ./...                         # full test suite (stdlib testing only, no external deps)
 go test ./internal/bot -run TestName  # single test
-go run .                              # run the bot (needs config.json, see below)
+go run .                              # run (needs config.json, see below)
 ```
 
 Running the bot requires `config.json` (copy `config.example.json`). Go 1.26.5+.

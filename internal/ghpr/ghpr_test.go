@@ -8,16 +8,16 @@ import (
 
 func TestParseGitHubPRURLs(t *testing.T) {
 	text := `
-Opened https://github.com/acoshift/grok-discord/pull/42 for review.
-Also see <https://github.com/acoshift/grok-discord/pull/42> and
+Opened https://github.com/acoshift/grokwork/pull/42 for review.
+Also see <https://github.com/acoshift/grokwork/pull/42> and
 https://github.com/acoshift/other/pull/7/files
-not a pr: https://github.com/acoshift/grok-discord/issues/1
+not a pr: https://github.com/acoshift/grokwork/issues/1
 `
 	got := ParseGitHubPRURLs(text)
 	if len(got) != 2 {
 		t.Fatalf("len=%d got=%+v", len(got), got)
 	}
-	if got[0].Number != 42 || got[0].Owner != "acoshift" || got[0].Repo != "grok-discord" {
+	if got[0].Number != 42 || got[0].Owner != "acoshift" || got[0].Repo != "grokwork" {
 		t.Fatalf("first=%+v", got[0])
 	}
 	if got[1].Number != 7 || got[1].Repo != "other" {

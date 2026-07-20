@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acoshift/grok-discord/internal/bot"
+	"github.com/acoshift/grokwork/internal/bot"
 )
 
 // live domain event names (htmx hx-trigger="sse:<name>").

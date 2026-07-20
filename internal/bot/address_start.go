@@ -5,8 +5,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/acoshift/grok-discord/internal/ghpr"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // Additional sentinels for Address CI / Continue / Address review.

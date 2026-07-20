@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/acoshift/grok-discord/internal/gitworktree"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // idleCleanupInterval is how often the background sweeper runs.

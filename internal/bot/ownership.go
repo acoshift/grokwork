@@ -8,8 +8,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/acoshift/grok-discord/internal/ghpr"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // canControlThread reports whether the author may cancel/reset this thread.

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/acoshift/grok-discord/internal/config"
+	"github.com/acoshift/grokwork/internal/config"
 )
 
 const (

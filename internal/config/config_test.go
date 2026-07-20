@@ -32,9 +32,11 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	t.Setenv("GROK_WORK_CONFIG", "")
 	t.Setenv("GROK_DISCORD_CONFIG", cfgPath)
 	t.Setenv("DISCORD_BOT_TOKEN", "")
 	// Clear HTTP listen env so config file wins for ListenAddr when we check it.
+	t.Setenv("GROK_WORK_HTTP_LISTEN", "")
 	t.Setenv("GROK_DISCORD_HTTP_LISTEN", "")
 
 	cfg, err := Load()
@@ -204,9 +206,27 @@ func TestAddProjectValidation(t *testing.T) {
 
 func TestListenAddrEnvOverride(t *testing.T) {
 	cfg := &Config{HTTPListen: ":1111"}
+	t.Setenv("GROK_WORK_HTTP_LISTEN", "")
 	t.Setenv("GROK_DISCORD_HTTP_LISTEN", "0.0.0.0:9999")
 	if got := cfg.ListenAddr(); got != "0.0.0.0:9999" {
-		t.Fatalf("ListenAddr = %q", got)
+		t.Fatalf("legacy ListenAddr = %q", got)
+	}
+	// GROK_WORK_* wins over legacy GROK_DISCORD_*.
+	t.Setenv("GROK_WORK_HTTP_LISTEN", "127.0.0.1:8888")
+	if got := cfg.ListenAddr(); got != "127.0.0.1:8888" {
+		t.Fatalf("work-preferred ListenAddr = %q", got)
+	}
+}
+
+func TestEnvPrefersWork(t *testing.T) {
+	t.Setenv("GROK_WORK_CONFIG", "")
+	t.Setenv("GROK_DISCORD_CONFIG", "/legacy/config.json")
+	if got := EnvPrefersWork("CONFIG"); got != "/legacy/config.json" {
+		t.Fatalf("legacy only: %q", got)
+	}
+	t.Setenv("GROK_WORK_CONFIG", "/work/config.json")
+	if got := EnvPrefersWork("CONFIG"); got != "/work/config.json" {
+		t.Fatalf("work preferred: %q", got)
 	}
 }
 
@@ -220,6 +240,7 @@ func TestSetAutoFixCIAndRiskyGlobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Point loader via env.
+	t.Setenv("GROK_WORK_CONFIG", "")
 	t.Setenv("GROK_DISCORD_CONFIG", path)
 	cfg, err := Load()
 	if err != nil {

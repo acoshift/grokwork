@@ -9,9 +9,9 @@ import (
 
 	"github.com/moonrhythm/hime"
 
-	"github.com/acoshift/grok-discord/internal/audit"
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/audit"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/ghpr"
 )
 
 // requireFeature rejects when the named write feature is off (404).

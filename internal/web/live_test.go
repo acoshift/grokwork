@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acoshift/grok-discord/internal/bot"
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/history"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/bot"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // TestLiveHTTPLaunch boots the production web entry (hime ListenAndServe path

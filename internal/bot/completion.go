@@ -13,8 +13,8 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/gitworktree"
 )
 
 // DefaultRiskyPathGlobs is the completion-card risk list (alias of config defaults).

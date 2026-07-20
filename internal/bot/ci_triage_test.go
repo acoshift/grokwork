@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acoshift/grok-discord/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/ghpr"
 )
 
 func TestBuildFixCIPrompt(t *testing.T) {

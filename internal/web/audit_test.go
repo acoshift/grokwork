@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acoshift/grok-discord/internal/audit"
-	"github.com/acoshift/grok-discord/internal/config"
+	"github.com/acoshift/grokwork/internal/audit"
+	"github.com/acoshift/grokwork/internal/config"
 )
 
 func TestConfigMutateWritesAuditAuthOff(t *testing.T) {

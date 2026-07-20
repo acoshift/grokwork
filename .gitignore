@@ -4,5 +4,6 @@ config.json
 *.log
 .DS_Store
 /grok-discord
+/grokwork
 .idea/
 *.iml

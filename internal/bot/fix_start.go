@@ -6,8 +6,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/acoshift/grok-discord/internal/gitworktree"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // Sentinel errors for web Fix-with-Grok mapping to HTTP status.

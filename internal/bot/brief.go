@@ -10,10 +10,10 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/acoshift/grok-discord/internal/ghpr"
-	"github.com/acoshift/grok-discord/internal/gitworktree"
-	"github.com/acoshift/grok-discord/internal/history"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 const (

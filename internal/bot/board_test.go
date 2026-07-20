@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 func TestParseBoardArgs(t *testing.T) {

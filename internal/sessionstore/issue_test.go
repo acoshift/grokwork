@@ -6,11 +6,11 @@ import (
 )
 
 func TestParseIssueRefsURL(t *testing.T) {
-	got := ParseIssueRefs("see https://github.com/acoshift/grok-discord/issues/42 please")
+	got := ParseIssueRefs("see https://github.com/acoshift/grokwork/issues/42 please")
 	if len(got) != 1 {
 		t.Fatalf("got %v", got)
 	}
-	if got[0].Number != 42 || got[0].Owner != "acoshift" || got[0].Repo != "grok-discord" {
+	if got[0].Number != 42 || got[0].Owner != "acoshift" || got[0].Repo != "grokwork" {
 		t.Fatalf("%+v", got[0])
 	}
 	if got[0].EffectiveKeyword() != IssueKeywordRefs {
@@ -169,7 +169,7 @@ func TestFormatIssueStatusLines(t *testing.T) {
 
 func TestFillIssueOwnerRepo(t *testing.T) {
 	issues := []TrackedIssue{{Number: 5}}
-	FillIssueOwnerRepo(issues, "acoshift", "grok-discord")
+	FillIssueOwnerRepo(issues, "acoshift", "grokwork")
 	if issues[0].Owner != "acoshift" || !strings.Contains(issues[0].URL, "/issues/5") {
 		t.Fatalf("%+v", issues[0])
 	}

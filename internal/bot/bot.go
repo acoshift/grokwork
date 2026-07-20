@@ -13,12 +13,12 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/ghpr"
-	"github.com/acoshift/grok-discord/internal/gitworktree"
-	"github.com/acoshift/grok-discord/internal/grokrun"
-	"github.com/acoshift/grok-discord/internal/history"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/grokrun"
+	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 const (
@@ -1078,7 +1078,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			sendChunks(s, threadID, grokrun.MaxTurnsUserMessage)
 		}
 
-		if result.Stderr != "" && os.Getenv("GROK_DISCORD_DEBUG") != "" {
+		if result.Stderr != "" && config.EnvPrefersWork("DEBUG") != "" {
 			errText := result.Stderr
 			if len(errText) > 1500 {
 				errText = errText[:1500]

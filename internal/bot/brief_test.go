@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acoshift/grok-discord/internal/history"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 func TestFormatBriefCardMinimal(t *testing.T) {

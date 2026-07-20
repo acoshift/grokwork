@@ -9,9 +9,9 @@ import (
 
 	"github.com/moonrhythm/hime"
 
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/ghpr"
-	"github.com/acoshift/grok-discord/internal/linear"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/linear"
 )
 
 // ghRun returns the injectable Runner (tests set s.ghRunner).

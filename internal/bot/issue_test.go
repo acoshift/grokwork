@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/acoshift/grok-discord/internal/config"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 func TestIssueBindingPrompt(t *testing.T) {
@@ -99,7 +99,7 @@ func TestBindIssuesFromText(t *testing.T) {
 	if err := b.sessions.Set("t1", sessionstore.Entry{Project: "app"}); err != nil {
 		t.Fatal(err)
 	}
-	bound := b.bindIssuesFromText("t1", "please fix #88 in auth", "acoshift", "grok-discord")
+	bound := b.bindIssuesFromText("t1", "please fix #88 in auth", "acoshift", "grokwork")
 	if len(bound) != 1 {
 		t.Fatalf("bound=%v", bound)
 	}

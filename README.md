@@ -1,4 +1,6 @@
-# grok-discord
+# grokwork
+
+**Grok Work** — Discord-first Grok workflow, with a full web ship surface.
 
 Tag **@Grok** in Discord; a Go bot on **your machine** runs [Grok Build](https://x.ai) headless against local project code. Your team can investigate bugs and propose fixes without sitting at the desk.
 
@@ -29,8 +31,8 @@ If you see `websocket: close 4014: Disallowed intent(s)`, the bot is requesting 
 ## 2. Configure
 
 ```bash
-git clone https://github.com/acoshift/grok-discord.git
-cd grok-discord
+git clone https://github.com/acoshift/grokwork.git
+cd grokwork
 cp config.example.json config.json
 # edit token, user IDs, project paths, channel map
 ```
@@ -50,7 +52,7 @@ cp config.example.json config.json
 | `worktreeIdleTTLDays` | Days of inactivity before pruning idle worktrees (default `30`; `0` disables). Editable on the Config page |
 | `boardStaleDays` | Days without session activity before `/board` lists a thread as **stale** (default `3`). Editable on the Config page |
 | `boardDigestChannel` | Optional Discord channel ID for a nightly team board post (empty = disabled). Editable on the Config page |
-| `httpListen` | Private-network web UI bind address (default `:8787`; override with `GROK_DISCORD_HTTP_LISTEN`) |
+| `httpListen` | Private-network web UI bind address (default `:8787`; override with `GROK_WORK_HTTP_LISTEN`) |
 | `webPublicBaseURL` | Absolute origin for OAuth redirect URIs (e.g. `http://100.x.y.z:8787`). Required when `webAuth.enabled` |
 | `discordClientSecret` | Discord OAuth2 client secret for web login (or env `DISCORD_CLIENT_SECRET` / `GROK_WORK_DISCORD_CLIENT_SECRET`) |
 | `webAuth` | Optional Discord OAuth for the web UI (see below). Default / omitted = open LAN mode (legacy) |
@@ -119,14 +121,14 @@ When enabled: unauthenticated page GETs redirect to `/login`; config and worktre
 ```bash
 go run .
 # or
-go build -o grok-discord .
-./grok-discord
+go build -o grokwork .
+./grokwork
 ```
 
 ### Docker
 
 ```bash
-docker build -t grok-discord .
+docker build -t grokwork .
 ```
 
 The image only runs the Discord bridge. Mount `grok`, auth, config, and project trees at runtime:
@@ -137,9 +139,9 @@ docker run --rm \
   -v "$HOME/.grok:/home/nonroot/.grok" \
   -v /path/to/your/code:/path/to/your/code \
   -v "$(which grok):/usr/local/bin/grok:ro" \
-  -e GROK_DISCORD_CONFIG=/config/config.json \
+  -e GROK_WORK_CONFIG=/config/config.json \
   -e HOME=/home/nonroot \
-  grok-discord
+  grokwork
 ```
 
 Project paths in `config.json` must match paths **inside** the container. Set `"grokBin": "/usr/local/bin/grok"` if needed. For day-to-day use on a laptop, the host binary is simpler than Docker.
@@ -226,7 +228,7 @@ While a task is running, the bot updates the status message every few seconds wi
 
 ## Keep running (macOS launchd)
 
-Adjust paths to where you cloned/built the binary. Example `~/Library/LaunchAgents/com.example.grok-discord.plist`:
+Adjust paths to where you cloned/built the binary. Example `~/Library/LaunchAgents/com.example.grokwork.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -234,21 +236,21 @@ Adjust paths to where you cloned/built the binary. Example `~/Library/LaunchAgen
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.example.grok-discord</string>
+  <string>com.example.grokwork</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/path/to/grok-discord/grok-discord</string>
+    <string>/path/to/grokwork/grokwork</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/path/to/grok-discord</string>
+  <string>/path/to/grokwork</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/path/to/grok-discord/data/stdout.log</string>
+  <string>/path/to/grokwork/data/stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>/path/to/grok-discord/data/stderr.log</string>
+  <string>/path/to/grokwork/data/stderr.log</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -259,19 +261,25 @@ Adjust paths to where you cloned/built the binary. Example `~/Library/LaunchAgen
 ```
 
 ```bash
-go build -o grok-discord .
+go build -o grokwork .
 mkdir -p data
-launchctl load ~/Library/LaunchAgents/com.example.grok-discord.plist
+launchctl load ~/Library/LaunchAgents/com.example.grokwork.plist
 ```
 
 ## Env vars
 
+Prefer `GROK_WORK_*`. Legacy `GROK_DISCORD_*` names are still accepted for one release cycle.
+
 | Variable | Purpose |
 |----------|---------|
 | `DISCORD_BOT_TOKEN` | Override token |
-| `GROK_DISCORD_CONFIG` | Path to config.json |
-| `GROK_DISCORD_HTTP_LISTEN` | Override `httpListen` for the web UI |
-| `GROK_DISCORD_DEBUG` | Post grok stderr into the thread |
+| `GROK_WORK_CONFIG` | Path to config.json (legacy: `GROK_DISCORD_CONFIG`) |
+| `GROK_WORK_HTTP_LISTEN` | Override `httpListen` for the web UI (legacy: `GROK_DISCORD_HTTP_LISTEN`) |
+| `GROK_WORK_DEBUG` | Post grok stderr into the thread (legacy: `GROK_DISCORD_DEBUG`) |
+| `GROK_WORK_PUBLIC_BASE_URL` | OAuth public base URL override |
+| `GROK_WORK_DISCORD_CLIENT_SECRET` / `DISCORD_CLIENT_SECRET` | OAuth client secret |
+| `GROK_WORK_SESSION_SECRET` | Web session secret |
+| `GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID` | First admin when `adminDiscordIds` empty |
 | `XAI_API_KEY` | Auth for headless grok if not logged in |
 
 ## Layout

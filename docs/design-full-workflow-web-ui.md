@@ -5,7 +5,7 @@
 | **Status** | Draft (rev 5 — user decisions locked) |
 | **Author** | — |
 | **Date** | 2026-07-20 |
-| **Repo** | `github.com/acoshift/grok-discord` |
+| **Repo** | `github.com/acoshift/grokwork` (renamed from `grok-discord` in PR 14) |
 | **Audience** | Senior engineers familiar with this codebase |
 | **Related** | `TODO.md` (P0 Safe team mode, P1 ship/review, non-goals), `Claude.md` |
 

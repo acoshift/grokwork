@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acoshift/grok-discord/internal/gitworktree"
-	"github.com/acoshift/grok-discord/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // IssueSessionHit is one work unit that already binds a given issue.

@@ -143,8 +143,8 @@ func TestFormatTimeline(t *testing.T) {
 	info := Info{
 		Number: 12,
 		Owner:  "acoshift",
-		Repo:   "grok-discord",
-		URL:    "https://github.com/acoshift/grok-discord/pull/12",
+		Repo:   "grokwork",
+		URL:    "https://github.com/acoshift/grokwork/pull/12",
 	}
 	msg := FormatTimeline(info, []TimelineEvent{
 		{Kind: TimelineApproved},
@@ -152,7 +152,7 @@ func TestFormatTimeline(t *testing.T) {
 	})
 	for _, want := range []string{
 		"**PR event**",
-		"acoshift/grok-discord#12",
+		"acoshift/grokwork#12",
 		"APPROVED",
 		"CI: **green**",
 		"✓ 4",
@@ -182,8 +182,8 @@ func TestFormatTimelineEmbed(t *testing.T) {
 	info := Info{
 		Number: 12,
 		Owner:  "acoshift",
-		Repo:   "grok-discord",
-		URL:    "https://github.com/acoshift/grok-discord/pull/12",
+		Repo:   "grokwork",
+		URL:    "https://github.com/acoshift/grokwork/pull/12",
 	}
 
 	if _, ok := FormatTimelineEmbed(info, nil); ok {
@@ -197,7 +197,7 @@ func TestFormatTimelineEmbed(t *testing.T) {
 	if !ok {
 		t.Fatal("expected embed")
 	}
-	if emb.Title != "PR event · acoshift/grok-discord#12" {
+	if emb.Title != "PR event · acoshift/grokwork#12" {
 		t.Fatalf("title=%q", emb.Title)
 	}
 	if emb.URL != info.URL {
