@@ -2,6 +2,7 @@ package ghpr
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -15,9 +16,14 @@ func TestListIssuesWithMock(t *testing.T) {
 		if !strings.Contains(joined, "--repo acme/app") {
 			t.Fatalf("missing --repo: %v", args)
 		}
+		if !strings.Contains(joined, "closedByPullRequestsReferences") {
+			t.Fatalf("list missing linked PR field: %v", args)
+		}
 		return []byte(`[
-			{"number":1,"url":"https://github.com/acme/app/issues/1","title":"Bug","state":"OPEN","author":{"login":"alice"},"labels":[{"name":"bug"}],"body":"hi"},
-			{"number":2,"url":"https://github.com/acme/app/issues/2","title":"Feat","state":"CLOSED","author":{"login":"bob"},"labels":[],"body":""}
+			{"number":1,"url":"https://github.com/acme/app/issues/1","title":"Bug","state":"OPEN","author":{"login":"alice"},"labels":[{"name":"bug"}],"body":"hi",
+			 "closedByPullRequestsReferences":[{"number":9,"url":"https://github.com/acme/app/pull/9","repository":{"name":"app","owner":{"login":"acme"}}}]},
+			{"number":2,"url":"https://github.com/acme/app/issues/2","title":"Feat","state":"CLOSED","author":{"login":"bob"},"labels":[],"body":"",
+			 "closedByPullRequestsReferences":[]}
 		]`), nil
 	}
 	list, err := ListIssuesWith(context.Background(), run, "/repo", IssueListOpts{Owner: "acme", Repo: "app", State: "all"})
@@ -33,16 +39,41 @@ func TestListIssuesWithMock(t *testing.T) {
 	if list[0].State != "OPEN" || len(list[0].Labels) != 1 || list[0].Labels[0] != "bug" {
 		t.Fatalf("first labels/state=%+v", list[0])
 	}
+	if len(list[0].LinkedPRs) != 1 || list[0].LinkedPRs[0].Number != 9 {
+		t.Fatalf("first linked=%+v", list[0].LinkedPRs)
+	}
+	if list[0].LinkedPRs[0].Owner != "acme" || list[0].LinkedPRs[0].Repo != "app" {
+		t.Fatalf("linked owner/repo=%+v", list[0].LinkedPRs[0])
+	}
 	if list[1].Number != 2 || list[1].State != "CLOSED" {
 		t.Fatalf("second=%+v", list[1])
+	}
+	if len(list[1].LinkedPRs) != 0 {
+		t.Fatalf("second linked=%+v", list[1].LinkedPRs)
 	}
 }
 
 func TestViewIssueWithMock(t *testing.T) {
+	var sawGraphQL bool
 	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "api graphql") {
+			sawGraphQL = true
+			if !strings.Contains(joined, "owner=acme") || !strings.Contains(joined, "repo=app") || !strings.Contains(joined, "number=42") {
+				t.Fatalf("graphql vars: %v", args)
+			}
+			return []byte(`{
+				"data":{"repository":{"issue":{"closedByPullRequestsReferences":{"nodes":[
+					{"number":9,"title":"Fix payment timeout","url":"https://github.com/acme/app/pull/9","state":"OPEN","isDraft":false,
+					 "repository":{"name":"app","owner":{"login":"acme"}}}
+				]}}}}
+			}`), nil
+		}
 		if !strings.Contains(joined, "issue view 42") {
 			t.Fatalf("args=%v", args)
+		}
+		if !strings.Contains(joined, "closedByPullRequestsReferences") {
+			t.Fatalf("view missing linked PR field: %v", args)
 		}
 		return []byte(`{
 			"number":42,
@@ -54,6 +85,9 @@ func TestViewIssueWithMock(t *testing.T) {
 			"body":"Repro steps…",
 			"comments":[
 				{"author":{"login":"dave"},"body":"looking","url":"https://github.com/acme/app/issues/42#issuecomment-1"}
+			],
+			"closedByPullRequestsReferences":[
+				{"number":9,"url":"https://github.com/acme/app/pull/9","repository":{"name":"app","owner":{"login":"acme"}}}
 			]
 		}`), nil
 	}
@@ -72,6 +106,47 @@ func TestViewIssueWithMock(t *testing.T) {
 	}
 	if info.Owner != "acme" || info.Repo != "app" {
 		t.Fatalf("owner/repo=%s/%s", info.Owner, info.Repo)
+	}
+	if !sawGraphQL {
+		t.Fatal("expected GraphQL enrichment for linked PRs")
+	}
+	if len(info.LinkedPRs) != 1 {
+		t.Fatalf("linked=%+v", info.LinkedPRs)
+	}
+	pr := info.LinkedPRs[0]
+	if pr.Number != 9 || pr.Title != "Fix payment timeout" || pr.State != "OPEN" {
+		t.Fatalf("linked pr=%+v", pr)
+	}
+	if pr.Owner != "acme" || pr.Repo != "app" || pr.URL == "" {
+		t.Fatalf("linked owner/url=%+v", pr)
+	}
+}
+
+func TestViewIssueLinkedPRsGraphQLFallback(t *testing.T) {
+	// GraphQL fails → keep CLI-parsed linked PRs (number/url only).
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "api graphql") {
+			return nil, fmt.Errorf("graphql down")
+		}
+		return []byte(`{
+			"number":1,"url":"https://github.com/acme/app/issues/1","title":"t","state":"OPEN",
+			"author":{"login":"a"},"labels":[],"body":"b","comments":[],
+			"closedByPullRequestsReferences":[
+				{"number":3,"url":"https://github.com/acme/other/pull/3",
+				 "repository":{"name":"other","owner":{"login":"acme"}}}
+			]
+		}`), nil
+	}
+	info, err := ViewIssueWith(context.Background(), run, "/repo", 1, "acme", "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info.LinkedPRs) != 1 || info.LinkedPRs[0].Number != 3 {
+		t.Fatalf("linked=%+v", info.LinkedPRs)
+	}
+	if info.LinkedPRs[0].Repo != "other" || info.LinkedPRs[0].Title != "" {
+		t.Fatalf("expected CLI shape without title: %+v", info.LinkedPRs[0])
 	}
 }
 

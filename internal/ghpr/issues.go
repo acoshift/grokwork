@@ -31,6 +31,18 @@ type IssueComment struct {
 	URL    string
 }
 
+// IssueLinkedPR is a pull request linked as a closing reference for an issue
+// (GitHub "Development" / closedByPullRequestsReferences).
+type IssueLinkedPR struct {
+	Number  int
+	URL     string
+	Title   string
+	State   string // OPEN, CLOSED, MERGED
+	IsDraft bool
+	Owner   string
+	Repo    string
+}
+
 // IssueInfo is a GitHub issue snapshot for web/read surfaces.
 type IssueInfo struct {
 	Number    int
@@ -41,6 +53,7 @@ type IssueInfo struct {
 	Author    string
 	Labels    []string
 	Comments  []IssueComment
+	LinkedPRs []IssueLinkedPR
 	Owner     string
 	Repo      string
 	Truncated bool // body or comments hit size caps
@@ -67,7 +80,7 @@ func ListIssuesWith(ctx context.Context, run Runner, repoDir string, opts IssueL
 	args := []string{"issue", "list",
 		"--state", state,
 		"--limit", strconv.Itoa(limit),
-		"--json", "number,url,title,state,author,labels,body",
+		"--json", "number,url,title,state,author,labels,body,closedByPullRequestsReferences",
 	}
 	if o, r := strings.TrimSpace(opts.Owner), strings.TrimSpace(opts.Repo); o != "" && r != "" {
 		args = append(args, "--repo", o+"/"+r)
@@ -91,6 +104,7 @@ func ViewIssue(ctx context.Context, repoDir string, number int) (IssueInfo, erro
 }
 
 // ViewIssueWith loads an issue; owner/repo optional --repo override.
+// When owner/repo are set, linked PRs are enriched via GraphQL (title, state).
 func ViewIssueWith(ctx context.Context, run Runner, repoDir string, number int, owner, repo string) (IssueInfo, error) {
 	if run == nil {
 		run = defaultRunner
@@ -99,7 +113,7 @@ func ViewIssueWith(ctx context.Context, run Runner, repoDir string, number int, 
 		return IssueInfo{}, fmt.Errorf("invalid issue number")
 	}
 	args := []string{"issue", "view", strconv.Itoa(number),
-		"--json", "number,url,title,state,author,labels,body,comments",
+		"--json", "number,url,title,state,author,labels,body,comments,closedByPullRequestsReferences",
 	}
 	if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
 		args = append(args, "--repo", o+"/"+r)
@@ -108,7 +122,31 @@ func ViewIssueWith(ctx context.Context, run Runner, repoDir string, number int, 
 	if err != nil {
 		return IssueInfo{}, err
 	}
-	return parseIssueViewJSON(raw, owner, repo, DefaultIssueBodyCap)
+	info, err := parseIssueViewJSON(raw, owner, repo, DefaultIssueBodyCap)
+	if err != nil {
+		return IssueInfo{}, err
+	}
+	// Prefer GraphQL for title/state on linked PRs (gh --json omits them).
+	if info.Owner != "" && info.Repo != "" && len(info.LinkedPRs) > 0 {
+		if rich, gErr := listIssueLinkedPRsWith(ctx, run, repoDir, info.Owner, info.Repo, number); gErr == nil && len(rich) > 0 {
+			info.LinkedPRs = rich
+		}
+	}
+	return info, nil
+}
+
+type issueLinkedPRJSON struct {
+	Number     int    `json:"number"`
+	URL        string `json:"url"`
+	Title      string `json:"title"`
+	State      string `json:"state"`
+	IsDraft    bool   `json:"isDraft"`
+	Repository *struct {
+		Name  string `json:"name"`
+		Owner *struct {
+			Login string `json:"login"`
+		} `json:"owner"`
+	} `json:"repository"`
 }
 
 type issueJSON struct {
@@ -124,6 +162,7 @@ type issueJSON struct {
 		Body   string `json:"body"`
 		URL    string `json:"url"`
 	} `json:"comments"`
+	ClosedByPullRequestsReferences []issueLinkedPRJSON `json:"closedByPullRequestsReferences"`
 }
 
 func parseIssueListJSON(raw []byte, owner, repo string) ([]IssueInfo, error) {
@@ -174,10 +213,149 @@ func (r issueJSON) toInfo(owner, repo string, bodyCap int) (IssueInfo, error) {
 			URL:    c.URL,
 		})
 	}
+	for _, pr := range r.ClosedByPullRequestsReferences {
+		info.LinkedPRs = append(info.LinkedPRs, pr.toLinkedPR(info.Owner, info.Repo))
+	}
 	if info.Owner == "" || info.Repo == "" {
 		fillIssueOwnerRepo(&info)
+		// Backfill empty owner/repo on linked PRs after URL parse.
+		for i := range info.LinkedPRs {
+			if info.LinkedPRs[i].Owner == "" {
+				info.LinkedPRs[i].Owner = info.Owner
+			}
+			if info.LinkedPRs[i].Repo == "" {
+				info.LinkedPRs[i].Repo = info.Repo
+			}
+		}
 	}
 	return info, nil
+}
+
+func (p issueLinkedPRJSON) toLinkedPR(fallbackOwner, fallbackRepo string) IssueLinkedPR {
+	pr := IssueLinkedPR{
+		Number:  p.Number,
+		URL:     strings.TrimSpace(p.URL),
+		Title:   strings.TrimSpace(p.Title),
+		State:   strings.ToUpper(strings.TrimSpace(p.State)),
+		IsDraft: p.IsDraft,
+		Owner:   strings.TrimSpace(fallbackOwner),
+		Repo:    strings.TrimSpace(fallbackRepo),
+	}
+	if p.Repository != nil {
+		if n := strings.TrimSpace(p.Repository.Name); n != "" {
+			pr.Repo = n
+		}
+		if p.Repository.Owner != nil {
+			if o := strings.TrimSpace(p.Repository.Owner.Login); o != "" {
+				pr.Owner = o
+			}
+		}
+	}
+	if pr.Owner == "" || pr.Repo == "" {
+		fillLinkedPROwnerRepo(&pr)
+	}
+	if pr.URL == "" && pr.Owner != "" && pr.Repo != "" && pr.Number > 0 {
+		pr.URL = fmt.Sprintf("https://github.com/%s/%s/pull/%d", pr.Owner, pr.Repo, pr.Number)
+	}
+	return pr
+}
+
+func fillLinkedPROwnerRepo(pr *IssueLinkedPR) {
+	const prefix = "https://github.com/"
+	u := strings.TrimSpace(pr.URL)
+	if !strings.HasPrefix(strings.ToLower(u), prefix) {
+		return
+	}
+	rest := u[len(prefix):]
+	parts := strings.Split(rest, "/")
+	// owner/repo/pull/N
+	if len(parts) < 2 {
+		return
+	}
+	if pr.Owner == "" {
+		pr.Owner = parts[0]
+	}
+	if pr.Repo == "" {
+		pr.Repo = parts[1]
+	}
+}
+
+// listIssueLinkedPRsWith loads closing-reference PRs with title/state via GraphQL.
+func listIssueLinkedPRsWith(ctx context.Context, run Runner, repoDir, owner, repo string, number int) ([]IssueLinkedPR, error) {
+	if run == nil {
+		run = defaultRunner
+	}
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if owner == "" || repo == "" || number <= 0 {
+		return nil, fmt.Errorf("owner, repo, and positive issue number required")
+	}
+	const query = `
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      closedByPullRequestsReferences(first: 30, includeClosedPrs: true) {
+        nodes {
+          number
+          title
+          url
+          state
+          isDraft
+          repository { name owner { login } }
+        }
+      }
+    }
+  }
+}`
+	args := []string{
+		"api", "graphql",
+		"-f", "query=" + strings.TrimSpace(query),
+		"-F", "owner=" + owner,
+		"-F", "repo=" + repo,
+		"-F", "number=" + strconv.Itoa(number),
+	}
+	out, err := run(ctx, repoDir, "gh", args...)
+	if err != nil {
+		return nil, fmt.Errorf("list issue linked PRs: %w", err)
+	}
+	return parseIssueLinkedPRsGraphQL(out, owner, repo)
+}
+
+type gqlIssueLinkedPRsEnvelope struct {
+	Data struct {
+		Repository *struct {
+			Issue *struct {
+				ClosedByPullRequestsReferences struct {
+					Nodes []issueLinkedPRJSON `json:"nodes"`
+				} `json:"closedByPullRequestsReferences"`
+			} `json:"issue"`
+		} `json:"repository"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+func parseIssueLinkedPRsGraphQL(raw []byte, fallbackOwner, fallbackRepo string) ([]IssueLinkedPR, error) {
+	var env gqlIssueLinkedPRsEnvelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, fmt.Errorf("parse issue linked PRs: %w", err)
+	}
+	if len(env.Errors) > 0 {
+		return nil, fmt.Errorf("graphql: %s", env.Errors[0].Message)
+	}
+	if env.Data.Repository == nil || env.Data.Repository.Issue == nil {
+		return nil, fmt.Errorf("issue not found")
+	}
+	nodes := env.Data.Repository.Issue.ClosedByPullRequestsReferences.Nodes
+	out := make([]IssueLinkedPR, 0, len(nodes))
+	for _, n := range nodes {
+		if n.Number <= 0 {
+			continue
+		}
+		out = append(out, n.toLinkedPR(fallbackOwner, fallbackRepo))
+	}
+	return out, nil
 }
 
 func fillIssueOwnerRepo(info *IssueInfo) {

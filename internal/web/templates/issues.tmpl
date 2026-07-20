@@ -51,7 +51,7 @@
   {{if .Issues}}
   <div class="table-scroll">
   <table>
-    <thead><tr><th>#</th><th>Title</th><th>State</th><th>Author</th></tr></thead>
+    <thead><tr><th>#</th><th>Title</th><th>State</th><th>Author</th><th title="Pull requests that reference this issue">PRs</th></tr></thead>
     <tbody>
     {{range .Issues}}
       <tr>
@@ -59,6 +59,7 @@
         <td><a class="pr-title" href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.Title}}</a></td>
         <td>{{if eq .State "open" "OPEN"}}<span class="badge live">{{.State}}</span>{{else}}<span class="badge">{{.State}}</span>{{end}}</td>
         <td class="mono muted">{{.Author}}</td>
+        <td class="mono">{{if .LinkedPRs}}{{len .LinkedPRs}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
     {{end}}
     </tbody>

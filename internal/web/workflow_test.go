@@ -48,6 +48,13 @@ func workflowServer(t *testing.T) *Server {
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		switch {
+		case strings.Contains(joined, "api graphql") && strings.Contains(joined, "closedByPullRequestsReferences"):
+			return []byte(`{
+				"data":{"repository":{"issue":{"closedByPullRequestsReferences":{"nodes":[
+					{"number":9,"title":"Fix fixture bug","url":"https://github.com/acme/app/pull/9","state":"OPEN","isDraft":false,
+					 "repository":{"name":"app","owner":{"login":"acme"}}}
+				]}}}}
+			}`), nil
 		case strings.HasPrefix(joined, "issue list"):
 			if !strings.Contains(joined, "--repo acme/api") && !strings.Contains(joined, "--repo acme/app") {
 				t.Fatalf("issue list missing --repo: %v", args)
@@ -57,13 +64,15 @@ func workflowServer(t *testing.T) *Server {
 				repo = "api"
 			}
 			return []byte(`[
-				{"number":7,"url":"https://github.com/acme/` + repo + `/issues/7","title":"Fixture bug ` + repo + `","state":"OPEN","author":{"login":"alice"},"labels":[],"body":"body"}
+				{"number":7,"url":"https://github.com/acme/` + repo + `/issues/7","title":"Fixture bug ` + repo + `","state":"OPEN","author":{"login":"alice"},"labels":[],"body":"body",
+				 "closedByPullRequestsReferences":[{"number":9,"url":"https://github.com/acme/` + repo + `/pull/9","repository":{"name":"` + repo + `","owner":{"login":"acme"}}}]}
 			]`), nil
 		case strings.Contains(joined, "issue view 7"):
 			return []byte(`{
 				"number":7,"url":"https://github.com/acme/app/issues/7","title":"Fixture bug app",
 				"state":"OPEN","author":{"login":"alice"},"labels":[{"name":"bug"}],
-				"body":"detail body","comments":[{"author":{"login":"bob"},"body":"note","url":"u"}]
+				"body":"detail body","comments":[{"author":{"login":"bob"},"body":"note","url":"u"}],
+				"closedByPullRequestsReferences":[{"number":9,"url":"https://github.com/acme/app/pull/9","repository":{"name":"app","owner":{"login":"acme"}}}]
 			}`), nil
 		case strings.HasPrefix(joined, "pr view"):
 			return []byte(`{
@@ -176,6 +185,9 @@ func TestIssuesListAndDetail(t *testing.T) {
 		"Fixture bug api",
 		"#7",
 		`name="repo_full"`,
+		">PRs</th>",
+		// Linked PR count column (one PR in fixture).
+		"<td class=\"mono\">1</td>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list missing %q in %s", want, body)
@@ -189,7 +201,11 @@ func TestIssuesListAndDetail(t *testing.T) {
 		t.Fatalf("detail status=%d", w.Code)
 	}
 	body = w.Body.String()
-	for _, want := range []string{`id="page-issue-detail"`, "Fixture bug app", "detail body", "bob", "note"} {
+	for _, want := range []string{
+		`id="page-issue-detail"`, "Fixture bug app", "detail body", "bob", "note",
+		`id="issue-linked-prs"`, "Related PRs", "Fix fixture bug",
+		`/prs/acme/app/9`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("detail missing %q", want)
 		}
