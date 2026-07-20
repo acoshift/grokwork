@@ -268,6 +268,13 @@ func (s *Server) prDetail(ctx *hime.Context) error {
 	} else if viewErr != nil {
 		d.Error = viewErr.Error()
 	}
+	d.ShowFixPicker = ctx.FormValue("picker") == "1"
+	if s.bot != nil && project != "" {
+		d.FixHits = s.bot.FindByPR(project, owner, repo, n, false)
+		if d.ShowFixPicker || len(d.FixHits) > 1 {
+			d.ShowFixPicker = true
+		}
+	}
 	return s.viewPage(ctx, "pr_detail", d)
 }
 

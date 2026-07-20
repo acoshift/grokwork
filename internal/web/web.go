@@ -180,6 +180,13 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssueFix))))
 	mux.Handle("POST /projects/{project}/linear/{identifier}/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postLinearFix))))
+	// Address CI / Continue / Address review (PR11b–11c)
+	mux.Handle("POST /prs/{owner}/{repo}/{n}/address-ci",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAddressCI))))
+	mux.Handle("POST /prs/{owner}/{repo}/{n}/address-review",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAddressReview))))
+	mux.Handle("POST /sessions/{threadID}/continue",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionContinue))))
 	mux.Handle("GET /events", s.requireAuth(http.HandlerFunc(s.sse)))
 	mux.Handle("GET /partials/dashboard/stats", s.requireAuth(hime.Handler(s.partialDashboardStats)))
 	mux.Handle("GET /partials/dashboard/runs", s.requireAuth(hime.Handler(s.partialDashboardRuns)))

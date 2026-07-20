@@ -25,6 +25,54 @@
   <pre class="bubble-body" style="margin-top:1rem;white-space:pre-wrap;">{{.PR.Body}}</pre>
 </div>
 
+{{if .CanStartSession}}
+<div class="section card" id="pr-address-actions">
+  <h2>Grok actions</h2>
+  <p class="sub">Starts or reuses a Discord work unit for this PR. Grok pushes fixes; it does not merge.</p>
+  {{if .ShowFixPicker}}
+  <p class="flash">Multiple sessions already bind this PR. Pick one, or force a new thread.</p>
+  <table class="table">
+    <thead><tr><th>Thread</th><th>Label</th><th>Goal</th><th></th></tr></thead>
+    <tbody>
+    {{range .FixHits}}
+      <tr>
+        <td class="mono">{{.ThreadID}}</td>
+        <td><span class="badge">{{.Label}}</span>{{if .Busy}} · busy{{end}}</td>
+        <td>{{.Goal}}</td>
+        <td>
+          <form method="post" action="/prs/{{$.ActiveOwner}}/{{$.ActiveRepo}}/{{$.PRNumber}}/address-ci" style="display:inline">
+            {{template "csrf" $}}
+            <input type="hidden" name="project" value="{{$.Project}}">
+            <input type="hidden" name="thread_id" value="{{.ThreadID}}">
+            <button type="submit">Continue (CI)</button>
+          </form>
+          <form method="post" action="/prs/{{$.ActiveOwner}}/{{$.ActiveRepo}}/{{$.PRNumber}}/address-review" style="display:inline">
+            {{template "csrf" $}}
+            <input type="hidden" name="project" value="{{$.Project}}">
+            <input type="hidden" name="thread_id" value="{{.ThreadID}}">
+            <button type="submit">Continue (review)</button>
+          </form>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-ci" style="margin-bottom:0.75rem;">
+    {{template "csrf" $}}
+    <input type="hidden" name="project" value="{{.Project}}">
+    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start new thread</label>
+    <div class="form-actions"><button type="submit" id="btn-address-ci">Address CI</button></div>
+  </form>
+  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-review">
+    {{template "csrf" $}}
+    <input type="hidden" name="project" value="{{.Project}}">
+    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start new thread</label>
+    <div class="form-actions"><button type="submit" id="btn-address-review">Address review</button></div>
+  </form>
+</div>
+{{end}}
+
 {{if .CanGitHubWrite}}
 <div class="section card" id="pr-comment-form">
   <h2>Add comment</h2>

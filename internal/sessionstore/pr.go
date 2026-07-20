@@ -157,6 +157,9 @@ func (e *Entry) UpsertPR(pr TrackedPR) {
 	e.syncLegacyFromPRs()
 }
 
+// SamePR reports whether two tracked PRs refer to the same pull request.
+func SamePR(a, b TrackedPR) bool { return samePR(a, b) }
+
 func samePR(a, b TrackedPR) bool {
 	if a.Number > 0 && a.Number == b.Number {
 		if a.Owner != "" && b.Owner != "" && a.Repo != "" && b.Repo != "" {

@@ -42,6 +42,19 @@
   {{end}}
 </div>
 
+{{if .CanStartSession}}
+<div class="section card" id="session-continue-form">
+  <h2>Continue with Grok</h2>
+  <p class="sub">Queue a follow-up on this work unit only (does not create a new Discord thread).</p>
+  <form method="post" action="/sessions/{{.ThreadID}}/continue">
+    {{template "csrf" $}}
+    <label for="continue-prompt">Prompt</label>
+    <textarea id="continue-prompt" name="prompt" rows="4" required placeholder="What should Grok do next?"></textarea>
+    <div class="form-actions"><button type="submit" id="btn-continue">Continue</button></div>
+  </form>
+</div>
+{{end}}
+
 <div class="section">
   <h2>Turns ({{len .Thread.Turns}})</h2>
   {{if .Thread.Turns}}
