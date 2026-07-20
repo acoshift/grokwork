@@ -19,6 +19,7 @@ type ProjectLinearConfig struct {
 type ProjectConfig struct {
 	Path             string               `json:"path"`
 	DiscordChannelID string               `json:"discordChannelId,omitempty"` // preferred channel for web-created threads
+	DiscordGuildID   string               `json:"discordGuildId,omitempty"`   // Discord server for deep links (multi-guild)
 	GitHub           *ProjectGitHubConfig `json:"github,omitempty"`
 	Linear           *ProjectLinearConfig `json:"linear,omitempty"`
 }
@@ -63,6 +64,7 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 		}
 		pc.Path = strings.TrimSpace(pc.Path)
 		pc.DiscordChannelID = strings.TrimSpace(pc.DiscordChannelID)
+		pc.DiscordGuildID = strings.TrimSpace(pc.DiscordGuildID)
 		if pc.Linear != nil {
 			pc.Linear.TeamKey = strings.TrimSpace(pc.Linear.TeamKey)
 			pc.Linear.APIKey = strings.TrimSpace(pc.Linear.APIKey)
@@ -92,6 +94,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 	type outObj struct {
 		Path             string               `json:"path"`
 		DiscordChannelID string               `json:"discordChannelId,omitempty"`
+		DiscordGuildID   string               `json:"discordGuildId,omitempty"`
 		GitHub           *ProjectGitHubConfig `json:"github,omitempty"`
 		Linear           *ProjectLinearConfig `json:"linear,omitempty"`
 	}
@@ -100,6 +103,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		out[name] = outObj{
 			Path:             pc.Path,
 			DiscordChannelID: pc.DiscordChannelID,
+			DiscordGuildID:   pc.DiscordGuildID,
 			GitHub:           cloneProjectGitHub(pc.GitHub),
 			Linear:           cloneProjectLinear(pc.Linear),
 		}
@@ -124,6 +128,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 		out[k] = ProjectConfig{
 			Path:             v.Path,
 			DiscordChannelID: v.DiscordChannelID,
+			DiscordGuildID:   v.DiscordGuildID,
 			GitHub:           cloneProjectGitHub(v.GitHub),
 			Linear:           cloneProjectLinear(v.Linear),
 		}

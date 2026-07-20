@@ -76,7 +76,8 @@ type Config struct {
 	// WebPublicBaseURL is the absolute public origin for OAuth redirect_uri
 	// (e.g. "http://100.x.y.z:8787"). Required when webAuth.enabled.
 	WebPublicBaseURL string `json:"webPublicBaseURL,omitempty"`
-	// DiscordGuildID is optional; used for Discord deep links from the web UI.
+	// DiscordGuildID is an optional default guild for Discord deep links when a
+	// project does not set projects.<name>.discordGuildId (multi-guild deploy).
 	DiscordGuildID string `json:"discordGuildId,omitempty"`
 	// WebMergeMethod is the default gh pr merge strategy: squash (default), merge, rebase.
 	WebMergeMethod string `json:"webMergeMethod,omitempty"`
@@ -116,6 +117,7 @@ type ProjectItem struct {
 	LinearAPIKeySet    bool   // true when config or env has a key (never expose the secret)
 	LinearEnvHint      string // e.g. LINEAR_API_KEY_HOMECONNECT
 	DiscordChannelID   string
+	DiscordGuildID     string
 	GitHubReposText     string // "owner/repo" lines for config form
 	ChannelOptions     []string // channel IDs mapped to this project (preferred dropdown)
 }
@@ -752,6 +754,7 @@ func (c *Config) Snapshot() Snapshot {
 			Path:             pc.Path,
 			LinearEnvHint:    "LINEAR_API_KEY_" + ProjectEnvKeySuffix(n),
 			DiscordChannelID: strings.TrimSpace(pc.DiscordChannelID),
+			DiscordGuildID:   strings.TrimSpace(pc.DiscordGuildID),
 		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled

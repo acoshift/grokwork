@@ -599,16 +599,20 @@ func (s *Server) setProjectGitHub(ctx *hime.Context) error {
 func (s *Server) setProjectChannel(ctx *hime.Context) error {
 	name := ctx.PostFormValue("name")
 	channelID := ctx.PostFormValue("channelId")
-	err := s.cfg.SetProjectDiscordChannel(name, channelID)
-	s.auditAction(ctx, "config.set_project_channel", err, map[string]any{"name": name, "channelId": channelID})
-	return s.configRedirect(ctx, fmt.Sprintf("Updated preferred channel for project %q", name), err)
+	guildID := ctx.PostFormValue("guildId")
+	// Single save: preferred channel + project guild (multi-guild deep links).
+	err := s.cfg.SetProjectDiscord(name, channelID, guildID)
+	s.auditAction(ctx, "config.set_project_channel", err, map[string]any{
+		"name": name, "channelId": channelID, "guildId": guildID,
+	})
+	return s.configRedirect(ctx, fmt.Sprintf("Updated Discord settings for project %q", name), err)
 }
 
 func (s *Server) setGuild(ctx *hime.Context) error {
 	id := ctx.PostFormValue("discordGuildId")
 	err := s.cfg.SetDiscordGuildID(id)
 	s.auditAction(ctx, "config.set_guild", err, map[string]any{"guildId": id})
-	return s.configRedirect(ctx, "Updated Discord guild id", err)
+	return s.configRedirect(ctx, "Updated default Discord guild id (fallback)", err)
 }
 
 func (s *Server) addUser(ctx *hime.Context) error {

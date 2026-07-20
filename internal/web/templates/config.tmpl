@@ -166,23 +166,26 @@
 </div>
 
 <div class="section card">
-  <h2>Discord guild id</h2>
-  <p class="sub" style="margin-top:0">Optional. Used later for deep links into Discord threads from the web UI.</p>
+  <h2>Default Discord guild (fallback)</h2>
+  <p class="sub" style="margin-top:0">
+    Used only when a project has no guild of its own. Prefer setting the guild on each project below for multi-server setups.
+  </p>
   <form class="inline" method="post" action="{{route "config.setGuild"}}" style="grid-template-columns: 1fr auto;">
     {{template "csrf" $}}
     <div>
-      <label for="guild-id">Guild ID</label>
-      <input id="guild-id" type="text" name="discordGuildId" value="{{.Config.DiscordGuildID}}" placeholder="123456789012345678" autocomplete="off">
+      <label for="guild-id">Default guild ID</label>
+      <input id="guild-id" type="text" name="discordGuildId" value="{{.Config.DiscordGuildID}}" placeholder="optional fallback" autocomplete="off">
     </div>
-    <button type="submit">Save guild</button>
+    <button type="submit">Save default guild</button>
   </form>
 </div>
 
 <div class="section card">
-  <h2>GitHub repos &amp; preferred channel (per project)</h2>
+  <h2>GitHub repos &amp; Discord (per project)</h2>
   <p class="sub" style="margin:0 0 0.75rem">
-    Multi-repo catalog (one <span class="mono">owner/repo</span> per line). Preferred Discord channel must already be mapped to the project in Channels.
-    Leave repos blank to discover from git remotes.
+    Multi-repo catalog (one <span class="mono">owner/repo</span> per line). Leave repos blank to discover from git remotes.
+    Preferred channel must already be mapped to the project in Channels.
+    Set each project’s <strong>Discord guild ID</strong> so “Open in Discord” links the right server (multi-guild).
   </p>
   {{range .Config.Projects}}
   <div style="border-top:1px solid var(--border);padding:0.85rem 0;">
@@ -194,7 +197,7 @@
       <textarea id="repos-{{.Name}}" name="repos" rows="3" placeholder="acme/app&#10;acme/api">{{.GitHubReposText}}</textarea>
       <div class="form-actions"><button type="submit">Save repos</button></div>
     </form>
-    <form class="inline" method="post" action="{{route "config.setProjectChannel"}}" style="grid-template-columns: 1fr auto;">
+    <form class="inline" method="post" action="{{route "config.setProjectChannel"}}" style="grid-template-columns: 1fr 1fr auto; align-items: end;">
       {{template "csrf" $}}
       <input type="hidden" name="name" value="{{.Name}}">
       <div>
@@ -207,7 +210,11 @@
           {{end}}
         </select>
       </div>
-      <button type="submit">Save channel</button>
+      <div>
+        <label for="guild-{{.Name}}">Discord guild ID</label>
+        <input id="guild-{{.Name}}" type="text" name="guildId" value="{{.DiscordGuildID}}" placeholder="server snowflake" autocomplete="off">
+      </div>
+      <button type="submit">Save Discord</button>
     </form>
   </div>
   {{else}}

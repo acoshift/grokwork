@@ -268,4 +268,22 @@ func TestSetProjectGitHubAndChannel(t *testing.T) {
 	if snap.Projects[0].DiscordChannelID != "ch1" {
 		t.Fatalf("channel=%q", snap.Projects[0].DiscordChannelID)
 	}
+	// Project guild overrides global default.
+	if got := cfg.ProjectDiscordGuildID("p"); got != "guild-9" {
+		t.Fatalf("fallback project guild=%q", got)
+	}
+	if err := cfg.SetProjectDiscord("p", "ch1", "guild-project"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.ProjectDiscordGuildID("p"); got != "guild-project" {
+		t.Fatalf("project guild=%q", got)
+	}
+	snap = cfg.Snapshot()
+	if snap.Projects[0].DiscordGuildID != "guild-project" {
+		t.Fatalf("snap project guild=%q", snap.Projects[0].DiscordGuildID)
+	}
+	// Unknown project → global fallback.
+	if got := cfg.ProjectDiscordGuildID("missing"); got != "guild-9" {
+		t.Fatalf("missing project guild=%q", got)
+	}
 }

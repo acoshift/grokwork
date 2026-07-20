@@ -11,6 +11,7 @@
     "app": {
       "path": "/absolute/path/to/app",
       "discordChannelId": "",
+      "discordGuildId": "",
       "github": {
         "repos": [
           { "owner": "your-org", "repo": "app" }

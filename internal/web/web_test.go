@@ -107,6 +107,9 @@ func TestPagesRender(t *testing.T) {
 		{"/config", "Pin Messages"},
 		{"/config", "Open / re-authorize"},
 		{"/config", "424242424242424242"},
+		{"/config", "Discord guild ID"},
+		{"/config", "name=\"guildId\""},
+		{"/config", "Default Discord guild"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {

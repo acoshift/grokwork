@@ -351,7 +351,8 @@ func (c *Config) SetProjectDiscordChannel(name, channelID string) error {
 	return c.saveLocked()
 }
 
-// SetDiscordGuildID sets the guild id used for Discord deep links.
+// SetDiscordGuildID sets the global default guild id (fallback for projects
+// without their own discordGuildId).
 func (c *Config) SetDiscordGuildID(guildID string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -359,7 +360,7 @@ func (c *Config) SetDiscordGuildID(guildID string) error {
 	return c.saveLocked()
 }
 
-// DiscordGuildIDValue returns the configured guild id.
+// DiscordGuildIDValue returns the global default guild id (not project-resolved).
 func (c *Config) DiscordGuildIDValue() string {
 	if c == nil {
 		return ""
@@ -367,6 +368,71 @@ func (c *Config) DiscordGuildIDValue() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return strings.TrimSpace(c.DiscordGuildID)
+}
+
+// ProjectDiscordGuildID returns the guild for Discord deep links for a project:
+// projects.<name>.discordGuildId if set, else the global discordGuildId fallback.
+func (c *Config) ProjectDiscordGuildID(project string) string {
+	if c == nil {
+		return ""
+	}
+	project = strings.TrimSpace(project)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if project != "" {
+		if pc, ok := c.Projects[project]; ok {
+			if g := strings.TrimSpace(pc.DiscordGuildID); g != "" {
+				return g
+			}
+		}
+	}
+	return strings.TrimSpace(c.DiscordGuildID)
+}
+
+// SetProjectDiscordGuild sets the per-project Discord guild id (empty clears).
+func (c *Config) SetProjectDiscordGuild(name, guildID string) error {
+	name = strings.TrimSpace(name)
+	guildID = strings.TrimSpace(guildID)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	pc.DiscordGuildID = guildID
+	c.Projects[name] = pc
+	return c.saveLocked()
+}
+
+// SetProjectDiscord updates preferred channel and/or guild for a project in one save.
+// Empty channelID clears preferred channel; empty guildID clears project guild
+// (global fallback still applies for deep links).
+func (c *Config) SetProjectDiscord(name, channelID, guildID string) error {
+	name = strings.TrimSpace(name)
+	channelID = strings.TrimSpace(channelID)
+	guildID = strings.TrimSpace(guildID)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	if channelID != "" {
+		mapped, ok := c.Channels[channelID]
+		if !ok || mapped != name {
+			return fmt.Errorf("channel %q must be mapped to project %q in channels", channelID, name)
+		}
+	}
+	pc.DiscordChannelID = channelID
+	pc.DiscordGuildID = guildID
+	c.Projects[name] = pc
+	return c.saveLocked()
 }
 
 // ChannelsForProject returns channel IDs mapped to the project (sorted by id).

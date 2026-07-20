@@ -402,7 +402,7 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 		d.Project = ent.Project
 		d.DiscordURL = ent.DiscordURL
 		if d.DiscordURL == "" {
-			d.DiscordURL = bot.DiscordThreadURL(s.cfg.DiscordGuildIDValue(), threadID)
+			d.DiscordURL = bot.DiscordThreadURL(s.cfg.ProjectDiscordGuildID(ent.Project), threadID)
 		}
 	}
 	// Live run chips from bot snapshot

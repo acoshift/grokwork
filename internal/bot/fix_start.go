@@ -182,7 +182,7 @@ func (b *Bot) startFixReuse(threadID, project, cwd string, tracked sessionstore.
 		discordURL = e.DiscordURL
 	}
 	if discordURL == "" {
-		discordURL = DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
+		discordURL = DiscordThreadURL(b.cfg.ProjectDiscordGuildID(project), threadID)
 	}
 	offline := !b.DiscordReady()
 	pos, err := b.StartTask(StartTaskOpts{
@@ -232,7 +232,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 				return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
 			})
 		}
-		discordURL := DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
+		discordURL := DiscordThreadURL(b.cfg.ProjectDiscordGuildID(project), threadID)
 		if err := b.bindFixIssue(threadID, project, tracked, opts.Actor, discordURL, true); err != nil {
 			return FixStartResult{}, err
 		}

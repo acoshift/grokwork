@@ -54,7 +54,8 @@ cp config.example.json config.json
 | `webPublicBaseURL` | Absolute origin for OAuth redirect URIs (e.g. `http://100.x.y.z:8787`). Required when `webAuth.enabled` |
 | `discordClientSecret` | Discord OAuth2 client secret for web login (or env `DISCORD_CLIENT_SECRET` / `GROK_WORK_DISCORD_CLIENT_SECRET`) |
 | `webAuth` | Optional Discord OAuth for the web UI (see below). Default / omitted = open LAN mode (legacy) |
-| `discordGuildId` | Optional Discord server id for future web deep links |
+| `discordGuildId` | Optional default Discord server id for deep links when a project omits its own |
+| `projects.<name>.discordGuildId` | Per-project Discord server id (multi-guild); used for “Open in Discord” / web thread URLs |
 | `projects.*.github.repos` | Optional multi-repo catalog (`owner`/`repo`) for Issues UI; omit to discover from git remotes |
 | `projects.*.discordChannelId` | Preferred Discord channel for web-started threads; must be mapped to this project in `channels` |
 

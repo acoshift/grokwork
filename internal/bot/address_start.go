@@ -123,7 +123,7 @@ func (b *Bot) StartContinue(opts ContinueOpts) (FixStartResult, error) {
 
 	discordURL := e.DiscordURL
 	if discordURL == "" {
-		discordURL = DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
+		discordURL = DiscordThreadURL(b.cfg.ProjectDiscordGuildID(project), threadID)
 	}
 	offline := !b.DiscordReady()
 	pos, err := b.StartTask(StartTaskOpts{
@@ -253,7 +253,7 @@ func (b *Bot) startPRReuse(threadID, project, cwd string, tracked sessionstore.T
 		}
 	}
 	if discordURL == "" {
-		discordURL = DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
+		discordURL = DiscordThreadURL(b.cfg.ProjectDiscordGuildID(project), threadID)
 	}
 	offline := !b.DiscordReady()
 	pos, err := b.StartTask(StartTaskOpts{
@@ -307,7 +307,7 @@ func (b *Bot) startPRCreate(project, cwd string, tracked sessionstore.TrackedPR,
 				return b.bindTrackedPR(unitID, project, tracked, actor, "", true)
 			})
 		}
-		discordURL := DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
+		discordURL := DiscordThreadURL(b.cfg.ProjectDiscordGuildID(project), threadID)
 		if err := b.bindTrackedPR(threadID, project, tracked, actor, discordURL, true); err != nil {
 			return FixStartResult{}, err
 		}
