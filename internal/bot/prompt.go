@@ -181,7 +181,7 @@ func messagePromptText(m *discordgo.Message) string {
 
 func HelpText() string {
 	return strings.Join([]string{
-		"**Grok Discord bridge** — runs Grok Build on this machine against local code.",
+		"**Grok Work bridge** — runs Grok Build on this machine against local code.",
 		"",
 		"**Usage**",
 		"• `@Grok <task>` — run against this channel's configured project",
