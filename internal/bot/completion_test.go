@@ -62,8 +62,8 @@ func TestParseDiffStatSummary(t *testing.T) {
 	}
 }
 
-func TestFormatCompletionCard(t *testing.T) {
-	card := FormatCompletionCard(CompletionCardInput{
+func sampleCompletionInput() CompletionCardInput {
+	return CompletionCardInput{
 		Status:   "Done",
 		Project:  "api",
 		Elapsed:  2*time.Minute + 5*time.Second,
@@ -81,11 +81,76 @@ func TestFormatCompletionCard(t *testing.T) {
 			NameStatus: []string{"M\tapi/a.go", "A\tdb/migrations/1.sql"},
 			Risky:      []string{"db/migrations/1.sql"},
 		},
-	})
+	}
+}
+
+func TestFormatCompletionEmbed(t *testing.T) {
+	emb, ok := FormatCompletionEmbed(sampleCompletionInput())
+	if !ok || emb == nil {
+		t.Fatal("expected embed")
+	}
+	if emb.Title != "Summary · Done" {
+		t.Fatalf("title=%q", emb.Title)
+	}
+	if emb.Color != completionColorDone {
+		t.Fatalf("color=%#x want done %#x", emb.Color, completionColorDone)
+	}
+	if !strings.Contains(emb.Description, "api") || !strings.Contains(emb.Description, "2m") {
+		t.Fatalf("description=%q", emb.Description)
+	}
+
+	fields := map[string]string{}
+	for _, f := range emb.Fields {
+		fields[f.Name] = f.Value
+	}
+	for _, name := range []string{"Branch", "Base", "Diff", "Files", "Risk", "PR"} {
+		if _, ok := fields[name]; !ok {
+			t.Fatalf("missing field %q; got %v", name, fields)
+		}
+	}
+	if !strings.Contains(fields["Branch"], "grok/discord/1") || !strings.Contains(fields["Branch"], "abc1234") {
+		t.Fatalf("branch=%q", fields["Branch"])
+	}
+	if !strings.Contains(fields["Base"], "origin/main") {
+		t.Fatalf("base=%q", fields["Base"])
+	}
+	if !strings.Contains(fields["Diff"], "+10") || !strings.Contains(fields["Diff"], "−1") {
+		t.Fatalf("diff=%q", fields["Diff"])
+	}
+	if !strings.Contains(fields["Files"], "M api/a.go") {
+		t.Fatalf("files=%q", fields["Files"])
+	}
+	if !strings.Contains(fields["Risk"], "migrations") {
+		t.Fatalf("risk=%q", fields["Risk"])
+	}
+	if !strings.Contains(fields["PR"], "#9") || !strings.Contains(fields["PR"], "https://github.com/o/r/pull/9") {
+		t.Fatalf("pr=%q", fields["PR"])
+	}
+
+	// Exit failure → red.
+	failIn := sampleCompletionInput()
+	failIn.Status = "Exit 1"
+	failEmb, ok := FormatCompletionEmbed(failIn)
+	if !ok || failEmb.Color != completionColorFailed {
+		t.Fatalf("exit color: ok=%v color=%#x", ok, failEmb.Color)
+	}
+
+	// Empty diff → no embed.
+	if _, ok := FormatCompletionEmbed(CompletionCardInput{
+		Status:  "Done",
+		Project: "api",
+		Diff:    DiffSummary{},
+	}); ok {
+		t.Fatal("expected no embed for empty diff")
+	}
+}
+
+func TestFormatCompletionCard(t *testing.T) {
+	card := FormatCompletionCard(sampleCompletionInput())
 	for _, want := range []string{
 		"**Summary**", "Done", "api", "2m",
 		"grok/discord/1", "abc1234", "origin/main",
-		"+10", "-1", "M api/a.go", "risk", "migrations",
+		"+10", "−1", "M api/a.go", "risk", "migrations",
 		"#9", "https://github.com/o/r/pull/9",
 	} {
 		if !strings.Contains(card, want) {

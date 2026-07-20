@@ -181,6 +181,13 @@ func discordSendEmbed(s *discordgo.Session, channelID string, embeds ...*discord
 		e.Title = strings.ReplaceAll(e.Title, "\x00", "")
 		e.Description = strings.ReplaceAll(e.Description, "\x00", "")
 		e.URL = strings.ReplaceAll(e.URL, "\x00", "")
+		for _, f := range e.Fields {
+			if f == nil {
+				continue
+			}
+			f.Name = strings.ReplaceAll(f.Name, "\x00", "")
+			f.Value = strings.ReplaceAll(f.Value, "\x00", "")
+		}
 		cleaned = append(cleaned, e)
 	}
 	if len(cleaned) == 0 {

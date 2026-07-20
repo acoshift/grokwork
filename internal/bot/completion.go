@@ -23,6 +23,13 @@ var DefaultRiskyPathGlobs = config.DefaultRiskyPathGlobs
 const (
 	maxCompletionNameLines = 12
 	maxCompletionMsgRunes  = 1800
+	maxEmbedFieldValue     = 1024
+
+	// Discord embed colors for completion summary.
+	completionColorDone      = 0x57F287 // green
+	completionColorFailed    = 0xED4245 // red
+	completionColorCancelled = 0x95A5A6 // grey
+	completionColorDefault   = 0x5865F2 // blurple
 )
 
 // DiffSummary is a deterministic git snapshot for the completion card.
@@ -299,50 +306,196 @@ type CompletionCardInput struct {
 	Queued   int
 }
 
-// FormatCompletionCard builds the Discord completion summary (no embeds).
+// completionHasContent reports whether the completion card has anything useful.
+func completionHasContent(d DiffSummary) bool {
+	return d.HasCommits || d.Dirty || d.FileCount > 0 || len(d.NameStatus) > 0
+}
+
+func completionStatus(in CompletionCardInput) string {
+	status := strings.TrimSpace(in.Status)
+	if status == "" {
+		return "Done"
+	}
+	return status
+}
+
+func completionEmbedColor(status string) int {
+	s := strings.ToLower(strings.TrimSpace(status))
+	switch {
+	case s == "done":
+		return completionColorDone
+	case s == "cancelled":
+		return completionColorCancelled
+	case strings.HasPrefix(s, "exit "):
+		return completionColorFailed
+	default:
+		return completionColorDefault
+	}
+}
+
+func completionBranchLabel(in CompletionCardInput) string {
+	branch := in.Branch
+	if branch == "" {
+		branch = in.Diff.Branch
+	}
+	if branch == "" && in.Diff.HeadShort == "" {
+		return ""
+	}
+	if branch == "" {
+		branch = "(detached)"
+	}
+	if in.Diff.HeadShort != "" {
+		return fmt.Sprintf("`%s` @ `%s`", branch, in.Diff.HeadShort)
+	}
+	return "`" + branch + "`"
+}
+
+func completionDiffLabel(d DiffSummary) string {
+	switch {
+	case d.FileCount > 0 || d.Insertions > 0 || d.Deletions > 0:
+		return fmt.Sprintf("%d file%s · +%d −%d",
+			d.FileCount, plural(d.FileCount), d.Insertions, d.Deletions)
+	case d.Dirty:
+		return "uncommitted changes"
+	case d.HasCommits:
+		return "commits present (stat unavailable)"
+	default:
+		return ""
+	}
+}
+
+func completionRiskLabel(risky []string) string {
+	if len(risky) == 0 {
+		return ""
+	}
+	shown := risky
+	extra := 0
+	if len(shown) > 6 {
+		extra = len(shown) - 6
+		shown = shown[:6]
+	}
+	risk := strings.Join(shown, ", ")
+	if extra > 0 {
+		risk += fmt.Sprintf(" (+%d more)", extra)
+	}
+	return risk
+}
+
+func completionPRField(in CompletionCardInput) (name, value string) {
+	if len(in.ExtraPRs) > 1 {
+		var b strings.Builder
+		for i, p := range in.ExtraPRs {
+			if i > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString("• ")
+			b.WriteString(p)
+		}
+		return fmt.Sprintf("PRs (%d)", len(in.ExtraPRs)), truncateRunes(b.String(), maxEmbedFieldValue)
+	}
+	if in.PRURL == "" {
+		return "", ""
+	}
+	if in.PRNumber > 0 {
+		return "PR", fmt.Sprintf("[#%d](%s)", in.PRNumber, in.PRURL)
+	}
+	return "PR", in.PRURL
+}
+
+// FormatCompletionEmbed builds a Discord rich-embed completion summary.
+// ok is false when there is nothing useful to show (no git changes).
+func FormatCompletionEmbed(in CompletionCardInput) (*discordgo.MessageEmbed, bool) {
+	d := in.Diff
+	if !completionHasContent(d) {
+		return nil, false
+	}
+
+	status := completionStatus(in)
+	emb := &discordgo.MessageEmbed{
+		Title: "Summary · " + status,
+		Color: completionEmbedColor(status),
+	}
+
+	var descParts []string
+	if p := strings.TrimSpace(in.Project); p != "" {
+		descParts = append(descParts, "**"+p+"**")
+	}
+	if el := formatElapsed(in.Elapsed); el != "" && el != "0s" {
+		descParts = append(descParts, el)
+	}
+	if len(descParts) > 0 {
+		emb.Description = strings.Join(descParts, " · ")
+	}
+
+	if branch := completionBranchLabel(in); branch != "" {
+		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
+			Name: "Branch", Value: branch, Inline: true,
+		})
+	}
+	if d.BaseRef != "" {
+		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
+			Name: "Base", Value: "`" + d.BaseRef + "`", Inline: true,
+		})
+	}
+	if diff := completionDiffLabel(d); diff != "" {
+		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
+			Name: "Diff", Value: diff, Inline: true,
+		})
+	}
+	if names := formatNameStatusLines(d.NameStatus, maxCompletionNameLines); names != "" {
+		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
+			Name: "Files", Value: codeBlockField(names), Inline: false,
+		})
+	}
+	if d.Dirty && d.DirtyStat != "" && d.Stat == "" {
+		// Only show dirty stat when committed stat was empty.
+		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
+			Name: "Working tree", Value: codeBlockField(truncateRunes(d.DirtyStat, 400)), Inline: false,
+		})
+	}
+	if risk := completionRiskLabel(d.Risky); risk != "" {
+		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
+			Name: "Risk", Value: truncateRunes(risk, maxEmbedFieldValue), Inline: false,
+		})
+	}
+	if name, value := completionPRField(in); name != "" {
+		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
+			Name: name, Value: value, Inline: false,
+		})
+	}
+	if in.Queued > 0 {
+		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
+			Name:   "Queue",
+			Value:  fmt.Sprintf("%d follow-up%s", in.Queued, plural(in.Queued)),
+			Inline: true,
+		})
+	}
+	return emb, true
+}
+
+// FormatCompletionCard builds a plain-text completion summary (fallback when embeds fail).
 // Returns empty string when there is nothing useful to show (no git changes).
 func FormatCompletionCard(in CompletionCardInput) string {
 	d := in.Diff
-	if !d.HasCommits && !d.Dirty && d.FileCount == 0 && len(d.NameStatus) == 0 {
+	if !completionHasContent(d) {
 		return ""
 	}
 
-	status := strings.TrimSpace(in.Status)
-	if status == "" {
-		status = "Done"
-	}
+	status := completionStatus(in)
 
 	var lines []string
 	head := fmt.Sprintf("**Summary** · %s · **%s** · %s", status, in.Project, formatElapsed(in.Elapsed))
 	lines = append(lines, head)
 
-	branch := in.Branch
-	if branch == "" {
-		branch = d.Branch
-	}
-	if branch != "" || d.HeadShort != "" {
-		b := branch
-		if b == "" {
-			b = "(detached)"
-		}
-		if d.HeadShort != "" {
-			lines = append(lines, fmt.Sprintf("**branch:** `%s` @ `%s`", b, d.HeadShort))
-		} else {
-			lines = append(lines, fmt.Sprintf("**branch:** `%s`", b))
-		}
+	if branch := completionBranchLabel(in); branch != "" {
+		lines = append(lines, "**branch:** "+branch)
 	}
 	if d.BaseRef != "" {
 		lines = append(lines, "**base:** `"+d.BaseRef+"`")
 	}
 
-	switch {
-	case d.FileCount > 0 || d.Insertions > 0 || d.Deletions > 0:
-		lines = append(lines, fmt.Sprintf("**diff:** %d file%s · +%d -%d",
-			d.FileCount, plural(d.FileCount), d.Insertions, d.Deletions))
-	case d.Dirty:
-		lines = append(lines, "**diff:** uncommitted changes")
-	case d.HasCommits:
-		lines = append(lines, "**diff:** commits present (stat unavailable)")
+	if diff := completionDiffLabel(d); diff != "" {
+		lines = append(lines, "**diff:** "+diff)
 	}
 
 	if names := formatNameStatusLines(d.NameStatus, maxCompletionNameLines); names != "" {
@@ -358,29 +511,27 @@ func FormatCompletionCard(in CompletionCardInput) string {
 		lines = append(lines, trimmed)
 		lines = append(lines, "```")
 	}
-	if len(d.Risky) > 0 {
-		shown := d.Risky
-		extra := 0
-		if len(shown) > 6 {
-			extra = len(shown) - 6
-			shown = shown[:6]
-		}
-		risk := strings.Join(shown, ", ")
-		if extra > 0 {
-			risk += fmt.Sprintf(" (+%d more)", extra)
-		}
+	if risk := completionRiskLabel(d.Risky); risk != "" {
 		lines = append(lines, "**risk:** "+risk)
 	}
-	if len(in.ExtraPRs) > 1 {
-		lines = append(lines, fmt.Sprintf("**prs:** %d", len(in.ExtraPRs)))
-		for _, p := range in.ExtraPRs {
-			lines = append(lines, "• "+p)
-		}
-	} else if in.PRURL != "" {
-		if in.PRNumber > 0 {
-			lines = append(lines, fmt.Sprintf("**pr:** #%d · %s", in.PRNumber, in.PRURL))
+	if name, value := completionPRField(in); name != "" {
+		// Plain fallback: drop markdown link syntax for readability.
+		if strings.HasPrefix(value, "[#") && strings.Contains(value, "](") {
+			// [#9](url) → #9 · url
+			if end := strings.Index(value, "]("); end > 0 {
+				label := value[1:end]
+				url := strings.TrimSuffix(value[end+2:], ")")
+				lines = append(lines, fmt.Sprintf("**pr:** %s · %s", label, url))
+			} else {
+				lines = append(lines, "**pr:** "+value)
+			}
+		} else if name == "PR" {
+			lines = append(lines, "**pr:** "+value)
 		} else {
-			lines = append(lines, "**pr:** "+in.PRURL)
+			lines = append(lines, fmt.Sprintf("**prs:** %d", len(in.ExtraPRs)))
+			for _, p := range in.ExtraPRs {
+				lines = append(lines, "• "+p)
+			}
 		}
 	}
 	if in.Queued > 0 {
@@ -389,6 +540,17 @@ func FormatCompletionCard(in CompletionCardInput) string {
 
 	text := strings.Join(lines, "\n")
 	return truncateRunes(text, maxCompletionMsgRunes)
+}
+
+// codeBlockField wraps body in a Discord code fence, keeping the value under
+// the embed field limit without truncating mid-fence.
+func codeBlockField(body string) string {
+	const overhead = len("```\n") + len("\n```")
+	maxBody := maxEmbedFieldValue - overhead
+	if maxBody < 1 {
+		return truncateRunes(body, maxEmbedFieldValue)
+	}
+	return "```\n" + truncateRunes(body, maxBody) + "\n```"
 }
 
 func formatNameStatusLines(entries []string, maxLines int) string {
@@ -481,7 +643,7 @@ func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd
 		}
 	}
 
-	card := FormatCompletionCard(CompletionCardInput{
+	in := CompletionCardInput{
 		Status:   status,
 		Project:  project,
 		Elapsed:  elapsed,
@@ -491,14 +653,23 @@ func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd
 		ExtraPRs: extraPRs,
 		Diff:     diff,
 		Queued:   b.queueLen(threadID),
-	})
-	if card == "" {
+	}
+	emb, ok := FormatCompletionEmbed(in)
+	if !ok {
 		log.Printf("completion: no code changes thread=%s", threadID)
 		return
 	}
-	if _, err := discordSend(s, threadID, card); err != nil {
-		log.Printf("completion: send thread=%s: %v", threadID, err)
-		return
+	if _, err := discordSendEmbed(s, threadID, emb); err != nil {
+		// Embed Links may be missing; fall back to plain text.
+		log.Printf("completion: embed thread=%s: %v — text fallback", threadID, err)
+		card := FormatCompletionCard(in)
+		if card == "" {
+			return
+		}
+		if _, textErr := discordSend(s, threadID, card); textErr != nil {
+			log.Printf("completion: send thread=%s: %v", threadID, textErr)
+			return
+		}
 	}
 	log.Printf("completion: posted thread=%s files=%d risk=%d", threadID, diff.FileCount, len(diff.Risky))
 }
