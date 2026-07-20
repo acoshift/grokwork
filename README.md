@@ -268,14 +268,12 @@ launchctl load ~/Library/LaunchAgents/com.example.grokwork.plist
 
 ## Env vars
 
-Prefer `GROK_WORK_*`. Legacy `GROK_DISCORD_*` names are still accepted for one release cycle.
-
 | Variable | Purpose |
 |----------|---------|
 | `DISCORD_BOT_TOKEN` | Override token |
-| `GROK_WORK_CONFIG` | Path to config.json (legacy: `GROK_DISCORD_CONFIG`) |
-| `GROK_WORK_HTTP_LISTEN` | Override `httpListen` for the web UI (legacy: `GROK_DISCORD_HTTP_LISTEN`) |
-| `GROK_WORK_DEBUG` | Post grok stderr into the thread (legacy: `GROK_DISCORD_DEBUG`) |
+| `GROK_WORK_CONFIG` | Path to config.json |
+| `GROK_WORK_HTTP_LISTEN` | Override `httpListen` for the web UI |
+| `GROK_WORK_DEBUG` | Post grok stderr into the thread |
 | `GROK_WORK_PUBLIC_BASE_URL` | OAuth public base URL override |
 | `GROK_WORK_DISCORD_CLIENT_SECRET` / `DISCORD_CLIENT_SECRET` | OAuth client secret |
 | `GROK_WORK_SESSION_SECRET` | Web session secret |

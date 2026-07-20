@@ -119,10 +119,9 @@ func TestLoadStringProjectsStillWorks(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GROK_WORK_CONFIG", "")
-	t.Setenv("GROK_DISCORD_CONFIG", cfgPath)
+	t.Setenv("GROK_WORK_CONFIG", cfgPath)
 	t.Setenv("DISCORD_BOT_TOKEN", "")
 	t.Setenv("GROK_WORK_HTTP_LISTEN", "")
-	t.Setenv("GROK_DISCORD_HTTP_LISTEN", "")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)

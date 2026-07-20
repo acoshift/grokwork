@@ -155,7 +155,7 @@ func TestValidatePreferredChannelsOnLoad(t *testing.T) {
 	})
 	_ = os.WriteFile(cfgPath, raw, 0o600)
 	t.Setenv("GROK_WORK_CONFIG", "")
-	t.Setenv("GROK_DISCORD_CONFIG", cfgPath)
+	t.Setenv("GROK_WORK_CONFIG", cfgPath)
 	t.Setenv("DISCORD_BOT_TOKEN", "")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected load fail on bad preferred channel")

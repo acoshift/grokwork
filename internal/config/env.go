@@ -18,14 +18,13 @@ func firstEnv(keys ...string) string {
 	return ""
 }
 
-// EnvPrefersWork returns the first non-empty value among GROK_WORK_<suffix>,
-// GROK_DISCORD_<suffix>, then any extra keys (in order). Empty if none set.
-// Packaging rename (PR 14): prefer GROK_WORK_*; keep GROK_DISCORD_* as legacy.
-func EnvPrefersWork(suffix string, extra ...string) string {
+// EnvWork returns the first non-empty value among GROK_WORK_<suffix>, then any
+// extra keys (in order). Empty if none set.
+func EnvWork(suffix string, extra ...string) string {
 	suffix = strings.TrimSpace(suffix)
-	keys := make([]string, 0, 2+len(extra))
+	keys := make([]string, 0, 1+len(extra))
 	if suffix != "" {
-		keys = append(keys, "GROK_WORK_"+suffix, "GROK_DISCORD_"+suffix)
+		keys = append(keys, "GROK_WORK_"+suffix)
 	}
 	keys = append(keys, extra...)
 	return firstEnv(keys...)

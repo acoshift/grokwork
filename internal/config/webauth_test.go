@@ -73,12 +73,10 @@ func TestWebAuthDisabledByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GROK_WORK_CONFIG", "")
-	t.Setenv("GROK_DISCORD_CONFIG", cfgPath)
+	t.Setenv("GROK_WORK_CONFIG", cfgPath)
 	t.Setenv("DISCORD_BOT_TOKEN", "")
 	t.Setenv("GROK_WORK_HTTP_LISTEN", "")
-	t.Setenv("GROK_DISCORD_HTTP_LISTEN", "")
 	t.Setenv("GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID", "")
-	t.Setenv("GROK_DISCORD_BOOTSTRAP_ADMIN_DISCORD_ID", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -114,17 +112,13 @@ func TestWebAuthEnabledRequiresFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GROK_WORK_CONFIG", "")
-	t.Setenv("GROK_DISCORD_CONFIG", cfgPath)
+	t.Setenv("GROK_WORK_CONFIG", cfgPath)
 	t.Setenv("DISCORD_BOT_TOKEN", "")
 	t.Setenv("DISCORD_CLIENT_SECRET", "")
 	t.Setenv("GROK_WORK_DISCORD_CLIENT_SECRET", "")
-	t.Setenv("GROK_DISCORD_CLIENT_SECRET", "")
 	t.Setenv("GROK_WORK_SESSION_SECRET", "")
-	t.Setenv("GROK_DISCORD_SESSION_SECRET", "")
 	t.Setenv("GROK_WORK_PUBLIC_BASE_URL", "")
-	t.Setenv("GROK_DISCORD_PUBLIC_BASE_URL", "")
 	t.Setenv("GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID", "")
-	t.Setenv("GROK_DISCORD_BOOTSTRAP_ADMIN_DISCORD_ID", "")
 
 	_, err := Load()
 	if err == nil {
@@ -162,10 +156,9 @@ func TestWebAuthEnabledWithBootstrapEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GROK_WORK_CONFIG", "")
-	t.Setenv("GROK_DISCORD_CONFIG", cfgPath)
+	t.Setenv("GROK_WORK_CONFIG", cfgPath)
 	t.Setenv("DISCORD_BOT_TOKEN", "")
 	t.Setenv("GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID", "admin-bootstrap")
-	t.Setenv("GROK_DISCORD_BOOTSTRAP_ADMIN_DISCORD_ID", "")
 
 	cfg, err := Load()
 	if err != nil {

@@ -1078,7 +1078,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			sendChunks(s, threadID, grokrun.MaxTurnsUserMessage)
 		}
 
-		if result.Stderr != "" && config.EnvPrefersWork("DEBUG") != "" {
+		if result.Stderr != "" && config.EnvWork("DEBUG") != "" {
 			errText := result.Stderr
 			if len(errText) > 1500 {
 				errText = errText[:1500]

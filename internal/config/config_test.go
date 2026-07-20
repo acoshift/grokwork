@@ -33,11 +33,10 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 	}
 
 	t.Setenv("GROK_WORK_CONFIG", "")
-	t.Setenv("GROK_DISCORD_CONFIG", cfgPath)
+	t.Setenv("GROK_WORK_CONFIG", cfgPath)
 	t.Setenv("DISCORD_BOT_TOKEN", "")
 	// Clear HTTP listen env so config file wins for ListenAddr when we check it.
 	t.Setenv("GROK_WORK_HTTP_LISTEN", "")
-	t.Setenv("GROK_DISCORD_HTTP_LISTEN", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -206,27 +205,31 @@ func TestAddProjectValidation(t *testing.T) {
 
 func TestListenAddrEnvOverride(t *testing.T) {
 	cfg := &Config{HTTPListen: ":1111"}
-	t.Setenv("GROK_WORK_HTTP_LISTEN", "")
-	t.Setenv("GROK_DISCORD_HTTP_LISTEN", "0.0.0.0:9999")
+	t.Setenv("GROK_WORK_HTTP_LISTEN", "0.0.0.0:9999")
 	if got := cfg.ListenAddr(); got != "0.0.0.0:9999" {
-		t.Fatalf("legacy ListenAddr = %q", got)
+		t.Fatalf("ListenAddr = %q", got)
 	}
-	// GROK_WORK_* wins over legacy GROK_DISCORD_*.
-	t.Setenv("GROK_WORK_HTTP_LISTEN", "127.0.0.1:8888")
-	if got := cfg.ListenAddr(); got != "127.0.0.1:8888" {
-		t.Fatalf("work-preferred ListenAddr = %q", got)
+	t.Setenv("GROK_WORK_HTTP_LISTEN", "")
+	if got := cfg.ListenAddr(); got != ":1111" {
+		t.Fatalf("config ListenAddr = %q", got)
 	}
 }
 
-func TestEnvPrefersWork(t *testing.T) {
-	t.Setenv("GROK_WORK_CONFIG", "")
-	t.Setenv("GROK_DISCORD_CONFIG", "/legacy/config.json")
-	if got := EnvPrefersWork("CONFIG"); got != "/legacy/config.json" {
-		t.Fatalf("legacy only: %q", got)
-	}
+func TestEnvWork(t *testing.T) {
 	t.Setenv("GROK_WORK_CONFIG", "/work/config.json")
-	if got := EnvPrefersWork("CONFIG"); got != "/work/config.json" {
-		t.Fatalf("work preferred: %q", got)
+	if got := EnvWork("CONFIG"); got != "/work/config.json" {
+		t.Fatalf("EnvWork CONFIG = %q", got)
+	}
+	t.Setenv("GROK_WORK_CONFIG", "")
+	if got := EnvWork("CONFIG"); got != "" {
+		t.Fatalf("empty want empty, got %q", got)
+	}
+	if got := EnvWork("CONFIG", "FALLBACK_KEY"); got == "" {
+		// extra keys only used when set
+	}
+	t.Setenv("FALLBACK_KEY", "fb")
+	if got := EnvWork("CONFIG", "FALLBACK_KEY"); got != "fb" {
+		t.Fatalf("extra key = %q", got)
 	}
 }
 
@@ -241,7 +244,7 @@ func TestSetAutoFixCIAndRiskyGlobs(t *testing.T) {
 	}
 	// Point loader via env.
 	t.Setenv("GROK_WORK_CONFIG", "")
-	t.Setenv("GROK_DISCORD_CONFIG", path)
+	t.Setenv("GROK_WORK_CONFIG", path)
 	cfg, err := Load()
 	if err != nil {
 		// projects path /tmp may warn; token is fine. If projects must exist, use abs temp.

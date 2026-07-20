@@ -57,11 +57,10 @@ func (c *Config) DiscordClientSecretValue() string {
 	if secret != "" {
 		return secret
 	}
-	// Plain Discord name first, then product dual-env names.
+	// Plain Discord name first, then product env.
 	return firstEnv(
 		"DISCORD_CLIENT_SECRET",
 		"GROK_WORK_DISCORD_CLIENT_SECRET",
-		"GROK_DISCORD_CLIENT_SECRET",
 	)
 }
 
@@ -76,7 +75,7 @@ func (c *Config) WebPublicBaseURLValue() string {
 	if base != "" {
 		return strings.TrimRight(base, "/")
 	}
-	if v := EnvPrefersWork("PUBLIC_BASE_URL"); v != "" {
+	if v := EnvWork("PUBLIC_BASE_URL"); v != "" {
 		return strings.TrimRight(v, "/")
 	}
 	return ""
@@ -96,7 +95,7 @@ func (c *Config) SessionSecretValue() string {
 	if secret != "" {
 		return secret
 	}
-	return EnvPrefersWork("SESSION_SECRET")
+	return EnvWork("SESSION_SECRET")
 }
 
 // WebAuthAdminIDs returns a copy of admin Discord user IDs (after bootstrap merge).
@@ -285,15 +284,11 @@ func (c *Config) applyWebAuthBootstrap() {
 	if c.WebAuth == nil {
 		c.WebAuth = &WebAuthConfig{}
 	}
-	// Bootstrap admin when list empty (GROK_WORK_* preferred, GROK_DISCORD_* legacy).
+	// Bootstrap admin when list empty.
 	if len(c.WebAuth.AdminDiscordIDs) == 0 {
-		if v := EnvPrefersWork("BOOTSTRAP_ADMIN_DISCORD_ID"); v != "" {
+		if v := EnvWork("BOOTSTRAP_ADMIN_DISCORD_ID"); v != "" {
 			c.WebAuth.AdminDiscordIDs = []string{v}
-			src := "GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID"
-			if strings.TrimSpace(os.Getenv("GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID")) == "" {
-				src = "GROK_DISCORD_BOOTSTRAP_ADMIN_DISCORD_ID"
-			}
-			fmt.Fprintf(os.Stderr, "[info] webAuth: bootstrapped admin Discord id from %s\n", src)
+			fmt.Fprintf(os.Stderr, "[info] webAuth: bootstrapped admin Discord id from GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID\n")
 		}
 	}
 	// Normalize ID slices (trim empties).
