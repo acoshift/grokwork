@@ -43,45 +43,55 @@ cp config.example.json config.json
 | `discordClientId` | Optional application/client ID for the install URL (decoded from the token when empty) |
 | `allowedUserIds` | Who may invoke Grok (fail-closed if empty **and** no roles) |
 | `allowedRoleIds` | Optional role allowlist |
-| `projects` | Name → **absolute** path on this machine |
+| `projects` | Name → **absolute** path string, or object `{ "path", "github", "linear", "discordChannelId", "discordGuildId" }` |
 | `channels` | Discord channel ID → project name (**required**; only way to select a project) |
 | `yolo` | Auto-approve Grok tools (needed for unattended fix/investigate) |
 | `summarizeThreadTitle` | Call Grok once to name the Discord thread before work (default true) |
 | `summarizeTimeoutMs` | Timeout for the title summary call (default 45000) |
 | `worktreeIsolation` | Per-thread git worktree under `data/worktrees/` (default true; non-git projects use main cwd) |
 | `worktreeIdleTTLDays` | Days of inactivity before pruning idle worktrees (default `30`; `0` disables). Editable on the Config page |
+| `autoFixCI` / `autoFixCIMax` | Auto-queue CI fixes when checks fail (default off; max attempts per PR, default 2) |
 | `boardStaleDays` | Days without session activity before `/board` lists a thread as **stale** (default `3`). Editable on the Config page |
 | `boardDigestChannel` | Optional Discord channel ID for a nightly team board post (empty = disabled). Editable on the Config page |
 | `httpListen` | Private-network web UI bind address (default `:8787`; override with `GROK_WORK_HTTP_LISTEN`) |
 | `webPublicBaseURL` | Absolute origin for OAuth redirect URIs (e.g. `http://100.x.y.z:8787`). Required when `webAuth.enabled` |
 | `discordClientSecret` | Discord OAuth2 client secret for web login (or env `DISCORD_CLIENT_SECRET` / `GROK_WORK_DISCORD_CLIENT_SECRET`) |
-| `webAuth` | Optional Discord OAuth for the web UI (see below). Default / omitted = open LAN mode (legacy) |
+| `webAuth` | Optional Discord OAuth for the web UI (see below). Default / omitted = open LAN mode (no login) |
 | `discordGuildId` | Optional default Discord server id for deep links when a project omits its own |
 | `projects.<name>.discordGuildId` | Per-project Discord server id (multi-guild); used for “Open in Discord” / web thread URLs |
 | `projects.*.github.repos` | Optional multi-repo catalog (`owner`/`repo`) for Issues UI; omit to discover from git remotes |
+| `projects.*.linear` | Optional Linear ticket binding (`enabled`, `apiKey`, `teamKey`). Key may also be `LINEAR_API_KEY_<PROJECT>` |
 | `projects.*.discordChannelId` | Preferred Discord channel for web-started threads; must be mapped to this project in `channels` |
 
 `config.json` is gitignored. Never commit tokens, user IDs, client secrets, or private project paths.
 
 ### Web UI (private network / Tailscale)
 
-While the process runs it also serves a small server-rendered admin UI (hime + `html/template` + stdlib SSE):
+While the process runs it also serves a small server-rendered admin UI (hime + `html/template` + stdlib SSE). Nav: **Dashboard · Ship · Issues · Sessions · Worktrees · Config**.
 
 | Path | View |
 |------|------|
 | `/` | Dashboard — live active runs / session counts (SSE refresh) |
 | `/ship` | Ship board — all bot-tracked PRs per project, CI/review status, copyable lead digest |
-| `/history` | Thread list; open a thread to read each user/Grok turn |
+| `/sessions` | Work units (history + session store); open a thread for status, PR links, continue/cancel when gated |
+| `/sessions/{id}` · `/sessions/{id}/diff` | Session detail and worktree unified diff |
+| `/history` · `/history/{id}` | Turn-by-turn conversation log (also linked from Discord action bar **History**) |
 | `/worktrees` | List per-thread git worktrees; prune one or all past idle TTL |
-| `/config` | Add/remove projects, channel→project map, allowed users/roles, worktree idle TTL, team board digest, CI auto-fix, completion risk globs |
+| `/config` | Add/remove projects, channel→project map, allowed users/roles, Linear/GitHub project fields, worktree idle TTL, team board digest, CI auto-fix, completion risk globs |
 | `/login` | Discord OAuth login (only when `webAuth.enabled`) |
 | `/issues` | Project picker for GitHub issues |
 | `/projects/{project}/issues` | Issue list with multi-repo picker |
-| `/projects/{project}/linear` | Linear issues (when Linear enabled) |
-| `/prs/{owner}/{repo}/{n}` | PR detail (ship board links here) |
-| `/prs/.../diff` · `/sessions/{id}/diff` | Unified diff browser |
+| `/projects/{project}/linear` | Linear issues (when Linear enabled on the project) |
+| `/prs/{owner}/{repo}/{n}` | PR detail (ship board links here); address CI / address review when `startSessions` is on |
+| `/prs/.../diff` | Unified diff browser for a PR |
 
-**GitHub writes (optional):** set `webAuth.enabled` and `webAuth.features.githubWrites` / `merge`. Members can comment/close; admins can merge (default `webMergeMethod`: `squash`). Merge never passes `--admin`.
+**Web writes (optional, require `webAuth.enabled`):**
+
+| Feature flag | Effect |
+|--------------|--------|
+| `webAuth.features.githubWrites` | Members can comment / close issues & PRs |
+| `webAuth.features.merge` | Admins can merge (default `webMergeMethod`: `squash`). Never passes `--admin` |
+| `webAuth.features.startSessions` | Members can **Fix** from a GitHub/Linear issue and **Address CI / Address review** from a PR (starts/queues a Grok run on the project’s Discord channel) |
 
 Bind for Tailscale or LAN with `"httpListen": "0.0.0.0:8787"` (or a Tailscale IP).
 
@@ -108,9 +118,10 @@ By default the UI stays **open on the private network** (no login) so existing c
 | Field / env | Purpose |
 |-------------|---------|
 | `webAuth.enabled` | Turn on OAuth gates |
-| `webAuth.sessionSecret` | Optional (unused for opaque server sessions; reserved) |
+| `webAuth.sessionSecret` | Optional / reserved (web sessions are opaque server-side IDs, not HMAC cookies) |
 | `webAuth.adminDiscordIds` | Discord user IDs who may change config / prune worktrees |
 | `webAuth.memberDiscordIds` / `viewerDiscordIds` | Optional explicit lists |
+| `webAuth.features.*` | `githubWrites`, `merge`, `startSessions` (see table above; all default false) |
 | Bot `allowedUserIds` | Allowlisted users get **member** if not in the lists above |
 | `GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID` | If `adminDiscordIds` is empty, merged on boot as the first admin |
 
@@ -131,7 +142,7 @@ go build -o grokwork .
 docker build -t grokwork .
 ```
 
-The image only runs the Discord bridge. Mount `grok`, auth, config, and project trees at runtime:
+The image is a distroless binary of `grokwork` (Discord bot **and** web UI). It does **not** include `grok`, `git`, or `gh` — mount those (and auth, config, project trees) at runtime:
 
 ```bash
 docker run --rm \
@@ -141,10 +152,11 @@ docker run --rm \
   -v "$(which grok):/usr/local/bin/grok:ro" \
   -e GROK_WORK_CONFIG=/config/config.json \
   -e HOME=/home/nonroot \
+  -p 8787:8787 \
   grokwork
 ```
 
-Project paths in `config.json` must match paths **inside** the container. Set `"grokBin": "/usr/local/bin/grok"` if needed. For day-to-day use on a laptop, the host binary is simpler than Docker.
+Project paths in `config.json` must match paths **inside** the container. Set `"grokBin": "/usr/local/bin/grok"` if needed. For day-to-day use on a laptop, the host binary (or launchd) is simpler than Docker.
 
 ### Smoke test
 
@@ -177,19 +189,23 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 | `@Grok <task>` | Run against this channel’s project |
 | `@Grok <follow-up>` in thread | Resume session (same project) |
 | `@Grok <follow-up>` while busy | Queue the follow-up (up to 5); runs after the current task |
+| `@Grok /help` | Command help |
 | `@Grok /projects` | Show this channel’s mapped project |
 | `@Grok /status` | Show owner, project, session, lifecycle label, worktree branch, PR, and queue depth |
 | `@Grok /brief` | Pin/update the continuity card (goal, label, done/left, branch, PR, key files) |
 | `@Grok /brief goal <text>` | Set the sticky goal, then refresh the brief card |
 | `@Grok /label` | Show lifecycle label; `/label <state>` sets manual; `/label auto` re-enables auto |
 | `@Grok /board [running\|queued\|waiting\|stale\|label\|all]` | Team activity board for this channel’s project (running, queued, waiting on human, stale) |
+| `@Grok /link #N` · `/link ENG-123` | Bind GitHub/Linear tickets (Linear only when enabled for the project); `/link fix …` stores **Fixes**; `/unlink`; `/link clear` |
 | `@Grok /claim` | Take ownership of this thread |
 | `@Grok /hand-off @user` | Transfer ownership and post a short hand-off card |
 | `@Grok /reset` | Drop session + remove this thread’s git worktree (owner/mod) |
-| `@Grok /cancel` | Stop the in-progress run (owner/mod; queued follow-ups still run) |
-| `@Grok /fix-ci` | Fetch failing CI checks for this thread’s PR and queue a minimal fix |
+| `@Grok /cancel` · `/stop` | Stop the in-progress run (owner/mod; queued follow-ups still run) |
+| `@Grok /fix-ci` | Fetch failing CI checks for this thread’s PR(s) and queue a minimal fix |
 | `@Grok <task>` + attachments | Download files for Grok to read (logs, screenshots, patches) |
 | Reply to a message with `@Grok <task>` | Include the referenced message text + attachments (e.g. image, then ask Grok) |
+
+**Run action bar:** buttons on the live status / done message and on `/status` — **Cancel · Continue** (modal) · **Reset** (confirm) · **History** (admin UI path). Same ownership rules as the text commands.
 
 **Thread ownership:** the first `@Grok` author on a thread becomes **owner** (stored on the session). Anyone on the allowlist may still queue tasks (soft open). `@Grok /cancel` and `@Grok /reset` require the owner, a co-owner, or a Discord moderator (Administrator, Manage Messages, or Manage Threads). `@Grok /claim` takes primary ownership (previous owner stays as co-owner). `@Grok /hand-off @user` transfers ownership and posts a short card (goal, status, PR, queue). Unowned legacy sessions stay open for cancel/reset until someone claims or the next task sets an owner.
 
@@ -199,7 +215,7 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 
 **Team activity board:** `@Grok /board` lists non-terminal threads for **this channel’s mapped project**, grouped by **activity**: **running** (active Grok job), **queued** (follow-ups waiting), **waiting on human** (blocked / needs review / changes requested / CI failing), **stale** (no session activity for `boardStaleDays`, default 3), and **active** (everything else). Filter with `/board waiting`, `/board stale`, lifecycle label (`/board needs_review`), or `/board all` (includes done/abandoned). Optional nightly digest posts an all-projects card to `boardDigestChannel` (Config page or `config.json`).
 
-**Issue / ticket binding:** tasks that mention `#42`, `owner/repo#42`, or a GitHub issue URL are bound on the session (max 5). Close-intent wording (`fix` / `closes` / `resolve` near the ref) stores **Fixes**; otherwise **Refs**. `@Grok /link #42` (or `/link fix #42`, full issue URL) binds manually; `/unlink #42` and `/link clear` remove. Bound issues appear on `/status`, brief, and hand-off; Discord thread titles get a `#N` prefix when retitled; the Grok remote-work prompt requires PR body lines (`Fixes #N` / `Refs #N`) and a matching title prefix when opening a PR. One-way GitHub parse only (no Linear/Jira sync).
+**Issue / ticket binding:** tasks that mention `#42`, `owner/repo#42`, a GitHub issue URL, or (when Linear is enabled for the project) identifiers like `ENG-123` are bound on the session (max 5). Close-intent wording (`fix` / `closes` / `resolve` near the ref) stores **Fixes**; otherwise **Refs**. `@Grok /link #42` or `/link ENG-123` (or `/link fix …`, full issue URL) binds manually; `/unlink …` and `/link clear` remove. Bound tickets appear on `/status`, brief, and hand-off; Discord thread titles get a `#N` / identifier prefix when retitled; the Grok remote-work prompt requires PR body lines (`Fixes #N` / `Refs #N` or Linear identifiers) and a matching title prefix when opening a PR. Binding is one-way into the session (no push of state back to GitHub/Linear except via normal PR body conventions / Linear’s own GitHub integration).
 
 While a task is running, the bot updates the status message every few seconds with elapsed time, **phase chips** (`read → edit → test → PR`, bold = current, ✓ = seen), and a short thought/tool activity snippet. Tool activity is read live from the Grok session’s `updates.jsonl` (streaming-json only emits thought/text/end). Assistant text streams into the thread via Grok’s `streaming-json` output: a live message shows the **latest** text (tail window), Discord edits run asynchronously so they never block reading Grok’s stdout, and when a reply outgrows one Discord message the bot seals that message and continues in a new one (finish does not re-post sealed chunks). Typing is pulsed while streaming. Use `/cancel` (or `/stop`) in that thread to kill the Grok process (the live stream is finalized without a stuck “streaming…” footer). Follow-ups sent while a run is active are queued in order (max 5) and start automatically when the current run finishes; the bot replies with `Queued (#N)`.
 
@@ -281,6 +297,7 @@ plutil -lint ~/Library/LaunchAgents/com.acoshift.grokwork.plist
 ```
 
 Copying the file into `~/Library/LaunchAgents/` only installs it for this session until you bootstrap. On the next login, launchd loads agents in that directory automatically (`RunAtLoad` starts the binary).
+
 ### 3. Start / stop / restart
 
 ```bash
@@ -331,8 +348,9 @@ rm -f ~/Library/LaunchAgents/com.acoshift.grokwork.plist
 | `GROK_WORK_DEBUG` | Post grok stderr into the thread |
 | `GROK_WORK_PUBLIC_BASE_URL` | OAuth public base URL override |
 | `GROK_WORK_DISCORD_CLIENT_SECRET` / `DISCORD_CLIENT_SECRET` | OAuth client secret |
-| `GROK_WORK_SESSION_SECRET` | Web session secret |
+| `GROK_WORK_SESSION_SECRET` | Optional / reserved (`webAuth.sessionSecret`) |
 | `GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID` | First admin when `adminDiscordIds` empty |
+| `LINEAR_API_KEY_<PROJECT>` | Per-project Linear API key when not set in config (`PROJECT` uppercased; non-alnum → `_`) |
 | `XAI_API_KEY` | Auth for headless grok if not logged in |
 
 ## Layout
@@ -346,5 +364,8 @@ internal/grokrun/      # exec grok -p
 internal/gitworktree/  # per-thread git worktree isolation
 internal/sessionstore/ # thread → session persistence
 internal/history/      # per-turn conversation log for the web UI
+internal/ghpr/         # gh CLI wrapper (PR/issue state, checks, writes)
+internal/linear/       # Linear GraphQL client
+internal/audit/        # web write audit log under data/audit/
 config.example.json
 ```
