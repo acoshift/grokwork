@@ -1,7 +1,9 @@
 package ghpr
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,6 +30,102 @@ func NormalizeMergeMethod(m string) MergeMethod {
 	default:
 		return MergeSquash
 	}
+}
+
+// CreateIssueOpts is input for gh issue create.
+type CreateIssueOpts struct {
+	Title  string
+	Body   string
+	Labels []string
+}
+
+// CreateIssue creates a GitHub issue and returns its number and URL.
+func CreateIssue(ctx context.Context, repoDir, owner, repo string, opts CreateIssueOpts) (number int, url string, err error) {
+	return CreateIssueWith(ctx, defaultRunner, repoDir, owner, repo, opts)
+}
+
+// CreateIssueWith is CreateIssue with an injectable runner.
+func CreateIssueWith(ctx context.Context, run Runner, repoDir, owner, repo string, opts CreateIssueOpts) (number int, url string, err error) {
+	if run == nil {
+		run = defaultRunner
+	}
+	title := strings.TrimSpace(opts.Title)
+	if title == "" {
+		return 0, "", fmt.Errorf("empty issue title")
+	}
+	path, cleanup, err := writeBodyFile(opts.Body)
+	if err != nil {
+		return 0, "", err
+	}
+	defer cleanup()
+	args := []string{"issue", "create", "--title", title, "--body-file", path}
+	if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
+		args = append(args, "--repo", o+"/"+r)
+	}
+	for _, lab := range opts.Labels {
+		lab = strings.TrimSpace(lab)
+		if lab == "" {
+			continue
+		}
+		args = append(args, "--label", lab)
+	}
+	// Prefer JSON for stable parse; fall back handled by parseCreateIssueOutput.
+	args = append(args, "--json", "number,url")
+	out, err := run(ctx, repoDir, "gh", args...)
+	if err != nil {
+		// Retry without labels if labels caused failure (missing label in repo).
+		if len(opts.Labels) > 0 {
+			argsNoLabel := []string{"issue", "create", "--title", title, "--body-file", path}
+			if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
+				argsNoLabel = append(argsNoLabel, "--repo", o+"/"+r)
+			}
+			argsNoLabel = append(argsNoLabel, "--json", "number,url")
+			out2, err2 := run(ctx, repoDir, "gh", argsNoLabel...)
+			if err2 == nil {
+				return parseCreateIssueOutput(out2)
+			}
+		}
+		return 0, "", err
+	}
+	return parseCreateIssueOutput(out)
+}
+
+func parseCreateIssueOutput(out []byte) (number int, url string, err error) {
+	out = bytes.TrimSpace(out)
+	if len(out) == 0 {
+		return 0, "", fmt.Errorf("gh issue create: empty output")
+	}
+	// JSON: {"number":1,"url":"https://..."}
+	if looksLikeJSON(out) {
+		var v struct {
+			Number int    `json:"number"`
+			URL    string `json:"url"`
+		}
+		if jerr := json.Unmarshal(out, &v); jerr == nil && v.Number > 0 {
+			return v.Number, strings.TrimSpace(v.URL), nil
+		}
+	}
+	// Plain URL line: https://github.com/o/r/issues/12
+	line := strings.TrimSpace(string(out))
+	if i := strings.LastIndex(line, "/issues/"); i >= 0 {
+		nStr := strings.TrimSpace(line[i+len("/issues/"):])
+		if slash := strings.IndexAny(nStr, " \t\n?#"); slash >= 0 {
+			nStr = nStr[:slash]
+		}
+		n, nerr := strconv.Atoi(nStr)
+		if nerr == nil && n > 0 {
+			return n, line, nil
+		}
+	}
+	return 0, "", fmt.Errorf("gh issue create: could not parse output %q", truncateForErr(string(out), 200))
+}
+
+func truncateForErr(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // CommentIssue posts a comment on a GitHub issue via body-file.

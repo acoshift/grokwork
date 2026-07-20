@@ -28,10 +28,12 @@ const (
 	ActionLoginFail           = "login.fail"
 	ActionLoginOK             = "login.ok"
 	ActionIssueComment        = "issue.comment"
+	ActionIssueCreate         = "issue.create"
 	ActionPRComment           = "pr.comment"
 	ActionPRClose             = "pr.close"
 	ActionPRMerge             = "pr.merge"
 	ActionSessionStart        = "session.start" // Fix with Grok / web session start
+	ActionCommitReviewStart   = "commit.review.start"
 )
 
 // ActorAnonymous is used when web auth is off or no session is present.

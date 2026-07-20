@@ -1,0 +1,71 @@
+{{define "content"}}
+<h1 id="page-commits-list">Commits · {{.Project}}</h1>
+<p class="sub">
+  Repo: <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span>
+  · ref <span class="mono">{{.CommitRef}}</span>
+  · <a href="/commits">All projects</a>
+</p>
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+<form method="get" action="/projects/{{.Project}}/commits" class="toolbar" id="commits-filter">
+  <div class="field" style="flex-basis:18rem">
+    <label for="repo-pick">Repository</label>
+    <select id="repo-pick" name="repo_full" data-autosubmit>
+      {{range .RepoCatalog}}
+      <option value="{{.Owner}}/{{.Repo}}" {{if and (eq .Owner $.ActiveOwner) (eq .Repo $.ActiveRepo)}}selected{{end}}>{{.Owner}}/{{.Repo}}</option>
+      {{end}}
+    </select>
+    <input type="hidden" name="owner" id="commits-owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" id="commits-repo" value="{{.ActiveRepo}}">
+  </div>
+  <div class="field">
+    <label for="ref">Ref</label>
+    <input id="ref" name="ref" value="{{.CommitRef}}" placeholder="HEAD" class="mono" style="min-width:10rem">
+  </div>
+  <div class="field">
+    <label for="n">Limit</label>
+    <input id="n" name="n" type="number" min="1" max="100" value="50" style="width:5rem">
+  </div>
+  <button type="submit" class="btn-secondary">Apply</button>
+</form>
+<script>
+(function(){
+  var form=document.getElementById('commits-filter');
+  if(!form) return;
+  var sel=document.getElementById('repo-pick');
+  function sync(){
+    var p=(sel.value||'/').split('/');
+    document.getElementById('commits-owner').value=p[0]||'';
+    document.getElementById('commits-repo').value=p[1]||'';
+  }
+  sel.addEventListener('change', sync);
+  form.addEventListener('submit', sync);
+  sync();
+})();
+</script>
+{{if not .RepoCatalog}}
+<p class="sub">No repos in catalog. Set <span class="mono">projects.{{.Project}}.github.repos</span> on Config, or ensure git remotes exist.</p>
+{{end}}
+
+<div class="section">
+  {{if .Commits}}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>SHA</th><th>Subject</th><th>Author</th><th>Date</th></tr></thead>
+    <tbody>
+    {{range .Commits}}
+      <tr>
+        <td class="mono"><a href="/projects/{{$.Project}}/commits/{{.SHA}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.ShortSHA}}</a></td>
+        <td><a class="pr-title" href="/projects/{{$.Project}}/commits/{{.SHA}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.Subject}}</a></td>
+        <td>{{.AuthorName}}</td>
+        <td class="mono">{{if not .AuthorDate.IsZero}}{{.AuthorDate.Format "2006-01-02 15:04"}}{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else if not .Error}}
+  <div class="empty">No commits for this ref.</div>
+  {{end}}
+</div>
+{{end}}

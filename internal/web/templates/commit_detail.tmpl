@@ -1,0 +1,109 @@
+{{define "content"}}
+<p class="sub" style="margin-bottom:0.5rem">
+  <a href="/projects/{{.Project}}/commits?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}">← Commits</a>
+</p>
+<h1 id="page-commit-detail" class="mono">{{if .Commit.ShortSHA}}{{.Commit.ShortSHA}}{{else}}commit{{end}}</h1>
+<p class="sub">
+  <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span>
+  {{if .Commit.SHA}} · <span class="mono" title="{{.Commit.SHA}}">{{.Commit.SHA}}</span>{{end}}
+</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if .Commit.SHA}}
+<div class="section card">
+  <h2 style="margin-top:0;font-size:1.05rem;">{{.Commit.Subject}}</h2>
+  <p class="sub" style="margin:0.35rem 0 0;">
+    {{.Commit.AuthorName}}
+    {{if .Commit.AuthorEmail}}&lt;{{.Commit.AuthorEmail}}&gt;{{end}}
+    {{if not .Commit.AuthorDate.IsZero}} · {{.Commit.AuthorDate.Format "2006-01-02 15:04 MST"}}{{end}}
+  </p>
+  {{if .Commit.Body}}
+  <pre class="bubble-body" style="margin-top:0.75rem;white-space:pre-wrap;">{{.Commit.Body}}</pre>
+  {{end}}
+  {{if .Commit.Stat}}
+  <pre class="bubble-body mono" style="margin-top:0.75rem;font-size:0.8rem;">{{.Commit.Stat}}</pre>
+  {{end}}
+</div>
+
+<div class="section card" style="margin-top:1rem;">
+  <h2 style="margin-top:0;font-size:1rem;">Review</h2>
+  <p class="sub">Read-only Grok review (no Discord session / worktree). On completion, creates one GitHub issue per finding automatically.</p>
+  {{if .CanReviewCommit}}
+  <form method="post" action="/projects/{{.Project}}/commits/{{.Commit.SHA}}/review" class="toolbar" hx-boost="false">
+    {{template "csrf" .}}
+    <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    <button type="submit" class="btn">Review &amp; file issues</button>
+  </form>
+  {{else}}
+  <p class="muted">Requires member role with <span class="mono">startSessions</span> and <span class="mono">githubWrites</span> enabled.</p>
+  {{end}}
+
+  {{if .ReviewJob}}
+  <div style="margin-top:1rem;">
+    <p>
+      Job <span class="mono">{{.ReviewJob.ID}}</span>
+      ·
+      {{if eq .ReviewJob.Status "done"}}<span class="badge live">{{.ReviewJob.Status}}</span>
+      {{else if eq .ReviewJob.Status "failed"}}<span class="badge status-warn">{{.ReviewJob.Status}}</span>
+      {{else}}<span class="badge">{{.ReviewJob.Status}}</span>{{end}}
+    </p>
+    {{if or (eq .ReviewJob.Status "queued") (eq .ReviewJob.Status "running") (eq .ReviewJob.Status "creating_issues")}}
+    <meta http-equiv="refresh" content="3">
+    <p class="muted">Refreshing…</p>
+    {{end}}
+    {{if .ReviewJob.Error}}<div class="flash err">{{.ReviewJob.Error}}</div>{{end}}
+    {{if .ReviewJob.Summary}}
+    <p style="margin-top:0.5rem;">{{.ReviewJob.Summary}}</p>
+    {{end}}
+    {{if .ReviewJob.Findings}}
+    <div class="table-scroll" style="margin-top:0.75rem;">
+    <table>
+      <thead><tr><th>Severity</th><th>Title</th><th>Issue</th></tr></thead>
+      <tbody>
+      {{range .ReviewJob.Findings}}
+        <tr>
+          <td><span class="badge">{{.Severity}}</span></td>
+          <td>{{.Title}}</td>
+          <td>
+            {{if .IssueNumber}}
+              <a class="mono" href="/projects/{{$.Project}}/issues/{{.IssueNumber}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">#{{.IssueNumber}}</a>
+              {{if .IssueURL}} · <a href="{{.IssueURL}}" target="_blank" rel="noopener">GitHub</a>{{end}}
+            {{else if .CreateError}}
+              <span class="muted">{{.CreateError}}</span>
+            {{else}}
+              <span class="muted">—</span>
+            {{end}}
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{else if eq .ReviewJob.Status "done"}}
+    <p class="muted" style="margin-top:0.5rem;">No issues filed — review clean.</p>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+
+{{if .Diff.Files}}
+<div class="section" style="margin-top:1rem;">
+  <h2 style="font-size:1rem;">Patch {{if .Diff.Truncated}}<span class="badge status-warn">truncated</span>{{end}}</h2>
+  {{range .Diff.Files}}
+  <div class="section card diff-file" style="margin-bottom:1rem;">
+    <h3 class="mono" style="font-size:0.92rem;margin-top:0;">{{if .PathNew}}{{.PathNew}}{{else}}{{.PathOld}}{{end}}</h3>
+    {{range .Hunks}}
+    <pre class="bubble-body" style="margin-top:0.5rem;font-size:0.8rem;"><code><span class="dl hunk">{{.Header}}</span>{{range .Lines}}<span class="dl {{diffClass .}}">{{.}}</span>{{end}}</code></pre>
+    {{else}}
+    <p class="muted">No hunks.</p>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{else if not .Error}}
+<div class="empty" style="margin-top:1rem;">No patch content.</div>
+{{end}}
+{{end}}
+{{end}}

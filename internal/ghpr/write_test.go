@@ -2,10 +2,93 @@ package ghpr
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 )
+
+func TestCreateIssueWithJSON(t *testing.T) {
+	var saw []string
+	var bodyPath string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		saw = append([]string{name}, args...)
+		for i, a := range args {
+			if a == "--body-file" && i+1 < len(args) {
+				bodyPath = args[i+1]
+				b, err := os.ReadFile(bodyPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(b) != "body text" {
+					t.Fatalf("body=%q", b)
+				}
+			}
+		}
+		return []byte(`{"number":42,"url":"https://github.com/o/r/issues/42"}`), nil
+	}
+	n, url, err := CreateIssueWith(context.Background(), run, "/repo", "o", "r", CreateIssueOpts{
+		Title:  "Bug",
+		Body:   "body text",
+		Labels: []string{"commit-review"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 42 || url != "https://github.com/o/r/issues/42" {
+		t.Fatalf("n=%d url=%s", n, url)
+	}
+	joined := strings.Join(saw, " ")
+	if !strings.Contains(joined, "issue create") || !strings.Contains(joined, "--title Bug") {
+		t.Fatalf("%v", saw)
+	}
+	if !strings.Contains(joined, "--label commit-review") || !strings.Contains(joined, "--repo o/r") {
+		t.Fatalf("%v", saw)
+	}
+	if bodyPath == "" {
+		t.Fatal("no body file")
+	}
+	if _, err := os.Stat(bodyPath); !os.IsNotExist(err) {
+		t.Fatalf("body file should be removed: %v", err)
+	}
+}
+
+func TestCreateIssueEmptyTitle(t *testing.T) {
+	_, _, err := CreateIssueWith(context.Background(), nil, "/r", "o", "r", CreateIssueOpts{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestCreateIssueLabelFallback(t *testing.T) {
+	calls := 0
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		calls++
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "--label") {
+			return nil, fmt.Errorf("label missing")
+		}
+		return []byte(`{"number":7,"url":"https://github.com/o/r/issues/7"}`), nil
+	}
+	n, _, err := CreateIssueWith(context.Background(), run, "/repo", "o", "r", CreateIssueOpts{
+		Title:  "T",
+		Body:   "B",
+		Labels: []string{"missing-label"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 7 || calls != 2 {
+		t.Fatalf("n=%d calls=%d", n, calls)
+	}
+}
+
+func TestParseCreateIssueOutputURL(t *testing.T) {
+	n, url, err := parseCreateIssueOutput([]byte("https://github.com/acme/app/issues/99\n"))
+	if err != nil || n != 99 || !strings.Contains(url, "/issues/99") {
+		t.Fatalf("n=%d url=%s err=%v", n, url, err)
+	}
+}
 
 func TestCommentIssueUsesBodyFile(t *testing.T) {
 	var saw []string

@@ -597,6 +597,7 @@
           <a href="{{route "dashboard"}}" class="{{if .IsDashboard}}active{{end}}">Dashboard</a>
           <a href="{{route "ship"}}" class="{{if .IsShip}}active{{end}}">Ship</a>
           <a href="{{route "issues"}}" class="{{if or .IsIssues .IsLinear}}active{{end}}">Issues</a>
+          <a href="{{route "commits"}}" class="{{if .IsCommits}}active{{end}}">Commits</a>
           <a href="{{route "sessions"}}" class="{{if .IsSessions}}active{{end}}">Sessions</a>
           <a href="{{route "worktrees"}}" class="{{if .IsWorktrees}}active{{end}}">Worktrees</a>
           <a href="{{route "config"}}" class="{{if .IsConfig}}active{{end}}">Config</a>
@@ -723,6 +724,11 @@
         if (path.indexOf("/projects/") === 0) {
           return path.indexOf("/issues") !== -1 || path.indexOf("/linear") !== -1;
         }
+        return false;
+      }
+      if (href === "/commits") {
+        if (path === "/commits" || path.indexOf("/commits/") === 0) return true;
+        if (path.indexOf("/projects/") === 0 && path.indexOf("/commits") !== -1) return true;
         return false;
       }
       if (href === "/ship") {

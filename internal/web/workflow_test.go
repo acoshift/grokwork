@@ -75,6 +75,24 @@ func workflowServer(t *testing.T) *Server {
 			return []byte("diff --git a/foo.go b/foo.go\n--- a/foo.go\n+++ b/foo.go\n@@ -1 +1 @@\n-old\n+new\n"), nil
 		case name == "git" && len(args) > 0 && args[0] == "diff":
 			return []byte("diff --git a/wt.go b/wt.go\n--- a/wt.go\n+++ b/wt.go\n@@ -1 +1 @@\n-a\n+b\n"), nil
+		case name == "git" && len(args) > 0 && args[0] == "log":
+			return []byte("abcdef0123456789\x1fFixture commit\x1fAlice\x1fa@ex.com\x1f2026-07-20T12:00:00Z\n"), nil
+		case name == "git" && len(args) > 0 && args[0] == "rev-parse":
+			return []byte("abcdef0123456789abcdef0123456789abcdef01\n"), nil
+		case name == "git" && len(args) > 0 && args[0] == "show":
+			// Metadata (-s), stat, or patch.
+			for _, a := range args {
+				if a == "-s" {
+					return []byte("abcdef0123456789abcdef0123456789abcdef01\x1fFixture commit\x1fAlice\x1fa@ex.com\x1f2026-07-20T12:00:00Z\x1fbody note\n"), nil
+				}
+				if a == "--stat" {
+					return []byte(" foo.go | 1 +\n 1 file changed\n"), nil
+				}
+				if a == "-p" {
+					return []byte("diff --git a/foo.go b/foo.go\n--- a/foo.go\n+++ b/foo.go\n@@ -1 +1 @@\n-old\n+new\n"), nil
+				}
+			}
+			return nil, nil
 		default:
 			t.Fatalf("unexpected gh/git %s %v", name, args)
 			return nil, nil
@@ -278,6 +296,67 @@ func TestShipBoardLinksToPRDetail(t *testing.T) {
 	if !strings.Contains(body, `/prs/acme/app/3`) {
 		t.Fatalf("ship missing in-app PR link: %s", body)
 	}
+}
+
+func TestCommitsListAndDetail(t *testing.T) {
+	srv := workflowServer(t)
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/commits?owner=acme&repo=app", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="page-commits-list"`,
+		"acme/app",
+		"Fixture commit",
+		"abcdef0",
+		`name="repo_full"`,
+		`class="active">Commits</a>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("list missing %q in %s", want, body)
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/commits/abcdef0?owner=acme&repo=app", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", w.Code, w.Body.String())
+	}
+	body = w.Body.String()
+	for _, want := range []string{
+		`id="page-commit-detail"`,
+		"Fixture commit",
+		"body note",
+		"foo.go",
+		`href === "/commits"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("detail missing %q", want)
+		}
+	}
+	assertNavActive(t, body, "Commits")
+}
+
+func TestCommitsIndex(t *testing.T) {
+	srv := workflowServer(t)
+	h := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/commits", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="page-commits"`) || !strings.Contains(body, "/projects/proj/commits") {
+		t.Fatalf("body=%s", body)
+	}
+	assertNavActive(t, body, "Commits")
 }
 
 func TestIssuesIndexNav(t *testing.T) {

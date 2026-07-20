@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/moonrhythm/hime"
 
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/bot"
+	"github.com/acoshift/grokwork/internal/commitreview"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/history"
@@ -41,6 +43,10 @@ type Server struct {
 	linearNew func(apiKey string) *linear.Client
 	// Fix-with-Grok rate limit (lazy init).
 	startLimit *startRateLimiter
+	// Commit review job store (lazy under data/commit-reviews).
+	reviews     *commitreview.Store
+	reviewsOnce sync.Once
+	reviewsErr  error
 }
 
 // New builds a hime app with dashboard, history, config, and SSE routes.
@@ -100,6 +106,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.settings":         "/config/settings",
 		"issues":                  "/issues",
 		"issues.project":          "/projects/",
+		"commits":                 "/commits",
 		"pr.detail":               "/prs/",
 		"sse":                     "/events",
 		// Live partials (htmx SSE domain swaps) — separate URLs so each region
@@ -116,6 +123,17 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	})
 
 	app.TemplateFunc("add", func(a, b int) int { return a + b })
+	// diffClass styles unified-diff lines on the diff page (added/removed/context).
+	app.TemplateFunc("diffClass", func(line string) string {
+		switch {
+		case strings.HasPrefix(line, "+"):
+			return "add"
+		case strings.HasPrefix(line, "-"):
+			return "del"
+		default:
+			return "ctx"
+		}
+	})
 
 	// One template set per page: layout root for full documents; named {{define}}s
 	// for SSE fragments (ctx.View("dashboard#dashboard_stats", …)).
@@ -139,6 +157,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("pr_detail", "layout.tmpl", "pr_detail.tmpl")
 	tp.ParseFiles("diff", "layout.tmpl", "diff.tmpl")
 	tp.ParseFiles("session", "layout.tmpl", "session.tmpl")
+	tp.ParseFiles("commits_index", "layout.tmpl", "commits_index.tmpl")
+	tp.ParseFiles("commits", "layout.tmpl", "commits.tmpl")
+	tp.ParseFiles("commit_detail", "layout.tmpl", "commit_detail.tmpl")
 
 	static, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -168,6 +189,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /projects/{project}/issues/{n}", s.requireAuth(hime.Handler(s.issueDetail)))
 	mux.Handle("GET /projects/{project}/linear", s.requireAuth(hime.Handler(s.linearList)))
 	mux.Handle("GET /projects/{project}/linear/{identifier}", s.requireAuth(hime.Handler(s.linearDetail)))
+	mux.Handle("GET /commits", s.requireAuth(hime.Handler(s.commitsIndex)))
+	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))
+	mux.Handle("GET /projects/{project}/commits/{sha}", s.requireAuth(hime.Handler(s.commitDetail)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}", s.requireAuth(hime.Handler(s.prDetail)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}/diff", s.requireAuth(hime.Handler(s.prDiffPage)))
 	// GitHub writes (PR8–9): always registered; request-time feature + role gates.
@@ -191,6 +215,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAddressReview))))
 	mux.Handle("POST /sessions/{threadID}/continue",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionContinue))))
+	// Commit review (read-only Grok job → auto-create GitHub issues)
+	mux.Handle("POST /projects/{project}/commits/{sha}/review",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCommitReview))))
 	mux.Handle("GET /events", s.requireAuth(http.HandlerFunc(s.sse)))
 	mux.Handle("GET /partials/dashboard/stats", s.requireAuth(hime.Handler(s.partialDashboardStats)))
 	mux.Handle("GET /partials/dashboard/runs", s.requireAuth(hime.Handler(s.partialDashboardRuns)))
@@ -251,6 +278,7 @@ type pageData struct {
 	IsLogin     bool
 	IsIssues    bool
 	IsLinear    bool
+	IsCommits   bool
 	Flash       string
 	Error       string
 	Status      bot.StatusSnapshot
@@ -285,6 +313,12 @@ type pageData struct {
 	Diff          ghpr.Diff
 	DiffBase      string
 	ThreadID      string
+	// Commits UI
+	Commits         []ghpr.CommitSummary
+	Commit          ghpr.CommitDetail
+	CommitRef       string
+	ReviewJob       *commitreview.Job
+	CanReviewCommit bool
 	// Write UI flags (from config snapshot + session)
 	CanGitHubWrite  bool
 	CanMerge        bool
