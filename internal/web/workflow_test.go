@@ -13,6 +13,17 @@ import (
 	"github.com/acoshift/grok-discord/internal/sessionstore"
 )
 
+// assertNavActive checks the top-nav item with the given label has class active
+// (server-rendered Is* flag). Layout also has navActiveFor() for hx-boost path sync.
+func assertNavActive(t *testing.T, body, label string) {
+	t.Helper()
+	// Template: class="{{if .IsIssues}}active{{end}}">Issues
+	want := `class="active">` + label + `</a>`
+	if !strings.Contains(body, want) {
+		t.Fatalf("nav %q not active (want %q)", label, want)
+	}
+}
+
 func workflowServer(t *testing.T) *Server {
 	t.Helper()
 	srv, cfg, _ := testServer(t)
@@ -161,6 +172,11 @@ func TestIssuesListAndDetail(t *testing.T) {
 			t.Fatalf("detail missing %q", want)
 		}
 	}
+	assertNavActive(t, body, "Issues")
+	// Boosted nav path rules must know issue detail lives under /projects/…/issues/…
+	if !strings.Contains(body, "function navActiveFor") || !strings.Contains(body, `href === "/issues"`) {
+		t.Fatal("layout missing navActiveFor path rules for Issues detail URLs")
+	}
 }
 
 func TestLinearListAndDetail(t *testing.T) {
@@ -172,18 +188,22 @@ func TestLinearListAndDetail(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "ENG-1") || !strings.Contains(w.Body.String(), "Lin fixture") {
-		t.Fatalf("body=%s", w.Body.String())
+	body := w.Body.String()
+	if !strings.Contains(body, "ENG-1") || !strings.Contains(body, "Lin fixture") {
+		t.Fatalf("body=%s", body)
 	}
+	assertNavActive(t, body, "Issues")
 	req = httptest.NewRequest(http.MethodGet, "/projects/proj/linear/ENG-1", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("detail status=%d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "detail desc") {
-		t.Fatalf("body=%s", w.Body.String())
+	body = w.Body.String()
+	if !strings.Contains(body, "detail desc") {
+		t.Fatalf("body=%s", body)
 	}
+	assertNavActive(t, body, "Issues")
 }
 
 func TestPRDetailAndDiff(t *testing.T) {
@@ -201,6 +221,7 @@ func TestPRDetailAndDiff(t *testing.T) {
 			t.Fatalf("pr missing %q", want)
 		}
 	}
+	assertNavActive(t, body, "Ship")
 	req = httptest.NewRequest(http.MethodGet, "/prs/acme/app/9/diff?project=proj", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)

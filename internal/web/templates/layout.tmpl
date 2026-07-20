@@ -709,18 +709,36 @@
     });
 
     // Nav active class is server-rendered on full load; keep it in sync after
-    // boosted SPA navigations (and browser back/forward restores).
+    // boosted SPA navigations (and browser back/forward restores). Nav lives
+    // outside #live-root so boost swaps never re-render Is* flags — path rules
+    // must cover detail URLs that are not under the tab's own href prefix
+    // (e.g. Issues hub is /issues but detail is /projects/{p}/issues/{n}).
+    function navActiveFor(path, href) {
+      if (href === "/") {
+        return path === "/";
+      }
+      if (href === "/issues") {
+        if (path === "/issues" || path.indexOf("/issues/") === 0) return true;
+        // GitHub issue list/detail + Linear list/detail under /projects/…
+        if (path.indexOf("/projects/") === 0) {
+          return path.indexOf("/issues") !== -1 || path.indexOf("/linear") !== -1;
+        }
+        return false;
+      }
+      if (href === "/ship") {
+        // Ship board + PR detail/diff hub.
+        return path === "/ship" || path.indexOf("/ship/") === 0 || path.indexOf("/prs/") === 0;
+      }
+      if (href === "/sessions") {
+        return path === "/sessions" || path.indexOf("/sessions/") === 0;
+      }
+      return path === href || path.indexOf(href + "/") === 0;
+    }
     function updateNavActive() {
       var path = location.pathname || "/";
       document.querySelectorAll("nav a[href]").forEach(function (a) {
         var href = a.getAttribute("href") || "";
-        var active;
-        if (href === "/") {
-          active = path === "/";
-        } else {
-          active = path === href || path.indexOf(href + "/") === 0;
-        }
-        a.classList.toggle("active", !!active);
+        a.classList.toggle("active", !!navActiveFor(path, href));
       });
     }
     document.body.addEventListener("htmx:pushedIntoHistory", updateNavActive);
