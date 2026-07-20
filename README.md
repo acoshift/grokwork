@@ -228,7 +228,19 @@ While a task is running, the bot updates the status message every few seconds wi
 
 ## Keep running (macOS launchd)
 
-Adjust paths to where you cloned/built the binary. Example `~/Library/LaunchAgents/com.example.grokwork.plist`:
+User agent that starts on login, restarts on crash, and keeps the process in the background. Label used below: `com.acoshift.grokwork` — change it if you prefer another reverse-DNS name (plist filename, `Label`, and every `launchctl` command must match).
+
+### 1. Build and prepare
+
+```bash
+cd /path/to/grokwork
+go build -o grokwork .
+mkdir -p data
+```
+
+### 2. Install the plist (does not start)
+
+Write `~/Library/LaunchAgents/com.acoshift.grokwork.plist` (adjust absolute paths, `HOME`, and `PATH` so `grok`, `gh`, `git`, etc. resolve under launchd — it does **not** load your shell profile):
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -236,7 +248,7 @@ Adjust paths to where you cloned/built the binary. Example `~/Library/LaunchAgen
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.example.grokwork</string>
+  <string>com.acoshift.grokwork</string>
   <key>ProgramArguments</key>
   <array>
     <string>/path/to/grokwork/grokwork</string>
@@ -247,24 +259,67 @@ Adjust paths to where you cloned/built the binary. Example `~/Library/LaunchAgen
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
   <key>StandardOutPath</key>
   <string>/path/to/grokwork/data/stdout.log</string>
   <key>StandardErrorPath</key>
   <string>/path/to/grokwork/data/stderr.log</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>HOME</key>
+    <string>/Users/YOU</string>
     <key>PATH</key>
-    <string>/usr/local/bin:/usr/bin:/bin</string>
+    <string>/Users/YOU/.grok/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
 </dict>
 </plist>
 ```
 
 ```bash
-go build -o grokwork .
-mkdir -p data
-launchctl load ~/Library/LaunchAgents/com.example.grokwork.plist
+plutil -lint ~/Library/LaunchAgents/com.acoshift.grokwork.plist
 ```
+
+Copying the file into `~/Library/LaunchAgents/` only installs it for this session until you bootstrap. On the next login, launchd loads agents in that directory automatically (`RunAtLoad` starts the binary).
+### 3. Start / stop / restart
+
+```bash
+# Start (loads the job; RunAtLoad starts the binary immediately)
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.acoshift.grokwork.plist
+
+# Stop (unload job; process exits)
+launchctl bootout gui/$(id -u)/com.acoshift.grokwork
+
+# Restart after rebuilding the binary (keeps the same installed plist)
+go build -o grokwork .
+launchctl kickstart -k gui/$(id -u)/com.acoshift.grokwork
+```
+
+`kickstart -k` kills the current process and starts a new one. A plain `go build -o grokwork .` overwrites the file on disk but does **not** replace the running process — always kickstart (or bootout + bootstrap) after a rebuild.
+
+If bootstrap fails with “service already loaded”, either kickstart or bootout first, then bootstrap again.
+
+### 4. Status and logs
+
+```bash
+launchctl print gui/$(id -u)/com.acoshift.grokwork
+tail -f data/stdout.log data/stderr.log
+```
+
+### 5. Uninstall
+
+```bash
+# Stop if running, then remove the plist
+launchctl bootout gui/$(id -u)/com.acoshift.grokwork 2>/dev/null || true
+rm -f ~/Library/LaunchAgents/com.acoshift.grokwork.plist
+```
+
+### Notes
+
+- Prefer modern `bootstrap` / `bootout` / `kickstart` over legacy `launchctl load` / `unload`.
+- `WorkingDirectory` must be the repo root so relative `config.json` and `data/` resolve correctly (or set `GROK_WORK_CONFIG` in `EnvironmentVariables`).
+- Logs grow without rotation; truncate or rotate `data/stdout.log` / `data/stderr.log` if needed.
+- Do not put secrets in the plist; keep tokens in `config.json` (gitignored) or env vars you inject carefully.
 
 ## Env vars
 
