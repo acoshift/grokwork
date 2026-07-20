@@ -30,9 +30,16 @@
       <span class="mono muted">{{$t.At}}</span>
       {{if $t.User}}<span>{{$t.User}}</span>{{end}}
       <span class="badge status-{{$t.Status}}">{{$t.Status}}</span>
+      {{if $t.ExitCode}}<span class="mono muted" title="exit code">exit {{$t.ExitCode}}</span>{{end}}
       {{if $t.Elapsed}}<span class="muted">{{$t.Elapsed}}</span>{{end}}
       {{if $t.SessionID}}<span class="mono muted" title="session">{{$t.SessionID}}</span>{{end}}
     </header>
+    {{with $err := $t.DisplayError}}
+    <div class="turn-error{{if eq $t.Status "cancelled"}} turn-error-cancelled{{end}}" role="alert">
+      <span class="turn-error-label">{{if eq $t.Status "cancelled"}}Cancelled{{else}}Error{{end}}</span>
+      <span class="turn-error-msg">{{$err}}</span>
+    </div>
+    {{end}}
     <div class="bubble user">
       <div class="bubble-label">User</div>
       <pre class="bubble-body">{{$t.Prompt}}</pre>

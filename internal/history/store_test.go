@@ -88,3 +88,18 @@ func TestInvalidThreadID(t *testing.T) {
 		t.Fatal("expected invalid id error")
 	}
 }
+
+func TestDisplayError(t *testing.T) {
+	if got := (Turn{Status: "done"}).DisplayError(); got != "" {
+		t.Fatalf("done: %q", got)
+	}
+	if got := (Turn{Status: "error", Error: "Reached max turns before a final reply"}).DisplayError(); got != "Reached max turns before a final reply" {
+		t.Fatalf("stored error: %q", got)
+	}
+	if got := (Turn{Status: "error", ExitCode: 1}).DisplayError(); got != "Grok exited with code 1" {
+		t.Fatalf("legacy exit: %q", got)
+	}
+	if got := (Turn{Status: "cancelled"}).DisplayError(); got != "Cancelled" {
+		t.Fatalf("cancelled: %q", got)
+	}
+}

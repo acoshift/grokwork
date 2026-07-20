@@ -75,6 +75,13 @@ func testServer(t *testing.T) (*Server, *config.Config, string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := hist.Append("thread-99", history.Turn{
+		User: "alice#0", Prompt: "do a huge refactor",
+		Response: "Working…", Status: "error", ExitCode: 1,
+		Error: "Reached max turns before a final reply", Project: "proj",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	b := bot.New(cfg, store, hist)
 	return New(cfg, store, hist, b), cfg, dir
 }
@@ -244,7 +251,7 @@ func TestPagesRender(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	body := w.Body.String()
-	if !strings.Contains(body, "thread-99") || !strings.Contains(body, "alice#0") || !strings.Contains(body, "ship a PR") {
+	if !strings.Contains(body, "thread-99") || !strings.Contains(body, "alice#0") || !strings.Contains(body, "do a huge refactor") {
 		t.Fatalf("history list missing fields: %s", body)
 	}
 
@@ -261,6 +268,10 @@ func TestPagesRender(t *testing.T) {
 		"I fixed it by waiting for the race.",
 		"ship a PR",
 		"Opened https://example.com/pr/1",
+		"do a huge refactor",
+		"Reached max turns before a final reply",
+		`class="turn-error"`,
+		"exit 1",
 		"User",
 		"Grok",
 	} {

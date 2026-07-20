@@ -1025,11 +1025,17 @@ func (b *Bot) recordTurn(threadID string, m *discordgo.MessageCreate, project, u
 		return
 	}
 	status := "done"
+	errMsg := ""
 	switch {
 	case result.Cancelled:
 		status = "cancelled"
+		errMsg = "Cancelled"
+	case result.MaxTurnsReached:
+		status = "error"
+		errMsg = "Reached max turns before a final reply"
 	case result.Code != 0:
 		status = "error"
+		errMsg = historyErrorFromResult(result)
 	}
 	user, userID := "", ""
 	if m != nil && m.Author != nil {
@@ -1057,6 +1063,7 @@ func (b *Bot) recordTurn(threadID string, m *discordgo.MessageCreate, project, u
 		Response:  response,
 		Status:    status,
 		ExitCode:  result.Code,
+		Error:     errMsg,
 		Elapsed:   formatElapsed(elapsed),
 		Project:   project,
 		SessionID: result.SessionID,
@@ -1064,6 +1071,33 @@ func (b *Bot) recordTurn(threadID string, m *discordgo.MessageCreate, project, u
 	}); err != nil {
 		log.Printf("error: history append thread=%s: %v", threadID, err)
 	}
+}
+
+// historyErrorFromResult picks a short failure reason for the history detail page.
+func historyErrorFromResult(result grokrun.Result) string {
+	if result.MaxTurnsReached || strings.Contains(result.Text, "Reached max turns") {
+		return "Reached max turns before a final reply"
+	}
+	text := strings.TrimSpace(result.Text)
+	if text != "" {
+		first := text
+		if i := strings.IndexByte(text, '\n'); i >= 0 {
+			first = strings.TrimSpace(text[:i])
+		}
+		lower := strings.ToLower(first)
+		if strings.HasPrefix(lower, "timed out") ||
+			strings.HasPrefix(lower, "failed ") ||
+			strings.HasPrefix(lower, "error:") {
+			if len(first) > 240 {
+				first = first[:240] + "…"
+			}
+			return first
+		}
+	}
+	if result.Code != 0 {
+		return fmt.Sprintf("Grok exited with code %d", result.Code)
+	}
+	return "Run failed"
 }
 
 func (b *Bot) progressLoop(s *discordgo.Session, threadID, msgID, project string, start time.Time, thoughts *thoughtTracker, stop <-chan struct{}) {

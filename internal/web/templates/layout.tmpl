@@ -499,6 +499,33 @@
       color: var(--warn);
       border-color: hsl(var(--yellow-700) / 20%);
     }
+    .turn-error {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.4rem 0.65rem;
+      margin: 0 0 0.75rem;
+      padding: 0.55rem 0.75rem;
+      border-radius: var(--radius);
+      background: var(--danger-bg);
+      border: 1px solid hsl(var(--red-500) / 25%);
+      color: var(--danger);
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+    .turn-error.turn-error-cancelled {
+      background: var(--warn-bg);
+      border-color: hsl(var(--yellow-700) / 25%);
+      color: var(--warn);
+    }
+    .turn-error-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.85;
+    }
+    .turn-error-msg { word-break: break-word; }
     button:disabled,
     .btn:disabled,
     button:disabled:hover,

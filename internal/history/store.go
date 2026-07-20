@@ -20,10 +20,32 @@ type Turn struct {
 	Response  string `json:"response,omitempty"`
 	Status    string `json:"status"` // done | cancelled | error
 	ExitCode  int    `json:"exitCode,omitempty"`
+	// Error is a short human-readable failure reason (max turns, timeout, exit code, …).
+	// Empty when Status is done. Older history files may omit this field.
+	Error     string `json:"error,omitempty"`
 	Elapsed   string `json:"elapsed,omitempty"`
 	Project   string `json:"project,omitempty"`
 	SessionID string `json:"sessionId,omitempty"`
 	MessageID string `json:"messageId,omitempty"`
+}
+
+// DisplayError returns a user-visible error line for the history UI.
+// Prefers the stored Error field; falls back to exit code for older records.
+func (t Turn) DisplayError() string {
+	if s := strings.TrimSpace(t.Error); s != "" {
+		return s
+	}
+	switch t.Status {
+	case "error":
+		if t.ExitCode != 0 {
+			return fmt.Sprintf("Grok exited with code %d", t.ExitCode)
+		}
+		return "Run failed"
+	case "cancelled":
+		return "Cancelled"
+	default:
+		return ""
+	}
 }
 
 // Thread is the full turn log for one Discord thread.
