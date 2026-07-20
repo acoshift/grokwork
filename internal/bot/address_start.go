@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/acoshift/grok-discord/internal/ghpr"
@@ -301,7 +302,10 @@ func (b *Bot) startPRCreate(project, cwd string, tracked sessionstore.TrackedPR,
 		}
 		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
 		if err != nil {
-			return FixStartResult{}, fmt.Errorf("create workflow thread: %w", err)
+			log.Printf("address: create Discord thread failed project=%s: %v — web-native fallback", project, err)
+			return b.startWebNativeUnit(project, cwd, prompt, actor, func(unitID string) error {
+				return b.bindTrackedPR(unitID, project, tracked, actor, "", true)
+			})
 		}
 		discordURL := DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
 		if err := b.bindTrackedPR(threadID, project, tracked, actor, discordURL, true); err != nil {

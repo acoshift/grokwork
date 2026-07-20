@@ -70,7 +70,12 @@ type Bot struct {
 }
 
 func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) *Bot {
-	return &Bot{cfg: cfg, sessions: sessions, history: hist}
+	b := &Bot{cfg: cfg, sessions: sessions, history: hist}
+	// Discord-independent background work: do not wait for gateway ready so
+	// web-native units still get idle TTL + PR terminal cleanup.
+	b.startIdleWorktreeCleanup()
+	b.startPRStatusPoller()
+	return b
 }
 
 // ActiveRun is a thread currently running a Grok job (dashboard).
@@ -239,8 +244,9 @@ func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("ready: channel %s → %s", ch.ChannelID, ch.Project)
 	}
 	_ = s.UpdateGameStatus(0, "@Grok <task>")
+	// Idle + PR pollers already started in New (Once); re-call is a no-op.
 	b.startIdleWorktreeCleanup()
-	b.startPRStatusPoller(s)
+	b.startPRStatusPoller()
 	b.startBoardDigest(s)
 }
 
@@ -1092,8 +1098,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 
 	b.recordTurnActor(threadID, actor, m, proj.Name, parsed.Prompt, result, elapsed)
 
-	// PR status card / completion / brief: only when Discord presentation is live.
-	if present && !result.Cancelled {
+	if !result.Cancelled {
 		replyText := result.Text
 		if replyText == "" {
 			replyText = streamer.Text()
@@ -1102,15 +1107,16 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		if repoDir == "" {
 			repoDir = proj.Cwd
 		}
+		// Bind/discover PRs even when Discord is absent (web-native / soft-degrade).
 		b.refreshPRAfterTask(s, threadID, repoDir, wtBranch, replyText)
-		b.postCompletionSummary(s, threadID, proj.Name, runCwd, wtBranch, elapsed, result.Code, result.Cancelled)
 		b.ensureThreadGoal(threadID, parsed.Prompt)
-		if _, err := b.refreshBriefCard(s, threadID, runCwd); err != nil {
-			log.Printf("brief: post-task refresh thread=%s: %v", threadID, err)
+		// Completion card + brief pin are Discord-only presentation.
+		if present {
+			b.postCompletionSummary(s, threadID, proj.Name, runCwd, wtBranch, elapsed, result.Code, result.Cancelled)
+			if _, err := b.refreshBriefCard(s, threadID, runCwd); err != nil {
+				log.Printf("brief: post-task refresh thread=%s: %v", threadID, err)
+			}
 		}
-	} else if !result.Cancelled {
-		// Still set sticky goal without Discord card.
-		b.ensureThreadGoal(threadID, parsed.Prompt)
 	}
 
 	msgTag := ""

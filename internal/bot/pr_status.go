@@ -21,30 +21,32 @@ const prStatusPollInterval = 90 * time.Second
 
 var prStatusPollerOnce sync.Once
 
-func (b *Bot) startPRStatusPoller(s *discordgo.Session) {
+// startPRStatusPoller starts the PR poller once. Uses live b.Discord() each cycle
+// so web-native cleanup works before (or without) gateway ready.
+func (b *Bot) startPRStatusPoller() {
 	prStatusPollerOnce.Do(func() {
 		log.Printf("bg: starting pr-status poller interval=%s initial_delay=45s", prStatusPollInterval)
-		go b.runPRStatusPoller(s)
+		go b.runPRStatusPoller()
 	})
 }
 
-func (b *Bot) runPRStatusPoller(s *discordgo.Session) {
+func (b *Bot) runPRStatusPoller() {
 	log.Printf("bg: pr-status poller running (waiting 45s before first poll)")
 	// Stagger after idle sweeper so ready is not flooded.
 	time.Sleep(45 * time.Second)
-	b.runPRStatusPollCycle(s, "initial")
+	b.runPRStatusPollCycle("initial")
 
 	ticker := time.NewTicker(prStatusPollInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		b.runPRStatusPollCycle(s, "tick")
+		b.runPRStatusPollCycle("tick")
 	}
 }
 
-func (b *Bot) runPRStatusPollCycle(s *discordgo.Session, reason string) {
+func (b *Bot) runPRStatusPollCycle(reason string) {
 	log.Printf("bg: pr-status poll start reason=%s", reason)
 	start := time.Now()
-	stats := b.pollPRStatuses(s)
+	stats := b.pollPRStatuses(b.Discord())
 	log.Printf("bg: pr-status poll done reason=%s sessions=%d with_pr=%d open=%d busy=%d updated=%d elapsed=%s",
 		reason, stats.Sessions, stats.WithPR, stats.Open, stats.Busy, stats.Updated,
 		time.Since(start).Round(time.Millisecond))
@@ -59,12 +61,10 @@ type prPollStats struct {
 	Updated  int
 }
 
-// pollPRStatuses refreshes cards for sessions with tracked PRs.
+// pollPRStatuses refreshes session PR state (and Discord cards when s != nil).
+// s may be nil: terminal cleanup and gh View still run for web-native units.
 func (b *Bot) pollPRStatuses(s *discordgo.Session) prPollStats {
 	var stats prPollStats
-	if s == nil {
-		return stats
-	}
 	list := b.sessions.List()
 	stats.Sessions = len(list)
 	for _, listed := range list {
@@ -135,10 +135,11 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) prPollStats {
 	return stats
 }
 
-// refreshPRAfterTask discovers/updates PR status cards after a Grok run.
+// refreshPRAfterTask discovers/updates PR state after a Grok run.
 // Supports multiple PR URLs in the reply plus the worktree branch PR.
+// s may be nil (web-native / Discord offline): session bind still runs; cards soft-skip.
 func (b *Bot) refreshPRAfterTask(s *discordgo.Session, threadID, repoDir, branch, replyText string) {
-	if s == nil || threadID == "" {
+	if threadID == "" {
 		return
 	}
 	var prev sessionstore.Entry
@@ -345,7 +346,7 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 // post-task refresh) detects a transition. Quiet on first seed except terminal.
 // Posts as a Discord rich embed (color-coded by event kind).
 func (b *Bot) announcePRTimeline(s *discordgo.Session, threadID string, prev ghpr.Snapshot, info ghpr.Info) {
-	if s == nil || threadID == "" {
+	if s == nil || threadID == "" || gitworktree.IsWebUnitID(threadID) {
 		return
 	}
 	events := ghpr.DiffTimeline(prev, ghpr.SnapshotFromInfo(info))
@@ -415,6 +416,13 @@ func (b *Bot) upsertPRStatusMessage(s *discordgo.Session, threadID, msgID, conte
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return msgID, fmt.Errorf("empty card content")
+	}
+	// Web-native units are not Discord channel snowflakes — never post cards there.
+	if gitworktree.IsWebUnitID(threadID) {
+		return msgID, nil
+	}
+	if s == nil {
+		return msgID, fmt.Errorf("discord session nil")
 	}
 	if msgID != "" {
 		if err := discordEdit(s, threadID, msgID, content); err == nil {

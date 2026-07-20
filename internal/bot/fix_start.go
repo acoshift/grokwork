@@ -3,6 +3,7 @@ package bot
 import (
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/acoshift/grok-discord/internal/gitworktree"
@@ -215,6 +216,8 @@ func (b *Bot) startFixReuse(threadID, project, cwd string, tracked sessionstore.
 
 func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIssue, prompt string, opts FixStartOpts) (FixStartResult, error) {
 	// Prefer Discord thread when gateway or test threadAPI is available.
+	// CreateWorkflowThread REST failure falls back to web-native (session may be
+	// non-nil after Register even when Discord API is down — see DiscordReady).
 	if b.canCreateDiscordThread() {
 		channelID, err := b.cfg.PreferDiscordChannel(project)
 		if err != nil {
@@ -224,7 +227,10 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		starter := fixStarterContent(tracked, opts.Actor)
 		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
 		if err != nil {
-			return FixStartResult{}, fmt.Errorf("create workflow thread: %w", err)
+			log.Printf("fix: create Discord thread failed project=%s: %v — web-native fallback", project, err)
+			return b.startWebNativeUnit(project, cwd, prompt, opts.Actor, func(unitID string) error {
+				return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
+			})
 		}
 		discordURL := DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
 		if err := b.bindFixIssue(threadID, project, tracked, opts.Actor, discordURL, true); err != nil {
@@ -232,7 +238,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		}
 		return b.startWebTask(threadID, project, cwd, prompt, opts.Actor, discordURL, true)
 	}
-	// Discord-down create: web-native unit (no createWorkflowThread).
+	// No gateway/threadAPI: web-native unit (no createWorkflowThread).
 	return b.startWebNativeUnit(project, cwd, prompt, opts.Actor, func(unitID string) error {
 		return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
 	})

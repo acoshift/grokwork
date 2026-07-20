@@ -2,13 +2,18 @@ package bot
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grok-discord/internal/config"
+	"github.com/acoshift/grok-discord/internal/ghpr"
 	"github.com/acoshift/grok-discord/internal/gitworktree"
 	"github.com/acoshift/grok-discord/internal/history"
 	"github.com/acoshift/grok-discord/internal/sessionstore"
@@ -94,5 +99,96 @@ func TestResolveRunCwdWebVsDiscordPrefix(t *testing.T) {
 	}
 	if !gitworktree.IsManagedBranch(branch2) {
 		t.Fatal("web branch must be managed")
+	}
+}
+
+// Production DiscordReady is true after Register even when REST is down.
+// CreateWorkflowThread failure must fall back to web-native (advisor major 1).
+func TestStartFixCreateThreadFailFallsBackWebNative(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	// Simulate "gateway session present" (Register) while thread API fails.
+	s, err := discordgo.New("Bot fake-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.setDiscord(s)
+	b.threadAPI = &fakeThreadAPI{failStart: fmt.Errorf("discord api outage")}
+
+	res, err := b.StartFix(FixStartOpts{
+		Kind: FixKindGitHub, Project: "app",
+		Owner: "acme", Repo: "app", Number: 42,
+		Title: "outage", Actor: Actor{ID: "u", DisplayName: "U"},
+	})
+	if err != nil {
+		t.Fatalf("expected web-native fallback, got %v", err)
+	}
+	if !res.Created || !gitworktree.IsWebUnitID(res.ThreadID) {
+		t.Fatalf("want web-native unit, got %+v", res)
+	}
+	if res.DiscordURL != "" {
+		t.Fatalf("web-native should not have Discord URL: %+v", res)
+	}
+	waitHistory(t, b, res.ThreadID, 1)
+}
+
+// PR discovery must bind session PRs without a Discord session (advisor major 2).
+func TestRefreshPRAfterTaskNilSessionBinds(t *testing.T) {
+	b, _ := testFixBot(t)
+	webID := gitworktree.NewWebUnitID()
+	if err := b.sessions.Set(webID, sessionstore.Entry{
+		Project: "app", Origin: SourceWeb,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Inject gh so View-by-URL works without network.
+	// refreshPRAfterTask → discoverPRInfos → ghpr.View uses gh binary.
+	// Use applyPRInfo path directly with nil session to prove bind.
+	info := ghpr.Info{
+		Number: 7, URL: "https://github.com/acme/app/pull/7",
+		Title: "fix", State: "OPEN", Owner: "acme", Repo: "app",
+	}
+	if err := b.applyPRInfo(nil, webID, info); err != nil {
+		t.Fatal(err)
+	}
+	e, ok := b.sessions.Get(webID)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	e.NormalizePRs()
+	if !e.HasAnyPR() || e.PRs[0].Number != 7 {
+		t.Fatalf("PR not bound: %+v", e.PRs)
+	}
+	// Card path must not error-spam: web unit + nil s → no Discord post.
+	id, err := b.upsertPRStatusMessage(nil, webID, "", "card body")
+	if err != nil {
+		t.Fatalf("web unit card skip should succeed: %v", err)
+	}
+	if id != "" {
+		t.Fatalf("unexpected msg id %q", id)
+	}
+}
+
+func TestPollPRStatusesNilSessionStillCleansTerminal(t *testing.T) {
+	b, _ := testFixBot(t)
+	webID := gitworktree.NewWebUnitID()
+	e := sessionstore.Entry{
+		Project: "app", Origin: SourceWeb,
+		WorktreeBranch: gitworktree.BranchNameForUnit(webID),
+	}
+	e.UpsertPR(sessionstore.TrackedPR{
+		Owner: "acme", Repo: "app", Number: 9, State: "MERGED",
+		URL: "https://github.com/acme/app/pull/9",
+	})
+	if err := b.sessions.Set(webID, e); err != nil {
+		t.Fatal(err)
+	}
+	// s == nil must not early-return before terminal cleanup.
+	stats := b.pollPRStatuses(nil)
+	if stats.Sessions < 1 {
+		t.Fatalf("stats=%+v", stats)
+	}
+	if _, ok := b.sessions.Get(webID); ok {
+		t.Fatal("expected terminal session cleanup without Discord")
 	}
 }
