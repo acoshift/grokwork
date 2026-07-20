@@ -907,6 +907,7 @@ func TestDrainTaskQueueWebFollowUpNoPanic(t *testing.T) {
 	}
 
 	// Must not panic; both turns should land in history.
+	b.drainWG.Add(1)
 	b.drainTaskQueue(ctx, cancel, item1, job)
 
 	deadline := time.Now().Add(5 * time.Second)

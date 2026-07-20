@@ -6,6 +6,7 @@
   <a href="#bot-invite">Bot invite</a>
   <a href="#grok-run-limits">Run limits</a>
   <a href="#worktree-cleanup">Worktrees</a>
+  <a href="#resume-active-runs">Resume</a>
   <a href="#team-board">Board</a>
   <a href="#ci-triage">CI triage</a>
   <a href="#risky-paths">Risk paths</a>
@@ -82,6 +83,25 @@
     <div>
       <label for="worktree-idle-ttl">Idle TTL (days)</label>
       <input id="worktree-idle-ttl" type="number" name="worktreeIdleTTLDays" min="0" step="1" required value="{{.Config.WorktreeIdleTTLDays}}" autocomplete="off">
+    </div>
+    <button type="submit">Save</button>
+  </form>
+</div>
+
+<div class="section card" id="resume-active-runs">
+  <h2>Crash-safe active runs</h2>
+  <p class="sub" style="margin-top:0">
+    Persist in-flight Grok runs and follow-up queues under <span class="mono">data/runs/</span> so a process restart auto-resumes work.
+    Default is <strong>on</strong>. Turn off only for debugging; leftover journals are purged on the next boot when disabled.
+  </p>
+  <form class="inline" method="post" action="{{route "config.settings"}}" style="grid-template-columns: auto auto;">
+    {{template "csrf" $}}
+    <input type="hidden" name="section" value="resume">
+    <div>
+      <label class="check">
+        <input type="checkbox" name="resumeActiveRuns" value="1" {{if .Config.ResumeActiveRuns}}checked{{end}}>
+        Resume active runs after restart
+      </label>
     </div>
     <button type="submit">Save</button>
   </form>

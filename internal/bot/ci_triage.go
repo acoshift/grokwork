@@ -10,6 +10,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -383,6 +384,7 @@ func (b *Bot) queueSystemTask(s *discordgo.Session, threadID, prompt, label stri
 		s: s, m: m, parsed: parsed, proj: projectRef{Name: projName, Cwd: cwd}, threadID: threadID,
 		actor: Actor{ID: "0", DisplayName: label}, source: SourceDiscord, origin: SourceDiscord,
 		createdBy: "0", createdByName: label,
+		taskID: runjournal.NewTaskID(), attempt: 1, triggerMsgID: m.ID,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -397,24 +399,34 @@ func (b *Bot) queueSystemTask(s *discordgo.Session, threadID, prompt, label stri
 		log.Printf("ci-triage: system task queued pos=%d thread=%s label=%s", queuePos, threadID, label)
 		return nil
 	}
+	b.drainWG.Add(1)
 	go b.drainTaskQueue(ctx, cancel, item, job)
 	return nil
 }
 
 // drainTaskQueue runs the active task and any follow-ups (same loop as handleTask after claim).
+// Caller must b.drainWG.Add(1) before go/call; Done is deferred here.
 func (b *Bot) drainTaskQueue(ctx context.Context, cancel context.CancelFunc, item taskItem, job *runJob) {
+	defer b.drainWG.Done()
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("error: panic in drainTaskQueue thread=%s: %v", item.threadID, r)
 		}
 	}()
 	for {
+		if b.stopping.Load() {
+			// Still finish the cancelled execute so journal checkpoint runs via finishRun.
+		}
 		b.executeTask(ctx, item, job)
 		cancel()
 
 		next, ok := b.finishRun(item.threadID)
 		if !ok {
 			b.tryCleanupTerminalPR(item.threadID)
+			return
+		}
+		if b.stopping.Load() {
+			// finishRun should not promote while stopping; belt-and-suspenders.
 			return
 		}
 		nextCtx, nextCancel := context.WithCancel(context.Background())

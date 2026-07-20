@@ -23,11 +23,13 @@ type Options struct {
 	Prompt    string
 	Cwd       string
 	SessionID string
-	Yolo      bool
-	Model     string
-	MaxTurns  int
-	Timeout   time.Duration
-	ExtraArgs []string
+	// ForceNewSession with non-empty SessionID uses -s instead of --resume.
+	ForceNewSession bool
+	Yolo            bool
+	Model           string
+	MaxTurns        int
+	Timeout         time.Duration
+	ExtraArgs       []string
 	// Tools non-nil → --tools; pointer to "" requests no tools.
 	Tools            *string
 	NoSubagents      bool
@@ -40,6 +42,8 @@ type Options struct {
 	OnThought   func(delta string)
 	// OnActivity receives tool/status lines when the CLI emits them.
 	OnActivity func(line string)
+	// OnStartPID is called with the child process id after Start succeeds.
+	OnStartPID func(pid int)
 }
 
 // MaxTurnsUserMessage is posted to Discord when Grok hits --max-turns.
@@ -165,7 +169,7 @@ func Run(ctx context.Context, opt Options) Result {
 	runSessionID := strings.TrimSpace(opt.SessionID)
 	newSession := false
 	if runSessionID == "" && stream && opt.OnActivity != nil {
-		runSessionID = newSessionID()
+		runSessionID = NewSessionID()
 		newSession = true
 	}
 
@@ -184,7 +188,11 @@ func Run(ctx context.Context, opt Options) Result {
 		args = append(args, "-m", opt.Model)
 	}
 	if opt.SessionID != "" {
-		args = append(args, "--resume", opt.SessionID)
+		if opt.ForceNewSession {
+			args = append(args, "-s", opt.SessionID)
+		} else {
+			args = append(args, "--resume", opt.SessionID)
+		}
 	} else if newSession {
 		args = append(args, "-s", runSessionID)
 	}
@@ -211,6 +219,7 @@ func Run(ctx context.Context, opt Options) Result {
 	cmd := exec.CommandContext(ctx, opt.GrokBin, args...)
 	cmd.Dir = opt.Cwd
 	cmd.Env = os.Environ()
+	setProcessGroup(cmd)
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -218,7 +227,29 @@ func Run(ctx context.Context, opt Options) Result {
 	if !stream {
 		var stdout bytes.Buffer
 		cmd.Stdout = &stdout
-		err := cmd.Run()
+		if err := cmd.Start(); err != nil {
+			return Result{
+				Text:      fmt.Sprintf("Failed to start grok: %v", err),
+				SessionID: runSessionID,
+				Code:      1,
+				Stderr:    stderr.String(),
+			}
+		}
+		if opt.OnStartPID != nil && cmd.Process != nil {
+			opt.OnStartPID(cmd.Process.Pid)
+		}
+		done := make(chan struct{})
+		go func() {
+			select {
+			case <-ctx.Done():
+				if cmd.Process != nil {
+					KillProcessGroup(cmd.Process.Pid)
+				}
+			case <-done:
+			}
+		}()
+		err := cmd.Wait()
+		close(done)
 		return finishResult(ctx, opt, err, stdout.Bytes(), stderr.String(), opt.Timeout)
 	}
 
@@ -239,6 +270,9 @@ func Run(ctx context.Context, opt Options) Result {
 			Stderr:    stderr.String(),
 		}
 	}
+	if opt.OnStartPID != nil && cmd.Process != nil {
+		opt.OnStartPID(cmd.Process.Pid)
+	}
 
 	watchCtx, stopWatch := context.WithCancel(ctx)
 	var watchWG sync.WaitGroup
@@ -250,8 +284,21 @@ func Run(ctx context.Context, opt Options) Result {
 		}()
 	}
 
+	// Kill process group on cancel so grandchildren die too.
+	killDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			if cmd.Process != nil {
+				KillProcessGroup(cmd.Process.Pid)
+			}
+		case <-killDone:
+		}
+	}()
+
 	streamed, parseErr := consumeStream(stdout, opt.OnTextDelta, opt.OnThought, opt.OnActivity)
 	waitErr := cmd.Wait()
+	close(killDone)
 	stopWatch()
 	watchWG.Wait()
 
@@ -802,8 +849,8 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-// newSessionID returns a random UUID v4 string for Grok's -s flag.
-func newSessionID() string {
+// NewSessionID returns a random UUID v4 string for Grok's -s flag.
+func NewSessionID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		// crypto/rand failure is effectively impossible; still emit UUID shape.
@@ -819,3 +866,5 @@ func newSessionID() string {
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
+
+func newSessionID() string { return NewSessionID() }

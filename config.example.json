@@ -44,6 +44,7 @@
   "summarizeTimeoutMs": 45000,
   "worktreeIsolation": true,
   "worktreeIdleTTLDays": 30,
+  "resumeActiveRuns": true,
   "httpListen": ":8787",
   "webPublicBaseURL": "",
   "webMergeMethod": "squash",

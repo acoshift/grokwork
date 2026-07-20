@@ -409,16 +409,21 @@ func (b *Bot) resolveProjectRepo(project, mainCwd string) (repo, name string) {
 
 func (b *Bot) isThreadBusy(threadID string) bool {
 	v, ok := b.states.Load(threadID)
-	if !ok {
-		return false
+	if ok {
+		st, _ := v.(*threadState)
+		if st != nil {
+			st.mu.Lock()
+			busy := st.job != nil || len(st.queue) > 0
+			st.mu.Unlock()
+			if busy {
+				return true
+			}
+		}
 	}
-	st, _ := v.(*threadState)
-	if st == nil {
-		return false
+	if b.resumeEnabled() && b.runs != nil && b.runs.HasWork(threadID) {
+		return true
 	}
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	return st.job != nil || len(st.queue) > 0
+	return false
 }
 
 func parseRFC3339(s string) time.Time {

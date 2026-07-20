@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -18,6 +19,7 @@ import (
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -50,6 +52,11 @@ type taskItem struct {
 	createdBy       string
 	createdByName   string
 	discordURL      string
+	// Durable resume fields.
+	taskID           string
+	attempt          int
+	referencedPrompt string
+	triggerMsgID     string
 }
 
 type threadState struct {
@@ -63,6 +70,14 @@ type Bot struct {
 	sessions *sessionstore.Store
 	history  *history.Store
 	states   sync.Map // threadID → *threadState
+	runs     *runjournal.Store
+
+	ready     atomic.Bool
+	gateReady atomic.Bool
+	stopping  atomic.Bool
+	drainWG   sync.WaitGroup
+	bootGen   uint64
+	hostname  string
 
 	discordMu sync.RWMutex
 	discord   *discordgo.Session // gateway session after Register
@@ -71,6 +86,16 @@ type Bot struct {
 
 func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) *Bot {
 	b := &Bot{cfg: cfg, sessions: sessions, history: hist}
+	if cfg != nil && cfg.DataDir != "" {
+		if store, err := runjournal.New(cfg.DataDir); err != nil {
+			log.Printf("warn: runjournal: %v", err)
+		} else {
+			b.runs = store
+		}
+	}
+	if host, err := os.Hostname(); err == nil {
+		b.hostname = host
+	}
 	// Discord-independent background work: do not wait for gateway ready so
 	// web-native units still get idle TTL + PR terminal cleanup.
 	b.startIdleWorktreeCleanup()
@@ -160,6 +185,25 @@ func (b *Bot) stateFor(threadID string) *threadState {
 }
 
 func (b *Bot) claimOrEnqueue(threadID string, job *runJob, item taskItem) (claimed bool, queuePos int, err error) {
+	return b.claimOrEnqueueInternal(threadID, job, item, false)
+}
+
+// claimOrEnqueueInternal claims or enqueues under st.mu and persists the journal (RMW).
+// skipReady is true for recovery rehydrate (gate still closed).
+func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem, skipReady bool) (claimed bool, queuePos int, err error) {
+	if b != nil && b.stopping.Load() {
+		return false, 0, ErrShuttingDown
+	}
+	if !skipReady && b != nil && !b.Ready() {
+		return false, 0, ErrNotReady
+	}
+	if item.taskID == "" {
+		item.taskID = runjournal.NewTaskID()
+	}
+	if item.attempt <= 0 {
+		item.attempt = 1
+	}
+
 	st := b.stateFor(threadID)
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -168,9 +212,23 @@ func (b *Bot) claimOrEnqueue(threadID string, job *runJob, item taskItem) (claim
 			return false, 0, errQueueFull
 		}
 		st.queue = append(st.queue, item)
+		if err := b.saveJournalFromState(threadID, st, item, false); err != nil {
+			st.queue = st.queue[:len(st.queue)-1]
+			if b.runs != nil {
+				b.runs.RemoveTaskFiles(threadID, item.taskID)
+			}
+			return false, 0, err
+		}
 		return false, len(st.queue), nil
 	}
 	st.job = job
+	if err := b.saveJournalFromState(threadID, st, item, true); err != nil {
+		st.job = nil
+		if b.runs != nil {
+			b.runs.RemoveTaskFiles(threadID, item.taskID)
+		}
+		return false, 0, err
+	}
 	return true, 0, nil
 }
 
@@ -178,12 +236,36 @@ func (b *Bot) finishRun(threadID string) (next taskItem, ok bool) {
 	st := b.stateFor(threadID)
 	st.mu.Lock()
 	defer st.mu.Unlock()
+
+	var finishedID string
+	if b.runs != nil && b.resumeEnabled() {
+		if j, found, err := b.runs.Load(threadID); err == nil && found && j.Active != nil {
+			finishedID = j.Active.ID
+		}
+	}
+
+	if b.stopping.Load() {
+		b.checkpointInterruptedLocked(threadID, st)
+		st.job = nil
+		return taskItem{}, false
+	}
+
+	if finishedID != "" && b.runs != nil {
+		b.runs.RemoveTaskFiles(threadID, finishedID)
+	}
+
 	if len(st.queue) == 0 {
 		st.job = nil
+		if b.resumeEnabled() {
+			b.deleteJournal(threadID)
+		}
 		return taskItem{}, false
 	}
 	next = st.queue[0]
 	st.queue = st.queue[1:]
+	if err := b.saveJournalFromState(threadID, st, next, true); err != nil {
+		log.Printf("warn: journal promote thread=%s: %v", threadID, err)
+	}
 	return next, true
 }
 
@@ -211,6 +293,11 @@ func (b *Bot) clearQueue(threadID string) int {
 	defer st.mu.Unlock()
 	n := len(st.queue)
 	st.queue = nil
+	if n > 0 {
+		if err := b.saveJournalFromState(threadID, st, taskItem{}, false); err != nil {
+			log.Printf("warn: journal clearQueue thread=%s: %v", threadID, err)
+		}
+	}
 	return n
 }
 
@@ -471,6 +558,11 @@ func (b *Bot) cancelCurrentRun(threadID, who string) (msg string, ok bool) {
 	n := b.queueLen(threadID)
 	log.Printf("cancel: thread=%s project=%s elapsed=%s queued=%d user=%s",
 		threadID, job.project, formatElapsed(time.Since(job.start)), n, who)
+	b.patchJournal(threadID, func(j *runjournal.Journal) {
+		if j.Active != nil {
+			j.Active.Status = runjournal.StatusCancelling
+		}
+	})
 	job.cancel()
 	msg = "Cancelling current run…"
 	if n > 0 {
@@ -752,11 +844,38 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	}
 	log.Printf("task: thread=%s title=%q", threadID, title)
 
+	// Phase A: materialize attachments / referenced prompt outside st.mu (K11).
+	taskID := runjournal.NewTaskID()
+	var related *discordgo.Message
+	if hasMessageReference(m) {
+		refMsg, refErr := resolveReferencedMessage(s, m)
+		if refErr != nil {
+			log.Printf("warn: referenced message (materialize): %v", refErr)
+		} else {
+			related = refMsg
+		}
+	}
+	matCtx, matCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	paths, refPrompt, matErr := b.materializeTaskFiles(matCtx, threadID, taskID, m, nil, related)
+	matCancel()
+	if matErr != nil {
+		log.Printf("error: materialize thread=%s: %v", threadID, matErr)
+		if _, sendErr := s.ChannelMessageSend(threadID, "Could not save attachments for this task: "+matErr.Error()); sendErr != nil {
+			log.Printf("error: reply materialize: %v", sendErr)
+		}
+		return
+	}
+
 	item := taskItem{
 		s: s, m: m, parsed: parsed, proj: proj, threadID: threadID,
-		actor:  ActorFromUser(m.Author),
-		source: SourceDiscord,
-		origin: SourceDiscord,
+		actor:            ActorFromUser(m.Author),
+		source:           SourceDiscord,
+		origin:           SourceDiscord,
+		taskID:           taskID,
+		attempt:          1,
+		attachmentPaths:  paths,
+		referencedPrompt: refPrompt,
+		triggerMsgID:     m.ID,
 	}
 	if m.Author != nil {
 		item.createdBy = m.Author.ID
@@ -767,11 +886,27 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	claimed, queuePos, qerr := b.claimOrEnqueue(threadID, job, item)
 	if qerr != nil {
 		cancel()
-		log.Printf("task: queue full thread=%s", threadID)
-		if _, sendErr := s.ChannelMessageSend(threadID, fmt.Sprintf(
-			"Follow-up queue is full (max %d). Wait for a run to finish, or `@Grok /cancel`.", maxFollowupQueue,
-		)); sendErr != nil {
-			log.Printf("error: reply queue-full: %v", sendErr)
+		if b.runs != nil {
+			b.runs.RemoveTaskFiles(threadID, taskID)
+		}
+		switch {
+		case qerr == ErrNotReady:
+			log.Printf("task: not ready thread=%s", threadID)
+			if _, sendErr := s.ChannelMessageSend(threadID, "Bot is starting up; try again in a moment."); sendErr != nil {
+				log.Printf("error: reply not-ready: %v", sendErr)
+			}
+		case qerr == errQueueFull:
+			log.Printf("task: queue full thread=%s", threadID)
+			if _, sendErr := s.ChannelMessageSend(threadID, fmt.Sprintf(
+				"Follow-up queue is full (max %d). Wait for a run to finish, or `@Grok /cancel`.", maxFollowupQueue,
+			)); sendErr != nil {
+				log.Printf("error: reply queue-full: %v", sendErr)
+			}
+		default:
+			log.Printf("task: claim failed thread=%s: %v", threadID, qerr)
+			if _, sendErr := s.ChannelMessageSend(threadID, "Could not queue task (durable state failed). Try again."); sendErr != nil {
+				log.Printf("error: reply claim-fail: %v", sendErr)
+			}
 		}
 		return
 	}
@@ -786,6 +921,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		return
 	}
 
+	b.drainWG.Add(1)
 	b.drainTaskQueue(ctx, cancel, item, job)
 }
 
@@ -820,6 +956,11 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			present = false
 		} else {
 			statusID = status.ID
+			b.patchJournal(threadID, func(j *runjournal.Journal) {
+				if j.Active != nil {
+					j.Active.StatusMsgID = statusID
+				}
+			})
 		}
 	}
 
@@ -858,11 +999,23 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	} else {
 		log.Printf("task: no worktree isolation cwd=%s", runCwd)
 	}
+	b.patchJournal(threadID, func(j *runjournal.Journal) {
+		j.WorktreeCwd = runCwd
+		j.Branch = wtBranch
+	})
 
 	prompt := parsed.Prompt
 
+	// Single-apply ReferencedPrompt: never resolve live if journal already has it.
 	var related *discordgo.Message
-	if present && m != nil && hasMessageReference(m) {
+	if item.referencedPrompt != "" {
+		if prompt != "" {
+			prompt = strings.TrimSpace(prompt) + "\n\n" + item.referencedPrompt
+		} else {
+			prompt = item.referencedPrompt
+		}
+		log.Printf("task: applied durable referenced prompt len=%d", len(item.referencedPrompt))
+	} else if present && m != nil && hasMessageReference(m) {
 		refMsg, refErr := resolveReferencedMessage(s, m)
 		if refErr != nil {
 			log.Printf("warn: referenced message: %v", refErr)
@@ -876,10 +1029,26 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		}
 	}
 
-	// Prefer pre-downloaded paths (web); else Discord attachment download.
+	// Prefer durable paths (web / materialize); fail closed if listed but missing.
 	if len(item.attachmentPaths) > 0 {
 		var files []savedAttachment
 		for _, p := range item.attachmentPaths {
+			if _, stErr := os.Stat(p); stErr != nil {
+				streamer.Stop()
+				close(stopProgress)
+				progressWG.Wait()
+				log.Printf("error: durable attachment missing %s: %v", p, stErr)
+				msg := "Attachments were lost before the run could start. Please re-send the task with files attached."
+				if present && statusID != "" {
+					if editErr := discordEditComponents(s, threadID, statusID, "Failed · attachments", actionBarDone(threadID), true); editErr != nil {
+						log.Printf("error: edit status: %v", editErr)
+					}
+				}
+				if present {
+					sendChunks(s, threadID, msg)
+				}
+				return
+			}
 			files = append(files, savedAttachment{Path: p, Filename: filepath.Base(p)})
 		}
 		prompt = promptWithAttachments(prompt, files)
@@ -913,6 +1082,11 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			log.Printf("task: saved %d attachment(s)", len(files))
 		}
 	}
+
+	if item.attempt > 1 {
+		prompt = interruptionPromptNote + prompt
+	}
+
 	// Normalize Discord link markup and keep query/# fragments explicit for the model.
 	prompt = enrichPromptWithLinks(prompt)
 	if urls := extractURLs(prompt); len(urls) > 0 {
@@ -932,6 +1106,10 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 				b.bindLinearIssuesFromText(threadID, projName, refText)
 			}
 		}
+		if item.referencedPrompt != "" {
+			b.bindIssuesFromText(threadID, item.referencedPrompt, owner, repo)
+			b.bindLinearIssuesFromText(threadID, projName, item.referencedPrompt)
+		}
 	} else {
 		b.bindIssuesFromText(threadID, parsed.Prompt, "", "")
 		b.bindLinearIssuesFromText(threadID, projName, parsed.Prompt)
@@ -942,10 +1120,9 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 
 	prompt = remoteWorkPromptPrefix(wtBranch) + issueBindingPrompt(issueLines) + prompt
 
-	var sessionID string
-	if e, ok := b.sessions.Get(threadID); ok {
-		sessionID = e.SessionID
-		log.Printf("task: resume session=%s", sessionID)
+	sessionID, forceNew := b.prebindSessionID(threadID, proj.Name)
+	if sessionID != "" {
+		log.Printf("task: session=%s forceNew=%v attempt=%d", sessionID, forceNew, item.attempt)
 	}
 
 	maxTurns := b.cfg.MaxTurnsValue()
@@ -954,15 +1131,16 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		b.cfg.GrokBin, b.cfg.YoloEnabled(), maxTurns, timeout, runCwd)
 
 	result := grokrun.Run(ctx, grokrun.Options{
-		GrokBin:   b.cfg.GrokBin,
-		Prompt:    prompt,
-		Cwd:       runCwd,
-		SessionID: sessionID,
-		Yolo:      b.cfg.YoloEnabled(),
-		Model:     b.cfg.Model,
-		MaxTurns:  maxTurns,
-		Timeout:   timeout,
-		ExtraArgs: b.cfg.ExtraArgs,
+		GrokBin:         b.cfg.GrokBin,
+		Prompt:          prompt,
+		Cwd:             runCwd,
+		SessionID:       sessionID,
+		ForceNewSession: forceNew,
+		Yolo:            b.cfg.YoloEnabled(),
+		Model:           b.cfg.Model,
+		MaxTurns:        maxTurns,
+		Timeout:         timeout,
+		ExtraArgs:       b.cfg.ExtraArgs,
 		OnTextDelta: func(delta string) {
 			streamer.OnDelta(delta)
 		},
@@ -972,8 +1150,16 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		OnActivity: func(line string) {
 			thoughts.OnActivity(line)
 		},
+		OnStartPID: func(pid int) {
+			b.patchJournal(threadID, func(j *runjournal.Journal) {
+				j.GrokPID = pid
+			})
+		},
 	})
 	streamer.Flush()
+	b.patchJournal(threadID, func(j *runjournal.Journal) {
+		j.GrokPID = 0
+	})
 
 	close(stopProgress)
 	progressWG.Wait()
@@ -1108,7 +1294,11 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		}
 	}
 
-	b.recordTurnActor(threadID, actor, m, proj.Name, parsed.Prompt, result, elapsed)
+	histM := m
+	if histM == nil && item.triggerMsgID != "" {
+		histM = &discordgo.MessageCreate{Message: &discordgo.Message{ID: item.triggerMsgID}}
+	}
+	b.recordTurnActor(threadID, actor, histM, proj.Name, parsed.Prompt, result, elapsed)
 
 	if !result.Cancelled {
 		replyText := result.Text

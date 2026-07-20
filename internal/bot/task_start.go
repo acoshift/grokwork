@@ -8,6 +8,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -172,6 +173,14 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 	if src == "" {
 		src = SourceDiscord
 	}
+	taskID := runjournal.NewTaskID()
+	matCtx, matCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	paths, _, matErr := b.materializeTaskFiles(matCtx, threadID, taskID, nil, opts.AttachmentPaths, nil)
+	matCancel()
+	if matErr != nil {
+		return 0, fmt.Errorf("materialize attachments: %w", matErr)
+	}
+
 	item := taskItem{
 		s:               opts.DG,
 		m:               nil,
@@ -180,11 +189,13 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 		threadID:        threadID,
 		actor:           opts.Actor,
 		source:          src,
-		attachmentPaths: append([]string(nil), opts.AttachmentPaths...),
+		attachmentPaths: paths,
 		origin:          opts.Origin,
 		createdBy:       opts.CreatedBy,
 		createdByName:   opts.CreatedByName,
 		discordURL:      opts.DiscordURL,
+		taskID:          taskID,
+		attempt:         1,
 	}
 	if item.origin == "" {
 		item.origin = src
@@ -199,12 +210,16 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 	claimed, pos, qerr := b.claimOrEnqueue(threadID, job, item)
 	if qerr != nil {
 		cancel()
+		if b.runs != nil {
+			b.runs.RemoveTaskFiles(threadID, taskID)
+		}
 		return 0, qerr
 	}
 	if !claimed {
 		cancel()
 		return pos, nil
 	}
+	b.drainWG.Add(1)
 	go b.drainTaskQueue(ctx, cancel, item, job)
 	return 0, nil
 }

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -34,15 +36,15 @@ func main() {
 	}
 
 	b := bot.New(cfg, sessions, hist)
+	b.EnableReadyGate()
 
-	addr := cfg.ListenAddr()
-	webSrv := web.New(cfg, sessions, hist, b)
-	go func() {
-		log.Printf("bg: web UI listening on http://%s (dashboard, ship, sessions, worktrees, config)", addr)
-		if err := webSrv.ListenAndServe(); err != nil {
-			log.Printf("bg: web server stopped: %v", err)
+	// Single-instance lock under data/runs/.lock (when journal store is available).
+	if runs := b.Runs(); runs != nil {
+		host, _ := os.Hostname()
+		if err := runs.TryLock(os.Getpid(), time.Now(), host); err != nil {
+			log.Fatalf("run journal lock: %v\n\nAnother grokwork process may be using this data directory.", err)
 		}
-	}()
+	}
 
 	dg, err := discordgo.New("Bot " + cfg.DiscordToken)
 	if err != nil {
@@ -52,6 +54,7 @@ func main() {
 	b.Register(dg)
 	dg.LogLevel = discordgo.LogWarning
 
+	// Open gateway before Recover so resume UX can post/heal messages.
 	if err := dg.Open(); err != nil {
 		if strings.Contains(err.Error(), "4014") {
 			log.Fatalf("open gateway: %v\n\n"+
@@ -65,12 +68,32 @@ func main() {
 	}
 	defer dg.Close()
 
+	// Recover while ready=false so user claims get ErrNotReady (no double-Grok).
+	if err := b.RecoverActiveRuns(context.Background()); err != nil {
+		log.Printf("warn: recover active runs: %v", err)
+	}
+	b.SetReady(true)
+
+	addr := cfg.ListenAddr()
+	webSrv := web.New(cfg, sessions, hist, b)
+	go func() {
+		log.Printf("bg: web UI listening on http://%s (dashboard, ship, sessions, worktrees, config)", addr)
+		if err := webSrv.ListenAndServe(); err != nil {
+			log.Printf("bg: web server stopped: %v", err)
+		}
+	}()
+
 	fmt.Println("Grok Work bridge running. Ctrl+C to stop.")
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 	fmt.Println("Shutting down…")
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), b.ShutdownTimeout())
+	b.Stop(stopCtx)
+	cancel()
+
 	// Web stop is configured for near-instant close (no wait for SSE).
 	_ = webSrv.Shutdown()
 }
