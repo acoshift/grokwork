@@ -283,6 +283,66 @@ func TestAuthOnMemberCannotMutate(t *testing.T) {
 	}
 }
 
+func TestAuthOnMemberCannotViewConfig(t *testing.T) {
+	srv, _, _ := authOnServer(t)
+	h := srv.Handler()
+	for _, role := range []struct {
+		id   string
+		name string
+		role config.WebRole
+	}{
+		{"member-1", "Member", config.WebRoleMember},
+		{"viewer-1", "Viewer", config.WebRoleViewer},
+	} {
+		sid, _, err := srv.LoginAs(role.id, role.name, role.role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{"/config", "/config/projects/proj", "/partials/config/lists"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("%s GET %s status=%d body=%s", role.role, path, w.Code, w.Body.String())
+			}
+		}
+		// Config nav link must not appear on other pages (CSS selectors may mention /config).
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s GET / status=%d", role.role, w.Code)
+		}
+		if strings.Contains(w.Body.String(), `>Config</a>`) {
+			t.Fatalf("%s dashboard must not show Config nav link", role.role)
+		}
+	}
+	// Admin can view config and sees the nav link.
+	sid, _, err := srv.LoginAs("admin-1", "Admin", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/config", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin GET /config status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `id="page-config"`) {
+		t.Fatal("admin config page marker missing")
+	}
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if !strings.Contains(w.Body.String(), `>Config</a>`) {
+		t.Fatal("admin dashboard should show Config nav link")
+	}
+}
+
 func TestAuthOnDeniedUser(t *testing.T) {
 	srv, _, _ := authOnServer(t)
 	h := srv.Handler()

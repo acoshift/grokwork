@@ -184,8 +184,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /sessions/{threadID}", s.requireAuth(hime.Handler(s.sessionPage)))
 	mux.Handle("GET /ship", s.requireAuth(hime.Handler(s.shipPage)))
 	mux.Handle("GET /worktrees", s.requireAuth(hime.Handler(s.worktreesPage)))
-	mux.Handle("GET /config", s.requireAuth(hime.Handler(s.configPage)))
-	mux.Handle("GET /config/projects/{name}", s.requireAuth(hime.Handler(s.projectConfigPage)))
+	mux.Handle("GET /config", s.requireAdmin(hime.Handler(s.configPage)))
+	mux.Handle("GET /config/projects/{name}", s.requireAdmin(hime.Handler(s.projectConfigPage)))
 	mux.Handle("GET /issues", s.requireAuth(hime.Handler(s.issuesIndex)))
 	mux.Handle("GET /projects/{project}/issues", s.requireAuth(hime.Handler(s.issuesList)))
 	mux.Handle("GET /projects/{project}/issues/{n}", s.requireAuth(hime.Handler(s.issueDetail)))
@@ -228,7 +228,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/history/table", s.requireAuth(hime.Handler(s.partialHistoryTable)))
 	mux.Handle("GET /partials/history/turns/{threadID}", s.requireAuth(hime.Handler(s.partialHistoryTurns)))
 	mux.Handle("GET /partials/worktrees/table", s.requireAuth(hime.Handler(s.partialWorktreesTable)))
-	mux.Handle("GET /partials/config/lists", s.requireAuth(hime.Handler(s.partialConfigLists)))
+	mux.Handle("GET /partials/config/lists", s.requireAdmin(hime.Handler(s.partialConfigLists)))
 
 	// Admin + CSRF mutations (no-op gates when auth disabled)
 	mux.Handle("POST /worktrees/prune", s.requireAdmin(hime.Handler(s.pruneWorktree)))
@@ -294,6 +294,7 @@ type pageData struct {
 	SSEPath     string
 	// Auth chrome
 	AuthEnabled bool
+	IsAdmin     bool // true when auth off, or session role ≥ admin
 	CSRF        string
 	UserName    string
 	UserRole    string
@@ -349,6 +350,8 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 	d.CanGitHubWrite = s.cfg.FeatureGitHubWrites()
 	d.CanMerge = s.cfg.FeatureMerge()
 	d.CanStartSession = s.cfg.FeatureStartSessions()
+	// Auth off = private-network trust model; treat as admin for chrome (Config nav, etc.).
+	d.IsAdmin = !d.AuthEnabled
 	if !d.AuthEnabled {
 		return d
 	}
@@ -361,12 +364,13 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 		d.UserName = sess.DisplayName
 		d.UserID = sess.DiscordUserID
 		d.UserRole = string(sess.Role)
+		d.IsAdmin = config.RoleAtLeast(sess.Role, config.WebRoleAdmin)
 		// Gate UI by role (handlers still enforce).
 		if !config.RoleAtLeast(sess.Role, config.WebRoleMember) {
 			d.CanGitHubWrite = false
 			d.CanStartSession = false
 		}
-		if !config.RoleAtLeast(sess.Role, config.WebRoleAdmin) {
+		if !d.IsAdmin {
 			d.CanMerge = false
 		}
 	} else {

@@ -1028,7 +1028,7 @@
         <a href="{{route "commits"}}" class="{{if .IsCommits}}active{{end}}">Commits</a>
         <a href="{{route "sessions"}}" class="{{if .IsSessions}}active{{end}}">Sessions</a>
         <a href="{{route "worktrees"}}" class="{{if .IsWorktrees}}active{{end}}">Worktrees</a>
-        <a href="{{route "config"}}" class="{{if .IsConfig}}active{{end}}">Config</a>
+        {{if .IsAdmin}}<a href="{{route "config"}}" class="{{if .IsConfig}}active{{end}}">Config</a>{{end}}
       </nav>
       <div class="side-foot">
         <span id="sse-status" title="Live updates via SSE">connecting…</span>
