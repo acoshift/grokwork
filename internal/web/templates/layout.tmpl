@@ -382,6 +382,57 @@
       70% { box-shadow: 0 0 0 0.32rem transparent; }
       100% { box-shadow: 0 0 0 0 transparent; }
     }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ── Loading feedback ────────────────────────────────────────────── */
+    /* Top progress bar for boosted page navigations (JS toggles .on/.done). */
+    #page-loader {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      z-index: 50;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    #page-loader::before {
+      content: "";
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+      box-shadow: 0 0 8px hsl(var(--blue-500) / 45%);
+    }
+    #page-loader.on { opacity: 1; }
+    #page-loader.on::before {
+      width: 80%;
+      transition: width 6s cubic-bezier(0.05, 0.65, 0.15, 1);
+    }
+    #page-loader.on.done::before {
+      width: 100%;
+      transition: width 0.15s ease;
+    }
+    /* Submit buttons in flight: spinner + disabled (JS adds .is-loading). */
+    button.is-loading::before,
+    .btn.is-loading::before {
+      content: "";
+      flex-shrink: 0;
+      width: 0.85rem;
+      height: 0.85rem;
+      border-radius: 50%;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      animation: spin 0.7s linear infinite;
+    }
+    button.is-loading:disabled,
+    button.is-loading:disabled:hover {
+      opacity: 0.85;
+      cursor: progress;
+    }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; }
     }
@@ -980,6 +1031,7 @@
   </style>
 </head>
 <body>
+  <div id="page-loader" aria-hidden="true"></div>
   {{/* Boost same-origin links/forms inside the shell: swap only #live-root so the
        sse-connect EventSource on this element stays open across in-app navigation
        (nav, table rows, back links, form redirects). target=_blank is not boosted.
@@ -1113,6 +1165,72 @@
       }
     });
 
+    // Page-change progress bar: boosted navigations only, so SSE region
+    // refreshes stay silent. The 120ms delay keeps instant swaps flash-free.
+    var loader = document.getElementById("page-loader");
+    var loaderTimer = null;
+    function loaderStart() {
+      if (!loader) return;
+      clearTimeout(loaderTimer);
+      loaderTimer = setTimeout(function () { loader.classList.add("on"); }, 120);
+    }
+    function loaderStop() {
+      if (!loader) return;
+      clearTimeout(loaderTimer);
+      loaderTimer = null;
+      if (!loader.classList.contains("on")) return;
+      loader.classList.add("done");
+      setTimeout(function () { loader.classList.remove("on", "done"); }, 300);
+    }
+
+    // Submit buttons in flight: disable so a double click cannot POST twice
+    // (queue two Grok runs, add a project twice, …), spinner via .is-loading.
+    // Only buttons this code disabled are re-enabled — template-disabled ones
+    // (busy prune, TTL off) stay disabled.
+    function setFormLoading(form, on) {
+      if (!form || !form.querySelectorAll) return;
+      form.querySelectorAll('button[type="submit"], button:not([type])').forEach(function (b) {
+        if (on) {
+          if (b.disabled) return;
+          b.disabled = true;
+          b.dataset.wasEnabled = "1";
+          b.classList.add("is-loading");
+        } else if (b.dataset.wasEnabled) {
+          b.disabled = false;
+          delete b.dataset.wasEnabled;
+          b.classList.remove("is-loading");
+        }
+      });
+    }
+
+    // beforeRequest fires synchronously while the request is issued, so the
+    // disable lands before any second click can be processed.
+    document.body.addEventListener("htmx:beforeRequest", function (e) {
+      var d = e.detail || {};
+      if (d.boosted) loaderStart();
+      if (d.elt && d.elt.tagName === "FORM") setFormLoading(d.elt, true);
+    });
+    // afterRequest also fires on errors; if the swap replaced the form this is
+    // a no-op on the detached node and the fresh DOM arrives enabled.
+    document.body.addEventListener("htmx:afterRequest", function (e) {
+      var d = e.detail || {};
+      if (d.elt && d.elt.tagName === "FORM") setFormLoading(d.elt, false);
+    });
+    ["htmx:responseError", "htmx:sendError", "htmx:sendAbort", "htmx:timeout"].forEach(function (ev) {
+      document.body.addEventListener(ev, function () { loaderStop(); });
+    });
+
+    // Non-htmx submissions (hx-boost="false": logout, commit review) unload
+    // the page natively; disable on the next tick so the submit itself is
+    // unaffected. Boosted forms are skipped here (htmx preventDefaults them
+    // and the htmx listeners above handle their lifecycle) — and so are
+    // confirm() dialogs the user cancelled.
+    document.addEventListener("submit", function (e) {
+      var form = e.target;
+      if (!form || form.tagName !== "FORM" || e.defaultPrevented) return;
+      setTimeout(function () { setFormLoading(form, true); }, 0);
+    });
+
     document.body.addEventListener("htmx:sseOpen", function () {
       setStatus("live", "ok");
     });
@@ -1190,6 +1308,7 @@
     document.body.addEventListener("htmx:afterSettle", function (e) {
       var d = e.detail;
       if (!d || !d.boosted) return;
+      loaderStop();
       var elt = d.elt;
       if (!elt || elt.id !== "live-root") return;
       var path = pagePath();

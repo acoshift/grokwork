@@ -3,9 +3,13 @@ package web
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
@@ -16,8 +20,10 @@ import (
 // TestPreviewServer boots the admin UI with seeded demo data for visual review
 // of template/CSS changes. It never runs in CI: skipped unless
 // GROKWORK_WEB_PREVIEW=1, then serves on 127.0.0.1:18787 until killed.
+// GROKWORK_WEB_PREVIEW_DELAY_MS adds artificial latency to page/partial
+// requests (not /static, not /events) so loading states are observable.
 //
-//	GROKWORK_WEB_PREVIEW=1 go test ./internal/web -run TestPreviewServer -timeout 0
+//	GROKWORK_WEB_PREVIEW=1 GROKWORK_WEB_PREVIEW_DELAY_MS=800 go test ./internal/web -run TestPreviewServer -timeout 0
 func TestPreviewServer(t *testing.T) {
 	if os.Getenv("GROKWORK_WEB_PREVIEW") != "1" {
 		t.Skip("set GROKWORK_WEB_PREVIEW=1 to boot the preview server")
@@ -139,6 +145,20 @@ func TestPreviewServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Fprintf(os.Stderr, "preview: http://%s (kill the test to stop)\n", ln.Addr())
+	if ms, _ := strconv.Atoi(os.Getenv("GROKWORK_WEB_PREVIEW_DELAY_MS")); ms > 0 {
+		delay := time.Duration(ms) * time.Millisecond
+		slow := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasPrefix(r.URL.Path, "/static/") && r.URL.Path != "/events" {
+				fmt.Fprintf(os.Stderr, "preview: %s %s\n", r.Method, r.URL.Path)
+				time.Sleep(delay)
+			}
+			srv.Handler().ServeHTTP(w, r)
+		})}
+		if err := slow.Serve(ln); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
 	if err := srv.App().Serve(ln); err != nil {
 		t.Fatal(err)
 	}
