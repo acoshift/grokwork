@@ -936,6 +936,8 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	switch {
 	case result.Cancelled:
 		header = fmt.Sprintf("Cancelled · **%s** · %s", proj.Name, formatElapsed(elapsed))
+	case result.MaxTurnsReached:
+		header = fmt.Sprintf("Stopped · max turns reached · **%s** · %s", proj.Name, formatElapsed(elapsed))
 	case result.Code != 0:
 		header = fmt.Sprintf("Finished with exit **%d** · **%s** · %s", result.Code, proj.Name, formatElapsed(elapsed))
 	}
@@ -965,6 +967,9 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			rem = result.Text
 		}
 		sendChunks(s, threadID, rem)
+	} else if result.MaxTurnsReached && !strings.Contains(streamer.Text(), "Reached max turns") {
+		// Stream finished before the notice was injected (e.g. stderr-only detection).
+		sendChunks(s, threadID, grokrun.MaxTurnsUserMessage)
 	}
 
 	if result.Stderr != "" && os.Getenv("GROK_DISCORD_DEBUG") != "" {

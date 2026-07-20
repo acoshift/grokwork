@@ -57,6 +57,93 @@ func TestConsumeStreamErrorEvent(t *testing.T) {
 	}
 }
 
+func TestConsumeStreamMaxTurnsEmpty(t *testing.T) {
+	raw := strings.Join([]string{
+		`{"type":"thought","data":"planning"}`,
+		`{"type":"max_turns_reached"}`,
+		`{"type":"end","sessionId":"s-max","stopReason":"Cancelled","num_turns":40}`,
+	}, "\n")
+	var texts []string
+	out, err := consumeStream(strings.NewReader(raw), func(d string) {
+		texts = append(texts, d)
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.MaxTurnsReached {
+		t.Fatal("expected MaxTurnsReached")
+	}
+	if out.Text != MaxTurnsUserMessage {
+		t.Fatalf("text=%q", out.Text)
+	}
+	if len(texts) != 1 || texts[0] != MaxTurnsUserMessage {
+		t.Fatalf("texts=%v", texts)
+	}
+	if out.SessionID != "s-max" || out.NumTurns != 40 {
+		t.Fatalf("session=%q turns=%d", out.SessionID, out.NumTurns)
+	}
+}
+
+func TestConsumeStreamMaxTurnsWithPartialText(t *testing.T) {
+	raw := strings.Join([]string{
+		`{"type":"text","data":"Working on the backport…"}`,
+		`{"type":"max_turns_reached"}`,
+		`{"type":"end","sessionId":"s2","num_turns":40}`,
+	}, "\n")
+	var texts []string
+	out, err := consumeStream(strings.NewReader(raw), func(d string) {
+		texts = append(texts, d)
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.MaxTurnsReached {
+		t.Fatal("expected MaxTurnsReached")
+	}
+	want := "Working on the backport…\n\n" + MaxTurnsUserMessage
+	if out.Text != want {
+		t.Fatalf("text=%q want=%q", out.Text, want)
+	}
+	if len(texts) != 2 {
+		t.Fatalf("texts=%v", texts)
+	}
+	if texts[1] != "\n\n"+MaxTurnsUserMessage {
+		t.Fatalf("notice delta=%q", texts[1])
+	}
+}
+
+func TestEnsureMaxTurnsMessageFromStderr(t *testing.T) {
+	res := Result{
+		Text:   "partial reply",
+		Stderr: "Error: max turns reached\n",
+		Code:   1,
+	}
+	ensureMaxTurnsMessage(&res)
+	if !res.MaxTurnsReached {
+		t.Fatal("expected MaxTurnsReached from stderr")
+	}
+	if !strings.Contains(res.Text, MaxTurnsUserMessage) {
+		t.Fatalf("text=%q", res.Text)
+	}
+	// Idempotent.
+	ensureMaxTurnsMessage(&res)
+	if strings.Count(res.Text, "Reached max turns") != 1 {
+		t.Fatalf("double-appended: %q", res.Text)
+	}
+}
+
+func TestEnsureMaxTurnsMessageReplacesStderrOnlyText(t *testing.T) {
+	res := Result{
+		Text:   "Error: max turns reached",
+		Stderr: "Error: max turns reached",
+		Code:   1,
+	}
+	ensureMaxTurnsMessage(&res)
+	if res.Text != MaxTurnsUserMessage {
+		t.Fatalf("text=%q", res.Text)
+	}
+}
+
 func TestConsumeStreamToolActivity(t *testing.T) {
 	raw := strings.Join([]string{
 		`{"type":"tool","name":"bash","data":"git status"}`,

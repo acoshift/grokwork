@@ -42,12 +42,16 @@ type Options struct {
 	OnActivity func(line string)
 }
 
+// MaxTurnsUserMessage is posted to Discord when Grok hits --max-turns.
+const MaxTurnsUserMessage = "Reached max turns before a final reply. Partial work may exist in the Grok session — send another task to continue."
+
 type Result struct {
 	Text                string
 	SessionID           string
 	Code                int
 	Stderr              string
 	Cancelled           bool
+	MaxTurnsReached     bool
 	Usage               *Usage
 	NumTurns            int
 	ContextTokensUsed   int
@@ -269,6 +273,7 @@ func Run(ctx context.Context, opt Options) Result {
 		}
 		res.Usage = streamed.Usage
 		res.NumTurns = streamed.NumTurns
+		res.MaxTurnsReached = streamed.MaxTurnsReached
 		enrichContext(&res, opt.Cwd)
 		return res
 	}
@@ -312,13 +317,15 @@ func Run(ctx context.Context, opt Options) Result {
 	}
 
 	res := Result{
-		Text:      text,
-		SessionID: sessionID,
-		Code:      code,
-		Stderr:    stderr.String(),
-		Usage:     streamed.Usage,
-		NumTurns:  streamed.NumTurns,
+		Text:            text,
+		SessionID:       sessionID,
+		Code:            code,
+		Stderr:          stderr.String(),
+		MaxTurnsReached: streamed.MaxTurnsReached,
+		Usage:           streamed.Usage,
+		NumTurns:        streamed.NumTurns,
 	}
+	ensureMaxTurnsMessage(&res)
 	enrichContext(&res, opt.Cwd)
 	return res
 }
@@ -387,8 +394,37 @@ func finishResult(ctx context.Context, opt Options, err error, stdout []byte, st
 		Usage:     usage,
 		NumTurns:  numTurns,
 	}
+	ensureMaxTurnsMessage(&res)
 	enrichContext(&res, opt.Cwd)
 	return res
+}
+
+// isMaxTurnsError reports whether stderr indicates the CLI hit --max-turns.
+func isMaxTurnsError(stderr string) bool {
+	s := strings.ToLower(stderr)
+	return strings.Contains(s, "max turns reached") || strings.Contains(s, "max_turns_reached")
+}
+
+// ensureMaxTurnsMessage sets MaxTurnsReached from stderr when needed and
+// appends MaxTurnsUserMessage so callers always have user-visible text.
+func ensureMaxTurnsMessage(res *Result) {
+	if res == nil {
+		return
+	}
+	if !res.MaxTurnsReached && isMaxTurnsError(res.Stderr) {
+		res.MaxTurnsReached = true
+	}
+	if !res.MaxTurnsReached {
+		return
+	}
+	if strings.Contains(res.Text, "Reached max turns") {
+		return
+	}
+	if strings.TrimSpace(res.Text) == "" || isMaxTurnsError(res.Text) {
+		res.Text = MaxTurnsUserMessage
+		return
+	}
+	res.Text = strings.TrimRight(res.Text, "\n") + "\n\n" + MaxTurnsUserMessage
 }
 
 func contextResult(ctx context.Context, opt Options, stderr string, timeout time.Duration) (Result, bool) {
@@ -416,10 +452,11 @@ func contextResult(ctx context.Context, opt Options, stderr string, timeout time
 }
 
 type streamOut struct {
-	Text      string
-	SessionID string
-	Usage     *Usage
-	NumTurns  int
+	Text            string
+	SessionID       string
+	Usage           *Usage
+	NumTurns        int
+	MaxTurnsReached bool
 }
 
 func consumeStream(r io.Reader, onText, onThought, onActivity func(string)) (out streamOut, err error) {
@@ -428,6 +465,17 @@ func consumeStream(r io.Reader, onText, onThought, onActivity func(string)) (out
 
 	var b strings.Builder
 	var parseNotes []string
+	maxTurnsNotified := false
+
+	appendText := func(delta string) {
+		if delta == "" {
+			return
+		}
+		b.WriteString(delta)
+		if onText != nil {
+			onText(delta)
+		}
+	}
 
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
@@ -445,12 +493,7 @@ func consumeStream(r io.Reader, onText, onThought, onActivity func(string)) (out
 			if delta == "" {
 				delta = ev.Text
 			}
-			if delta != "" {
-				b.WriteString(delta)
-				if onText != nil {
-					onText(delta)
-				}
-			}
+			appendText(delta)
 		case "thought":
 			delta := ev.Data
 			if delta == "" {
@@ -466,7 +509,16 @@ func consumeStream(r io.Reader, onText, onThought, onActivity func(string)) (out
 			if ev.SessionID != "" {
 				out.SessionID = ev.SessionID
 			}
-		case "end", "max_turns_reached":
+		case "max_turns_reached":
+			out.MaxTurnsReached = true
+			if !maxTurnsNotified {
+				maxTurnsNotified = true
+				delta := MaxTurnsUserMessage
+				if b.Len() > 0 {
+					delta = "\n\n" + MaxTurnsUserMessage
+				}
+				appendText(delta)
+			}
 			if ev.SessionID != "" {
 				out.SessionID = ev.SessionID
 			}
@@ -476,12 +528,15 @@ func consumeStream(r io.Reader, onText, onThought, onActivity func(string)) (out
 			if ev.NumTurns > 0 {
 				out.NumTurns = ev.NumTurns
 			}
-			if strings.EqualFold(ev.Type, "max_turns_reached") && b.Len() == 0 {
-				msg := "Reached max turns before a final reply."
-				b.WriteString(msg)
-				if onText != nil {
-					onText(msg)
-				}
+		case "end":
+			if ev.SessionID != "" {
+				out.SessionID = ev.SessionID
+			}
+			if ev.Usage != nil {
+				out.Usage = ev.Usage
+			}
+			if ev.NumTurns > 0 {
+				out.NumTurns = ev.NumTurns
 			}
 		case "error":
 			msg := ev.Message
@@ -491,13 +546,21 @@ func consumeStream(r io.Reader, onText, onThought, onActivity func(string)) (out
 			if msg == "" {
 				msg = ev.Text
 			}
-			if msg != "" {
-				if b.Len() > 0 {
-					b.WriteString("\n\n")
+			if isMaxTurnsError(msg) {
+				out.MaxTurnsReached = true
+				if !maxTurnsNotified {
+					maxTurnsNotified = true
+					delta := MaxTurnsUserMessage
+					if b.Len() > 0 {
+						delta = "\n\n" + MaxTurnsUserMessage
+					}
+					appendText(delta)
 				}
-				b.WriteString(msg)
-				if onText != nil {
-					onText(msg)
+			} else if msg != "" {
+				if b.Len() > 0 {
+					appendText("\n\n" + msg)
+				} else {
+					appendText(msg)
 				}
 			}
 			if ev.Usage != nil {
