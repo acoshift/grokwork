@@ -11,6 +11,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/linear"
 )
 
@@ -318,7 +319,10 @@ func (s *Server) sessionDiffPage(ctx *hime.Context) error {
 		return ctx.Status(http.StatusNotFound).Error("unknown session/thread")
 	}
 	cwd := strings.TrimSpace(ent.Cwd)
-	if cwd == "" {
+	// Heal stale absolute worktree paths after dataDir rename (grok-discord → grokwork).
+	if path, onDisk := gitworktree.ResolveSessionWorktreePath(s.cfg.DataDir, ent.Project, threadID, ent.Cwd, ent.MainCwd); onDisk {
+		cwd = path
+	} else if cwd == "" {
 		if p, ok := s.cfg.ProjectPath(ent.Project); ok {
 			cwd = p
 		}

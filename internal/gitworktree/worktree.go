@@ -122,6 +122,34 @@ func WorktreePath(dataDir, project, unitID string) string {
 	return filepath.Join(dataDir, "worktrees", sanitizePathSegment(project), sanitizePathSegment(unitID))
 }
 
+// ResolveSessionWorktreePath picks the best on-disk worktree for a unit.
+// Prefer sessionCwd when it still exists; otherwise the canonical path under
+// dataDir. This heals sessions that stored absolute paths under an old data
+// directory (e.g. …/grok-discord/data/worktrees/… after a rename to grokwork).
+// When nothing is on disk, returns the canonical path with onDisk=false.
+func ResolveSessionWorktreePath(dataDir, project, unitID, sessionCwd, mainCwd string) (path string, onDisk bool) {
+	canonical := WorktreePath(dataDir, project, unitID)
+	sessionCwd = strings.TrimSpace(sessionCwd)
+	mainCwd = strings.TrimSpace(mainCwd)
+
+	dirOK := func(p string) bool {
+		if p == "" {
+			return false
+		}
+		st, err := os.Stat(p)
+		return err == nil && st.IsDir()
+	}
+
+	// Live session path wins when it is a real worktree dir (not main checkout).
+	if sessionCwd != "" && sessionCwd != mainCwd && dirOK(sessionCwd) {
+		return sessionCwd, true
+	}
+	if dirOK(canonical) {
+		return canonical, true
+	}
+	return canonical, false
+}
+
 func IsRepo(dir string) bool {
 	cmd := exec.Command("git", "-C", dir, "rev-parse", "--is-inside-work-tree")
 	out, err := cmd.Output()

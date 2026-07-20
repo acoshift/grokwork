@@ -519,13 +519,7 @@ func (b *Bot) resetThreadCore(threadID string) (msg string, err error) {
 			mainCwd = e.Cwd
 		}
 		branch := e.WorktreeBranch
-		path := ""
-		if e.WorktreeBranch != "" && e.Cwd != "" && e.Cwd != mainCwd {
-			path = e.Cwd
-		}
-		if path == "" && mainCwd != "" {
-			path = gitworktree.WorktreePath(b.cfg.DataDir, e.Project, threadID)
-		}
+		path, _ := gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, e.Project, threadID, e.Cwd, mainCwd)
 		if branch == "" {
 			branch = gitworktree.BranchNameForUnit(threadID)
 		}
@@ -567,10 +561,14 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		}
 	}
 
-	if e, ok := b.sessions.Get(threadID); ok && e.WorktreeBranch != "" && e.Cwd != "" && e.Cwd != proj.Cwd {
-		if st, statErr := os.Stat(e.Cwd); statErr == nil && st.IsDir() && gitworktree.IsRepo(e.Cwd) {
-			log.Printf("task: reuse session worktree branch=%s", e.WorktreeBranch)
-			return e.Cwd, e.WorktreeBranch, nil
+	if e, ok := b.sessions.Get(threadID); ok && e.WorktreeBranch != "" {
+		path, onDisk := gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, e.Project, threadID, e.Cwd, proj.Cwd)
+		if onDisk && path != "" && path != proj.Cwd && gitworktree.IsRepo(path) {
+			if e.Cwd != path {
+				b.healSessionWorktreeCwd(threadID, path)
+			}
+			log.Printf("task: reuse session worktree branch=%s cwd=%s", e.WorktreeBranch, path)
+			return path, e.WorktreeBranch, nil
 		}
 	}
 	tree, err := gitworktree.EnsureWith(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID, opts)

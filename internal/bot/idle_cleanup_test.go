@@ -202,6 +202,55 @@ func TestListAndPruneWorktree(t *testing.T) {
 	}
 }
 
+func TestListWorktreesHealsStaleDataDirCwd(t *testing.T) {
+	// Sessions saved under an old absolute dataDir (e.g. …/grok-discord/data/…)
+	// while worktrees still exist under the new dataDir (…/grokwork/data/…).
+	repo := initIdleTestRepo(t)
+	data := t.TempDir()
+	ctx := context.Background()
+	threadID := "rename-1"
+	tr, err := gitworktree.Ensure(ctx, repo, data, "app", threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleCwd := filepath.Join(t.TempDir(), "grok-discord", "data", "worktrees", "app", threadID)
+	writeSessions(t, data, map[string]sessionstore.Entry{
+		threadID: {
+			SessionID:      "s",
+			Project:        "app",
+			Cwd:            staleCwd,
+			MainCwd:        repo,
+			WorktreeBranch: tr.Branch,
+			UpdatedAt:      time.Now().UTC().Format(time.RFC3339),
+		},
+	})
+	sessions, err := sessionstore.New(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Projects: config.PathProjects(map[string]string{"app": repo}),
+		DataDir:  data,
+	}
+	b := New(cfg, sessions, nil)
+
+	list := b.ListWorktrees()
+	if len(list) != 1 {
+		t.Fatalf("list=%+v", list)
+	}
+	if !list[0].OnDisk {
+		t.Fatalf("expected OnDisk after dataDir rename heal: %+v", list[0])
+	}
+	if list[0].Path != tr.Path {
+		t.Fatalf("path=%q want %q", list[0].Path, tr.Path)
+	}
+	// Session cwd should be rewritten to the live path.
+	e, ok := sessions.Get(threadID)
+	if !ok || e.Cwd != tr.Path {
+		t.Fatalf("session not healed: ok=%v cwd=%q want %q", ok, e.Cwd, tr.Path)
+	}
+}
+
 func TestPruneIdleNowUsesConfig(t *testing.T) {
 	repo := initIdleTestRepo(t)
 	data := t.TempDir()

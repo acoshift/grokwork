@@ -269,27 +269,26 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 		}
 
 		last := parseRFC3339(e.UpdatedAt)
-		path := e.Cwd
-		if path == "" || path == e.MainCwd {
-			path = gitworktree.WorktreePath(b.cfg.DataDir, e.Project, threadID)
+		mainCwd := e.MainCwd
+		if mainCwd == "" {
+			mainCwd, _ = b.resolveProjectRepo(e.Project, "")
+		}
+		// Prefer live dirs: session cwd if still present, else canonical dataDir path
+		// (covers dataDir renames like grok-discord → grokwork).
+		path, pathOnDisk := gitworktree.ResolveSessionWorktreePath(
+			b.cfg.DataDir, e.Project, threadID, e.Cwd, mainCwd,
+		)
+		if pathOnDisk && e.Cwd != "" && e.Cwd != path {
+			// Heal stale absolute cwd left after a dataDir / host path rename.
+			b.healSessionWorktreeCwd(threadID, path)
 		}
 		branch := e.WorktreeBranch
 		if branch == "" {
 			branch = gitworktree.BranchNameForUnit(threadID)
 		}
-		mainCwd := e.MainCwd
-		if mainCwd == "" {
-			mainCwd, _ = b.resolveProjectRepo(e.Project, "")
-		}
 
 		existing, ok := byThread[threadID]
 		if !ok {
-			onDisk := false
-			if path != "" {
-				if st, err := os.Stat(path); err == nil && st.IsDir() {
-					onDisk = true
-				}
-			}
 			byThread[threadID] = idleCandidate{
 				threadID:   threadID,
 				project:    e.Project,
@@ -297,7 +296,7 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 				branch:     branch,
 				mainCwd:    mainCwd,
 				last:       last,
-				onDisk:     onDisk,
+				onDisk:     pathOnDisk,
 				hasSession: true,
 			}
 			continue
@@ -306,7 +305,11 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 		if e.Project != "" {
 			existing.project = e.Project
 		}
-		if path != "" {
+		// Never replace a verified on-disk path with a stale session cwd.
+		if pathOnDisk {
+			existing.path = path
+			existing.onDisk = true
+		} else if existing.path == "" {
 			existing.path = path
 		}
 		if branch != "" {
@@ -325,8 +328,23 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 	for _, c := range byThread {
 		if c.path != "" {
 			if st, err := os.Stat(c.path); err != nil || !st.IsDir() {
-				c.path = ""
-				c.onDisk = false
+				// Last chance: re-resolve under current dataDir (session may have been wrong).
+				if c.project != "" && c.threadID != "" {
+					alt, ok := gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, c.project, c.threadID, "", c.mainCwd)
+					if ok {
+						c.path = alt
+						c.onDisk = true
+						if c.hasSession {
+							b.healSessionWorktreeCwd(c.threadID, alt)
+						}
+					} else {
+						c.path = ""
+						c.onDisk = false
+					}
+				} else {
+					c.path = ""
+					c.onDisk = false
+				}
 			} else {
 				c.onDisk = true
 			}
@@ -337,6 +355,25 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 		out = append(out, c)
 	}
 	return out
+}
+
+// healSessionWorktreeCwd rewrites Entry.Cwd when the worktree moved (e.g. dataDir rename).
+func (b *Bot) healSessionWorktreeCwd(threadID, newCwd string) {
+	threadID = strings.TrimSpace(threadID)
+	newCwd = strings.TrimSpace(newCwd)
+	if b == nil || b.sessions == nil || threadID == "" || newCwd == "" {
+		return
+	}
+	_, _, err := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+		if ent.Cwd == newCwd {
+			return
+		}
+		log.Printf("session: heal worktree cwd thread=%s old=%q new=%q", threadID, ent.Cwd, newCwd)
+		ent.Cwd = newCwd
+	})
+	if err != nil {
+		log.Printf("warn: heal session cwd thread=%s: %v", threadID, err)
+	}
 }
 
 func sessionHasWorktree(e sessionstore.Entry) bool {

@@ -9,6 +9,38 @@ import (
 	"testing"
 )
 
+func TestResolveSessionWorktreePathPrefersLiveSessionThenCanonical(t *testing.T) {
+	data := t.TempDir()
+	// Simulate post-rename: worktree lives under current dataDir, session still has old path.
+	canonical := WorktreePath(data, "app", "tid1")
+	if err := os.MkdirAll(canonical, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(t.TempDir(), "grok-discord", "data", "worktrees", "app", "tid1")
+	// stale dir does not exist
+
+	path, onDisk := ResolveSessionWorktreePath(data, "app", "tid1", stale, "/main/repo")
+	if !onDisk || path != canonical {
+		t.Fatalf("want canonical live path, got path=%q onDisk=%v", path, onDisk)
+	}
+
+	// Prefer still-valid session cwd over canonical.
+	liveSession := filepath.Join(t.TempDir(), "custom-wt")
+	if err := os.MkdirAll(liveSession, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path, onDisk = ResolveSessionWorktreePath(data, "app", "tid2", liveSession, "/main/repo")
+	if !onDisk || path != liveSession {
+		t.Fatalf("want session cwd, got path=%q onDisk=%v", path, onDisk)
+	}
+
+	// Neither exists → canonical, not on disk.
+	path, onDisk = ResolveSessionWorktreePath(data, "app", "missing", "/old/gone", "/main")
+	if onDisk || path != WorktreePath(data, "app", "missing") {
+		t.Fatalf("want missing canonical, got path=%q onDisk=%v", path, onDisk)
+	}
+}
+
 func TestEnsureReuseAndRemove(t *testing.T) {
 	repo := initTestRepo(t)
 	data := t.TempDir()

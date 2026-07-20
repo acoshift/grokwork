@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -460,12 +461,9 @@ func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 	if branch == "" {
 		branch = gitworktree.BranchNameForUnit(threadID)
 	}
-	path := ""
-	if e.WorktreeBranch != "" && e.Cwd != "" && e.Cwd != mainCwd {
-		path = e.Cwd
-	}
-	if path == "" && mainCwd != "" && e.Project != "" {
-		path = gitworktree.WorktreePath(b.cfg.DataDir, e.Project, threadID)
+	path, onDisk := gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, e.Project, threadID, e.Cwd, mainCwd)
+	if onDisk && e.Cwd != "" && e.Cwd != path {
+		b.healSessionWorktreeCwd(threadID, path)
 	}
 
 	if mainCwd != "" && gitworktree.IsRepo(mainCwd) {
@@ -514,10 +512,19 @@ func prRepoDir(e sessionstore.Entry) string {
 // is a multi-repo folder without .git, fall back to that path (or empty) so
 // full PR URL selectors still work — `gh pr view <url>` does not need a repo.
 func (b *Bot) prViewCwd(e sessionstore.Entry) string {
+	// Live session cwd first.
 	if d := prRepoDir(e); d != "" {
 		return d
 	}
-	if b != nil && b.cfg != nil {
+	// Heal stale absolute cwd after dataDir rename (…/grok-discord/data/… → current dataDir).
+	if b != nil && b.cfg != nil && e.Project != "" {
+		unitID := unitIDFromSession(e)
+		if unitID != "" {
+			path, onDisk := gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, e.Project, unitID, e.Cwd, e.MainCwd)
+			if onDisk && gitworktree.IsRepo(path) {
+				return path
+			}
+		}
 		if p, ok := b.cfg.ProjectPath(e.Project); ok {
 			if dirExists(p) {
 				return p
@@ -527,6 +534,20 @@ func (b *Bot) prViewCwd(e sessionstore.Entry) string {
 	for _, p := range []string{e.Cwd, e.MainCwd} {
 		if dirExists(p) {
 			return p
+		}
+	}
+	return ""
+}
+
+// unitIDFromSession extracts the worktree unit id from branch or cwd basename.
+func unitIDFromSession(e sessionstore.Entry) string {
+	if p := gitworktree.PrefixFromBranch(e.WorktreeBranch); p != "" {
+		return strings.TrimPrefix(e.WorktreeBranch, p)
+	}
+	if e.Cwd != "" && e.MainCwd != "" && e.Cwd != e.MainCwd {
+		base := filepath.Base(filepath.Clean(e.Cwd))
+		if base != "" && base != "." && base != string(filepath.Separator) {
+			return base
 		}
 	}
 	return ""
