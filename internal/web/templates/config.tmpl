@@ -10,8 +10,7 @@
   <a href="#ci-triage">CI triage</a>
   <a href="#risky-paths">Risk paths</a>
   <a href="#projects">Projects</a>
-  <a href="#project-integrations">GitHub &amp; Discord</a>
-  <a href="#linear">Linear</a>
+  <a href="#default-guild">Default guild</a>
   <a href="#channels">Channels</a>
   <a href="#access">Access</a>
 </div>
@@ -165,6 +164,10 @@
 
 <div class="section card" id="projects">
   <h2>Add project folder</h2>
+  <p class="sub" style="margin-top:0">
+    Each project has its own settings page (GitHub repos, Discord, Linear, channel map) — adding one takes you straight there.
+    Existing projects are listed below.
+  </p>
   <form class="inline" method="post" action="{{route "config.addProject"}}">
     {{template "csrf" $}}
     <div>
@@ -192,81 +195,6 @@
     </div>
     <button type="submit">Save default guild</button>
   </form>
-</div>
-
-<div class="section card" id="project-integrations">
-  <h2>GitHub repos &amp; Discord (per project)</h2>
-  <p class="sub" style="margin:0 0 0.75rem">
-    Multi-repo catalog (one <span class="mono">owner/repo</span> per line). Leave repos blank to discover from git remotes.
-    Preferred channel must already be mapped to the project in Channels.
-    Set each project’s <strong>Discord guild ID</strong> so “Open in Discord” links the right server (multi-guild).
-  </p>
-  {{range .Config.Projects}}
-  <div style="border-top:1px solid var(--border);padding:0.85rem 0;">
-    <div class="mono" style="font-weight:600;margin-bottom:0.5rem;">{{.Name}}</div>
-    <form method="post" action="{{route "config.setProjectGitHub"}}" style="margin-bottom:0.65rem;">
-      {{template "csrf" $}}
-      <input type="hidden" name="name" value="{{.Name}}">
-      <label for="repos-{{.Name}}">GitHub repos</label>
-      <textarea id="repos-{{.Name}}" name="repos" rows="3" placeholder="acme/app&#10;acme/api">{{.GitHubReposText}}</textarea>
-      <div class="form-actions"><button type="submit">Save repos</button></div>
-    </form>
-    <form class="inline" method="post" action="{{route "config.setProjectChannel"}}" style="grid-template-columns: 1fr 1fr auto; align-items: end;">
-      {{template "csrf" $}}
-      <input type="hidden" name="name" value="{{.Name}}">
-      <div>
-        <label for="ch-{{.Name}}">Preferred Discord channel</label>
-        <select id="ch-{{.Name}}" name="channelId">
-          <option value="">(auto / reverse-map)</option>
-          {{$pref := .DiscordChannelID}}
-          {{range .ChannelOptions}}
-          <option value="{{.}}" {{if eq . $pref}}selected{{end}}>{{.}}</option>
-          {{end}}
-        </select>
-      </div>
-      <div>
-        <label for="guild-{{.Name}}">Discord guild ID</label>
-        <input id="guild-{{.Name}}" type="text" name="guildId" value="{{.DiscordGuildID}}" placeholder="server snowflake" autocomplete="off">
-      </div>
-      <button type="submit">Save Discord</button>
-    </form>
-  </div>
-  {{else}}
-  <p class="sub">Add a project first.</p>
-  {{end}}
-</div>
-
-<div class="section card" id="linear">
-  <h2>Linear (per project)</h2>
-  <p class="sub" style="margin:0 0 0.75rem">Opt-in ticket binding. API key is per project (different Linear workspaces allowed). Empty API key field leaves the stored key unchanged. Env alternative: <span class="mono">LINEAR_API_KEY_&lt;PROJECT&gt;</span>.</p>
-  <form class="inline" method="post" action="{{route "config.setProjectLinear"}}" style="grid-template-columns: 1fr 1fr 1fr 1fr auto; align-items: end;">
-    {{template "csrf" $}}
-    <div>
-      <label for="lin-project">Project</label>
-      <select id="lin-project" name="name" required>
-        <option value="" disabled selected>Select…</option>
-        {{range .Config.ProjectNames}}
-        <option value="{{.}}">{{.}}</option>
-        {{end}}
-      </select>
-    </div>
-    <div>
-      <label for="lin-team">Team key</label>
-      <input id="lin-team" type="text" name="teamKey" placeholder="ENG" autocomplete="off">
-    </div>
-    <div>
-      <label for="lin-key">API key</label>
-      <input id="lin-key" type="password" name="apiKey" placeholder="leave blank to keep" autocomplete="off">
-    </div>
-    <div>
-      <label class="check" style="min-height:0"><input type="checkbox" name="enabled" value="1"> Enabled</label>
-      <label class="check" style="min-height:0;margin-top:0.35rem"><input type="checkbox" name="clearApiKey" value="1"> Clear API key</label>
-    </div>
-    <button type="submit">Save Linear</button>
-  </form>
-  {{if not .Config.ProjectNames}}
-  <p class="sub" style="margin:0.5rem 0 0">Add a project first.</p>
-  {{end}}
 </div>
 
 <div class="section card" id="channels">
@@ -333,12 +261,15 @@
   {{if .Config.Projects}}
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Name</th><th>Path</th><th>Linear</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Path</th><th>Discord</th><th>Linear</th><th></th></tr></thead>
     <tbody>
       {{range .Config.Projects}}
       <tr>
-        <td class="mono">{{.Name}}</td>
+        <td class="mono"><a href="/config/projects/{{.Name}}">{{.Name}}</a></td>
         <td class="mono muted">{{.Path}}</td>
+        <td class="mono">
+          {{if .ChannelOptions}}{{len .ChannelOptions}} channel{{if ne (len .ChannelOptions) 1}}s{{end}}{{else}}<span class="badge status-warn">no channels</span>{{end}}
+        </td>
         <td class="mono">
           {{if .LinearEnabled}}
             on{{if .LinearTeamKey}} · {{.LinearTeamKey}}{{end}}{{if .LinearAPIKeySet}} · key set{{else}} · no key{{end}}
@@ -347,11 +278,7 @@
           {{end}}
         </td>
         <td class="row-actions">
-          <form method="post" action="{{route "config.removeProject"}}" onsubmit="return confirm('Remove project {{.Name}}? Channel maps to this project will also be removed.');">
-            {{template "csrf" $}}
-            <input type="hidden" name="name" value="{{.Name}}">
-            <button type="submit" class="btn-danger">Remove</button>
-          </form>
+          <a class="btn btn-secondary" style="height:2rem;font-size:0.82rem;" href="/config/projects/{{.Name}}">Settings</a>
         </td>
       </tr>
       {{end}}

@@ -1,0 +1,138 @@
+{{define "content"}}
+<p class="sub" style="margin-bottom:0.5rem"><a href="{{route "config"}}">← Config</a></p>
+<h1 id="page-project-config"><span class="mono">{{.ProjectItem.Name}}</span> <span class="muted" style="font-weight:500;font-size:1.05rem">· project settings</span></h1>
+<p class="sub">
+  <span class="mono">{{.ProjectItem.Path}}</span>
+  · <a href="/projects/{{.ProjectItem.Name}}/issues">Issues</a>
+  · <a href="/projects/{{.ProjectItem.Name}}/commits">Commits</a>
+  {{if .ProjectItem.LinearEnabled}} · <a href="/projects/{{.ProjectItem.Name}}/linear">Linear</a>{{end}}
+</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+<div class="section card" id="project-github">
+  <h2>GitHub repositories</h2>
+  <p class="sub" style="margin-top:0">
+    Multi-repo catalog for issues, commits, and PR tracking — one <span class="mono">owner/repo</span> per line.
+    Leave blank to discover from the checkout’s git remotes.
+  </p>
+  <form method="post" action="{{route "config.setProjectGitHub"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <label for="project-repos">Repos</label>
+    <textarea id="project-repos" name="repos" rows="4" placeholder="acme/app&#10;acme/api">{{.ProjectItem.GitHubReposText}}</textarea>
+    <div class="form-actions"><button type="submit">Save repos</button></div>
+  </form>
+</div>
+
+<div class="section card" id="project-discord">
+  <h2>Discord</h2>
+  <p class="sub" style="margin-top:0">
+    The preferred channel hosts threads for web-started work units; it must be one of the mapped channels below.
+    The guild ID makes “Open in Discord” deep-link the right server (multi-guild setups).
+  </p>
+  <form class="inline" method="post" action="{{route "config.setProjectChannel"}}" style="grid-template-columns: 1fr 1fr auto;">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div>
+      <label for="project-channel">Preferred channel</label>
+      <select id="project-channel" name="channelId">
+        <option value="">(auto / reverse-map)</option>
+        {{$pref := .ProjectItem.DiscordChannelID}}
+        {{range .ProjectItem.ChannelOptions}}
+        <option value="{{.}}" {{if eq . $pref}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div>
+      <label for="project-guild">Discord guild ID</label>
+      <input id="project-guild" type="text" name="guildId" value="{{.ProjectItem.DiscordGuildID}}" placeholder="server snowflake" autocomplete="off">
+    </div>
+    <button type="submit">Save Discord</button>
+  </form>
+  <p class="sub" style="margin:0.5rem 0 0">Empty guild falls back to the default guild on <a href="{{route "config"}}#default-guild">Config</a>.</p>
+
+  <div style="border-top:1px solid var(--border); margin-top:1.1rem; padding-top:1rem;">
+    <h2>Mapped channels</h2>
+    <p class="sub" style="margin-top:0">Tagging <span class="mono">@Grok</span> in these Discord channels starts tasks for this project.</p>
+    {{if .ProjectItem.ChannelOptions}}
+    <div class="table-scroll" style="margin-bottom:0.85rem;">
+    <table>
+      <thead><tr><th>Channel ID</th><th></th></tr></thead>
+      <tbody>
+        {{range .ProjectItem.ChannelOptions}}
+        <tr>
+          <td class="mono">{{.}}</td>
+          <td class="row-actions">
+            <form method="post" action="{{route "config.removeChannel"}}" onsubmit="return confirm('Unmap channel {{.}}?');">
+              {{template "csrf" $}}
+              <input type="hidden" name="channelId" value="{{.}}">
+              <input type="hidden" name="project" value="{{$.ProjectItem.Name}}">
+              <input type="hidden" name="return_to" value="project">
+              <button type="submit" class="btn-danger">Unmap</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{else}}
+    <div class="empty" style="margin-bottom:0.85rem;">No channels mapped — tasks cannot start from Discord until one is.</div>
+    {{end}}
+    <form class="inline" method="post" action="{{route "config.addChannel"}}" style="grid-template-columns: 1fr auto;">
+      {{template "csrf" $}}
+      <input type="hidden" name="project" value="{{.ProjectItem.Name}}">
+      <input type="hidden" name="return_to" value="project">
+      <div>
+        <label for="project-add-channel">Discord channel ID</label>
+        <input id="project-add-channel" type="text" name="channelId" placeholder="123456789012345678" required autocomplete="off">
+      </div>
+      <button type="submit">Map channel</button>
+    </form>
+  </div>
+</div>
+
+<div class="section card" id="project-linear">
+  <h2>Linear</h2>
+  <p class="sub" style="margin-top:0">
+    Opt-in ticket binding for this project.
+    {{if .ProjectItem.LinearAPIKeySet}}<span class="badge status-done">API key set</span>{{else}}<span class="badge">no API key</span>{{end}}
+    · env alternative: <span class="mono">{{.ProjectItem.LinearEnvHint}}</span>
+  </p>
+  <form method="post" action="{{route "config.setProjectLinear"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div class="inline" style="grid-template-columns: auto 1fr 1fr; margin-bottom:0.65rem;">
+      <label class="check">
+        <input type="checkbox" name="enabled" value="1" {{if .ProjectItem.LinearEnabled}}checked{{end}}>
+        Enabled
+      </label>
+      <div>
+        <label for="project-linear-team">Team key</label>
+        <input id="project-linear-team" type="text" name="teamKey" value="{{.ProjectItem.LinearTeamKey}}" placeholder="ENG" autocomplete="off">
+      </div>
+      <div>
+        <label for="project-linear-key">API key</label>
+        <input id="project-linear-key" type="password" name="apiKey" placeholder="leave blank to keep" autocomplete="off">
+      </div>
+    </div>
+    <label class="check">
+      <input type="checkbox" name="clearApiKey" value="1"> Clear stored API key
+    </label>
+    <div class="form-actions"><button type="submit">Save Linear</button></div>
+  </form>
+</div>
+
+<div class="section card danger-zone" id="project-danger">
+  <h2>Danger zone</h2>
+  <p class="sub" style="margin-top:0">
+    Removing the project also removes its channel mappings. Existing worktrees, sessions, and history are not touched.
+  </p>
+  <form method="post" action="{{route "config.removeProject"}}" onsubmit="return confirm('Remove project {{.ProjectItem.Name}}? Channel maps to this project will also be removed.');">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <button type="submit" class="btn-danger">Remove project</button>
+  </form>
+</div>
+{{end}}

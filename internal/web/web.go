@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -148,6 +149,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("ship", "layout.tmpl", "ship.tmpl")
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
 	tp.ParseFiles("config", "layout.tmpl", "config.tmpl")
+	tp.ParseFiles("project_config", "layout.tmpl", "project_config.tmpl")
 	tp.ParseFiles("login", "layout.tmpl", "login.tmpl")
 	tp.ParseFiles("issues_index", "layout.tmpl", "issues_index.tmpl")
 	tp.ParseFiles("issues", "layout.tmpl", "issues.tmpl")
@@ -184,6 +186,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /ship", s.requireAuth(hime.Handler(s.shipPage)))
 	mux.Handle("GET /worktrees", s.requireAuth(hime.Handler(s.worktreesPage)))
 	mux.Handle("GET /config", s.requireAuth(hime.Handler(s.configPage)))
+	mux.Handle("GET /config/projects/{name}", s.requireAuth(hime.Handler(s.projectConfigPage)))
 	mux.Handle("GET /issues", s.requireAuth(hime.Handler(s.issuesIndex)))
 	mux.Handle("GET /projects/{project}/issues", s.requireAuth(hime.Handler(s.issuesList)))
 	mux.Handle("GET /projects/{project}/issues/{n}", s.requireAuth(hime.Handler(s.issueDetail)))
@@ -288,6 +291,8 @@ type pageData struct {
 	Worktrees   []bot.WorktreeInfo
 	IdleTTLDays int
 	Config      config.Snapshot
+	// Per-project config page (/config/projects/{name}).
+	ProjectItem config.ProjectItem
 	SSEPath     string
 	// Auth chrome
 	AuthEnabled bool
@@ -466,6 +471,30 @@ func (s *Server) configPage(ctx *hime.Context) error {
 	return s.viewPage(ctx, "config", d)
 }
 
+func (s *Server) projectConfigPage(ctx *hime.Context) error {
+	name := ctx.PathValue("name")
+	snap := s.cfg.Snapshot()
+	var item *config.ProjectItem
+	for i := range snap.Projects {
+		if snap.Projects[i].Name == name {
+			item = &snap.Projects[i]
+			break
+		}
+	}
+	if item == nil {
+		return ctx.RedirectTo("config", map[string]string{"err": fmt.Sprintf("unknown project %q", name)})
+	}
+	d := s.basePage(ctx)
+	d.Title = item.Name + " · Config"
+	d.IsConfig = true
+	d.Config = snap
+	d.Project = item.Name
+	d.ProjectItem = *item
+	d.Flash = ctx.FormValue("ok")
+	d.Error = ctx.FormValue("err")
+	return s.viewPage(ctx, "project_config", d)
+}
+
 func (s *Server) worktreesPage(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Title = "Worktrees"
@@ -584,12 +613,32 @@ func (s *Server) configRedirect(ctx *hime.Context, okMsg string, err error) erro
 	return ctx.RedirectTo("config", map[string]string{"ok": okMsg})
 }
 
+// projectConfigRedirect returns project-scoped saves to that project's own
+// settings page; falls back to the config hub when the name is missing.
+func (s *Server) projectConfigRedirect(ctx *hime.Context, name, okMsg string, err error) error {
+	if strings.TrimSpace(name) == "" {
+		return s.configRedirect(ctx, okMsg, err)
+	}
+	q := url.Values{}
+	if err != nil {
+		q.Set("err", err.Error())
+	} else {
+		q.Set("ok", okMsg)
+	}
+	return ctx.Redirect("/config/projects/" + url.PathEscape(name) + "?" + q.Encode())
+}
+
 func (s *Server) addProject(ctx *hime.Context) error {
 	name := ctx.PostFormValue("name")
 	path := ctx.PostFormValue("path")
 	err := s.cfg.AddProject(name, path)
 	s.auditAction(ctx, audit.ActionConfigAddProject, err, map[string]any{"name": name})
-	return s.configRedirect(ctx, fmt.Sprintf("Added project %q", name), err)
+	if err != nil {
+		return s.configRedirect(ctx, "", err)
+	}
+	// Land on the new project's settings page so repos/Discord/Linear can be
+	// configured right away.
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Added project %q", name), nil)
 }
 
 func (s *Server) removeProject(ctx *hime.Context) error {
@@ -607,7 +656,7 @@ func (s *Server) setProjectLinear(ctx *hime.Context) error {
 	apiKey := ctx.PostFormValue("apiKey")
 	err := s.cfg.SetProjectLinear(name, enabled, teamKey, apiKey, clearKey)
 	s.auditAction(ctx, audit.ActionConfigSetLinear, err, map[string]any{"name": name, "enabled": enabled})
-	return s.configRedirect(ctx, fmt.Sprintf("Updated Linear for project %q", name), err)
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Updated Linear for project %q", name), err)
 }
 
 func (s *Server) setProjectGitHub(ctx *hime.Context) error {
@@ -621,13 +670,13 @@ func (s *Server) setProjectGitHub(ctx *hime.Context) error {
 		}
 		parts := strings.SplitN(line, "/", 2)
 		if len(parts) != 2 {
-			return s.configRedirect(ctx, "", fmt.Errorf("invalid repo line %q (want owner/repo)", line))
+			return s.projectConfigRedirect(ctx, name, "", fmt.Errorf("invalid repo line %q (want owner/repo)", line))
 		}
 		repos = append(repos, config.GitHubRepoRef{Owner: strings.TrimSpace(parts[0]), Repo: strings.TrimSpace(parts[1])})
 	}
 	err := s.cfg.SetProjectGitHubRepos(name, repos)
 	s.auditAction(ctx, "config.set_project_github", err, map[string]any{"name": name, "count": len(repos)})
-	return s.configRedirect(ctx, fmt.Sprintf("Updated GitHub repos for project %q", name), err)
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Updated GitHub repos for project %q", name), err)
 }
 
 func (s *Server) setProjectChannel(ctx *hime.Context) error {
@@ -639,7 +688,7 @@ func (s *Server) setProjectChannel(ctx *hime.Context) error {
 	s.auditAction(ctx, "config.set_project_channel", err, map[string]any{
 		"name": name, "channelId": channelID, "guildId": guildID,
 	})
-	return s.configRedirect(ctx, fmt.Sprintf("Updated Discord settings for project %q", name), err)
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Updated Discord settings for project %q", name), err)
 }
 
 func (s *Server) setGuild(ctx *hime.Context) error {
@@ -682,14 +731,23 @@ func (s *Server) addChannel(ctx *hime.Context) error {
 	project := ctx.PostFormValue("project")
 	err := s.cfg.AddChannel(channelID, project)
 	s.auditAction(ctx, audit.ActionConfigAddChannel, err, map[string]any{"channelId": channelID, "project": project})
-	return s.configRedirect(ctx, fmt.Sprintf("Mapped channel %s → %s", channelID, project), err)
+	msg := fmt.Sprintf("Mapped channel %s → %s", channelID, project)
+	// Channel forms live on both the config hub and project settings pages.
+	if ctx.PostFormValue("return_to") == "project" {
+		return s.projectConfigRedirect(ctx, project, msg, err)
+	}
+	return s.configRedirect(ctx, msg, err)
 }
 
 func (s *Server) removeChannel(ctx *hime.Context) error {
 	channelID := ctx.PostFormValue("channelId")
 	err := s.cfg.RemoveChannel(channelID)
 	s.auditAction(ctx, audit.ActionConfigRemoveChannel, err, map[string]any{"channelId": channelID})
-	return s.configRedirect(ctx, fmt.Sprintf("Removed channel %s", channelID), err)
+	msg := fmt.Sprintf("Removed channel %s", channelID)
+	if ctx.PostFormValue("return_to") == "project" {
+		return s.projectConfigRedirect(ctx, ctx.PostFormValue("project"), msg, err)
+	}
+	return s.configRedirect(ctx, msg, err)
 }
 
 func (s *Server) updateSettings(ctx *hime.Context) error {

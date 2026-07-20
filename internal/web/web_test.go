@@ -107,9 +107,15 @@ func TestPagesRender(t *testing.T) {
 		{"/config", "Pin Messages"},
 		{"/config", "Open / re-authorize"},
 		{"/config", "424242424242424242"},
-		{"/config", "Discord guild ID"},
-		{"/config", "name=\"guildId\""},
 		{"/config", "Default Discord guild"},
+		{"/config", `href="/config/projects/proj"`},
+		// Per-project settings page owns GitHub/Discord/Linear forms.
+		{"/config/projects/proj", `id="page-project-config"`},
+		{"/config/projects/proj", "Discord guild ID"},
+		{"/config/projects/proj", "name=\"guildId\""},
+		{"/config/projects/proj", "GitHub repositories"},
+		{"/config/projects/proj", "LINEAR_API_KEY_PROJ"},
+		{"/config/projects/proj", "Danger zone"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
@@ -705,8 +711,9 @@ func TestHTMXAwareRedirect(t *testing.T) {
 		if w.Code != http.StatusNoContent {
 			t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 		}
+		// addProject lands on the new project's own settings page.
 		loc := w.Header().Get("HX-Redirect")
-		if !strings.HasPrefix(loc, "/config?") || !strings.Contains(loc, "ok=") {
+		if !strings.HasPrefix(loc, "/config/projects/htmx-proj?") || !strings.Contains(loc, "ok=") {
 			t.Fatalf("HX-Redirect=%q", loc)
 		}
 		if w.Header().Get("Location") != "" {
@@ -730,10 +737,74 @@ func TestHTMXAwareRedirect(t *testing.T) {
 			t.Fatalf("boosted path should not set HX-Redirect, got %q", w.Header().Get("HX-Redirect"))
 		}
 		loc := w.Header().Get("Location")
-		if !strings.HasPrefix(loc, "/config?") {
+		if !strings.HasPrefix(loc, "/config/projects/htmx-boost?") {
 			t.Fatalf("Location=%q", loc)
 		}
 	})
+}
+
+// Project-scoped saves round-trip back to the project settings page; unknown
+// projects bounce to the config hub with an error.
+func TestProjectConfigPage(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	h := srv.Handler()
+
+	// Unknown project → config hub with err.
+	req := httptest.NewRequest(http.MethodGet, "/config/projects/nope", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("unknown project status=%d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/config?") || !strings.Contains(loc, "err=") {
+		t.Fatalf("unknown project Location=%q", loc)
+	}
+
+	// Save repos → back to the project page with flash.
+	form := url.Values{"name": {"proj"}, "repos": {"acme/app\nacme/api"}}
+	req = httptest.NewRequest(http.MethodPost, "/config/projects/github", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("set repos status=%d body=%s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/config/projects/proj?") || !strings.Contains(loc, "ok=") {
+		t.Fatalf("set repos Location=%q", loc)
+	}
+
+	// Channel map from the project page round-trips with return_to=project.
+	form = url.Values{"channelId": {"ch-proj-2"}, "project": {"proj"}, "return_to": {"project"}}
+	req = httptest.NewRequest(http.MethodPost, "/config/channels", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/config/projects/proj?") {
+		t.Fatalf("add channel Location=%q", loc)
+	}
+	if p, ok := cfg.ChannelProject("ch-proj-2"); !ok || p != "proj" {
+		t.Fatalf("channel not mapped: %q %v", p, ok)
+	}
+
+	// Project page renders the saved state.
+	req = httptest.NewRequest(http.MethodGet, "/config/projects/proj", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("project page status=%d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="page-project-config"`,
+		"acme/app",
+		"ch-proj-2",
+		`name="return_to"`,
+		"Remove project",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("project page missing %q", want)
+		}
+	}
 }
 
 func TestWorktreePruneRoutes(t *testing.T) {
