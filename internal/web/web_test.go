@@ -258,6 +258,75 @@ func TestPagesRender(t *testing.T) {
 		}
 	})
 
+	t.Run("pwa install assets", func(t *testing.T) {
+		// Manifest + SW are public (no auth) so browsers can install before login.
+		req := httptest.NewRequest(http.MethodGet, "/manifest.webmanifest", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("manifest status=%d", w.Code)
+		}
+		if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/manifest+json") {
+			t.Fatalf("manifest Content-Type=%q", ct)
+		}
+		body := w.Body.String()
+		for _, want := range []string{`"name": "Grok Work"`, `"display": "standalone"`, `/static/icon-192.png`, `/static/icon-512.png`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("manifest missing %q", want)
+			}
+		}
+
+		req = httptest.NewRequest(http.MethodGet, "/sw.js", nil)
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("sw status=%d", w.Code)
+		}
+		if w.Header().Get("Service-Worker-Allowed") != "/" {
+			t.Fatalf("Service-Worker-Allowed=%q want /", w.Header().Get("Service-Worker-Allowed"))
+		}
+		if !strings.Contains(w.Body.String(), "fetch") {
+			t.Fatal("sw must register a fetch handler for installability")
+		}
+
+		for _, path := range []string{
+			"/static/icon-192.png",
+			"/static/icon-512.png",
+			"/static/icon-maskable-512.png",
+			"/static/apple-touch-icon.png",
+			"/static/favicon.svg",
+			"/static/logo.svg",
+		} {
+			req = httptest.NewRequest(http.MethodGet, path, nil)
+			w = httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("%s status=%d", path, w.Code)
+			}
+			if w.Body.Len() < 20 {
+				t.Fatalf("%s body too small: %d", path, w.Body.Len())
+			}
+		}
+
+		// Pages advertise install metadata.
+		req = httptest.NewRequest(http.MethodGet, "/", nil)
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		page := w.Body.String()
+		for _, want := range []string{
+			`rel="manifest"`,
+			`/manifest.webmanifest`,
+			`apple-touch-icon`,
+			`/static/apple-touch-icon.png`,
+			`serviceWorker.register("/sw.js")`,
+			`apple-mobile-web-app-capable`,
+		} {
+			if !strings.Contains(page, want) {
+				t.Fatalf("page missing PWA marker %q", want)
+			}
+		}
+	})
+
 	req := httptest.NewRequest(http.MethodGet, "/history", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)

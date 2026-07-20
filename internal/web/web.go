@@ -168,8 +168,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	}
 
 	mux := http.NewServeMux()
-	// Public
+	// Public (static + PWA install assets + auth)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
+	registerPWA(mux)
 	mux.Handle("GET /login", hime.Handler(s.loginPage))
 	mux.Handle("GET /auth/discord", hime.Handler(s.oauthDiscordStart))
 	mux.Handle("GET /auth/discord/callback", hime.Handler(s.oauthDiscordCallback))
