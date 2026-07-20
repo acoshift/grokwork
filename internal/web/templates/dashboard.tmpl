@@ -49,7 +49,7 @@
   <div class="card">
     <div class="label">Projects</div>
     <div class="value" id="stat-projects">{{.Status.ProjectCount}}</div>
-    <div class="hint">users {{.Status.AllowUsers}} · roles {{.Status.AllowRoles}}</div>
+    <div class="hint">{{if .Status.EmptyMemberProjects}}{{.Status.EmptyMemberProjects}} without members{{else}}all have members{{end}}</div>
   </div>
 </div>
 {{end}}

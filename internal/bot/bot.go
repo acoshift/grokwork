@@ -91,26 +91,25 @@ type ActiveRun struct {
 
 // StatusSnapshot is a point-in-time view of bot activity for the web dashboard/SSE.
 type StatusSnapshot struct {
-	ActiveRuns   []ActiveRun `json:"activeRuns"`
-	ActiveCount  int         `json:"activeCount"`
-	QueuedTotal  int         `json:"queuedTotal"`
-	SessionCount int         `json:"sessionCount"`
-	ProjectCount int         `json:"projectCount"`
-	AllowUsers   int         `json:"allowUsers"`
-	AllowRoles   int         `json:"allowRoles"`
-	Time         time.Time   `json:"time"`
+	ActiveRuns          []ActiveRun `json:"activeRuns"`
+	ActiveCount         int         `json:"activeCount"`
+	QueuedTotal         int         `json:"queuedTotal"`
+	SessionCount        int         `json:"sessionCount"`
+	ProjectCount        int         `json:"projectCount"`
+	EmptyMemberProjects int         `json:"emptyMemberProjects"`
+	Time                time.Time   `json:"time"`
 }
 
 // StatusSnapshot collects active runs and session counts without Discord I/O.
 func (b *Bot) StatusSnapshot() StatusSnapshot {
 	now := time.Now()
 	snap := StatusSnapshot{
-		ActiveRuns:   make([]ActiveRun, 0),
-		SessionCount: b.sessions.Count(),
-		ProjectCount: len(b.cfg.ProjectNames()),
-		Time:         now,
+		ActiveRuns:          make([]ActiveRun, 0),
+		SessionCount:        b.sessions.Count(),
+		ProjectCount:        len(b.cfg.ProjectNames()),
+		EmptyMemberProjects: b.cfg.EmptyProjectsCount(),
+		Time:                now,
 	}
-	snap.AllowUsers, snap.AllowRoles = b.cfg.AllowlistSizes()
 
 	b.states.Range(func(key, value any) bool {
 		threadID, _ := key.(string)
@@ -236,9 +235,9 @@ func (b *Bot) Register(s *discordgo.Session) {
 func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
 	log.Printf("ready: logged in as %s (id=%s)", r.User.String(), r.User.ID)
 	names := b.cfg.ProjectNames()
-	users, roles := b.cfg.AllowlistSizes()
-	log.Printf("ready: projects=%s channels=%d allowUsers=%d allowRoles=%d",
-		strings.Join(names, ","), b.cfg.ChannelCount(), users, roles)
+	empty := b.cfg.EmptyProjectsCount()
+	log.Printf("ready: projects=%s channels=%d emptyMemberProjects=%d",
+		strings.Join(names, ","), b.cfg.ChannelCount(), empty)
 	snap := b.cfg.Snapshot()
 	for _, ch := range snap.Channels {
 		log.Printf("ready: channel %s → %s", ch.ChannelID, ch.Project)
@@ -275,9 +274,9 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		log.Printf("warn: empty content on mention — enable Message Content Intent in Developer Portal")
 	}
 
-	if !b.isAllowed(s, m) {
-		log.Printf("deny: user %s(%s) not on allowlist", m.Author.String(), m.Author.ID)
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "You're not on the allowlist for this Grok bridge.", ref(m)); err != nil {
+	if allowed, denyMsg := b.checkMessageAccess(s, m); !allowed {
+		log.Printf("deny: user %s(%s) project access: %s", m.Author.String(), m.Author.ID, denyMsg)
+		if _, err := s.ChannelMessageSendReply(m.ChannelID, denyMsg, ref(m)); err != nil {
 			log.Printf("error: reply allowlist deny: %v", err)
 		}
 		return
@@ -631,11 +630,26 @@ func remoteWorkPromptPrefix(branch string) string {
 	return strings.Join(lines, "\n")
 }
 
-func (b *Bot) isAllowed(s *discordgo.Session, m *discordgo.MessageCreate) bool {
+// checkMessageAccess resolves the channel's project and checks membership.
+func (b *Bot) checkMessageAccess(s *discordgo.Session, m *discordgo.MessageCreate) (bool, string) {
 	if m == nil || m.Author == nil {
-		return false
+		return false, "You're not allowed to use Grok."
 	}
-	return b.isAllowedUser(s, m.GuildID, m.Author.ID, m.Member)
+	parent := parentChannelID(s, m.ChannelID)
+	project, ok := b.cfg.ChannelProject(parent)
+	if !ok || project == "" {
+		return false, "This channel is not mapped to a project."
+	}
+	if !b.cfg.ProjectHasAllowlist(project) {
+		return false, fmt.Sprintf(
+			"Project **%s** has no members configured. An admin must add members in the web config.",
+			project,
+		)
+	}
+	if b.isAllowedUser(s, m.GuildID, m.Author.ID, project, m.Member) {
+		return true, ""
+	}
+	return false, fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
 }
 
 type projectRef struct {

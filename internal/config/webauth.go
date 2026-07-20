@@ -161,15 +161,15 @@ func (c *Config) AnyWriteFeatureEnabled() bool {
 
 // RoleResolveInput is the pure input for ResolveWebRole (unit-testable).
 type RoleResolveInput struct {
-	AdminIDs         []string
-	MemberIDs        []string
-	ViewerIDs        []string
-	AllowedUserIDs   []string // bot allowlist user IDs → member
-	AllowedUserSet   map[string]struct{}
+	AdminIDs       []string
+	MemberIDs      []string
+	ViewerIDs      []string
+	ProjectUserIDs []string // union of projects.*.allowedUserIds → member
+	ProjectUserSet map[string]struct{}
 }
 
 // ResolveWebRole maps a Discord user id to a web role.
-// Order: admin list → member list → viewer list → bot allowlist user → deny.
+// Order: admin list → member list → viewer list → any project user allowlist → deny.
 // Returns (role, ok). ok=false means login must be denied.
 func ResolveWebRole(discordUserID string, in RoleResolveInput) (WebRole, bool) {
 	id := strings.TrimSpace(discordUserID)
@@ -185,32 +185,39 @@ func ResolveWebRole(discordUserID string, in RoleResolveInput) (WebRole, bool) {
 	if containsID(in.ViewerIDs, id) {
 		return WebRoleViewer, true
 	}
-	if in.AllowedUserSet != nil {
-		if _, ok := in.AllowedUserSet[id]; ok {
+	if in.ProjectUserSet != nil {
+		if _, ok := in.ProjectUserSet[id]; ok {
 			return WebRoleMember, true
 		}
-	} else if containsID(in.AllowedUserIDs, id) {
+	} else if containsID(in.ProjectUserIDs, id) {
 		return WebRoleMember, true
 	}
 	return WebRoleNone, false
 }
 
-// ResolveWebRoleForConfig uses live config lists + allowlist users.
+// ResolveWebRoleForConfig uses live webAuth lists + project membership.
 func (c *Config) ResolveWebRoleForConfig(discordUserID string) (WebRole, bool) {
 	if c == nil {
 		return WebRoleNone, false
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	in := RoleResolveInput{
-		AllowedUserIDs: slices.Clone(c.AllowedUserIDs),
-		AllowedUserSet: c.AllowedUsers,
-	}
+	in := RoleResolveInput{}
 	if c.WebAuth != nil {
 		in.AdminIDs = c.WebAuth.AdminDiscordIDs
 		in.MemberIDs = c.WebAuth.MemberDiscordIDs
 		in.ViewerIDs = c.WebAuth.ViewerDiscordIDs
 	}
+	set := map[string]struct{}{}
+	for _, pc := range c.Projects {
+		for _, uid := range pc.AllowedUserIDs {
+			uid = strings.TrimSpace(uid)
+			if uid != "" {
+				set[uid] = struct{}{}
+			}
+		}
+	}
+	in.ProjectUserSet = set
 	return ResolveWebRole(discordUserID, in)
 }
 

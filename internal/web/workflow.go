@@ -84,6 +84,9 @@ func (s *Server) resolveCatalogRepo(ctx context.Context, project, owner, repo st
 
 func (s *Server) issuesList(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return ctx.Status(http.StatusForbidden).Error(err.Error())
+	}
 	path, err := s.projectPath(project)
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).Error(err.Error())
@@ -397,6 +400,6 @@ func (s *Server) issuesIndex(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Title = "Issues"
 	d.IsIssues = true
-	d.Config = s.cfg.Snapshot()
+	d.Config = s.filterSnapshotToVisible(ctx, s.cfg.Snapshot())
 	return s.viewPage(ctx, "issues_index", d)
 }

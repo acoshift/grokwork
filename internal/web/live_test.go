@@ -31,14 +31,12 @@ func TestLiveHTTPLaunch(t *testing.T) {
 	}
 	cfgPath := filepath.Join(dir, "config.json")
 	cfg := &config.Config{
-		DiscordToken:   "tok",
-		AllowedUserIDs: []string{"u0"},
-		AllowedRoleIDs: []string{},
-		Projects:       config.PathProjects(map[string]string{"proj": proj}),
-		Channels:       map[string]string{"ch": "proj"},
-		AllowedUsers:   map[string]struct{}{"u0": {}},
-		AllowedRoles:   map[string]struct{}{},
-		GrokBin:        "grok",
+		DiscordToken: "tok",
+		Projects: config.ProjectsMap{
+			"proj": {Path: proj, AllowedUserIDs: []string{"u0"}},
+		},
+		Channels: map[string]string{"ch": "proj"},
+		GrokBin:  "grok",
 		MaxTurns:       40,
 		TimeoutMs:      1000,
 		HTTPListen:     "127.0.0.1:0",
@@ -147,8 +145,8 @@ func TestLiveHTTPLaunch(t *testing.T) {
 		form url.Values
 	}{
 		{"/config/projects", url.Values{"name": {"liveproj"}, "path": {newProj}}},
-		{"/config/users", url.Values{"id": {"live-user"}}},
-		{"/config/roles", url.Values{"id": {"live-role"}}},
+		{"/config/projects/users", url.Values{"name": {"proj"}, "id": {"live-user"}}},
+		{"/config/projects/roles", url.Values{"name": {"proj"}, "id": {"live-role"}}},
 	}
 	for _, p := range posts {
 		res, err := client.PostForm(base+p.path, p.form)
@@ -165,8 +163,8 @@ func TestLiveHTTPLaunch(t *testing.T) {
 	if p, ok := cfg.ProjectPath("liveproj"); !ok || p != newProj {
 		t.Fatalf("runtime project missing: %q %v", p, ok)
 	}
-	if !cfg.UserAllowed("live-user") || !cfg.RoleAllowed("live-role") {
-		t.Fatal("runtime allowlist missing after POST")
+	if !cfg.AccessAllowed("proj", "live-user", nil) || !cfg.AccessAllowed("proj", "x", []string{"live-role"}) {
+		t.Fatal("runtime project members missing after POST")
 	}
 	raw, err := os.ReadFile(cfgPath)
 	if err != nil {

@@ -2,14 +2,14 @@
   "discordToken": "YOUR_BOT_TOKEN",
   "discordClientId": "",
   "discordClientSecret": "",
-  "allowedUserIds": [
-    "YOUR_DISCORD_USER_ID"
-  ],
-  "allowedRoleIds": [],
   "discordGuildId": "",
   "projects": {
     "app": {
       "path": "/absolute/path/to/app",
+      "allowedUserIds": [
+        "YOUR_DISCORD_USER_ID"
+      ],
+      "allowedRoleIds": [],
       "discordChannelId": "",
       "discordGuildId": "",
       "github": {
@@ -23,7 +23,12 @@
         "teamKey": "ENG"
       }
     },
-    "api": "/absolute/path/to/api"
+    "api": {
+      "path": "/absolute/path/to/api",
+      "allowedUserIds": [
+        "YOUR_DISCORD_USER_ID"
+      ]
+    }
   },
   "channels": {
     "DISCORD_CHANNEL_ID_FOR_APP": "app",

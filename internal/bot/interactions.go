@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -44,8 +45,13 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 		return
 	}
 
-	if !b.isAllowedUser(s, i.GuildID, user.ID, i.Member) {
-		respondEphemeral(s, i, "You're not on the allowlist for this Grok bridge.")
+	project := b.projectForThread(s, threadID)
+	if project == "" || !b.isAllowedUser(s, i.GuildID, user.ID, project, i.Member) {
+		msg := "You're not allowed to use Grok on this project."
+		if project != "" {
+			msg = fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
+		}
+		respondEphemeral(s, i, msg)
 		return
 	}
 
@@ -89,8 +95,13 @@ func (b *Bot) handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCr
 		respondEphemeral(s, i, "Use Continue inside a Grok thread.")
 		return
 	}
-	if !b.isAllowedUser(s, i.GuildID, user.ID, i.Member) {
-		respondEphemeral(s, i, "You're not on the allowlist for this Grok bridge.")
+	project := b.projectForThread(s, threadID)
+	if project == "" || !b.isAllowedUser(s, i.GuildID, user.ID, project, i.Member) {
+		msg := "You're not allowed to use Grok on this project."
+		if project != "" {
+			msg = fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
+		}
+		respondEphemeral(s, i, msg)
 		return
 	}
 
@@ -230,20 +241,16 @@ func denyControlText(e sessionstore.Entry, action string) string {
 	)
 }
 
-// isAllowedUser is the allowlist check for interactions (no MessageCreate).
-func (b *Bot) isAllowedUser(s *discordgo.Session, guildID, userID string, member *discordgo.Member) bool {
-	if b == nil || b.cfg == nil || userID == "" {
+// isAllowedUser checks project membership for Discord users.
+func (b *Bot) isAllowedUser(s *discordgo.Session, guildID, userID, project string, member *discordgo.Member) bool {
+	if b == nil || b.cfg == nil || userID == "" || project == "" {
 		return false
 	}
-	if !b.cfg.HasAllowlist() {
+	if !b.cfg.ProjectHasAllowlist(project) {
 		return false
 	}
-	if b.cfg.UserAllowed(userID) {
+	if b.cfg.AccessAllowed(project, userID, nil) {
 		return true
-	}
-	_, roleCount := b.cfg.AllowlistSizes()
-	if roleCount == 0 {
-		return false
 	}
 	if member == nil && s != nil && guildID != "" {
 		var err error
@@ -255,12 +262,19 @@ func (b *Bot) isAllowedUser(s *discordgo.Session, guildID, userID string, member
 	if member == nil {
 		return false
 	}
-	for _, roleID := range member.Roles {
-		if b.cfg.RoleAllowed(roleID) {
-			return true
-		}
+	return b.cfg.AccessAllowed(project, userID, member.Roles)
+}
+
+// projectForThread resolves the project for a Discord thread (session, else parent channel map).
+func (b *Bot) projectForThread(s *discordgo.Session, threadID string) string {
+	if e, ok := b.sessions.Get(threadID); ok && strings.TrimSpace(e.Project) != "" {
+		return e.Project
 	}
-	return false
+	parent := parentChannelID(s, threadID)
+	if name, ok := b.cfg.ChannelProject(parent); ok {
+		return name
+	}
+	return ""
 }
 
 // canControlUser reports whether userID may cancel/reset this thread.

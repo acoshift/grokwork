@@ -221,26 +221,7 @@
   {{end}}
 </div>
 
-<div class="section card" id="access">
-  <h2>Allowlist</h2>
-  <p class="sub" style="margin-top:0">Discord users and roles allowed to task the bot. When both lists are empty the bot is fail-closed (nobody can run tasks).</p>
-  <form class="inline" method="post" action="{{route "config.addUser"}}" style="grid-template-columns: 1fr auto; margin-bottom:0.65rem;">
-    {{template "csrf" $}}
-    <div>
-      <label for="user-id">Discord user ID</label>
-      <input id="user-id" type="text" name="id" placeholder="123456789012345678" required autocomplete="off">
-    </div>
-    <button type="submit">Add user</button>
-  </form>
-  <form class="inline" method="post" action="{{route "config.addRole"}}" style="grid-template-columns: 1fr auto;">
-    {{template "csrf" $}}
-    <div>
-      <label for="role-id">Discord role ID</label>
-      <input id="role-id" type="text" name="id" placeholder="123456789012345678" required autocomplete="off">
-    </div>
-    <button type="submit">Add role</button>
-  </form>
-</div>
+<p class="sub" id="access">Members are configured per project (open a project’s Settings). A project with no members is fail-closed — nobody can <span class="mono">@Grok</span> on its channels.</p>
 
 {{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
@@ -261,12 +242,16 @@
   {{if .Config.Projects}}
   <div class="table-scroll">
   <table>
-    <thead><tr><th>Name</th><th>Path</th><th>Discord</th><th>Linear</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Path</th><th>Members</th><th>Discord</th><th>Linear</th><th></th></tr></thead>
     <tbody>
       {{range .Config.Projects}}
       <tr>
         <td class="mono"><a href="/config/projects/{{.Name}}">{{.Name}}</a></td>
         <td class="mono muted">{{.Path}}</td>
+        <td class="mono">
+          {{$mu := len .AllowedUserIDs}}{{$mr := len .AllowedRoleIDs}}
+          {{if or $mu $mr}}{{$mu}} user{{if ne $mu 1}}s{{end}}{{if $mr}} · {{$mr}} role{{if ne $mr 1}}s{{end}}{{end}}{{else}}<span class="badge status-warn">none</span>{{end}}
+        </td>
         <td class="mono">
           {{if .ChannelOptions}}{{len .ChannelOptions}} channel{{if ne (len .ChannelOptions) 1}}s{{end}}{{else}}<span class="badge status-warn">no channels</span>{{end}}
         </td>
@@ -318,57 +303,4 @@
   {{end}}
 </div>
 
-<div class="section">
-  <h2>Allowed users</h2>
-  {{if .Config.AllowedUserIDs}}
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>User ID</th><th></th></tr></thead>
-    <tbody>
-      {{range .Config.AllowedUserIDs}}
-      <tr>
-        <td class="mono">{{.}}</td>
-        <td class="row-actions">
-          <form method="post" action="{{route "config.removeUser"}}" onsubmit="return confirm('Remove user {{.}}?');">
-            {{template "csrf" $}}
-            <input type="hidden" name="id" value="{{.}}">
-            <button type="submit" class="btn-danger">Remove</button>
-          </form>
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-  </div>
-  {{else}}
-  <div class="empty">No allowed users.</div>
-  {{end}}
-</div>
-
-<div class="section">
-  <h2>Allowed roles</h2>
-  {{if .Config.AllowedRoleIDs}}
-  <div class="table-scroll">
-  <table>
-    <thead><tr><th>Role ID</th><th></th></tr></thead>
-    <tbody>
-      {{range .Config.AllowedRoleIDs}}
-      <tr>
-        <td class="mono">{{.}}</td>
-        <td class="row-actions">
-          <form method="post" action="{{route "config.removeRole"}}" onsubmit="return confirm('Remove role {{.}}?');">
-            {{template "csrf" $}}
-            <input type="hidden" name="id" value="{{.}}">
-            <button type="submit" class="btn-danger">Remove</button>
-          </form>
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-  </div>
-  {{else}}
-  <div class="empty">No allowed roles.</div>
-  {{end}}
-</div>
 {{end}}

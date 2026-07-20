@@ -13,7 +13,7 @@ func TestResolveWebRoleOrder(t *testing.T) {
 		AdminIDs:       []string{"admin-1"},
 		MemberIDs:      []string{"member-1", "admin-1"}, // admin still wins
 		ViewerIDs:      []string{"viewer-1"},
-		AllowedUserIDs: []string{"allow-1"},
+		ProjectUserIDs: []string{"allow-1"},
 	}
 	cases := []struct {
 		id   string
@@ -37,7 +37,7 @@ func TestResolveWebRoleOrder(t *testing.T) {
 
 func TestResolveWebRoleAllowedUserSet(t *testing.T) {
 	role, ok := ResolveWebRole("u9", RoleResolveInput{
-		AllowedUserSet: map[string]struct{}{"u9": {}},
+		ProjectUserSet: map[string]struct{}{"u9": {}},
 	})
 	if !ok || role != WebRoleMember {
 		t.Fatalf("got %q %v", role, ok)

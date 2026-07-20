@@ -93,6 +93,84 @@
   </div>
 </div>
 
+
+<div class="section card" id="project-members">
+  <h2>Members</h2>
+  <p class="sub" style="margin-top:0">
+    Discord users and roles allowed to <span class="mono">@Grok</span> on this project’s channels.
+    Empty lists are fail-closed (nobody can task the bot here). Web UI visibility uses user IDs (not roles).
+  </p>
+  {{if not .ProjectItem.AllowedUserIDs}}{{if not .ProjectItem.AllowedRoleIDs}}
+  <div class="flash err" style="margin-bottom:0.85rem;">No members — add at least one user or role or nobody can use Grok on this project.</div>
+  {{end}}{{end}}
+  <form class="inline" method="post" action="{{route "config.addProjectUser"}}" style="grid-template-columns: 1fr auto; margin-bottom:0.65rem;">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div>
+      <label for="project-user-id">Discord user ID</label>
+      <input id="project-user-id" type="text" name="id" placeholder="123456789012345678" required autocomplete="off">
+    </div>
+    <button type="submit">Add user</button>
+  </form>
+  {{if .ProjectItem.AllowedUserIDs}}
+  <div class="table-scroll" style="margin-bottom:1rem;">
+  <table>
+    <thead><tr><th>User ID</th><th></th></tr></thead>
+    <tbody>
+      {{range .ProjectItem.AllowedUserIDs}}
+      <tr>
+        <td class="mono">{{.}}</td>
+        <td class="row-actions">
+          <form method="post" action="{{route "config.removeProjectUser"}}" onsubmit="return confirm('Remove user {{.}}?');">
+            {{template "csrf" $}}
+            <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+            <input type="hidden" name="id" value="{{.}}">
+            <button type="submit" class="btn-danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty" style="margin-bottom:1rem;">No users.</div>
+  {{end}}
+  <form class="inline" method="post" action="{{route "config.addProjectRole"}}" style="grid-template-columns: 1fr auto; margin-bottom:0.65rem;">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div>
+      <label for="project-role-id">Discord role ID</label>
+      <input id="project-role-id" type="text" name="id" placeholder="123456789012345678" required autocomplete="off">
+    </div>
+    <button type="submit">Add role</button>
+  </form>
+  {{if .ProjectItem.AllowedRoleIDs}}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Role ID</th><th></th></tr></thead>
+    <tbody>
+      {{range .ProjectItem.AllowedRoleIDs}}
+      <tr>
+        <td class="mono">{{.}}</td>
+        <td class="row-actions">
+          <form method="post" action="{{route "config.removeProjectRole"}}" onsubmit="return confirm('Remove role {{.}}?');">
+            {{template "csrf" $}}
+            <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+            <input type="hidden" name="id" value="{{.}}">
+            <button type="submit" class="btn-danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">No roles.</div>
+  {{end}}
+</div>
+
 <div class="section card" id="project-linear">
   <h2>Linear</h2>
   <p class="sub" style="margin-top:0">

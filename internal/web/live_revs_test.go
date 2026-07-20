@@ -22,7 +22,11 @@ func TestLiveRevsStableAndChange(t *testing.T) {
 	}
 
 	// Config mutation should move Config fingerprint.
-	if err := cfg.AddAllowedUser("user-live-rev"); err != nil {
+	names := cfg.ProjectNames()
+	if len(names) == 0 {
+		t.Fatal("no projects")
+	}
+	if err := cfg.AddProjectAllowedUser(names[0], "user-live-rev"); err != nil {
 		t.Fatal(err)
 	}
 	c := srv.computeLiveRevs()

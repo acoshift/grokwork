@@ -54,8 +54,8 @@ type Config struct {
 	// DiscordClientSecret is the OAuth2 client secret for web login (never log).
 	// Prefer env DISCORD_CLIENT_SECRET / GROK_WORK_DISCORD_CLIENT_SECRET.
 	DiscordClientSecret string `json:"discordClientSecret,omitempty"`
-	AllowedUserIDs      []string          `json:"allowedUserIds"`
-	AllowedRoleIDs      []string          `json:"allowedRoleIds"`
+	AllowedUserIDs      []string          `json:"allowedUserIds,omitempty"`
+	AllowedRoleIDs      []string          `json:"allowedRoleIds,omitempty"`
 	Projects            ProjectsMap       `json:"projects"`
 	Channels            map[string]string `json:"channels"` // channel ID → project name
 	GrokBin             string            `json:"grokBin"`
@@ -120,6 +120,8 @@ type ProjectItem struct {
 	DiscordGuildID     string
 	GitHubReposText     string // "owner/repo" lines for config form
 	ChannelOptions     []string // channel IDs mapped to this project (preferred dropdown)
+	AllowedUserIDs     []string
+	AllowedRoleIDs     []string
 }
 
 // ChannelItem is a channel→project mapping row for the config UI.
@@ -133,8 +135,6 @@ type Snapshot struct {
 	Projects            []ProjectItem
 	Channels            []ChannelItem
 	ProjectNames        []string
-	AllowedUserIDs      []string
-	AllowedRoleIDs      []string
 	HTTPListen          string
 	GrokBin             string
 	Model               string
@@ -375,6 +375,9 @@ func Load() (*Config, error) {
 		c.SummarizeTimeoutMs = 45_000
 	}
 
+	// Legacy root allowlists are kept only long enough to migrate into projects.
+	c.AllowedUserIDs = cleanIDList(c.AllowedUserIDs)
+	c.AllowedRoleIDs = cleanIDList(c.AllowedRoleIDs)
 	c.AllowedUsers = toSet(c.AllowedUserIDs)
 	c.AllowedRoles = toSet(c.AllowedRoleIDs)
 	c.ConfigPath = path
@@ -386,6 +389,18 @@ func Load() (*Config, error) {
 	}
 	if err := c.ValidatePreferredChannels(); err != nil {
 		return nil, err
+	}
+
+	// One-shot: copy root allowlist into empty projects, then clear root lists.
+	hadGlobal := len(c.AllowedUserIDs) > 0 || len(c.AllowedRoleIDs) > 0
+	n, err := c.MigrateGlobalAllowlistToProjects()
+	if err != nil {
+		return nil, fmt.Errorf("migrate global allowlist to projects: %w", err)
+	}
+	if n > 0 {
+		fmt.Fprintf(os.Stderr, "[info] migrated global allowlist into %d project(s); global allowlist cleared\n", n)
+	} else if hadGlobal {
+		fmt.Fprintf(os.Stderr, "[info] cleared legacy global allowlist (projects already had members)\n")
 	}
 
 	return &c, nil
@@ -408,8 +423,8 @@ func (c *Config) saveLocked() error {
 		DiscordToken         string            `json:"discordToken"`
 		DiscordClientID      string            `json:"discordClientId,omitempty"`
 		DiscordClientSecret  string            `json:"discordClientSecret,omitempty"`
-		AllowedUserIDs       []string          `json:"allowedUserIds"`
-		AllowedRoleIDs       []string          `json:"allowedRoleIds"`
+		AllowedUserIDs       []string          `json:"allowedUserIds,omitempty"`
+		AllowedRoleIDs       []string          `json:"allowedRoleIds,omitempty"`
 		Projects             ProjectsMap       `json:"projects"`
 		Channels             map[string]string `json:"channels"`
 		GrokBin              string            `json:"grokBin"`
@@ -597,46 +612,6 @@ func (c *Config) AddProject(name, absPath string) error {
 	return c.saveLocked()
 }
 
-// AddAllowedUser adds a Discord user ID to the allowlist and persists.
-func (c *Config) AddAllowedUser(id string) error {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return fmt.Errorf("user id is required")
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if _, ok := c.AllowedUsers[id]; ok {
-		return nil
-	}
-	c.AllowedUserIDs = append(c.AllowedUserIDs, id)
-	if c.AllowedUsers == nil {
-		c.AllowedUsers = map[string]struct{}{}
-	}
-	c.AllowedUsers[id] = struct{}{}
-	return c.saveLocked()
-}
-
-// AddAllowedRole adds a Discord role ID to the allowlist and persists.
-func (c *Config) AddAllowedRole(id string) error {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return fmt.Errorf("role id is required")
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if _, ok := c.AllowedRoles[id]; ok {
-		return nil
-	}
-	c.AllowedRoleIDs = append(c.AllowedRoleIDs, id)
-	if c.AllowedRoles == nil {
-		c.AllowedRoles = map[string]struct{}{}
-	}
-	c.AllowedRoles[id] = struct{}{}
-	return c.saveLocked()
-}
-
 // AddChannel maps a Discord channel ID to a project and persists.
 // If the channel already maps to the same project, it is a no-op.
 // If it maps to a different project, the mapping is updated.
@@ -686,40 +661,6 @@ func (c *Config) RemoveProject(name string) error {
 	return c.saveLocked()
 }
 
-// RemoveAllowedUser removes a Discord user ID from the allowlist.
-func (c *Config) RemoveAllowedUser(id string) error {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return fmt.Errorf("user id is required")
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if _, ok := c.AllowedUsers[id]; !ok {
-		return fmt.Errorf("user %q not found", id)
-	}
-	delete(c.AllowedUsers, id)
-	c.AllowedUserIDs = removeString(c.AllowedUserIDs, id)
-	return c.saveLocked()
-}
-
-// RemoveAllowedRole removes a Discord role ID from the allowlist.
-func (c *Config) RemoveAllowedRole(id string) error {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return fmt.Errorf("role id is required")
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if _, ok := c.AllowedRoles[id]; !ok {
-		return fmt.Errorf("role %q not found", id)
-	}
-	delete(c.AllowedRoles, id)
-	c.AllowedRoleIDs = removeString(c.AllowedRoleIDs, id)
-	return c.saveLocked()
-}
-
 // RemoveChannel removes a channel→project mapping.
 func (c *Config) RemoveChannel(channelID string) error {
 	channelID = strings.TrimSpace(channelID)
@@ -755,6 +696,8 @@ func (c *Config) Snapshot() Snapshot {
 			LinearEnvHint:    "LINEAR_API_KEY_" + ProjectEnvKeySuffix(n),
 			DiscordChannelID: strings.TrimSpace(pc.DiscordChannelID),
 			DiscordGuildID:   strings.TrimSpace(pc.DiscordGuildID),
+			AllowedUserIDs:   slices.Clone(pc.AllowedUserIDs),
+			AllowedRoleIDs:   slices.Clone(pc.AllowedRoleIDs),
 		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled
@@ -822,8 +765,6 @@ func (c *Config) Snapshot() Snapshot {
 		Projects:            projects,
 		Channels:            channels,
 		ProjectNames:        names,
-		AllowedUserIDs:      slices.Clone(c.AllowedUserIDs),
-		AllowedRoleIDs:      slices.Clone(c.AllowedRoleIDs),
 		HTTPListen:          c.HTTPListen,
 		GrokBin:             c.GrokBin,
 		Model:               c.Model,
@@ -883,30 +824,20 @@ func (c *Config) ChannelProject(channelID string) (string, bool) {
 	return name, ok && name != ""
 }
 
-func (c *Config) UserAllowed(userID string) bool {
+// EmptyProjectsCount returns how many projects have no members (user or role).
+func (c *Config) EmptyProjectsCount() int {
+	if c == nil {
+		return 0
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	_, ok := c.AllowedUsers[userID]
-	return ok
-}
-
-func (c *Config) RoleAllowed(roleID string) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	_, ok := c.AllowedRoles[roleID]
-	return ok
-}
-
-func (c *Config) HasAllowlist() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return len(c.AllowedUsers) > 0 || len(c.AllowedRoles) > 0
-}
-
-func (c *Config) AllowlistSizes() (users, roles int) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return len(c.AllowedUsers), len(c.AllowedRoles)
+	n := 0
+	for _, pc := range c.Projects {
+		if !projectHasAllowlist(pc) {
+			n++
+		}
+	}
+	return n
 }
 
 func (c *Config) ProjectNames() []string {

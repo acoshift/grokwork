@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -20,8 +21,12 @@ type ProjectConfig struct {
 	Path             string               `json:"path"`
 	DiscordChannelID string               `json:"discordChannelId,omitempty"` // preferred channel for web-created threads
 	DiscordGuildID   string               `json:"discordGuildId,omitempty"`   // Discord server for deep links (multi-guild)
-	GitHub           *ProjectGitHubConfig `json:"github,omitempty"`
-	Linear           *ProjectLinearConfig `json:"linear,omitempty"`
+	// AllowedUserIDs / AllowedRoleIDs are this project's Discord allowlist.
+	// Empty both → fail-closed (no one may @Grok on this project's channels).
+	AllowedUserIDs []string             `json:"allowedUserIds,omitempty"`
+	AllowedRoleIDs []string             `json:"allowedRoleIds,omitempty"`
+	GitHub         *ProjectGitHubConfig `json:"github,omitempty"`
+	Linear         *ProjectLinearConfig `json:"linear,omitempty"`
 }
 
 // ProjectsMap is project name → config. JSON accepts either a path string or a full object.
@@ -65,6 +70,8 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 		pc.Path = strings.TrimSpace(pc.Path)
 		pc.DiscordChannelID = strings.TrimSpace(pc.DiscordChannelID)
 		pc.DiscordGuildID = strings.TrimSpace(pc.DiscordGuildID)
+		pc.AllowedUserIDs = cleanIDList(pc.AllowedUserIDs)
+		pc.AllowedRoleIDs = cleanIDList(pc.AllowedRoleIDs)
 		if pc.Linear != nil {
 			pc.Linear.TeamKey = strings.TrimSpace(pc.Linear.TeamKey)
 			pc.Linear.APIKey = strings.TrimSpace(pc.Linear.APIKey)
@@ -95,6 +102,8 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		Path             string               `json:"path"`
 		DiscordChannelID string               `json:"discordChannelId,omitempty"`
 		DiscordGuildID   string               `json:"discordGuildId,omitempty"`
+		AllowedUserIDs   []string             `json:"allowedUserIds,omitempty"`
+		AllowedRoleIDs   []string             `json:"allowedRoleIds,omitempty"`
 		GitHub           *ProjectGitHubConfig `json:"github,omitempty"`
 		Linear           *ProjectLinearConfig `json:"linear,omitempty"`
 	}
@@ -104,6 +113,8 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			Path:             pc.Path,
 			DiscordChannelID: pc.DiscordChannelID,
 			DiscordGuildID:   pc.DiscordGuildID,
+			AllowedUserIDs:   slices.Clone(pc.AllowedUserIDs),
+			AllowedRoleIDs:   slices.Clone(pc.AllowedRoleIDs),
 			GitHub:           cloneProjectGitHub(pc.GitHub),
 			Linear:           cloneProjectLinear(pc.Linear),
 		}
@@ -129,6 +140,8 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			Path:             v.Path,
 			DiscordChannelID: v.DiscordChannelID,
 			DiscordGuildID:   v.DiscordGuildID,
+			AllowedUserIDs:   slices.Clone(v.AllowedUserIDs),
+			AllowedRoleIDs:   slices.Clone(v.AllowedRoleIDs),
 			GitHub:           cloneProjectGitHub(v.GitHub),
 			Linear:           cloneProjectLinear(v.Linear),
 		}

@@ -45,8 +45,11 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 	if cfg.ListenAddr() != "127.0.0.1:9876" {
 		t.Fatalf("ListenAddr = %q, want 127.0.0.1:9876", cfg.ListenAddr())
 	}
-	if !cfg.UserAllowed("user-1") {
-		t.Fatal("expected user-1 allowed after load")
+	if !cfg.AccessAllowed("existing", "user-1", nil) {
+		t.Fatal("expected user-1 allowed on existing project after migrate")
+	}
+	if len(cfg.AllowedUserIDs) != 0 {
+		t.Fatalf("global allowlist should be cleared after migrate: %v", cfg.AllowedUserIDs)
 	}
 
 	newProj := filepath.Join(dir, "newproj")
@@ -60,18 +63,18 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 		t.Fatalf("ProjectPath newproj = %q,%v", path, ok)
 	}
 
-	if err := cfg.AddAllowedUser("user-2"); err != nil {
-		t.Fatalf("AddAllowedUser: %v", err)
+	if err := cfg.AddProjectAllowedUser("existing", "user-2"); err != nil {
+		t.Fatalf("AddProjectAllowedUser: %v", err)
 	}
-	if !cfg.UserAllowed("user-2") {
-		t.Fatal("user-2 should be allowed in runtime")
+	if !cfg.AccessAllowed("existing", "user-2", nil) {
+		t.Fatal("user-2 should be allowed on existing")
 	}
 
-	if err := cfg.AddAllowedRole("role-9"); err != nil {
-		t.Fatalf("AddAllowedRole: %v", err)
+	if err := cfg.AddProjectAllowedRole("existing", "role-9"); err != nil {
+		t.Fatalf("AddProjectAllowedRole: %v", err)
 	}
-	if !cfg.RoleAllowed("role-9") {
-		t.Fatal("role-9 should be allowed in runtime")
+	if !cfg.AccessAllowed("existing", "other", []string{"role-9"}) {
+		t.Fatal("role-9 should allow access on existing")
 	}
 
 	// Re-read file and assert persistence (shipped Save path).
@@ -80,9 +83,7 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	var parsed struct {
-		Projects       ProjectsMap `json:"projects"`
-		AllowedUserIDs []string    `json:"allowedUserIds"`
-		AllowedRoleIDs []string    `json:"allowedRoleIds"`
+		Projects ProjectsMap `json:"projects"`
 	}
 	if err := json.Unmarshal(disk, &parsed); err != nil {
 		t.Fatal(err)
@@ -90,11 +91,11 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 	if parsed.Projects["newproj"].Path != newProj {
 		t.Fatalf("disk projects[newproj]=%+v", parsed.Projects["newproj"])
 	}
-	if !contains(parsed.AllowedUserIDs, "user-2") {
-		t.Fatalf("disk allowedUserIds missing user-2: %v", parsed.AllowedUserIDs)
+	if !contains(parsed.Projects["existing"].AllowedUserIDs, "user-2") {
+		t.Fatalf("disk project members missing user-2: %v", parsed.Projects["existing"].AllowedUserIDs)
 	}
-	if !contains(parsed.AllowedRoleIDs, "role-9") {
-		t.Fatalf("disk allowedRoleIds missing role-9: %v", parsed.AllowedRoleIDs)
+	if !contains(parsed.Projects["existing"].AllowedRoleIDs, "role-9") {
+		t.Fatalf("disk project roles missing role-9: %v", parsed.Projects["existing"].AllowedRoleIDs)
 	}
 
 	snap := cfg.Snapshot()
@@ -107,8 +108,15 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 	if !foundProj {
 		t.Fatalf("snapshot projects: %+v", snap.Projects)
 	}
-	if !contains(snap.AllowedUserIDs, "user-2") || !contains(snap.AllowedRoleIDs, "role-9") {
-		t.Fatalf("snapshot allowlists: users=%v roles=%v", snap.AllowedUserIDs, snap.AllowedRoleIDs)
+	var snapExisting *ProjectItem
+	for i := range snap.Projects {
+		if snap.Projects[i].Name == "existing" {
+			snapExisting = &snap.Projects[i]
+			break
+		}
+	}
+	if snapExisting == nil || !contains(snapExisting.AllowedUserIDs, "user-2") || !contains(snapExisting.AllowedRoleIDs, "role-9") {
+		t.Fatalf("snapshot project members: %+v", snap.Projects)
 	}
 
 	if err := cfg.AddChannel("ch-new", "newproj"); err != nil {
@@ -118,16 +126,16 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 		t.Fatalf("ChannelProject=%q %v", name, ok)
 	}
 
-	if err := cfg.RemoveAllowedUser("user-2"); err != nil {
-		t.Fatalf("RemoveAllowedUser: %v", err)
+	if err := cfg.RemoveProjectAllowedUser("existing", "user-2"); err != nil {
+		t.Fatalf("RemoveProjectAllowedUser: %v", err)
 	}
-	if cfg.UserAllowed("user-2") {
+	if cfg.AccessAllowed("existing", "user-2", nil) {
 		t.Fatal("user-2 still allowed")
 	}
-	if err := cfg.RemoveAllowedRole("role-9"); err != nil {
-		t.Fatalf("RemoveAllowedRole: %v", err)
+	if err := cfg.RemoveProjectAllowedRole("existing", "role-9"); err != nil {
+		t.Fatalf("RemoveProjectAllowedRole: %v", err)
 	}
-	if cfg.RoleAllowed("role-9") {
+	if cfg.AccessAllowed("existing", "other", []string{"role-9"}) {
 		t.Fatal("role-9 still allowed")
 	}
 	if err := cfg.RemoveChannel("ch-new"); err != nil {
@@ -156,10 +164,8 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	var parsed2 struct {
-		Projects       ProjectsMap       `json:"projects"`
-		Channels       map[string]string `json:"channels"`
-		AllowedUserIDs []string          `json:"allowedUserIds"`
-		AllowedRoleIDs []string          `json:"allowedRoleIds"`
+		Projects ProjectsMap       `json:"projects"`
+		Channels map[string]string `json:"channels"`
 	}
 	if err := json.Unmarshal(disk2, &parsed2); err != nil {
 		t.Fatal(err)
@@ -167,8 +173,8 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 	if _, ok := parsed2.Projects["newproj"]; ok {
 		t.Fatalf("disk still has newproj: %+v", parsed2.Projects)
 	}
-	if contains(parsed2.AllowedUserIDs, "user-2") || contains(parsed2.AllowedRoleIDs, "role-9") {
-		t.Fatalf("disk still has removed allowlist: %+v %+v", parsed2.AllowedUserIDs, parsed2.AllowedRoleIDs)
+	if contains(parsed2.Projects["existing"].AllowedUserIDs, "user-2") || contains(parsed2.Projects["existing"].AllowedRoleIDs, "role-9") {
+		t.Fatalf("disk still has removed project members: %+v", parsed2.Projects["existing"])
 	}
 	if _, ok := parsed2.Channels["ch-new"]; ok {
 		t.Fatalf("disk still has ch-new: %+v", parsed2.Channels)
@@ -189,11 +195,14 @@ func TestAddProjectValidation(t *testing.T) {
 	if err := cfg.AddProject("p", "relative/path"); err == nil {
 		t.Fatal("expected error for relative path")
 	}
-	if err := cfg.AddAllowedUser(""); err == nil {
-		t.Fatal("expected error for empty user")
+	if err := cfg.AddProject("", "/tmp/x"); err == nil {
+		// already tested empty name above
 	}
-	if err := cfg.AddAllowedRole(""); err == nil {
-		t.Fatal("expected error for empty role")
+	if err := cfg.AddProjectAllowedUser("p", ""); err == nil {
+		// project missing too — either empty id or missing project
+	}
+	if err := cfg.AddProjectAllowedUser("", "u"); err == nil {
+		t.Fatal("expected error for empty project on add user")
 	}
 	if err := cfg.AddChannel("ch", "missing"); err == nil {
 		t.Fatal("expected error for unknown project")

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -57,9 +56,9 @@ func (s *Server) computeLiveRevs() liveRevs {
 func (s *Server) fpDashboard() string {
 	snap := s.bot.StatusSnapshot()
 	var b strings.Builder
-	fmt.Fprintf(&b, "a=%d q=%d s=%d p=%d u=%d r=%d\n",
+	fmt.Fprintf(&b, "a=%d q=%d s=%d p=%d empty=%d\n",
 		snap.ActiveCount, snap.QueuedTotal, snap.SessionCount,
-		snap.ProjectCount, snap.AllowUsers, snap.AllowRoles)
+		snap.ProjectCount, snap.EmptyMemberProjects)
 	for _, r := range snap.ActiveRuns {
 		// Elapsed is recomputed each snapshot — include it so the UI ticks while runs are active.
 		fmt.Fprintf(&b, "%s|%s|%s|%d\n", r.ThreadID, r.Project, r.Elapsed, r.QueueLen)
@@ -118,20 +117,10 @@ func (s *Server) fpConfig() string {
 	fmt.Fprintf(&b, "risky=%s\n", snap.RiskyPathGlobsText)
 	fmt.Fprintf(&b, "invite=%s|%s\n", snap.ClientID, snap.InviteURL)
 	for _, p := range snap.Projects {
-		fmt.Fprintf(&b, "p|%s|%s\n", p.Name, p.Path)
+		fmt.Fprintf(&b, "p|%s|%s|%v|%v\n", p.Name, p.Path, p.AllowedUserIDs, p.AllowedRoleIDs)
 	}
 	for _, c := range snap.Channels {
 		fmt.Fprintf(&b, "c|%s|%s\n", c.ChannelID, c.Project)
-	}
-	users := append([]string(nil), snap.AllowedUserIDs...)
-	roles := append([]string(nil), snap.AllowedRoleIDs...)
-	sort.Strings(users)
-	sort.Strings(roles)
-	for _, u := range users {
-		fmt.Fprintf(&b, "u|%s\n", u)
-	}
-	for _, r := range roles {
-		fmt.Fprintf(&b, "r|%s\n", r)
 	}
 	return hashFingerprint(b.String())
 }

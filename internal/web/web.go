@@ -98,10 +98,10 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.setProjectGitHub": "/config/projects/github",
 		"config.setProjectChannel": "/config/projects/channel",
 		"config.setGuild":         "/config/guild",
-		"config.addUser":          "/config/users",
-		"config.removeUser":       "/config/users/remove",
-		"config.addRole":          "/config/roles",
-		"config.removeRole":       "/config/roles/remove",
+		"config.addProjectUser":   "/config/projects/users",
+		"config.removeProjectUser": "/config/projects/users/remove",
+		"config.addProjectRole":   "/config/projects/roles",
+		"config.removeProjectRole": "/config/projects/roles/remove",
 		"config.addChannel":       "/config/channels",
 		"config.removeChannel":    "/config/channels/remove",
 		"config.settings":         "/config/settings",
@@ -240,10 +240,10 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/github", s.requireAdmin(hime.Handler(s.setProjectGitHub)))
 	mux.Handle("POST /config/projects/channel", s.requireAdmin(hime.Handler(s.setProjectChannel)))
 	mux.Handle("POST /config/guild", s.requireAdmin(hime.Handler(s.setGuild)))
-	mux.Handle("POST /config/users", s.requireAdmin(hime.Handler(s.addUser)))
-	mux.Handle("POST /config/users/remove", s.requireAdmin(hime.Handler(s.removeUser)))
-	mux.Handle("POST /config/roles", s.requireAdmin(hime.Handler(s.addRole)))
-	mux.Handle("POST /config/roles/remove", s.requireAdmin(hime.Handler(s.removeRole)))
+	mux.Handle("POST /config/projects/users", s.requireAdmin(hime.Handler(s.addProjectUser)))
+	mux.Handle("POST /config/projects/users/remove", s.requireAdmin(hime.Handler(s.removeProjectUser)))
+	mux.Handle("POST /config/projects/roles", s.requireAdmin(hime.Handler(s.addProjectRole)))
+	mux.Handle("POST /config/projects/roles/remove", s.requireAdmin(hime.Handler(s.removeProjectRole)))
 	mux.Handle("POST /config/channels", s.requireAdmin(hime.Handler(s.addChannel)))
 	mux.Handle("POST /config/channels/remove", s.requireAdmin(hime.Handler(s.removeChannel)))
 	mux.Handle("POST /config/settings", s.requireAdmin(hime.Handler(s.updateSettings)))
@@ -410,6 +410,7 @@ func (s *Server) historyList(ctx *hime.Context) error {
 	}
 	// Also surface sessions that have no turns yet (legacy / mid-run).
 	threads = mergeSessionRows(threads, s.sessions.List())
+	threads = s.filterThreadsVisible(ctx, threads)
 	d := s.basePage(ctx)
 	d.Title = "History"
 	d.IsHistory = true
@@ -424,6 +425,7 @@ func (s *Server) sessionsList(ctx *hime.Context) error {
 		return ctx.Status(http.StatusInternalServerError).Error("sessions list: " + err.Error())
 	}
 	threads = mergeSessionRows(threads, s.sessions.List())
+	threads = s.filterThreadsVisible(ctx, threads)
 	d := s.basePage(ctx)
 	d.Title = "Sessions"
 	d.IsSessions = true
@@ -502,7 +504,7 @@ func (s *Server) worktreesPage(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Title = "Worktrees"
 	d.IsWorktrees = true
-	d.Worktrees = s.bot.ListWorktrees()
+	d.Worktrees = s.filterWorktreesVisible(ctx, s.bot.ListWorktrees())
 	d.IdleTTLDays = s.cfg.WorktreeIdleTTLDaysValue()
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
@@ -545,6 +547,7 @@ func (s *Server) partialHistoryTable(ctx *hime.Context) error {
 		return ctx.Status(http.StatusInternalServerError).Error("history list: " + err.Error())
 	}
 	threads = mergeSessionRows(threads, s.sessions.List())
+	threads = s.filterThreadsVisible(ctx, threads)
 	d := s.basePage(ctx)
 	d.Threads = threads
 	return s.viewFragment(ctx, "history", "history_table", d)
@@ -568,7 +571,7 @@ func (s *Server) partialHistoryTurns(ctx *hime.Context) error {
 
 func (s *Server) partialWorktreesTable(ctx *hime.Context) error {
 	d := s.basePage(ctx)
-	d.Worktrees = s.bot.ListWorktrees()
+	d.Worktrees = s.filterWorktreesVisible(ctx, s.bot.ListWorktrees())
 	d.IdleTTLDays = s.cfg.WorktreeIdleTTLDaysValue()
 	return s.viewFragment(ctx, "worktrees", "worktrees_table", d)
 }
@@ -697,32 +700,36 @@ func (s *Server) setGuild(ctx *hime.Context) error {
 	return s.configRedirect(ctx, "Updated default Discord guild id (fallback)", err)
 }
 
-func (s *Server) addUser(ctx *hime.Context) error {
+func (s *Server) addProjectUser(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
 	id := ctx.PostFormValue("id")
-	err := s.cfg.AddAllowedUser(id)
-	s.auditAction(ctx, audit.ActionConfigAddUser, err, map[string]any{"id": id})
-	return s.configRedirect(ctx, fmt.Sprintf("Added user %s", id), err)
+	err := s.cfg.AddProjectAllowedUser(name, id)
+	s.auditAction(ctx, audit.ActionConfigAddUser, err, map[string]any{"project": name, "id": id})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Added user %s", id), err)
 }
 
-func (s *Server) removeUser(ctx *hime.Context) error {
+func (s *Server) removeProjectUser(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
 	id := ctx.PostFormValue("id")
-	err := s.cfg.RemoveAllowedUser(id)
-	s.auditAction(ctx, audit.ActionConfigRemoveUser, err, map[string]any{"id": id})
-	return s.configRedirect(ctx, fmt.Sprintf("Removed user %s", id), err)
+	err := s.cfg.RemoveProjectAllowedUser(name, id)
+	s.auditAction(ctx, audit.ActionConfigRemoveUser, err, map[string]any{"project": name, "id": id})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Removed user %s", id), err)
 }
 
-func (s *Server) addRole(ctx *hime.Context) error {
+func (s *Server) addProjectRole(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
 	id := ctx.PostFormValue("id")
-	err := s.cfg.AddAllowedRole(id)
-	s.auditAction(ctx, audit.ActionConfigAddRole, err, map[string]any{"id": id})
-	return s.configRedirect(ctx, fmt.Sprintf("Added role %s", id), err)
+	err := s.cfg.AddProjectAllowedRole(name, id)
+	s.auditAction(ctx, audit.ActionConfigAddRole, err, map[string]any{"project": name, "id": id})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Added role %s", id), err)
 }
 
-func (s *Server) removeRole(ctx *hime.Context) error {
+func (s *Server) removeProjectRole(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
 	id := ctx.PostFormValue("id")
-	err := s.cfg.RemoveAllowedRole(id)
-	s.auditAction(ctx, audit.ActionConfigRemoveRole, err, map[string]any{"id": id})
-	return s.configRedirect(ctx, fmt.Sprintf("Removed role %s", id), err)
+	err := s.cfg.RemoveProjectAllowedRole(name, id)
+	s.auditAction(ctx, audit.ActionConfigRemoveRole, err, map[string]any{"project": name, "id": id})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Removed role %s", id), err)
 }
 
 func (s *Server) addChannel(ctx *hime.Context) error {

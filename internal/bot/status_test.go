@@ -25,16 +25,11 @@ func TestStatusSnapshot(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		Projects: config.PathProjects(map[string]string{"app": dir, "api": dir}),
-		AllowedUsers: map[string]struct{}{
-			"u1": {},
+		Projects: config.ProjectsMap{
+			"app": {Path: dir, AllowedUserIDs: []string{"u1"}, AllowedRoleIDs: []string{"r1"}},
+			"api": {Path: dir},
 		},
-		AllowedRoles: map[string]struct{}{
-			"r1": {},
-		},
-		AllowedUserIDs: []string{"u1"},
-		AllowedRoleIDs: []string{"r1"},
-		DataDir:        dir,
+		DataDir: dir,
 	}
 	b := New(cfg, store, hist)
 
@@ -62,8 +57,8 @@ func TestStatusSnapshot(t *testing.T) {
 	if snap.ProjectCount != 2 {
 		t.Fatalf("ProjectCount=%d", snap.ProjectCount)
 	}
-	if snap.AllowUsers != 1 || snap.AllowRoles != 1 {
-		t.Fatalf("allow users=%d roles=%d", snap.AllowUsers, snap.AllowRoles)
+	if snap.EmptyMemberProjects != 1 {
+		t.Fatalf("EmptyMemberProjects=%d want 1 (api)", snap.EmptyMemberProjects)
 	}
 	if snap.ActiveCount != 1 || len(snap.ActiveRuns) != 1 {
 		t.Fatalf("active: count=%d runs=%+v", snap.ActiveCount, snap.ActiveRuns)

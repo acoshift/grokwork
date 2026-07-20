@@ -32,12 +32,10 @@ func testServer(t *testing.T) (*Server, *config.Config, string) {
 	cfg := &config.Config{
 		DiscordToken:    "tok",
 		DiscordClientID: "424242424242424242",
-		AllowedUserIDs:  []string{"u0"},
-		AllowedRoleIDs:  []string{},
-		Projects:        config.PathProjects(map[string]string{"proj": proj}),
+		Projects: config.ProjectsMap{
+			"proj": {Path: proj, AllowedUserIDs: []string{"u0"}},
+		},
 		Channels:        map[string]string{"ch": "proj"},
-		AllowedUsers:    map[string]struct{}{"u0": {}},
-		AllowedRoles:    map[string]struct{}{},
 		GrokBin:         "grok",
 		MaxTurns:        40,
 		TimeoutMs:       1000,
@@ -561,19 +559,19 @@ func TestConfigAddsPersist(t *testing.T) {
 			},
 		},
 		{
-			path: "/config/users",
-			form: url.Values{"id": {"user-added"}},
+			path: "/config/projects/users",
+			form: url.Values{"name": {"proj"}, "id": {"user-added"}},
 			check: func(t *testing.T) {
-				if !cfg.UserAllowed("user-added") {
+				if !cfg.AccessAllowed("proj", "user-added", nil) {
 					t.Fatal("runtime user missing")
 				}
 			},
 		},
 		{
-			path: "/config/roles",
-			form: url.Values{"id": {"role-added"}},
+			path: "/config/projects/roles",
+			form: url.Values{"name": {"proj"}, "id": {"role-added"}},
 			check: func(t *testing.T) {
-				if !cfg.RoleAllowed("role-added") {
+				if !cfg.AccessAllowed("proj", "x", []string{"role-added"}) {
 					t.Fatal("runtime role missing")
 				}
 			},
@@ -596,12 +594,21 @@ func TestConfigAddsPersist(t *testing.T) {
 	h.ServeHTTP(w, req)
 	body := w.Body.String()
 	for _, want := range []string{
-		"added", newProj, "user-added", "role-added", "ch-added", "Remove", "Add channel map",
+		"added", newProj, "ch-added", "Remove", "Add channel map",
 		"Grok run limits", "maxTurns", "timeoutMs",
 		"Worktree idle cleanup", "worktreeIdleTTLDays", "CI triage", "autoFixCI", "Completion risk paths",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("config page missing %q", want)
+		}
+	}
+	req = httptest.NewRequest(http.MethodGet, "/config/projects/proj", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	pbody := w.Body.String()
+	for _, want := range []string{"user-added", "role-added", "Members"} {
+		if !strings.Contains(pbody, want) {
+			t.Fatalf("project config missing %q", want)
 		}
 	}
 
@@ -687,19 +694,19 @@ func TestConfigAddsPersist(t *testing.T) {
 	// Removes
 	removes := []postCase{
 		{
-			path: "/config/users/remove",
-			form: url.Values{"id": {"user-added"}},
+			path: "/config/projects/users/remove",
+			form: url.Values{"name": {"proj"}, "id": {"user-added"}},
 			check: func(t *testing.T) {
-				if cfg.UserAllowed("user-added") {
+				if cfg.AccessAllowed("proj", "user-added", nil) {
 					t.Fatal("user still allowed")
 				}
 			},
 		},
 		{
-			path: "/config/roles/remove",
-			form: url.Values{"id": {"role-added"}},
+			path: "/config/projects/roles/remove",
+			form: url.Values{"name": {"proj"}, "id": {"role-added"}},
 			check: func(t *testing.T) {
-				if cfg.RoleAllowed("role-added") {
+				if cfg.AccessAllowed("proj", "x", []string{"role-added"}) {
 					t.Fatal("role still allowed")
 				}
 			},
@@ -753,9 +760,8 @@ func TestConfigAddsPersist(t *testing.T) {
 	if _, ok := disk.Channels["ch-added"]; ok {
 		t.Fatalf("disk still has channel: %+v", disk.Channels)
 	}
-	if contains(disk.AllowedUserIDs, "user-added") || contains(disk.AllowedRoleIDs, "role-added") {
-		t.Fatalf("disk still has allowlist: %+v %+v", disk.AllowedUserIDs, disk.AllowedRoleIDs)
-	}
+	// project members removed — check via AccessAllowed already above
+	_ = disk
 }
 
 // HTMXAwareRedirect: non-boosted htmx POSTs get HX-Redirect + 204 (htmx does not

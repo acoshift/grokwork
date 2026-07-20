@@ -45,7 +45,7 @@ Wiring lives in `main.go`: `config.Load()` → `sessionstore.New` → `history.N
 
 ### Message pipeline (`internal/bot`, the bulk of the code)
 
-`onMessage` (bot.go) gates: not-a-bot → in-guild → mentions bot → allowlist (fail-closed when both user and role lists are empty). Then `ParseMessage` (prompt.go) classifies into text commands (`/status`, `/reset`, `/cancel`, `/claim`, `/hand-off`, `/brief`, `/fix-ci`, …) vs `KindTask`. Text commands via `@Grok` mention are the deliberate primary UX — native Discord slash commands were intentionally rejected (TODO.md).
+`onMessage` (bot.go) gates: not-a-bot → in-guild → mentions bot → resolve channel→project → **per-project** allowlist (fail-closed when that project’s user and role lists are both empty). Then `ParseMessage` (prompt.go) classifies into text commands (`/status`, `/reset`, `/cancel`, `/claim`, `/hand-off`, `/brief`, `/fix-ci`, …) vs `KindTask`. Text commands via `@Grok` mention are the deliberate primary UX — native Discord slash commands were intentionally rejected (TODO.md).
 
 A task then flows through `handleTask` (async):
 1. `resolveProject` — project comes **only** from the channel→project config map (parent channel when inside a thread); users can never switch projects in chat.
@@ -80,4 +80,5 @@ A task then flows through `handleTask` (async):
 
 - Message cap is 1900 chars (`maxMsg`); long output is chunked/sealed.
 - Local project paths must never leak into Discord messages.
-- Ownership: first `@Grok` author owns the thread; `/cancel` and `/reset` require owner, co-owner, or a Discord mod (Admin / Manage Messages / Manage Threads); anyone allowlisted may queue tasks.
+- Ownership: first `@Grok` author owns the thread; `/cancel` and `/reset` require owner, co-owner, or a Discord mod (Admin / Manage Messages / Manage Threads); anyone on that **project’s** allowlist may queue tasks.
+- Project members: `projects.<name>.allowedUserIds` / `allowedRoleIds`. Web UI filters projects by user ID membership (admins see all). Legacy root allowlists migrate into empty projects on load.

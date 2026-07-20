@@ -28,12 +28,15 @@ func (s *Server) commitsIndex(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Title = "Commits"
 	d.IsCommits = true
-	d.Config = s.cfg.Snapshot()
+	d.Config = s.filterSnapshotToVisible(ctx, s.cfg.Snapshot())
 	return s.viewPage(ctx, "commits_index", d)
 }
 
 func (s *Server) commitsList(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return ctx.Status(http.StatusForbidden).Error(err.Error())
+	}
 	path, err := s.projectPath(project)
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).Error(err.Error())
@@ -84,6 +87,9 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 
 func (s *Server) commitDetail(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return ctx.Status(http.StatusForbidden).Error(err.Error())
+	}
 	sha := strings.TrimSpace(ctx.PathValue("sha"))
 	if sha == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing commit sha")

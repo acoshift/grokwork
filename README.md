@@ -41,7 +41,7 @@ cp config.example.json config.json
 |--------|---------|
 | `discordToken` | Bot token (or `DISCORD_BOT_TOKEN` env) |
 | `discordClientId` | Optional application/client ID for the install URL (decoded from the token when empty) |
-| `allowedUserIds` | Who may invoke Grok (fail-closed if empty **and** no roles) |
+| `projects.<name>.allowedUserIds` / `allowedRoleIds` | Per-project Discord allowlist (fail-closed when both empty). Legacy root `allowedUserIds`/`allowedRoleIds` are migrated into empty projects on load, then cleared. |
 | `allowedRoleIds` | Optional role allowlist |
 | `projects` | Name → **absolute** path string, or object `{ "path", "github", "linear", "discordChannelId", "discordGuildId" }` |
 | `channels` | Discord channel ID → project name (**required**; only way to select a project) |
@@ -122,7 +122,7 @@ By default the UI stays **open on the private network** (no login) so existing c
 | `webAuth.adminDiscordIds` | Discord user IDs who may change config / prune worktrees |
 | `webAuth.memberDiscordIds` / `viewerDiscordIds` | Optional explicit lists |
 | `webAuth.features.*` | `githubWrites`, `merge`, `startSessions` (see table above; all default false) |
-| Bot `allowedUserIds` | Allowlisted users get **member** if not in the lists above |
+| Project `allowedUserIds` | Users listed on any project get **member** if not in the lists above |
 | `GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID` | If `adminDiscordIds` is empty, merged on boot as the first admin |
 
 When enabled: unauthenticated page GETs redirect to `/login`; config and worktree **POST**s require an **admin** session + CSRF. Static assets stay public. Discord `@Grok` is unchanged (still uses the bot allowlist).
@@ -237,7 +237,7 @@ While a task is running, the bot updates the status message every few seconds wi
 
 ## Security
 
-- Allowlist users/roles. Empty both lists → everyone is denied.
+- Per-project members (users/roles). Empty both lists on a project → nobody can `@Grok` there.
 - Prefer a private Discord server/channels.
 - `yolo: true` lets Grok edit files and run commands under project cwd. Review diffs.
 - Keep `config.json` local only (gitignored).
