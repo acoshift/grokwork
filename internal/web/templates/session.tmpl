@@ -1,0 +1,75 @@
+{{define "content"}}
+<h1 id="page-session">Session</h1>
+<p class="sub">
+  <span class="mono">{{.ThreadID}}</span>
+  {{if .Project}} · <strong>{{.Project}}</strong>{{end}}
+  {{if .DiscordURL}} · <a href="{{.DiscordURL}}" target="_blank" rel="noopener">Open in Discord</a>{{end}}
+  · <a href="/history/{{.ThreadID}}">History</a>
+  · <a href="/sessions/{{.ThreadID}}/diff">Worktree diff</a>
+</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+<div class="section card">
+  <h2>Work unit</h2>
+  <p class="sub" style="margin:0">
+    {{if .SessionEntry.Label}}<span class="badge">{{.SessionEntry.Label}}</span>{{else}}<span class="badge">open</span>{{end}}
+    {{if .SessionEntry.Origin}} · origin <span class="mono">{{.SessionEntry.Origin}}</span>{{end}}
+    {{if .SessionEntry.OwnerName}} · owner {{.SessionEntry.OwnerName}}{{end}}
+    {{if .SessionEntry.WorktreeBranch}} · branch <span class="mono">{{.SessionEntry.WorktreeBranch}}</span>{{end}}
+  </p>
+  {{if .SessionEntry.Goal}}
+  <p style="margin-top:0.75rem"><strong>Goal</strong><br>{{.SessionEntry.Goal}}</p>
+  {{end}}
+  {{if .SessionEntry.Issues}}
+  <p style="margin-top:0.75rem"><strong>Bound issues</strong></p>
+  <ul>
+    {{range .SessionEntry.Issues}}
+    <li class="mono">{{.DisplayRef}} ({{.EffectiveKeyword}})</li>
+    {{end}}
+  </ul>
+  {{end}}
+  {{if .RunBusy}}
+  <p style="margin-top:0.75rem">
+    <span class="badge">running</span>
+    {{if .RunElapsed}} · {{.RunElapsed}}{{end}}
+    {{if .RunQueue}} · {{.RunQueue}} queued{{end}}
+  </p>
+  {{if .RunPhases}}<p class="mono">{{.RunPhases}}</p>{{end}}
+  {{if .RunActivity}}<p class="muted"><em>{{.RunActivity}}</em></p>{{end}}
+  {{else}}
+  <p class="muted" style="margin-top:0.75rem">No active Grok run on this thread.</p>
+  {{end}}
+</div>
+
+<div class="section">
+  <h2>Turns ({{len .Thread.Turns}})</h2>
+  {{if .Thread.Turns}}
+  <div class="turns" id="turns">
+    {{range $i, $t := .Thread.Turns}}
+    <article class="turn">
+      <header class="turn-meta">
+        <span class="badge">#{{add $i 1}}</span>
+        <span class="badge status-{{$t.Status}}">{{$t.Status}}</span>
+        {{if $t.User}}<span>{{$t.User}}</span>{{end}}
+      </header>
+      <div class="bubble user">
+        <div class="bubble-label">User</div>
+        <pre class="bubble-body">{{$t.Prompt}}</pre>
+      </div>
+      <div class="bubble assistant">
+        <div class="bubble-label">Grok</div>
+        {{if $t.Response}}
+        <pre class="bubble-body">{{$t.Response}}</pre>
+        {{else}}
+        <pre class="bubble-body muted">(no response text yet)</pre>
+        {{end}}
+      </div>
+    </article>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty">No turns yet. If a run just started, refresh after it finishes.</div>
+  {{end}}
+</div>
+{{end}}

@@ -4,10 +4,47 @@
   <a href="/projects/{{.Project}}/linear">← Linear list</a>
   {{if .LinearIssue.URL}} · <a href="{{.LinearIssue.URL}}" target="_blank" rel="noopener">Open in Linear</a>{{end}}
 </p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 <div class="section card">
   <h2>{{.LinearIssue.Title}}</h2>
   <p class="sub" style="margin:0"><span class="badge">{{.LinearIssue.State}}</span> · team <span class="mono">{{.LinearIssue.TeamKey}}</span></p>
   <pre class="bubble-body" style="margin-top:1rem;white-space:pre-wrap;">{{.LinearIssue.Description}}</pre>
 </div>
+
+{{if and .CanStartSession .LinearEnabled}}
+<div class="section card" id="linear-fix-form">
+  <h2>Fix with Grok</h2>
+  <p class="sub">Starts or reuses a Discord work unit for this Linear issue (Fixes bind). Do not merge from Grok.</p>
+  {{if .ShowFixPicker}}
+  <p class="flash">Multiple sessions already bind this issue. Pick one, or force a new thread.</p>
+  <table class="table">
+    <thead><tr><th>Thread</th><th>Label</th><th>Goal</th><th></th></tr></thead>
+    <tbody>
+    {{range .FixHits}}
+      <tr>
+        <td class="mono">{{.ThreadID}}</td>
+        <td><span class="badge">{{.Label}}</span>{{if .Busy}} · busy{{end}}</td>
+        <td>{{.Goal}}</td>
+        <td>
+          <form method="post" action="/projects/{{$.Project}}/linear/{{$.LinearIssue.Identifier}}/fix" style="display:inline">
+            {{template "csrf" $}}
+            <input type="hidden" name="thread_id" value="{{.ThreadID}}">
+            <button type="submit">Continue</button>
+          </form>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  <form method="post" action="/projects/{{.Project}}/linear/{{.LinearIssue.Identifier}}/fix">
+    {{template "csrf" $}}
+    <label class="check">
+      <input type="checkbox" name="force_new" value="1"> Always start new thread
+    </label>
+    <div class="form-actions"><button type="submit" id="btn-fix-linear">Fix with Grok</button></div>
+  </form>
+</div>
+{{end}}
 {{end}}

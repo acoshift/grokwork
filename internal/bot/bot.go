@@ -210,7 +210,11 @@ func (b *Bot) clearQueue(threadID string) int {
 	return n
 }
 
-var errQueueFull = fmt.Errorf("follow-up queue is full (max %d)", maxFollowupQueue)
+// ErrQueueFull is returned when a thread's follow-up queue is at capacity.
+var ErrQueueFull = fmt.Errorf("follow-up queue is full (max %d)", maxFollowupQueue)
+
+// errQueueFull is the historical name used inside this package.
+var errQueueFull = ErrQueueFull
 
 func (b *Bot) Register(s *discordgo.Session) {
 	b.setDiscord(s)

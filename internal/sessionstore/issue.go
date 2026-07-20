@@ -170,6 +170,9 @@ func NormalizeIssueKeyword(s string) string {
 	}
 }
 
+// SameIssue reports whether two tracked issues refer to the same ticket.
+func SameIssue(a, b TrackedIssue) bool { return sameIssue(a, b) }
+
 // sameIssue reports whether two tracked issues refer to the same ticket.
 func sameIssue(a, b TrackedIssue) bool {
 	// Never match across providers.

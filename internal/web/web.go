@@ -39,6 +39,8 @@ type Server struct {
 	// Test injectables (nil → production defaults).
 	ghRunner  ghpr.Runner
 	linearNew func(apiKey string) *linear.Client
+	// Fix-with-Grok rate limit (lazy init).
+	startLimit *startRateLimiter
 }
 
 // New builds a hime app with dashboard, history, config, and SSE routes.
@@ -133,6 +135,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("linear_detail", "layout.tmpl", "linear_detail.tmpl")
 	tp.ParseFiles("pr_detail", "layout.tmpl", "pr_detail.tmpl")
 	tp.ParseFiles("diff", "layout.tmpl", "diff.tmpl")
+	tp.ParseFiles("session", "layout.tmpl", "session.tmpl")
 
 	static, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -162,6 +165,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /prs/{owner}/{repo}/{n}", s.requireAuth(hime.Handler(s.prDetail)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}/diff", s.requireAuth(hime.Handler(s.prDiffPage)))
 	mux.Handle("GET /sessions/{threadID}/diff", s.requireAuth(hime.Handler(s.sessionDiffPage)))
+	mux.Handle("GET /sessions/{threadID}", s.requireAuth(hime.Handler(s.sessionPage)))
 	// GitHub writes (PR8–9): always registered; request-time feature + role gates.
 	mux.Handle("POST /projects/{project}/issues/{n}/comments",
 		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postIssueComment))))
@@ -171,6 +175,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postPRClose))))
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/merge",
 		s.requireFeature("merge", s.requireAdmin(hime.Handler(s.postPRMerge))))
+	// Fix with Grok (PR11a)
+	mux.Handle("POST /projects/{project}/issues/{n}/fix",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssueFix))))
+	mux.Handle("POST /projects/{project}/linear/{identifier}/fix",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postLinearFix))))
 	mux.Handle("GET /events", s.requireAuth(http.HandlerFunc(s.sse)))
 	mux.Handle("GET /partials/dashboard/stats", s.requireAuth(hime.Handler(s.partialDashboardStats)))
 	mux.Handle("GET /partials/dashboard/runs", s.requireAuth(hime.Handler(s.partialDashboardRuns)))
@@ -265,9 +274,20 @@ type pageData struct {
 	DiffBase      string
 	ThreadID      string
 	// Write UI flags (from config snapshot + session)
-	CanGitHubWrite bool
-	CanMerge       bool
-	WebMergeMethod string
+	CanGitHubWrite  bool
+	CanMerge        bool
+	CanStartSession bool
+	WebMergeMethod  string
+	// Fix-with-Grok / session view
+	FixHits      []bot.IssueSessionHit
+	ShowFixPicker bool
+	SessionEntry sessionstore.Entry
+	DiscordURL   string
+	RunActivity  string
+	RunPhases    string
+	RunElapsed   string
+	RunBusy      bool
+	RunQueue     int
 }
 
 func (s *Server) basePage(ctx *hime.Context) pageData {
@@ -279,6 +299,7 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 	// Write affordances: feature on + (auth off never enables Feature*; auth on needs role).
 	d.CanGitHubWrite = s.cfg.FeatureGitHubWrites()
 	d.CanMerge = s.cfg.FeatureMerge()
+	d.CanStartSession = s.cfg.FeatureStartSessions()
 	if !d.AuthEnabled {
 		return d
 	}
@@ -294,6 +315,7 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 		// Gate UI by role (handlers still enforce).
 		if !config.RoleAtLeast(sess.Role, config.WebRoleMember) {
 			d.CanGitHubWrite = false
+			d.CanStartSession = false
 		}
 		if !config.RoleAtLeast(sess.Role, config.WebRoleAdmin) {
 			d.CanMerge = false
@@ -301,6 +323,7 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 	} else {
 		d.CanGitHubWrite = false
 		d.CanMerge = false
+		d.CanStartSession = false
 	}
 	return d
 }

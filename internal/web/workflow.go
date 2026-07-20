@@ -169,6 +169,11 @@ func (s *Server) issueDetail(ctx *hime.Context) error {
 	} else if viewErr != nil {
 		d.Error = viewErr.Error()
 	}
+	d.ShowFixPicker = ctx.FormValue("picker") == "1"
+	s.attachFixPicker(&d, project, active.Owner, active.Repo, n, "")
+	if d.ShowFixPicker || len(d.FixHits) > 1 {
+		d.ShowFixPicker = true
+	}
 	return s.viewPage(ctx, "issue_detail", d)
 }
 
@@ -209,6 +214,9 @@ func (s *Server) linearDetail(ctx *hime.Context) error {
 	}
 	client := s.linearClient(project)
 	issue, err := client.GetByIdentifier(ctx.Context(), id)
+	if strings.TrimSpace(issue.Identifier) == "" {
+		issue.Identifier = id
+	}
 	d := s.basePage(ctx)
 	d.Title = id + " · " + project
 	d.IsLinear = true
@@ -216,8 +224,16 @@ func (s *Server) linearDetail(ctx *hime.Context) error {
 	d.LinearTeam = s.cfg.ProjectLinearTeamKey(project)
 	d.LinearIssue = issue
 	d.LinearEnabled = true
-	if err != nil {
+	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
+	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
+		d.Error = e
+	} else if err != nil {
 		d.Error = err.Error()
+	}
+	d.ShowFixPicker = ctx.FormValue("picker") == "1"
+	s.attachFixPicker(&d, project, "", "", 0, id)
+	if d.ShowFixPicker || len(d.FixHits) > 1 {
+		d.ShowFixPicker = true
 	}
 	return s.viewPage(ctx, "linear_detail", d)
 }

@@ -18,6 +18,49 @@
   <pre class="bubble-body" style="margin-top:1rem;white-space:pre-wrap;">{{.Issue.Body}}</pre>
 </div>
 
+{{if .CanStartSession}}
+<div class="section card" id="issue-fix-form">
+  <h2>Fix with Grok</h2>
+  <p class="sub">Starts or reuses a Discord work unit for this issue (Fixes bind). Grok opens/updates a PR; it does not merge.</p>
+  {{if .ShowFixPicker}}
+  <p class="flash">Multiple sessions already bind this issue. Pick one, or force a new thread.</p>
+  <table class="table">
+    <thead><tr><th>Thread</th><th>Label</th><th>Goal</th><th>Owner</th><th></th></tr></thead>
+    <tbody>
+    {{range .FixHits}}
+      <tr>
+        <td class="mono">{{.ThreadID}}</td>
+        <td><span class="badge">{{.Label}}</span>{{if .Busy}} · busy{{end}}</td>
+        <td>{{.Goal}}</td>
+        <td>{{.OwnerName}}</td>
+        <td>
+          <form method="post" action="/projects/{{$.Project}}/issues/{{$.Issue.Number}}/fix" style="display:inline">
+            {{template "csrf" $}}
+            <input type="hidden" name="owner" value="{{$.ActiveOwner}}">
+            <input type="hidden" name="repo" value="{{$.ActiveRepo}}">
+            <input type="hidden" name="thread_id" value="{{.ThreadID}}">
+            <button type="submit">Continue</button>
+          </form>
+        </td>
+      </tr>
+    {{else}}
+      <tr><td colspan="5" class="muted">No candidates (they may be terminal).</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  <form method="post" action="/projects/{{.Project}}/issues/{{.Issue.Number}}/fix">
+    {{template "csrf" $}}
+    <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    <label class="check">
+      <input type="checkbox" name="force_new" value="1"> Always start new thread
+    </label>
+    <div class="form-actions"><button type="submit" id="btn-fix-github">Fix with Grok</button></div>
+  </form>
+</div>
+{{end}}
+
 {{if .CanGitHubWrite}}
 <div class="section card" id="issue-comment-form">
   <h2>Add comment</h2>

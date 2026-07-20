@@ -31,6 +31,7 @@ const (
 	ActionPRComment           = "pr.comment"
 	ActionPRClose             = "pr.close"
 	ActionPRMerge             = "pr.merge"
+	ActionSessionStart        = "session.start" // Fix with Grok / web session start
 )
 
 // ActorAnonymous is used when web auth is off or no session is present.
