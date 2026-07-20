@@ -48,27 +48,6 @@
      hx-sync="this:replace">
   {{template "ship_table" .}}
 </div>
-
-<div class="section">
-  <details class="digest">
-    <summary>
-      <h2>Lead digest</h2>
-      <span class="muted">plain-text summary of the current view — copy for standups or lead chat</span>
-    </summary>
-    <div class="digest-body">
-      <div class="live-region"
-           id="live-ship-digest"
-           hx-get="{{route "partial.ship.digest"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
-           hx-trigger="sse:ship"
-           hx-target="this"
-           hx-select="unset"
-           hx-swap="innerHTML"
-           hx-sync="this:replace">
-        {{template "ship_digest" .}}
-      </div>
-    </div>
-  </details>
-</div>
 {{end}}
 
 {{define "ship_stats"}}
@@ -93,14 +72,6 @@
     <div class="value">{{.Ship.Approved}}</div>
     <div class="hint">merged {{.Ship.Merged}} · closed {{.Ship.Closed}}</div>
   </div>
-</div>
-{{end}}
-
-{{define "ship_digest"}}
-<textarea id="ship-digest" readonly rows="10" aria-label="Lead digest">{{.Ship.Digest}}</textarea>
-<div class="form-actions">
-  <button type="button" class="btn-secondary" data-copy-target="ship-digest" data-copy-status="copy-status">Copy digest</button>
-  <span class="muted" id="copy-status" style="font-size:0.85rem;"></span>
 </div>
 {{end}}
 

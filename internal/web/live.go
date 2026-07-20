@@ -80,7 +80,6 @@ func (s *Server) fpShip() string {
 			r.ThreadID, r.Number, r.State, r.Checks, r.Review, r.Label,
 			r.Running, r.ChecksFailing, r.Queue, r.UpdatedAt)
 	}
-	// Digest includes today's date; exclude pure date churn by not hashing Digest.
 	return hashFingerprint(b.String())
 }
 

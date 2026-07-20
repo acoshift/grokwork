@@ -96,7 +96,6 @@ func TestPagesRender(t *testing.T) {
 	}{
 		{"/", `id="page-dashboard"`},
 		{"/ship", `id="page-ship"`},
-		{"/ship", "Lead digest"},
 		{"/sessions", `id="page-sessions"`},
 		{"/history", `id="page-history"`},
 		{"/worktrees", `id="page-worktrees"`},
@@ -178,7 +177,6 @@ func TestPagesRender(t *testing.T) {
 			{"/partials/dashboard/stats", `id="stats"`, "dashboard"},
 			{"/partials/dashboard/runs", `id="runs-wrap"`, "dashboard"},
 			{"/partials/ship/stats", "CI failing", "ship"},
-			{"/partials/ship/digest", `id="ship-digest"`, "ship"},
 			{"/partials/ship/table", "Pull requests", "ship"},
 			{"/partials/history/table", "thread-99", "history"},
 			{"/partials/history/turns/thread-99", `id="turns"`, "history"},

@@ -115,7 +115,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"partial.dashboard.stats": "/partials/dashboard/stats",
 		"partial.dashboard.runs":  "/partials/dashboard/runs",
 		"partial.ship.stats":      "/partials/ship/stats",
-		"partial.ship.digest":     "/partials/ship/digest",
 		"partial.ship.table":      "/partials/ship/table",
 		"partial.history.table":   "/partials/history/table",
 		"partial.history.turns":   "/partials/history/turns/",
@@ -225,7 +224,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/dashboard/stats", s.requireAuth(hime.Handler(s.partialDashboardStats)))
 	mux.Handle("GET /partials/dashboard/runs", s.requireAuth(hime.Handler(s.partialDashboardRuns)))
 	mux.Handle("GET /partials/ship/stats", s.requireAuth(hime.Handler(s.partialShipStats)))
-	mux.Handle("GET /partials/ship/digest", s.requireAuth(hime.Handler(s.partialShipDigest)))
 	mux.Handle("GET /partials/ship/table", s.requireAuth(hime.Handler(s.partialShipTable)))
 	mux.Handle("GET /partials/history/table", s.requireAuth(hime.Handler(s.partialHistoryTable)))
 	mux.Handle("GET /partials/history/turns/{threadID}", s.requireAuth(hime.Handler(s.partialHistoryTurns)))
@@ -530,10 +528,6 @@ func (s *Server) shipPartialData(ctx *hime.Context) pageData {
 
 func (s *Server) partialShipStats(ctx *hime.Context) error {
 	return s.viewFragment(ctx, "ship", "ship_stats", s.shipPartialData(ctx))
-}
-
-func (s *Server) partialShipDigest(ctx *hime.Context) error {
-	return s.viewFragment(ctx, "ship", "ship_digest", s.shipPartialData(ctx))
 }
 
 func (s *Server) partialShipTable(ctx *hime.Context) error {

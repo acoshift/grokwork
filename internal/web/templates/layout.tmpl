@@ -866,41 +866,6 @@
     .toolbar .field { min-width: 11rem; flex: 0 1 14rem; }
     .toolbar button, .toolbar .btn { height: 2.5rem; }
 
-    /* ── Collapsible digest ──────────────────────────────────────────── */
-    details.digest {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-1);
-      padding: 0;
-    }
-    details.digest > summary {
-      cursor: pointer;
-      list-style: none;
-      display: flex;
-      align-items: center;
-      gap: 0.55rem;
-      padding: 0.85rem 1.1rem;
-      user-select: none;
-    }
-    details.digest > summary::-webkit-details-marker { display: none; }
-    details.digest > summary::after {
-      content: "";
-      flex-shrink: 0;
-      width: 1rem;
-      height: 1rem;
-      margin-left: auto;
-      background-image: var(--chev);
-      background-size: 1rem 1rem;
-      background-repeat: no-repeat;
-      background-position: center;
-      transition: transform 0.15s ease;
-    }
-    details.digest[open] > summary::after { transform: rotate(180deg); }
-    details.digest > summary h2 { margin: 0; font-size: 0.98rem; font-weight: 620; }
-    details.digest > summary .muted { font-size: 0.82rem; }
-    details.digest .digest-body { padding: 0 1.1rem 1rem; }
-
     /* ── Conversation turns ──────────────────────────────────────────── */
     .turns { display: flex; flex-direction: column; gap: 1.1rem; }
     .turn {

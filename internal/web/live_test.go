@@ -109,7 +109,7 @@ func TestLiveHTTPLaunch(t *testing.T) {
 				t.Fatalf("dashboard marker missing")
 			}
 		case "/ship":
-			if !strings.Contains(text, `id="page-ship"`) || !strings.Contains(text, "Lead digest") {
+			if !strings.Contains(text, `id="page-ship"`) {
 				t.Fatalf("ship board marker missing: %s", text)
 			}
 		case "/history":

@@ -3,7 +3,6 @@ package bot
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/acoshift/grokwork/internal/config"
@@ -119,9 +118,6 @@ func TestListShipBoard(t *testing.T) {
 	if open.Rows[0].State != "OPEN" || open.Rows[1].State != "DRAFT" {
 		t.Fatalf("states: %s %s", open.Rows[0].State, open.Rows[1].State)
 	}
-	if !strings.Contains(open.Digest, "acme/alpha#10") || !strings.Contains(open.Digest, "CI failing: 1") {
-		t.Fatalf("digest missing content:\n%s", open.Digest)
-	}
 
 	all := b.ListShipBoard("", "all")
 	if len(all.Rows) != 3 {
@@ -139,10 +135,6 @@ func TestListShipBoard(t *testing.T) {
 	merged := b.ListShipBoard("alpha", "merged")
 	if len(merged.Rows) != 1 || merged.Rows[0].Number != 9 {
 		t.Fatalf("merged: %+v", merged.Rows)
-	}
-	// Digest stays open-PR focused even when the table filter is terminal-only.
-	if !strings.Contains(merged.Digest, "acme/alpha#10") || strings.Contains(merged.Digest, "already shipped") {
-		t.Fatalf("merged filter digest should list open PRs only:\n%s", merged.Digest)
 	}
 	draft := b.ListShipBoard("beta", "draft")
 	if len(draft.Rows) != 1 || draft.Rows[0].Number != 3 {
