@@ -285,56 +285,33 @@ func (b *Bot) startPRReuse(threadID, project, cwd string, tracked sessionstore.T
 }
 
 func (b *Bot) startPRCreate(project, cwd string, tracked sessionstore.TrackedPR, prompt string, actor Actor, titleHint string) (FixStartResult, error) {
-	channelID, err := b.cfg.PreferDiscordChannel(project)
-	if err != nil {
-		return FixStartResult{}, err
+	if b.canCreateDiscordThread() {
+		channelID, err := b.cfg.PreferDiscordChannel(project)
+		if err != nil {
+			return FixStartResult{}, err
+		}
+		title := strings.TrimSpace(titleHint)
+		if title == "" {
+			title = tracked.Selector()
+		}
+		title = threadNameFromPrompt(title, actor.DisplayName)
+		starter := fmt.Sprintf("**Grok Work** · %s · started by %s (web)", tracked.Selector(), actor.String())
+		if u := strings.TrimSpace(tracked.URL); u != "" {
+			starter += "\n" + u
+		}
+		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
+		if err != nil {
+			return FixStartResult{}, fmt.Errorf("create workflow thread: %w", err)
+		}
+		discordURL := DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
+		if err := b.bindTrackedPR(threadID, project, tracked, actor, discordURL, true); err != nil {
+			return FixStartResult{}, err
+		}
+		return b.startWebTask(threadID, project, cwd, prompt, actor, discordURL, true)
 	}
-	if !b.DiscordReady() && b.threadAPI == nil {
-		return FixStartResult{}, ErrDiscordNotReady
-	}
-	title := strings.TrimSpace(titleHint)
-	if title == "" {
-		title = tracked.Selector()
-	}
-	title = threadNameFromPrompt(title, actor.DisplayName)
-	starter := fmt.Sprintf("**Grok Work** · %s · started by %s (web)", tracked.Selector(), actor.String())
-	if u := strings.TrimSpace(tracked.URL); u != "" {
-		starter += "\n" + u
-	}
-	threadID, err := b.CreateWorkflowThread(channelID, title, starter)
-	if err != nil {
-		return FixStartResult{}, fmt.Errorf("create workflow thread: %w", err)
-	}
-	discordURL := DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
-	if err := b.bindTrackedPR(threadID, project, tracked, actor, discordURL, true); err != nil {
-		return FixStartResult{}, err
-	}
-	pos, err := b.StartTask(StartTaskOpts{
-		ThreadID:      threadID,
-		Proj:          projectRef{Name: project, Cwd: cwd},
-		Prompt:        prompt,
-		Actor:         actor,
-		Source:        SourceWeb,
-		Origin:        SourceWeb,
-		CreatedBy:     actor.ID,
-		CreatedByName: actor.DisplayName,
-		DiscordURL:    discordURL,
-		DG:            b.Discord(),
+	return b.startWebNativeUnit(project, cwd, prompt, actor, func(unitID string) error {
+		return b.bindTrackedPR(unitID, project, tracked, actor, "", true)
 	})
-	if err != nil {
-		return FixStartResult{}, err
-	}
-	st := FixStatusStarted
-	if pos > 0 {
-		st = FixStatusQueued
-	}
-	return FixStartResult{
-		Status:     st,
-		ThreadID:   threadID,
-		QueuePos:   pos,
-		DiscordURL: discordURL,
-		Created:    true,
-	}, nil
 }
 
 func (b *Bot) bindTrackedPR(threadID, project string, tracked sessionstore.TrackedPR, actor Actor, discordURL string, isNew bool) error {

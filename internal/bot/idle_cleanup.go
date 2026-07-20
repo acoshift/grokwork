@@ -250,7 +250,7 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 			threadID: d.ThreadID,
 			project:  project,
 			path:     d.Path,
-			branch:   gitworktree.BranchName(d.ThreadID),
+			branch:   gitworktree.BranchNameForUnit(d.ThreadID),
 			mainCwd:  mainCwd,
 			last:     gitworktree.DirModTime(d.Path),
 			onDisk:   true,
@@ -275,7 +275,7 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 		}
 		branch := e.WorktreeBranch
 		if branch == "" {
-			branch = gitworktree.BranchName(threadID)
+			branch = gitworktree.BranchNameForUnit(threadID)
 		}
 		mainCwd := e.MainCwd
 		if mainCwd == "" {

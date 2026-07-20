@@ -122,16 +122,21 @@ func TestAddressCIReuseNoCreate(t *testing.T) {
 	}
 }
 
-func TestAddressCIDiscordDown503(t *testing.T) {
+func TestAddressCIDiscordDownWebNative(t *testing.T) {
 	srv, b := addressEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
 	bot.SetThreadAPIForTest(b, nil)
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
 	}
 	w := postFix(t, srv, "/prs/acme/app/9/address-ci", sid, csrf, url.Values{"project": {"proj"}})
-	if w.Code != http.StatusServiceUnavailable {
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/sessions/w_") {
+		t.Fatalf("Location=%q want web-native session", loc)
 	}
 }
 

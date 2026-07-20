@@ -260,9 +260,10 @@ func TestFixMultiHitPickerNoEnqueue(t *testing.T) {
 	}
 }
 
-func TestFixCreateDiscordDown503(t *testing.T) {
+func TestFixCreateDiscordDownWebNative(t *testing.T) {
 	srv, _, b := fixEnabledServer(t)
-	bot.SetThreadAPIForTest(b, nil) // no API, no Discord ready
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	bot.SetThreadAPIForTest(b, nil) // no API, no Discord ready → web-native unit
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
@@ -270,8 +271,12 @@ func TestFixCreateDiscordDown503(t *testing.T) {
 	w := postFix(t, srv, "/projects/proj/issues/99/fix", sid, csrf, url.Values{
 		"owner": {"acme"}, "repo": {"app"},
 	})
-	if w.Code != http.StatusServiceUnavailable {
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/sessions/w_") {
+		t.Fatalf("Location=%q want web-native /sessions/w_*", loc)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/acoshift/grok-discord/internal/gitworktree"
 	"github.com/acoshift/grok-discord/internal/sessionstore"
 )
 
@@ -154,6 +155,10 @@ func DiscordThreadURL(guildID, threadID string) string {
 	guildID = strings.TrimSpace(guildID)
 	threadID = strings.TrimSpace(threadID)
 	if guildID == "" || threadID == "" {
+		return ""
+	}
+	// Web-native units are not Discord channel snowflakes.
+	if gitworktree.IsWebUnitID(threadID) {
 		return ""
 	}
 	return "https://discord.com/channels/" + guildID + "/" + threadID

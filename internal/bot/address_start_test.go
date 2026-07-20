@@ -10,6 +10,7 @@ import (
 
 	"github.com/acoshift/grok-discord/internal/config"
 	"github.com/acoshift/grok-discord/internal/ghpr"
+	"github.com/acoshift/grok-discord/internal/gitworktree"
 	"github.com/acoshift/grok-discord/internal/history"
 	"github.com/acoshift/grok-discord/internal/sessionstore"
 )
@@ -179,13 +180,18 @@ func TestStartAddressCIPicker(t *testing.T) {
 
 func TestStartAddressCIDiscordDown(t *testing.T) {
 	b, _ := testAddressBot(t)
-	_, err := b.StartAddressCI(AddressCIOpts{
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	res, err := b.StartAddressCI(AddressCIOpts{
 		Project: "app", Owner: "acme", Repo: "app", Number: 1,
 		Actor: Actor{ID: "u", DisplayName: "U"},
 	})
-	if !errors.Is(err, ErrDiscordNotReady) {
-		t.Fatalf("%v", err)
+	if err != nil {
+		t.Fatalf("web-native address create: %v", err)
 	}
+	if !res.Created || !gitworktree.IsWebUnitID(res.ThreadID) {
+		t.Fatalf("%+v", res)
+	}
+	waitHistory(t, b, res.ThreadID, 1)
 }
 
 func TestStartContinueNoCreate(t *testing.T) {

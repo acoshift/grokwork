@@ -450,7 +450,7 @@ func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 	}
 	branch := e.WorktreeBranch
 	if branch == "" {
-		branch = gitworktree.BranchName(threadID)
+		branch = gitworktree.BranchNameForUnit(threadID)
 	}
 	path := ""
 	if e.WorktreeBranch != "" && e.Cwd != "" && e.Cwd != mainCwd {
@@ -462,7 +462,11 @@ func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 
 	if mainCwd != "" && gitworktree.IsRepo(mainCwd) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		cleaned, state, err := gitworktree.CleanupIfPRDone(ctx, mainCwd, b.cfg.DataDir, e.Project, threadID)
+		opts := gitworktree.EnsureOpts{BranchPrefix: gitworktree.PrefixForUnitID(threadID)}
+		if p := gitworktree.PrefixFromBranch(branch); p != "" {
+			opts.BranchPrefix = p
+		}
+		cleaned, state, err := gitworktree.CleanupIfPRDoneWith(ctx, mainCwd, b.cfg.DataDir, e.Project, threadID, opts)
 		if err != nil {
 			log.Printf("pr-status: CleanupIfPRDone thread=%s: %v — trying Remove", threadID, err)
 			if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {

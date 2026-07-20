@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/acoshift/grok-discord/internal/gitworktree"
 	"github.com/acoshift/grok-discord/internal/sessionstore"
 )
 
@@ -71,7 +72,8 @@ type FixStartResult struct {
 }
 
 // StartFix discovers or creates a work unit, binds the issue with Fixes, and StartTasks.
-// Reuse never calls CreateWorkflowThread. Create requires PreferDiscordChannel + DiscordReady.
+// Reuse never calls CreateWorkflowThread. Create prefers Discord when gateway/threadAPI is
+// available; otherwise allocates a web-native unit (w_*) on grok/web/ without Discord.
 func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 	if b == nil {
 		return FixStartResult{}, fmt.Errorf("bot is nil")
@@ -212,34 +214,73 @@ func (b *Bot) startFixReuse(threadID, project, cwd string, tracked sessionstore.
 }
 
 func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIssue, prompt string, opts FixStartOpts) (FixStartResult, error) {
-	channelID, err := b.cfg.PreferDiscordChannel(project)
-	if err != nil {
-		return FixStartResult{}, err
+	// Prefer Discord thread when gateway or test threadAPI is available.
+	if b.canCreateDiscordThread() {
+		channelID, err := b.cfg.PreferDiscordChannel(project)
+		if err != nil {
+			return FixStartResult{}, err
+		}
+		title := fixThreadTitle(tracked, opts)
+		starter := fixStarterContent(tracked, opts.Actor)
+		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
+		if err != nil {
+			return FixStartResult{}, fmt.Errorf("create workflow thread: %w", err)
+		}
+		discordURL := DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
+		if err := b.bindFixIssue(threadID, project, tracked, opts.Actor, discordURL, true); err != nil {
+			return FixStartResult{}, err
+		}
+		return b.startWebTask(threadID, project, cwd, prompt, opts.Actor, discordURL, true)
 	}
-	if !b.DiscordReady() && b.threadAPI == nil {
-		// threadAPI inject allows tests without a live gateway.
-		return FixStartResult{}, ErrDiscordNotReady
-	}
+	// Discord-down create: web-native unit (no createWorkflowThread).
+	return b.startWebNativeUnit(project, cwd, prompt, opts.Actor, func(unitID string) error {
+		return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
+	})
+}
 
-	title := fixThreadTitle(tracked, opts)
-	starter := fixStarterContent(tracked, opts.Actor)
-	threadID, err := b.CreateWorkflowThread(channelID, title, starter)
-	if err != nil {
-		return FixStartResult{}, fmt.Errorf("create workflow thread: %w", err)
+// canCreateDiscordThread reports whether create may open a Discord workflow thread.
+func (b *Bot) canCreateDiscordThread() bool {
+	if b == nil {
+		return false
 	}
-	discordURL := DiscordThreadURL(b.cfg.DiscordGuildIDValue(), threadID)
-	if err := b.bindFixIssue(threadID, project, tracked, opts.Actor, discordURL, true); err != nil {
-		return FixStartResult{}, err
+	return b.DiscordReady() || b.threadAPI != nil
+}
+
+// startWebNativeUnit allocates w_* + binds via bind, then StartTask (branch grok/web/ via unit id).
+func (b *Bot) startWebNativeUnit(project, cwd, prompt string, actor Actor, bind func(unitID string) error) (FixStartResult, error) {
+	unitID := gitworktree.NewWebUnitID()
+	if bind != nil {
+		if err := bind(unitID); err != nil {
+			return FixStartResult{}, err
+		}
 	}
+	// Pre-seed WorktreeBranch so cleanup/list see web prefix before first Ensure completes.
+	if b.sessions != nil {
+		_, _, _ = b.sessions.Patch(unitID, func(ent *sessionstore.Entry) {
+			if ent.WorktreeBranch == "" {
+				ent.WorktreeBranch = gitworktree.BranchNameForUnit(unitID)
+			}
+			if ent.Project == "" {
+				ent.Project = project
+			}
+			if ent.Origin == "" {
+				ent.Origin = SourceWeb
+			}
+		})
+	}
+	return b.startWebTask(unitID, project, cwd, prompt, actor, "", true)
+}
+
+func (b *Bot) startWebTask(threadID, project, cwd, prompt string, actor Actor, discordURL string, created bool) (FixStartResult, error) {
 	pos, err := b.StartTask(StartTaskOpts{
 		ThreadID:      threadID,
 		Proj:          projectRef{Name: project, Cwd: cwd},
 		Prompt:        prompt,
-		Actor:         opts.Actor,
+		Actor:         actor,
 		Source:        SourceWeb,
 		Origin:        SourceWeb,
-		CreatedBy:     opts.Actor.ID,
-		CreatedByName: opts.Actor.DisplayName,
+		CreatedBy:     actor.ID,
+		CreatedByName: actor.DisplayName,
 		DiscordURL:    discordURL,
 		DG:            b.Discord(),
 	})
@@ -255,7 +296,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		ThreadID:   threadID,
 		QueuePos:   pos,
 		DiscordURL: discordURL,
-		Created:    true,
+		Created:    created,
 	}, nil
 }
 

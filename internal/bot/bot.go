@@ -521,7 +521,7 @@ func (b *Bot) resetThreadCore(threadID string) (msg string, err error) {
 			path = gitworktree.WorktreePath(b.cfg.DataDir, e.Project, threadID)
 		}
 		if branch == "" {
-			branch = gitworktree.BranchName(threadID)
+			branch = gitworktree.BranchNameForUnit(threadID)
 		}
 		if mainCwd != "" && (path != "" || branch != "") {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -551,7 +551,8 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		return cwd, "", nil
 	}
 
-	if cleaned, state, cErr := gitworktree.CleanupIfPRDone(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID); cErr != nil {
+	opts := b.ensureOptsForUnit(threadID)
+	if cleaned, state, cErr := gitworktree.CleanupIfPRDoneWith(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID, opts); cErr != nil {
 		log.Printf("warn: worktree PR cleanup check thread=%s: %v", threadID, cErr)
 	} else if cleaned {
 		log.Printf("task: cleaned worktree after PR %s thread=%s", state, threadID)
@@ -566,11 +567,23 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 			return e.Cwd, e.WorktreeBranch, nil
 		}
 	}
-	tree, err := gitworktree.Ensure(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID)
+	tree, err := gitworktree.EnsureWith(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID, opts)
 	if err != nil {
 		return "", "", err
 	}
 	return tree.Path, tree.Branch, nil
+}
+
+// ensureOptsForUnit picks managed branch prefix from session WorktreeBranch or unit id form.
+func (b *Bot) ensureOptsForUnit(unitID string) gitworktree.EnsureOpts {
+	if b != nil && b.sessions != nil {
+		if e, ok := b.sessions.Get(unitID); ok {
+			if p := gitworktree.PrefixFromBranch(e.WorktreeBranch); p != "" {
+				return gitworktree.EnsureOpts{BranchPrefix: p}
+			}
+		}
+	}
+	return gitworktree.EnsureOpts{BranchPrefix: gitworktree.PrefixForUnitID(unitID)}
 }
 
 func remoteWorkPromptPrefix(branch string) string {

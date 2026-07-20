@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/acoshift/grok-discord/internal/config"
+	"github.com/acoshift/grok-discord/internal/gitworktree"
 	"github.com/acoshift/grok-discord/internal/history"
 	"github.com/acoshift/grok-discord/internal/sessionstore"
 )
@@ -200,15 +201,30 @@ func TestStartFixForceNewBypassesReuse(t *testing.T) {
 
 func TestStartFixCreateDiscordDown(t *testing.T) {
 	b, _ := testFixBot(t)
-	// no threadAPI, no Discord session
-	_, err := b.StartFix(FixStartOpts{
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	// no threadAPI, no Discord session → web-native unit
+	res, err := b.StartFix(FixStartOpts{
 		Kind: FixKindGitHub, Project: "app",
 		Owner: "acme", Repo: "app", Number: 1,
 		Title: "t", Actor: Actor{ID: "u", DisplayName: "U"},
 	})
-	if !errors.Is(err, ErrDiscordNotReady) {
-		t.Fatalf("err=%v", err)
+	if err != nil {
+		t.Fatalf("web-native create should succeed: %v", err)
 	}
+	if !res.Created || !gitworktree.IsWebUnitID(res.ThreadID) {
+		t.Fatalf("want web-native created unit, got %+v", res)
+	}
+	if res.DiscordURL != "" {
+		t.Fatalf("web-native must not set Discord URL: %+v", res)
+	}
+	e, ok := b.sessions.Get(res.ThreadID)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if !strings.HasPrefix(e.WorktreeBranch, gitworktree.WebBranchPrefix) {
+		t.Fatalf("branch=%q want web prefix", e.WorktreeBranch)
+	}
+	waitHistory(t, b, res.ThreadID, 1)
 }
 
 func TestStartFixReuseDiscordDownStillEnqueues(t *testing.T) {
