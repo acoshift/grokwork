@@ -123,8 +123,13 @@ func TestAuthOnUnauthenticatedRedirect(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("login status=%d body=%s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "Log in with Discord") {
+	body := w.Body.String()
+	if !strings.Contains(body, "Log in with Discord") {
 		t.Fatal("missing login button")
+	}
+	// Must not hx-boost OAuth: Discord CORS rejects HX-Request on authorize.
+	if !strings.Contains(body, `id="login-discord"`) || !strings.Contains(body, `hx-boost="false"`) {
+		t.Fatalf("login Discord link must set hx-boost=false, body snippet missing markers")
 	}
 	// Static still public.
 	req = httptest.NewRequest(http.MethodGet, "/static/htmx.min.js", nil)
@@ -149,6 +154,19 @@ func TestAuthOnOAuthCallbackAndAdminMutate(t *testing.T) {
 	loc := w.Header().Get("Location")
 	if !strings.Contains(loc, "discord.com/api/oauth2/authorize") || !strings.Contains(loc, "identify") {
 		t.Fatalf("authorize URL=%q", loc)
+	}
+	// Boosted htmx path: full client navigation via HX-Redirect (no CORS to Discord).
+	reqHX := httptest.NewRequest(http.MethodGet, "/auth/discord?next=/config", nil)
+	reqHX.Header.Set("HX-Request", "true")
+	reqHX.Header.Set("HX-Boosted", "true")
+	wHX := httptest.NewRecorder()
+	h.ServeHTTP(wHX, reqHX)
+	if wHX.Code != http.StatusNoContent {
+		t.Fatalf("oauth start HX status=%d want 204", wHX.Code)
+	}
+	hxLoc := wHX.Header().Get("HX-Redirect")
+	if !strings.Contains(hxLoc, "discord.com/api/oauth2/authorize") {
+		t.Fatalf("HX-Redirect=%q", hxLoc)
 	}
 	u, err := url.Parse(loc)
 	if err != nil {

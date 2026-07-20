@@ -8,7 +8,10 @@
   <div class="card" style="margin-top: 1rem;">
     <p class="sub" style="margin-top:0">Only operators listed as web admins/members/viewers or on the bot allowlist can continue after Discord login.</p>
     <p style="margin: 1rem 0 0;">
-      <a class="btn" href="{{route "auth.discord"}}{{if .LoginNext}}?next={{urlquery .LoginNext}}{{end}}">Log in with Discord</a>
+      {{/* Full navigation: hx-boost would AJAX /auth/discord then follow the Discord
+           OAuth redirect with HX-Request, which Discord CORS rejects. */}}
+      <a class="btn" href="{{route "auth.discord"}}{{if .LoginNext}}?next={{urlquery .LoginNext}}{{end}}"
+         hx-boost="false" id="login-discord">Log in with Discord</a>
     </p>
   </div>
 </div>

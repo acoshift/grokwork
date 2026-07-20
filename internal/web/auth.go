@@ -232,7 +232,16 @@ func (s *Server) oauthDiscordStart(ctx *hime.Context) error {
 		Secure:   s.cookieSecure(),
 		MaxAge:   int(oauthStateTTL.Seconds()),
 	})
-	return ctx.Redirect(discordAuthorizeURL(clientID, redirectURI, state))
+	authURL := discordAuthorizeURL(clientID, redirectURI, state)
+	// Boosted htmx would follow a 302 to Discord with HX-Request, which Discord
+	// CORS rejects ("HX-Request is not allowed by Access-Control-Allow-Headers").
+	// Force a client-side full navigation instead. Login link also uses hx-boost=false.
+	if ctx.Request.Header.Get("HX-Request") == "true" {
+		ctx.ResponseWriter().Header().Set("HX-Redirect", authURL)
+		ctx.ResponseWriter().WriteHeader(http.StatusNoContent)
+		return nil
+	}
+	return ctx.Redirect(authURL)
 }
 
 func (s *Server) oauthDiscordCallback(ctx *hime.Context) error {
