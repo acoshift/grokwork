@@ -596,7 +596,7 @@ func TestConfigAddsPersist(t *testing.T) {
 	for _, want := range []string{
 		"added", newProj, "ch-added", "Remove", "Add channel map",
 		"Grok run limits", "maxTurns", "timeoutMs",
-		"Worktree idle cleanup", "worktreeIdleTTLDays", "CI triage", "autoFixCI", "Completion risk paths",
+		"Worktree idle cleanup", "worktreeIdleTTLDays", "Crash-safe active runs", "resumeActiveRuns", "CI triage", "autoFixCI", "Completion risk paths",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("config page missing %q", want)
@@ -876,6 +876,40 @@ func TestProjectConfigPage(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("project page missing %q", want)
+		}
+	}
+}
+
+func TestProjectConfigMemberNames(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	// Seed a known member display name via a web login session.
+	if _, _, err := srv.LoginAs("u0", "Alice Example", config.WebRoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	// Another member only known from a past thread owner.
+	if err := cfg.AddProjectAllowedUser("proj", "u-owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.sessions.Set("t-owner", sessionstore.Entry{
+		SessionID: "s-owner", Project: "proj",
+		OwnerID: "u-owner", OwnerName: "Owner Bob",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/config/projects/proj", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"u0", "Alice Example",
+		"u-owner", "Owner Bob",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("project members missing %q", want)
 		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -166,6 +167,29 @@ func (st *sessionStore) Delete(id string) error {
 	}
 	delete(st.sessions, id)
 	return st.saveLocked()
+}
+
+// displayNames returns Discord user id → display name for non-expired sessions.
+func (st *sessionStore) displayNames() map[string]string {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	out := map[string]string{}
+	if st.sessions == nil {
+		return out
+	}
+	now := time.Now()
+	for _, s := range st.sessions {
+		if now.After(s.ExpiresAt) {
+			continue
+		}
+		id := strings.TrimSpace(s.DiscordUserID)
+		name := strings.TrimSpace(s.DisplayName)
+		if id == "" || name == "" {
+			continue
+		}
+		out[id] = name
+	}
+	return out
 }
 
 func randomToken(nBytes int) (string, error) {

@@ -291,8 +291,9 @@ type pageData struct {
 	IdleTTLDays int
 	Config      config.Snapshot
 	// Per-project config page (/config/projects/{name}).
-	ProjectItem config.ProjectItem
-	SSEPath     string
+	ProjectItem       config.ProjectItem
+	DiscordUserNames  map[string]string // Discord user id → display name (best-effort)
+	SSEPath           string
 	// Auth chrome
 	AuthEnabled bool
 	IsAdmin     bool // true when auth off, or session role ≥ admin
@@ -497,9 +498,70 @@ func (s *Server) projectConfigPage(ctx *hime.Context) error {
 	d.Config = snap
 	d.Project = item.Name
 	d.ProjectItem = *item
+	d.DiscordUserNames = s.resolveDiscordUserNames(item.AllowedUserIDs)
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
 	return s.viewPage(ctx, "project_config", d)
+}
+
+// resolveDiscordUserNames maps Discord user snowflakes to display names.
+// Best-effort: web logins, past thread owners, then live Discord User lookup.
+func (s *Server) resolveDiscordUserNames(ids []string) map[string]string {
+	out := make(map[string]string, len(ids))
+	need := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		need[id] = struct{}{}
+	}
+	if len(need) == 0 {
+		return out
+	}
+	take := func(id, name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		if _, ok := need[id]; !ok {
+			return
+		}
+		out[id] = name
+		delete(need, id)
+	}
+	if s.webSessions != nil {
+		for id, name := range s.webSessions.displayNames() {
+			take(id, name)
+		}
+	}
+	if s.sessions != nil {
+		for _, listed := range s.sessions.List() {
+			e := listed.Entry
+			take(e.OwnerID, e.OwnerName)
+			if created := strings.TrimSpace(e.CreatedBy); created != "" && !strings.HasPrefix(created, "web:") {
+				take(created, e.CreatedByName)
+			}
+			if len(need) == 0 {
+				return out
+			}
+		}
+	}
+	if len(need) == 0 || s.bot == nil {
+		return out
+	}
+	dg := s.bot.Discord()
+	if dg == nil {
+		return out
+	}
+	for id := range need {
+		u, err := dg.User(id)
+		if err != nil || u == nil {
+			continue
+		}
+		take(id, u.DisplayName())
+	}
+	return out
 }
 
 func (s *Server) worktreesPage(ctx *hime.Context) error {
@@ -785,6 +847,8 @@ func (s *Server) updateSettings(ctx *hime.Context) error {
 		err = s.updateRunSettingsErr(ctx)
 	case "board":
 		err = s.updateBoardSettingsErr(ctx)
+	case "resume":
+		err = s.updateResumeSettingsErr(ctx)
 	default:
 		err = fmt.Errorf("unknown settings section %q", section)
 	}
@@ -847,9 +911,21 @@ func (s *Server) updateSettings(ctx *hime.Context) error {
 			msg += fmt.Sprintf("; digest channel %s", channel)
 		}
 		return s.configRedirect(ctx, msg, nil)
+	case "resume":
+		enabled := ctx.PostFormValue("resumeActiveRuns") == "1" || strings.EqualFold(ctx.PostFormValue("resumeActiveRuns"), "on")
+		msg := "Crash-safe resume disabled"
+		if enabled {
+			msg = "Crash-safe resume enabled"
+		}
+		return s.configRedirect(ctx, msg, nil)
 	default:
 		return s.configRedirect(ctx, "Settings saved", nil)
 	}
+}
+
+func (s *Server) updateResumeSettingsErr(ctx *hime.Context) error {
+	enabled := ctx.PostFormValue("resumeActiveRuns") == "1" || strings.EqualFold(ctx.PostFormValue("resumeActiveRuns"), "on")
+	return s.cfg.SetResumeActiveRuns(enabled)
 }
 
 func (s *Server) updateRunSettingsErr(ctx *hime.Context) error {

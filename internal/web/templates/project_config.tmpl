@@ -115,11 +115,13 @@
   {{if .ProjectItem.AllowedUserIDs}}
   <div class="table-scroll" style="margin-bottom:1rem;">
   <table>
-    <thead><tr><th>User ID</th><th></th></tr></thead>
+    <thead><tr><th>User</th><th></th></tr></thead>
     <tbody>
       {{range .ProjectItem.AllowedUserIDs}}
       <tr>
-        <td class="mono">{{.}}</td>
+        <td>
+          <span class="mono">{{.}}</span>{{with index $.DiscordUserNames .}} <span class="muted">{{.}}</span>{{end}}
+        </td>
         <td class="row-actions">
           <form method="post" action="{{route "config.removeProjectUser"}}" onsubmit="return confirm('Remove user {{.}}?');">
             {{template "csrf" $}}
