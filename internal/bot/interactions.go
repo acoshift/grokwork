@@ -69,7 +69,11 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 	case actionResetNo:
 		respondEphemeral(s, i, "Reset cancelled.")
 	case actionHistory:
-		respondEphemeral(s, i, historyHint(threadID, b.cfg.ListenAddr()))
+		base := ""
+		if b.cfg != nil {
+			base = b.cfg.WebPublicBaseURLValue()
+		}
+		respondEphemeral(s, i, historyHint(threadID, base))
 	default:
 		respondEphemeral(s, i, "Unknown action.")
 	}

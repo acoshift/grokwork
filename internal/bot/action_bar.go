@@ -150,57 +150,13 @@ func modalTextValue(data discordgo.ModalSubmitInteractionData, fieldID string) s
 	return ""
 }
 
-func historyHint(threadID string, listenAddr string) string {
+// historyHint is the ephemeral reply for the History action-bar button.
+// publicBaseURL is config webPublicBaseURL (or GROK_WORK_PUBLIC_BASE_URL); empty → path only.
+func historyHint(threadID string, publicBaseURL string) string {
 	path := "/history/" + threadID
-	base := publicHistoryBase(listenAddr)
+	base := strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
 	if base != "" {
 		return fmt.Sprintf("Thread history (admin UI):\n%s%s", base, path)
 	}
 	return fmt.Sprintf("Thread history (admin UI, private network):\n`%s`", path)
-}
-
-// publicHistoryBase turns a listen addr into an http origin when safe for a clickable URL.
-func publicHistoryBase(listenAddr string) string {
-	addr := strings.TrimSpace(listenAddr)
-	if addr == "" {
-		return ""
-	}
-	host, port, ok := splitHostPortLoose(addr)
-	if !ok {
-		return ""
-	}
-	switch host {
-	case "", "0.0.0.0", "::", "[::]":
-		host = "127.0.0.1"
-	}
-	host = strings.Trim(host, "[]")
-	if port == "" {
-		return ""
-	}
-	return "http://" + host + ":" + port
-}
-
-func splitHostPortLoose(addr string) (host, port string, ok bool) {
-	addr = strings.TrimSpace(addr)
-	if addr == "" {
-		return "", "", false
-	}
-	// :8787
-	if strings.HasPrefix(addr, ":") {
-		return "", strings.TrimPrefix(addr, ":"), true
-	}
-	// [ipv6]:port
-	if strings.HasPrefix(addr, "[") {
-		end := strings.LastIndex(addr, "]:")
-		if end < 0 {
-			return "", "", false
-		}
-		return addr[1:end], addr[end+2:], true
-	}
-	// host:port
-	i := strings.LastIndex(addr, ":")
-	if i <= 0 || i == len(addr)-1 {
-		return "", "", false
-	}
-	return addr[:i], addr[i+1:], true
 }

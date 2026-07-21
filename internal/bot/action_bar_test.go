@@ -94,24 +94,20 @@ func TestModalTextValue(t *testing.T) {
 	}
 }
 
-func TestPublicHistoryBase(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{":8787", "http://127.0.0.1:8787"},
-		{"0.0.0.0:8787", "http://127.0.0.1:8787"},
-		{"127.0.0.1:9000", "http://127.0.0.1:9000"},
-		{"tailscale-host:8787", "http://tailscale-host:8787"},
-		{"", ""},
-	}
-	for _, tc := range cases {
-		if got := publicHistoryBase(tc.in); got != tc.want {
-			t.Fatalf("publicHistoryBase(%q)=%q want %q", tc.in, got, tc.want)
-		}
-	}
-	hint := historyHint("abc", ":8787")
-	if !strings.Contains(hint, "http://127.0.0.1:8787/history/abc") {
+func TestHistoryHint(t *testing.T) {
+	hint := historyHint("abc", "http://100.x.y.z:8787/")
+	if !strings.Contains(hint, "http://100.x.y.z:8787/history/abc") {
 		t.Fatalf("hint=%q", hint)
+	}
+	if strings.Contains(hint, "//history") {
+		t.Fatalf("double slash: %q", hint)
+	}
+	pathOnly := historyHint("abc", "")
+	if !strings.Contains(pathOnly, "`/history/abc`") {
+		t.Fatalf("path-only hint=%q", pathOnly)
+	}
+	if strings.Contains(pathOnly, "http") {
+		t.Fatalf("path-only should not invent host: %q", pathOnly)
 	}
 }
 
