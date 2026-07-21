@@ -1938,8 +1938,9 @@
 
     // Per-path scroll for boosted navigations (e.g. history detail → list via
     // "← History"). show:none keeps the *leaving* page's scrollY; without this
-    // the list jumps to top or to the detail offset. Browser back/forward uses
-    // htmx's own history-cache scroll and can ignore this map.
+    // the list jumps to top or to the detail offset. New destinations (not yet
+    // in the map) scroll to top so list→detail does not land mid-page.
+    // Browser back/forward uses htmx's own history-cache scroll and can ignore this map.
     var boostScrollByPath = Object.create(null);
     function pagePath() {
       return location.pathname + location.search;
@@ -1956,8 +1957,9 @@
       var elt = d.elt;
       if (!elt || elt.id !== "live-root") return;
       var path = pagePath();
-      if (!Object.prototype.hasOwnProperty.call(boostScrollByPath, path)) return;
-      var y = boostScrollByPath[path];
+      var y = Object.prototype.hasOwnProperty.call(boostScrollByPath, path)
+        ? boostScrollByPath[path]
+        : 0;
       if (typeof y === "number") {
         window.scrollTo(0, y);
       }
