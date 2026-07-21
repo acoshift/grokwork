@@ -244,6 +244,87 @@ func TestIssuesListAndDetail(t *testing.T) {
 	}
 }
 
+func TestIssuesListShowsFixingWorkState(t *testing.T) {
+	srv := workflowServer(t)
+	// Active Fixes session for acme/api#7 → list should show FIXING, not bare OPEN.
+	e := sessionstore.Entry{Project: "proj", Label: sessionstore.LabelInProgress}
+	e.UpsertIssue(sessionstore.TrackedIssue{
+		Owner: "acme", Repo: "api", Number: 7, Keyword: sessionstore.IssueKeywordFixes,
+	})
+	if err := srv.sessions.Set("th-fixing", e); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/issues?owner=acme&repo=api", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "FIXING") {
+		t.Fatalf("expected FIXING badge in list: %s", body)
+	}
+	if !strings.Contains(body, `value="fixing"`) {
+		t.Fatal("expected Fixing filter option")
+	}
+
+	// Filter state=fixing keeps the issue
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/issues?owner=acme&repo=api&state=fixing", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	body = w.Body.String()
+	if !strings.Contains(body, "#7") || !strings.Contains(body, "FIXING") {
+		t.Fatalf("fixing filter: %s", body)
+	}
+
+	// Detail for app#7 without session stays OPEN; bind app#7 and check detail.
+	e2 := sessionstore.Entry{Project: "proj", Label: sessionstore.LabelInProgress}
+	e2.UpsertIssue(sessionstore.TrackedIssue{
+		Owner: "acme", Repo: "app", Number: 7, Keyword: sessionstore.IssueKeywordFixes,
+	})
+	if err := srv.sessions.Set("th-app-fix", e2); err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/issues/7?owner=acme&repo=app", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("detail status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "FIXING") {
+		t.Fatalf("detail missing FIXING: %s", w.Body.String())
+	}
+}
+
+func TestLinearListShowsFixingWorkState(t *testing.T) {
+	srv := workflowServer(t)
+	e := sessionstore.Entry{Project: "proj", Label: sessionstore.LabelOpen}
+	e.UpsertIssue(sessionstore.TrackedIssue{
+		Provider: sessionstore.ProviderLinear, Identifier: "ENG-1", Keyword: sessionstore.IssueKeywordFixes,
+	})
+	if err := srv.sessions.Set("th-lin-fix", e); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/linear", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "FIXING") {
+		t.Fatalf("linear list missing FIXING: %s", w.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/linear/ENG-1", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if !strings.Contains(w.Body.String(), "FIXING") {
+		t.Fatalf("linear detail missing FIXING: %s", w.Body.String())
+	}
+}
+
 func TestLinearListAndDetail(t *testing.T) {
 	srv := workflowServer(t)
 	h := srv.Handler()

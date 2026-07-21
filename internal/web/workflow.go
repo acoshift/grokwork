@@ -10,6 +10,7 @@ import (
 
 	"github.com/moonrhythm/hime"
 
+	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
@@ -114,12 +115,29 @@ func (s *Server) issuesList(ctx *hime.Context) error {
 	if state == "" {
 		state = "open"
 	}
+	// "fixing" is a grokwork overlay: load open GitHub issues, keep those with active Fixes sessions.
+	ghState := state
+	if state == "fixing" {
+		ghState = "open"
+	}
 	issues, listErr := ghpr.ListIssuesWith(ctx.Context(), s.ghRun(), path, ghpr.IssueListOpts{
 		Owner: active.Owner,
 		Repo:  active.Repo,
-		State: state,
+		State: ghState,
 		Limit: 40,
 	})
+	if listErr == nil {
+		issues = s.annotateGitHubIssueWorkState(project, active.Owner, active.Repo, issues)
+		if state == "fixing" {
+			filtered := issues[:0]
+			for _, iss := range issues {
+				if iss.WorkState == bot.IssueWorkStateFixing {
+					filtered = append(filtered, iss)
+				}
+			}
+			issues = filtered
+		}
+	}
 	d := s.basePage(ctx)
 	d.Title = "Issues · " + project
 	d.IsIssues = true
@@ -163,6 +181,12 @@ func (s *Server) issueDetail(ctx *hime.Context) error {
 		}
 	}
 	info, viewErr := ghpr.ViewIssueWith(ctx.Context(), s.ghRun(), path, n, active.Owner, active.Repo)
+	if viewErr == nil {
+		annotated := s.annotateGitHubIssueWorkState(project, active.Owner, active.Repo, []ghpr.IssueInfo{info})
+		if len(annotated) > 0 {
+			info = annotated[0]
+		}
+	}
 	d := s.basePage(ctx)
 	d.Title = fmt.Sprintf("%s/%s#%d", active.Owner, active.Repo, n)
 	d.IsIssues = true
@@ -186,6 +210,45 @@ func (s *Server) issueDetail(ctx *hime.Context) error {
 	return s.viewPage(ctx, "issue_detail", d)
 }
 
+// annotateGitHubIssueWorkState marks issues FIXING when a non-terminal session binds them with Fixes.
+func (s *Server) annotateGitHubIssueWorkState(project, owner, repo string, issues []ghpr.IssueInfo) []ghpr.IssueInfo {
+	if s == nil || s.bot == nil || len(issues) == 0 {
+		return issues
+	}
+	active := s.bot.ActiveFixGitHubIssues(project, owner, repo)
+	if len(active) == 0 {
+		return issues
+	}
+	for i := range issues {
+		// Only overlay FIXING on still-open GitHub issues.
+		if !strings.EqualFold(issues[i].State, "open") {
+			continue
+		}
+		if _, ok := active[issues[i].Number]; ok {
+			issues[i].WorkState = bot.IssueWorkStateFixing
+		}
+	}
+	return issues
+}
+
+// annotateLinearIssueWorkState marks Linear issues FIXING for active Fixes sessions.
+func (s *Server) annotateLinearIssueWorkState(project string, issues []linear.Issue) []linear.Issue {
+	if s == nil || s.bot == nil || len(issues) == 0 {
+		return issues
+	}
+	active := s.bot.ActiveFixLinearIssues(project)
+	if len(active) == 0 {
+		return issues
+	}
+	for i := range issues {
+		id := sessionstore.NormalizeLinearIdentifier(issues[i].Identifier)
+		if _, ok := active[id]; ok {
+			issues[i].WorkState = bot.IssueWorkStateFixing
+		}
+	}
+	return issues
+}
+
 func (s *Server) linearList(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
 	if !s.cfg.ProjectLinearEnabled(project) {
@@ -202,6 +265,9 @@ func (s *Server) linearList(ctx *hime.Context) error {
 	team := s.cfg.ProjectLinearTeamKey(project)
 	client := s.linearClient(project)
 	issues, listErr := client.ListTeamIssues(ctx.Context(), team, 40)
+	if listErr == nil {
+		issues = s.annotateLinearIssueWorkState(project, issues)
+	}
 	d := s.basePage(ctx)
 	d.Title = "Linear · " + project
 	d.IsLinear = true
@@ -225,6 +291,12 @@ func (s *Server) linearDetail(ctx *hime.Context) error {
 	issue, err := client.GetByIdentifier(ctx.Context(), id)
 	if strings.TrimSpace(issue.Identifier) == "" {
 		issue.Identifier = id
+	}
+	if err == nil {
+		annotated := s.annotateLinearIssueWorkState(project, []linear.Issue{issue})
+		if len(annotated) > 0 {
+			issue = annotated[0]
+		}
 	}
 	d := s.basePage(ctx)
 	d.Title = id + " · " + project

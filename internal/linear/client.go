@@ -39,6 +39,9 @@ type Issue struct {
 	State       string
 	TeamKey     string
 	Description string
+	// WorkState is set by the web layer (not Linear): "FIXING" when a
+	// non-terminal Grok session binds this issue with Fixes.
+	WorkState string
 }
 
 type gqlRequest struct {

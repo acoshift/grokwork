@@ -57,6 +57,9 @@ type IssueInfo struct {
 	Owner     string
 	Repo      string
 	Truncated bool // body or comments hit size caps
+	// WorkState is set by the web layer (not gh): "FIXING" when a non-terminal
+	// Grok session binds this issue with Fixes. Empty when none.
+	WorkState string
 }
 
 // ListIssues lists issues for a repo via gh.

@@ -24,6 +24,87 @@ type IssueSessionHit struct {
 	DiscordURL  string
 }
 
+// IssueWorkStateFixing is a grokwork-derived issue state: a non-terminal
+// session binds the ticket with Fixes (Fix-with-Grok or chat bind).
+// GitHub still reports open/closed; this overlays the issues UI.
+const IssueWorkStateFixing = "FIXING"
+
+// ActiveFixGitHubIssues returns issue numbers in owner/repo that have at least
+// one non-terminal session with a Fixes bind (project-scoped).
+func (b *Bot) ActiveFixGitHubIssues(project, owner, repo string) map[int]struct{} {
+	out := make(map[int]struct{})
+	if b == nil || b.sessions == nil {
+		return out
+	}
+	project = strings.TrimSpace(project)
+	owner = strings.ToLower(strings.TrimSpace(owner))
+	repo = strings.ToLower(strings.TrimSpace(repo))
+	if project == "" || owner == "" || repo == "" {
+		return out
+	}
+	for _, listed := range b.sessions.List() {
+		if !strings.EqualFold(listed.Project, project) {
+			continue
+		}
+		if sessionstore.IsTerminalLabel(listed.EffectiveLabel()) {
+			continue
+		}
+		for _, iss := range listed.Issues {
+			if iss.IsLinear() {
+				continue
+			}
+			if iss.EffectiveKeyword() != sessionstore.IssueKeywordFixes {
+				continue
+			}
+			iss.FillFromURL()
+			if !strings.EqualFold(strings.TrimSpace(iss.Owner), owner) {
+				continue
+			}
+			if !strings.EqualFold(strings.TrimSpace(iss.Repo), repo) {
+				continue
+			}
+			if iss.Number > 0 {
+				out[iss.Number] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
+// ActiveFixLinearIssues returns normalized Linear identifiers (e.g. ENG-123)
+// with at least one non-terminal Fixes-bound session in project.
+func (b *Bot) ActiveFixLinearIssues(project string) map[string]struct{} {
+	out := make(map[string]struct{})
+	if b == nil || b.sessions == nil {
+		return out
+	}
+	project = strings.TrimSpace(project)
+	if project == "" {
+		return out
+	}
+	for _, listed := range b.sessions.List() {
+		if !strings.EqualFold(listed.Project, project) {
+			continue
+		}
+		if sessionstore.IsTerminalLabel(listed.EffectiveLabel()) {
+			continue
+		}
+		for _, iss := range listed.Issues {
+			if !iss.IsLinear() {
+				continue
+			}
+			if iss.EffectiveKeyword() != sessionstore.IssueKeywordFixes {
+				continue
+			}
+			id := sessionstore.NormalizeLinearIdentifier(iss.Identifier)
+			if id != "" {
+				out[id] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
 // IsThreadBusy reports an active run or non-empty follow-up queue.
 func (b *Bot) IsThreadBusy(threadID string) bool {
 	if b == nil || threadID == "" {

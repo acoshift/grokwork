@@ -23,6 +23,7 @@
     <label for="state">State</label>
     <select id="state" name="state" data-autosubmit>
       <option value="open" {{if eq .IssueState "open"}}selected{{end}}>Open</option>
+      <option value="fixing" {{if eq .IssueState "fixing"}}selected{{end}}>Fixing</option>
       <option value="closed" {{if eq .IssueState "closed"}}selected{{end}}>Closed</option>
       <option value="all" {{if eq .IssueState "all"}}selected{{end}}>All</option>
     </select>
@@ -77,7 +78,15 @@
         {{end}}
         <td class="mono"><a href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">#{{.Number}}</a></td>
         <td><a class="pr-title" href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.Title}}</a></td>
-        <td>{{if eq .State "open" "OPEN"}}<span class="badge live">{{.State}}</span>{{else}}<span class="badge">{{.State}}</span>{{end}}</td>
+        <td>
+          {{if eq .WorkState "FIXING"}}
+          <span class="badge live" title="Active Grok fix session">FIXING</span>
+          {{else if eq .State "open" "OPEN"}}
+          <span class="badge live">{{.State}}</span>
+          {{else}}
+          <span class="badge">{{.State}}</span>
+          {{end}}
+        </td>
         <td class="mono muted">{{.Author}}</td>
         <td class="mono">{{if .LinkedPRs}}{{len .LinkedPRs}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>

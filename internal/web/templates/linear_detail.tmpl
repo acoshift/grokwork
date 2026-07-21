@@ -8,7 +8,14 @@
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 <div class="section card">
   <h2>{{.LinearIssue.Title}}</h2>
-  <p class="sub" style="margin:0"><span class="badge">{{.LinearIssue.State}}</span> · team <span class="mono">{{.LinearIssue.TeamKey}}</span></p>
+  <p class="sub" style="margin:0">
+    {{if eq .LinearIssue.WorkState "FIXING"}}
+    <span class="badge live" title="Active Grok fix session">FIXING</span>
+    {{else}}
+    <span class="badge">{{.LinearIssue.State}}</span>
+    {{end}}
+    · team <span class="mono">{{.LinearIssue.TeamKey}}</span>
+  </p>
   <pre class="bubble-body" style="margin-top:1rem;white-space:pre-wrap;">{{.LinearIssue.Description}}</pre>
 </div>
 

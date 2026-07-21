@@ -10,7 +10,13 @@
 <div class="section card">
   <h2>{{.Issue.Title}}</h2>
   <p class="sub" style="margin:0">
-    {{if eq .Issue.State "open" "OPEN"}}<span class="badge live">{{.Issue.State}}</span>{{else}}<span class="badge">{{.Issue.State}}</span>{{end}}
+    {{if eq .Issue.WorkState "FIXING"}}
+    <span class="badge live" title="Active Grok fix session">FIXING</span>
+    {{else if eq .Issue.State "open" "OPEN"}}
+    <span class="badge live">{{.Issue.State}}</span>
+    {{else}}
+    <span class="badge">{{.Issue.State}}</span>
+    {{end}}
     · <span class="mono">{{.Issue.Author}}</span>
     {{range .Issue.Labels}} · <span class="badge">{{.}}</span>{{end}}
     {{if .Issue.Truncated}} · <span class="muted">body truncated</span>{{end}}

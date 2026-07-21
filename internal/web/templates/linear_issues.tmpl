@@ -12,7 +12,13 @@
       <tr>
         <td class="mono"><a href="/projects/{{$.Project}}/linear/{{.Identifier}}">{{.Identifier}}</a></td>
         <td><a class="pr-title" href="/projects/{{$.Project}}/linear/{{.Identifier}}">{{.Title}}</a></td>
-        <td><span class="badge">{{.State}}</span></td>
+        <td>
+          {{if eq .WorkState "FIXING"}}
+          <span class="badge live" title="Active Grok fix session">FIXING</span>
+          {{else}}
+          <span class="badge">{{.State}}</span>
+          {{end}}
+        </td>
       </tr>
     {{end}}
     </tbody>

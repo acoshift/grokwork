@@ -78,6 +78,56 @@ func TestFindByIssueMatchAndTerminalFilter(t *testing.T) {
 	}
 }
 
+func TestActiveFixGitHubIssues(t *testing.T) {
+	b, store := testBotSessions(t)
+	// Active Fixes bind
+	e1 := sessionstore.Entry{Project: "app", Label: sessionstore.LabelInProgress}
+	e1.UpsertIssue(sessionstore.TrackedIssue{Owner: "acme", Repo: "app", Number: 7, Keyword: sessionstore.IssueKeywordFixes})
+	if err := store.Set("t-fix", e1); err != nil {
+		t.Fatal(err)
+	}
+	// Refs only — not fixing
+	e2 := sessionstore.Entry{Project: "app", Label: sessionstore.LabelInProgress}
+	e2.UpsertIssue(sessionstore.TrackedIssue{Owner: "acme", Repo: "app", Number: 8, Keyword: sessionstore.IssueKeywordRefs})
+	if err := store.Set("t-refs", e2); err != nil {
+		t.Fatal(err)
+	}
+	// Terminal — not fixing
+	e3 := sessionstore.Entry{Project: "app", Label: sessionstore.LabelDone}
+	e3.UpsertIssue(sessionstore.TrackedIssue{Owner: "acme", Repo: "app", Number: 9, Keyword: sessionstore.IssueKeywordFixes})
+	if err := store.Set("t-done", e3); err != nil {
+		t.Fatal(err)
+	}
+
+	got := b.ActiveFixGitHubIssues("app", "acme", "app")
+	if _, ok := got[7]; !ok {
+		t.Fatalf("want #7 fixing, got %v", got)
+	}
+	if _, ok := got[8]; ok {
+		t.Fatalf("Refs should not count as fixing: %v", got)
+	}
+	if _, ok := got[9]; ok {
+		t.Fatalf("terminal session should not count: %v", got)
+	}
+}
+
+func TestActiveFixLinearIssues(t *testing.T) {
+	b, store := testBotSessions(t)
+	e := sessionstore.Entry{Project: "app", Label: sessionstore.LabelOpen}
+	e.UpsertIssue(sessionstore.TrackedIssue{
+		Provider:   sessionstore.ProviderLinear,
+		Identifier: "eng-42",
+		Keyword:    sessionstore.IssueKeywordFixes,
+	})
+	if err := store.Set("t-lin", e); err != nil {
+		t.Fatal(err)
+	}
+	got := b.ActiveFixLinearIssues("app")
+	if _, ok := got["ENG-42"]; !ok {
+		t.Fatalf("want ENG-42, got %v", got)
+	}
+}
+
 func TestFindByIssueOrderingBusyWorktreeNewest(t *testing.T) {
 	b, store := testBotSessions(t)
 	now := time.Now().UTC()
