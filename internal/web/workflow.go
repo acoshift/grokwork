@@ -339,7 +339,7 @@ func (s *Server) sessionDiffPage(ctx *hime.Context) error {
 	var index ghpr.DiffIndex
 	var diffErr error
 	if cwd == "" {
-		diffErr = fmt.Errorf("no git worktree found for this session (project=%q)", project)
+		diffErr = fmt.Errorf("worktree no longer on disk for this session (project=%q)", project)
 	} else {
 		index, diffErr = ghpr.WorktreeDiffIndexWith(ctx.Context(), s.ghRun(), cwd, base)
 	}
@@ -413,9 +413,10 @@ func (s *Server) sessionPRBaseName(ctx context.Context, ent sessionstore.Entry, 
 	return base
 }
 
-// resolveSessionDiffCwd picks a real project/worktree root for the session diff
-// page. Never returns the bot process cwd — empty cwd would make git diff the
-// grokwork repo itself when worktrees live under data/.
+// resolveSessionDiffCwd picks the session's on-disk git worktree for the
+// worktree-diff page. It never falls back to the main project checkout or the
+// bot process cwd — a removed/pruned worktree returns empty so the UI can show
+// an error instead of an empty or misleading main-branch diff.
 func (s *Server) resolveSessionDiffCwd(ent sessionstore.Entry, threadID string) (cwd, project string) {
 	project = strings.TrimSpace(ent.Project)
 	mainCwd := strings.TrimSpace(ent.MainCwd)
@@ -438,17 +439,11 @@ func (s *Server) resolveSessionDiffCwd(ent sessionstore.Entry, threadID string) 
 		return d.Path, project
 	}
 
-	// Session cwd if it is itself a worktree root (including main checkout).
+	// Live session cwd (includes worktreeIsolation=false where cwd is the main
+	// checkout). Do not invent mainCwd when ent.Cwd is gone — that path is the
+	// "worktree already removed" case and must surface as an error.
 	if c := strings.TrimSpace(ent.Cwd); gitworktree.IsRepo(c) {
 		return c, project
-	}
-	if mainCwd != "" && gitworktree.IsRepo(mainCwd) {
-		return mainCwd, project
-	}
-	if project != "" {
-		if p, ok := s.cfg.ProjectPath(project); ok && gitworktree.IsRepo(p) {
-			return p, project
-		}
 	}
 	return "", project
 }

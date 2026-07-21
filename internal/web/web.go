@@ -350,15 +350,16 @@ type pageData struct {
 	CanStartSession bool
 	WebMergeMethod  string
 	// Fix-with-Grok / session view
-	FixHits      []bot.IssueSessionHit
+	FixHits       []bot.IssueSessionHit
 	ShowFixPicker bool
-	SessionEntry sessionstore.Entry
-	DiscordURL   string
-	RunActivity  string
-	RunPhases    string
-	RunElapsed   string
-	RunBusy      bool
-	RunQueue     int
+	SessionEntry  sessionstore.Entry
+	DiscordURL    string
+	HasWorktree   bool // session worktree still on disk (enables Worktree diff)
+	RunActivity   string
+	RunPhases     string
+	RunElapsed    string
+	RunBusy       bool
+	RunQueue      int
 }
 
 func (s *Server) basePage(ctx *hime.Context) pageData {

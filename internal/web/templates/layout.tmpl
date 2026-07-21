@@ -526,6 +526,12 @@
     .section[id], .card[id] { scroll-margin-top: 1.25rem; }
     code, .mono { font-family: var(--mono); font-size: 0.86em; }
     .muted { color: var(--muted); }
+    a.muted[aria-disabled="true"] {
+      cursor: not-allowed;
+      text-decoration: none;
+      opacity: 0.75;
+    }
+    a.muted[aria-disabled="true"]:hover { color: var(--muted); }
     .clamp {
       display: -webkit-box;
       -webkit-line-clamp: 2;
@@ -1126,12 +1132,18 @@
     .toolbar {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.6rem;
+      gap: 0.6rem 0.75rem;
       align-items: end;
       margin-bottom: 1.25rem;
     }
     .toolbar .field { min-width: 11rem; flex: 0 1 14rem; }
-    .toolbar button, .toolbar .btn { height: 2.5rem; }
+    /* Short controls (limit, etc.): size to content so Apply sits next to them. */
+    .toolbar .field-sm {
+      min-width: 0;
+      flex: 0 0 auto;
+    }
+    .toolbar .field-sm input[type=number] { width: 5.5rem; }
+    .toolbar button, .toolbar .btn { height: 2.5rem; flex: 0 0 auto; }
 
     /* ── Conversation turns ──────────────────────────────────────────── */
     .turns { display: flex; flex-direction: column; gap: 1.1rem; }
@@ -1419,6 +1431,7 @@
       .invite-row button,
       .invite-row .btn { width: 100%; }
       .toolbar .field { flex: 1 1 100%; }
+      .toolbar .field-sm { flex: 0 0 auto; }
       .card .value { font-size: 1.6rem; }
     }
   </style>

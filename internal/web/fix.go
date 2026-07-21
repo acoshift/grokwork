@@ -404,6 +404,8 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 		if d.DiscordURL == "" {
 			d.DiscordURL = bot.DiscordThreadURL(s.cfg.ProjectDiscordGuildID(ent.Project), threadID)
 		}
+		cwd, _ := s.resolveSessionDiffCwd(ent, threadID)
+		d.HasWorktree = cwd != ""
 	}
 	// Live run chips from bot snapshot
 	if s.bot != nil {

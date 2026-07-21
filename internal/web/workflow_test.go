@@ -351,22 +351,29 @@ func TestPRDetailAndDiff(t *testing.T) {
 
 func TestSessionDiff(t *testing.T) {
 	srv := workflowServer(t)
-	if err := srv.sessions.Set("thread-99", sessionstore.Entry{
-		SessionID: "s", Project: "proj", Cwd: "/tmp/wt", MainCwd: "/tmp/main",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	// Mock IsRepo is not used; ghRunner still runs. Session cwd /tmp/wt is not a
-	// real repo, so resolve falls through unless we plant a disk worktree or
-	// make the mock path enough. Force via MainCwd project path from test config.
-	// Project "proj" has a real path under the test server temp dir.
 	projPath, ok := srv.cfg.ProjectPath("proj")
 	if !ok {
 		t.Fatal("proj path missing")
 	}
-	// init a real git repo at project path so resolveSessionDiffCwd accepts it
-	// when worktree is missing (main checkout fallback).
 	if err := execGitInit(t, projPath); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(srv.cfg.DataDir, "worktrees", "proj", "thread-99")
+	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "-C", projPath, "worktree", "add", "-b", "grok/discord/thread-99", wt)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=t@e.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=t@e.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("worktree add: %v\n%s", err, out)
+	}
+	if err := srv.sessions.Set("thread-99", sessionstore.Entry{
+		SessionID: "s", Project: "proj", Cwd: wt, MainCwd: projPath,
+		WorktreeBranch: "grok/discord/thread-99",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	var sawDir string
@@ -390,8 +397,8 @@ func TestSessionDiff(t *testing.T) {
 	if !strings.Contains(body, `hx-get="/sessions/thread-99/diff/file?base=origin%2Fmain&amp;path=wt.go"`) {
 		t.Fatalf("missing per-file fragment URL in %s", body)
 	}
-	if sawDir != projPath {
-		t.Fatalf("diff cwd=%q want project path %q (not process cwd)", sawDir, projPath)
+	if sawDir != wt {
+		t.Fatalf("diff cwd=%q want worktree %q", sawDir, wt)
 	}
 
 	// Fragment endpoint renders the hunks for one file.
@@ -404,6 +411,105 @@ func TestSessionDiff(t *testing.T) {
 	body = w.Body.String()
 	if !strings.Contains(body, `class="dpatch"`) || !strings.Contains(body, "&#43;b") {
 		t.Fatalf("frag body=%s", body)
+	}
+}
+
+func TestSessionDiffMissingWorktreeShowsError(t *testing.T) {
+	// Session still tracked, but worktree was pruned — must not fall back to main checkout.
+	srv := workflowServer(t)
+	projPath, ok := srv.cfg.ProjectPath("proj")
+	if !ok {
+		t.Fatal("proj path")
+	}
+	if err := execGitInit(t, projPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.sessions.Set("gone-wt", sessionstore.Entry{
+		SessionID: "s", Project: "proj",
+		Cwd:            filepath.Join(srv.cfg.DataDir, "worktrees", "proj", "gone-wt"),
+		MainCwd:        projPath,
+		WorktreeBranch: "grok/discord/gone-wt",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		t.Fatalf("git must not run when worktree is gone; dir=%q args=%v", dir, args)
+		return nil, nil
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions/gone-wt/diff", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "worktree no longer on disk") {
+		t.Fatalf("want missing-worktree error, got %s", body)
+	}
+	if strings.Contains(body, `id="diff-review"`) && strings.Contains(body, "wt.go") {
+		t.Fatal("must not render a main-checkout diff when worktree is gone")
+	}
+
+	// Session page: Worktree diff link is present but marked disabled/muted.
+	req = httptest.NewRequest(http.MethodGet, "/sessions/gone-wt", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("session status=%d", w.Code)
+	}
+	sess := w.Body.String()
+	// Match the anchor itself (layout CSS also mentions aria-disabled).
+	if !strings.Contains(sess, `href="/sessions/gone-wt/diff?project=proj" class="muted" aria-disabled="true" title="Worktree no longer on disk">Worktree diff</a>`) {
+		t.Fatalf("want disabled Worktree diff link, got %s", sess)
+	}
+}
+
+func TestSessionDiffIsolationOffUsesMainCwd(t *testing.T) {
+	// worktreeIsolation=false: session cwd is the main checkout — still a valid diff root.
+	srv := workflowServer(t)
+	projPath, ok := srv.cfg.ProjectPath("proj")
+	if !ok {
+		t.Fatal("proj path")
+	}
+	if err := execGitInit(t, projPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.sessions.Set("main-cwd", sessionstore.Entry{
+		SessionID: "s", Project: "proj", Cwd: projPath, MainCwd: projPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var sawDir string
+	orig := srv.ghRunner
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if name == "git" && len(args) > 0 && args[0] == "diff" {
+			sawDir = dir
+		}
+		return orig(ctx, dir, name, args...)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions/main-cwd/diff", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if sawDir != projPath {
+		t.Fatalf("diff cwd=%q want main checkout %q", sawDir, projPath)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "worktree no longer on disk") {
+		t.Fatal("isolation-off main cwd must not be treated as missing worktree")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/sessions/main-cwd", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	sess := w.Body.String()
+	if !strings.Contains(sess, `href="/sessions/main-cwd/diff?project=proj">Worktree diff</a>`) {
+		t.Fatalf("want enabled Worktree diff link, got %s", sess)
+	}
+	if strings.Contains(sess, `href="/sessions/main-cwd/diff?project=proj" class="muted"`) {
+		t.Fatal("Worktree diff must not be muted when session cwd is the live main checkout")
 	}
 }
 
@@ -487,7 +593,7 @@ func TestSessionDiffEmptyCwdDoesNotUseProcessDir(t *testing.T) {
 		t.Fatalf("status=%d", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "no git worktree found") {
+	if !strings.Contains(body, "worktree no longer on disk") {
 		t.Fatalf("want error about missing worktree, got %s", body)
 	}
 }
