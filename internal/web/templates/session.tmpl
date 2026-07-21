@@ -4,7 +4,7 @@
 <p class="sub">
   {{if .Project}}<strong>{{.Project}}</strong> · {{end}}
   {{if .DiscordURL}}<a href="{{.DiscordURL}}" target="_blank" rel="noopener">Open in Discord ↗</a> · {{end}}
-  <a href="/history/{{.ThreadID}}">Turn log</a>
+  <a href="/history/{{.ThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}">Turn log</a>
   · <a href="/sessions/{{.ThreadID}}/diff{{if .Project}}?project={{urlquery .Project}}{{end}}">Worktree diff</a>
 </p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}

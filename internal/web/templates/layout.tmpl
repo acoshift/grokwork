@@ -1743,7 +1743,7 @@
         if (seg[0] === "projects" && seg.length >= 2) return decodeURIComponent(seg[1]);
         if (seg[0] === "config" && seg[1] === "projects" && seg.length >= 3) return decodeURIComponent(seg[2]);
       } catch (e) { return ""; }
-      if ((seg[0] === "sessions" || seg[0] === "prs") && seg.length >= 2) {
+      if ((seg[0] === "sessions" || seg[0] === "history" || seg[0] === "prs") && seg.length >= 2) {
         return new URLSearchParams(location.search).get("project") || "";
       }
       return "";
@@ -1757,12 +1757,12 @@
         return path === href;
       }
       // Workspace Ship/Sessions also cover detail pages living outside the
-      // /projects/{p} prefix (/prs/…, /sessions/{id}); scope already matched.
+      // /projects/{p} prefix (/prs/…, /sessions/{id}, /history/{id}); scope already matched.
       if (href.slice(-5) === "/ship" || href === "/ship") {
         if (path.indexOf("/prs/") === 0) return true;
       }
       if (href.slice(-9) === "/sessions" || href === "/sessions") {
-        if (path.indexOf("/sessions/") === 0) return true;
+        if (path.indexOf("/sessions/") === 0 || path.indexOf("/history/") === 0) return true;
       }
       return path === href || path.indexOf(href + "/") === 0;
     }

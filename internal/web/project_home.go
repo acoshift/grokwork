@@ -22,9 +22,9 @@ import (
 
 // navScopeFromURL derives the workspace project from the URL. Path wins:
 // /projects/{p}/… and /config/projects/{p}. Detail pages whose canonical URL
-// carries no project (/sessions/{id…}, /prs/…) may opt in via ?project=.
-// Global list pages that use ?project= as a data filter (/ship) stay global.
-// Mirror any change here in layout.tmpl's scopeFromLocation().
+// carries no project (/sessions/{id…}, /history/{id…}, /prs/…) may opt in via
+// ?project=. Global list pages that use ?project= as a data filter (/ship)
+// stay global. Mirror any change here in layout.tmpl's scopeFromLocation().
 func navScopeFromURL(u *url.URL) string {
 	seg := strings.Split(strings.Trim(u.Path, "/"), "/")
 	switch {
@@ -32,7 +32,7 @@ func navScopeFromURL(u *url.URL) string {
 		return seg[1]
 	case len(seg) >= 3 && seg[0] == "config" && seg[1] == "projects":
 		return seg[2]
-	case len(seg) >= 2 && (seg[0] == "sessions" || seg[0] == "prs"):
+	case len(seg) >= 2 && (seg[0] == "sessions" || seg[0] == "history" || seg[0] == "prs"):
 		return u.Query().Get("project")
 	}
 	return ""

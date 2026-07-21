@@ -470,7 +470,15 @@ func (s *Server) historyDetail(ctx *hime.Context) error {
 	}
 	d := s.basePage(ctx)
 	d.Title = title
+	// Turn log is a session-adjacent detail surface; highlight Sessions when
+	// the workspace shell is scoped via ?project= (History is not a nav tab).
 	d.IsHistory = true
+	if d.NavProject != "" {
+		d.IsSessions = true
+		d.Project = d.NavProject
+	} else if th.Project != "" {
+		d.Project = th.Project
+	}
 	d.Thread = th
 	return s.viewPage(ctx, "history_detail", d)
 }
@@ -648,6 +656,11 @@ func (s *Server) partialHistoryTurns(ctx *hime.Context) error {
 	}
 	d := s.basePage(ctx)
 	d.Thread = th
+	if d.NavProject != "" {
+		d.Project = d.NavProject
+	} else if th.Project != "" {
+		d.Project = th.Project
+	}
 	return s.viewFragment(ctx, "history_detail", "history_turns", d)
 }
 

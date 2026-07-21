@@ -527,9 +527,9 @@ func TestNavBrandChrome(t *testing.T) {
 
 // TestNavScopeRules pins the URL→shell-scope contract (mirrored by the layout
 // JS scopeFromLocation): path scopes /projects/… and /config/projects/…;
-// ?project= scopes only /sessions/{id…} and /prs/… detail pages; global list
-// pages using ?project= as a data filter stay global; unknown projects fall
-// back to the global shell.
+// ?project= scopes only /sessions/{id…}, /history/{id…}, and /prs/… detail
+// pages; global list pages using ?project= as a data filter stay global;
+// unknown projects fall back to the global shell.
 func TestNavScopeRules(t *testing.T) {
 	srv, _, _ := testServer(t)
 	h := srv.Handler()
@@ -547,6 +547,9 @@ func TestNavScopeRules(t *testing.T) {
 		{"/sessions/thread-99?project=proj", "proj"},
 		{"/sessions/thread-99", ""},
 		{"/sessions/thread-99?project=nope", ""}, // unknown → global shell
+		{"/history/thread-99?project=proj", "proj"},
+		{"/history/thread-99", ""},
+		{"/history/thread-99?project=nope", ""}, // unknown → global shell
 	}
 	for _, tc := range cases {
 		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
@@ -561,9 +564,31 @@ func TestNavScopeRules(t *testing.T) {
 		}
 	}
 
-	// Unknown project workspace pages are forbidden, not silently global.
-	req := httptest.NewRequest(http.MethodGet, "/projects/nope", nil)
+	// Session ↔ turn log must keep ?project= so the workspace shell stays put.
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99?project=proj", nil)
 	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if body := w.Body.String(); !strings.Contains(body, `href="/history/thread-99?project=proj"`) {
+		t.Fatalf("session detail Turn log missing project query: %s", body)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/history/thread-99?project=proj", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	histBody := w.Body.String()
+	for _, want := range []string{
+		`data-scope="proj"`,
+		`href="/projects/proj/sessions"`,
+		`href="/sessions/thread-99?project=proj"`,
+		`class="active">Sessions</a>`,
+	} {
+		if !strings.Contains(histBody, want) {
+			t.Fatalf("scoped turn log missing %q", want)
+		}
+	}
+
+	// Unknown project workspace pages are forbidden, not silently global.
+	req = httptest.NewRequest(http.MethodGet, "/projects/nope", nil)
+	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("unknown workspace status=%d want 403", w.Code)
