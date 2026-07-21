@@ -60,6 +60,52 @@ func TestParseFindingsInvalid(t *testing.T) {
 	}
 }
 
+func TestParseFindingsPrefersLastObject(t *testing.T) {
+	// Intermediate status object then final review (seen with tools-on reviews).
+	text := `{
+  "summary": "Reviewing the Playtech provider init commit…",
+  "findings": []
+}{
+  "summary": "Real review",
+  "findings": [
+    {"title": "Money bug", "body": "uses Abs", "severity": "high", "paths": ["cb.go"]}
+  ]
+}`
+	sum, fs, err := ParseFindings(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum != "Real review" || len(fs) != 1 || fs[0].Title != "Money bug" {
+		t.Fatalf("sum=%q fs=%+v", sum, fs)
+	}
+}
+
+func TestParseFindingsBodyWithMarkdownFence(t *testing.T) {
+	// Finding bodies often include ```go samples; naive fence strip must not run.
+	fence := "```"
+	text := "{\n" +
+		`  "summary": "ok",` + "\n" +
+		`  "findings": [` + "\n" +
+		`    {` + "\n" +
+		`      "title": "Cancel math",` + "\n" +
+		`      "body": "Bug in cancel path:\n\n` + fence + `go\nr.TurnOver.Sub(tx.Money.Amount)\n` + fence + `\n\nShould use Neg.",` + "\n" +
+		`      "severity": "high",` + "\n" +
+		`      "paths": ["cb_transaction.go"]` + "\n" +
+		`    }` + "\n" +
+		`  ]` + "\n" +
+		`}`
+	sum, fs, err := ParseFindings(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum != "ok" || len(fs) != 1 {
+		t.Fatalf("%q %+v", sum, fs)
+	}
+	if !strings.Contains(fs[0].Body, fence+"go") {
+		t.Fatalf("body lost fence: %q", fs[0].Body)
+	}
+}
+
 func TestNormalizeSeverity(t *testing.T) {
 	if normalizeSeverity("HIGH") != "high" {
 		t.Fatal()

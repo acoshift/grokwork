@@ -21,11 +21,31 @@ var severityRank = map[string]int{
 }
 
 // ParseFindings extracts summary + findings from model text (JSON or fenced JSON).
+//
+// Models sometimes emit an intermediate object mid-review then a final one, or put
+// markdown fences inside finding bodies. We collect every top-level JSON object
+// (string-aware brace scan) and use the last one that unmarshals as findings.
 func ParseFindings(text string) (summary string, findings []Finding, err error) {
-	raw := extractJSONObject(text)
-	if raw == "" {
+	objs := extractJSONObjects(text)
+	if len(objs) == 0 {
 		return "", nil, fmt.Errorf("no JSON object in model response")
 	}
+	var lastErr error
+	for i := len(objs) - 1; i >= 0; i-- {
+		sum, fs, perr := parseFindingsObject(objs[i])
+		if perr != nil {
+			lastErr = perr
+			continue
+		}
+		return sum, fs, nil
+	}
+	if lastErr != nil {
+		return "", nil, lastErr
+	}
+	return "", nil, fmt.Errorf("no JSON object in model response")
+}
+
+func parseFindingsObject(raw string) (summary string, findings []Finding, err error) {
 	var v struct {
 		Summary  string `json:"summary"`
 		Findings []struct {
@@ -38,6 +58,21 @@ func ParseFindings(text string) (summary string, findings []Finding, err error) 
 	}
 	if err := json.Unmarshal([]byte(raw), &v); err != nil {
 		return "", nil, fmt.Errorf("parse findings JSON: %w", err)
+	}
+	// Reject unrelated top-level objects (e.g. tool payloads) that lack both fields.
+	if strings.TrimSpace(v.Summary) == "" && len(v.Findings) == 0 {
+		// Empty findings with empty summary is still a valid "looks fine" review only
+		// if the key "findings" was present. encoding/json cannot tell omitted vs [].
+		// Require at least one known key via a second generic map check.
+		var probe map[string]json.RawMessage
+		if jerr := json.Unmarshal([]byte(raw), &probe); jerr != nil {
+			return "", nil, fmt.Errorf("parse findings JSON: %w", jerr)
+		}
+		if _, hasSum := probe["summary"]; !hasSum {
+			if _, hasFind := probe["findings"]; !hasFind {
+				return "", nil, fmt.Errorf("parse findings JSON: not a findings object")
+			}
+		}
 	}
 	summary = strings.TrimSpace(v.Summary)
 	out := make([]Finding, 0, len(v.Findings))
@@ -118,24 +153,68 @@ func fingerprint(severity, title string, paths []string) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-// extractJSONObject returns the first top-level JSON object substring.
-func extractJSONObject(text string) string {
+// extractJSONObjects returns all top-level JSON object substrings (string-aware).
+// Markdown fences inside string values are ignored. If no objects are found,
+// falls back to scanning after a leading ``` / ```json fence wrapper.
+func extractJSONObjects(text string) []string {
 	text = strings.TrimSpace(text)
-	// Strip markdown fence if present.
-	if i := strings.Index(text, "```"); i >= 0 {
-		rest := text[i+3:]
-		rest = strings.TrimSpace(rest)
-		if strings.HasPrefix(strings.ToLower(rest), "json") {
-			rest = strings.TrimSpace(rest[4:])
-		}
-		if j := strings.Index(rest, "```"); j >= 0 {
-			rest = rest[:j]
-		}
-		text = strings.TrimSpace(rest)
+	if objs := scanJSONObjects(text); len(objs) > 0 {
+		return objs
 	}
-	start := strings.Index(text, "{")
-	if start < 0 {
+	if fenced, ok := unwrapMarkdownFence(text); ok {
+		return scanJSONObjects(fenced)
+	}
+	return nil
+}
+
+// extractJSONObject returns the first top-level JSON object (tests / callers).
+func extractJSONObject(text string) string {
+	objs := extractJSONObjects(text)
+	if len(objs) == 0 {
 		return ""
+	}
+	return objs[0]
+}
+
+// unwrapMarkdownFence strips a leading ``` or ```json wrapper only when the
+// fence appears before any top-level '{'. Does not touch fences inside bodies.
+func unwrapMarkdownFence(text string) (string, bool) {
+	text = strings.TrimSpace(text)
+	brace := strings.Index(text, "{")
+	fence := strings.Index(text, "```")
+	if fence < 0 || (brace >= 0 && brace < fence) {
+		return "", false
+	}
+	rest := strings.TrimSpace(text[fence+3:])
+	if strings.HasPrefix(strings.ToLower(rest), "json") {
+		rest = strings.TrimSpace(rest[4:])
+	}
+	if j := strings.Index(rest, "```"); j >= 0 {
+		rest = rest[:j]
+	}
+	return strings.TrimSpace(rest), true
+}
+
+func scanJSONObjects(text string) []string {
+	var out []string
+	for i := 0; i < len(text); i++ {
+		if text[i] != '{' {
+			continue
+		}
+		end := scanJSONObjectEnd(text, i)
+		if end < 0 {
+			continue
+		}
+		out = append(out, text[i:end])
+		i = end - 1
+	}
+	return out
+}
+
+// scanJSONObjectEnd returns the index just past the matching '}', or -1.
+func scanJSONObjectEnd(text string, start int) int {
+	if start < 0 || start >= len(text) || text[start] != '{' {
+		return -1
 	}
 	depth := 0
 	inStr := false
@@ -164,9 +243,9 @@ func extractJSONObject(text string) string {
 		case '}':
 			depth--
 			if depth == 0 {
-				return text[start : i+1]
+				return i + 1
 			}
 		}
 	}
-	return ""
+	return -1
 }
