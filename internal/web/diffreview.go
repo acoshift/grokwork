@@ -13,6 +13,7 @@ import (
 	"github.com/moonrhythm/hime"
 
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/gitworktree"
 )
 
 // Diff review UI (commit / session / PR diffs): the page renders a file index
@@ -212,9 +213,28 @@ func (s *Server) commitDiffFile(ctx *hime.Context) error {
 	if sha == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing commit sha")
 	}
-	repoPath, err := s.projectPath(project)
+	root, err := s.projectPath(project)
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).Error(err.Error())
+	}
+	owner := strings.TrimSpace(ctx.FormValue("owner"))
+	repo := strings.TrimSpace(ctx.FormValue("repo"))
+	var repoPath string
+	if owner != "" && repo != "" {
+		_, _, repoPath, err = s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+		if err != nil {
+			return ctx.Status(http.StatusBadRequest).Error(err.Error())
+		}
+	} else {
+		catalog, _ := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
+		if len(catalog) > 0 {
+			repoPath, err = gitworktree.ResolveLocalRepo(ctx.Context(), root, catalog[0].Owner, catalog[0].Repo)
+		} else {
+			repoPath, err = gitworktree.ResolveLocalRepo(ctx.Context(), root, "", "")
+		}
+		if err != nil {
+			return ctx.Status(http.StatusBadRequest).Error(err.Error())
+		}
 	}
 	reqPath, ok := cleanDiffPath(ctx.FormValue("path"))
 	if !ok {

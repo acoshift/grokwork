@@ -45,6 +45,8 @@ func (s *Server) projectPath(name string) (string, error) {
 
 // resolveCatalogRepo ensures owner/repo is in the project's GitHub catalog (authorization boundary).
 // If project is empty, finds the first project whose catalog contains the repo.
+// cwd is the local git checkout for that repo (project root for single-repo projects;
+// project root/<repo> for multi-repo folder layouts).
 func (s *Server) resolveCatalogRepo(ctx context.Context, project, owner, repo string) (proj string, ref config.GitHubRepoRef, cwd string, err error) {
 	owner = strings.TrimSpace(owner)
 	repo = strings.TrimSpace(repo)
@@ -53,9 +55,9 @@ func (s *Server) resolveCatalogRepo(ctx context.Context, project, owner, repo st
 		return "", config.GitHubRepoRef{}, "", fmt.Errorf("owner and repo are required")
 	}
 	if project != "" {
-		cwd, err = s.projectPath(project)
-		if err != nil {
-			return "", config.GitHubRepoRef{}, "", err
+		root, pErr := s.projectPath(project)
+		if pErr != nil {
+			return "", config.GitHubRepoRef{}, "", pErr
 		}
 		cat, cErr := s.cfg.ProjectRepoCatalogWith(ctx, project, nil)
 		if cErr != nil {
@@ -65,7 +67,13 @@ func (s *Server) resolveCatalogRepo(ctx context.Context, project, owner, repo st
 		if err != nil {
 			return "", config.GitHubRepoRef{}, "", fmt.Errorf("repository %s/%s is not in project %q catalog", owner, repo, project)
 		}
-		return project, ref, cwd, nil
+		// Prefer the local checkout for the selected repo (multi-repo folder
+		// layout). Fall back to the project root so gh --repo callers still work
+		// when a child checkout is missing or the path is not a git root.
+		if local, lErr := gitworktree.ResolveLocalRepo(ctx, root, ref.Owner, ref.Repo); lErr == nil {
+			return project, ref, local, nil
+		}
+		return project, ref, root, nil
 	}
 	for _, name := range s.cfg.ProjectNames() {
 		cat, cErr := s.cfg.ProjectRepoCatalogWith(ctx, name, nil)
@@ -76,11 +84,17 @@ func (s *Server) resolveCatalogRepo(ctx context.Context, project, owner, repo st
 		if rErr != nil {
 			continue
 		}
-		p, pErr := s.projectPath(name)
+		root, pErr := s.projectPath(name)
 		if pErr != nil {
 			continue
 		}
-		return name, r, p, nil
+		local, lErr := gitworktree.ResolveLocalRepo(ctx, root, r.Owner, r.Repo)
+		if lErr != nil {
+			// Catalog match is enough for authorization; fall back to project root
+			// so gh --repo callers still work when the local checkout is missing.
+			return name, r, root, nil
+		}
+		return name, r, local, nil
 	}
 	return "", config.GitHubRepoRef{}, "", fmt.Errorf("repository %s/%s is not in any project catalog", owner, repo)
 }

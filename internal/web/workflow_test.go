@@ -16,6 +16,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -34,6 +35,16 @@ func assertNavActive(t *testing.T, body, label string) {
 func workflowServer(t *testing.T) *Server {
 	t.Helper()
 	srv, cfg, _ := testServer(t)
+	// Project path must be a git root so commits browser / ResolveLocalRepo work
+	// (multi-repo folder layouts use child checkouts; single-checkout projects
+	// use the project path itself — tests use the latter).
+	projPath, ok := cfg.ProjectPath("proj")
+	if !ok {
+		t.Fatal("proj path missing")
+	}
+	if err := execGitInit(t, projPath); err != nil {
+		t.Fatal(err)
+	}
 	// Multi-repo catalog for proj
 	if err := cfg.SetProjectGitHubRepos("proj", []config.GitHubRepoRef{
 		{Owner: "acme", Repo: "app"},
@@ -866,7 +877,12 @@ func execGitInit(t *testing.T, dir string) error {
 		}
 		return nil
 	}
-	if err := run("init"); err != nil {
+	// Idempotent: workflowServer and individual tests may both call this.
+	if gitworktree.IsRepo(dir) {
+		if err := run("rev-parse", "--verify", "HEAD"); err == nil {
+			return nil
+		}
+	} else if err := run("init"); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "README"), []byte("hi\n"), 0o644); err != nil {
@@ -938,7 +954,10 @@ func TestCommitsListAndDetail(t *testing.T) {
 		"body note",
 		"foo.go",
 		`id="diff-review"`,
-		`hx-get="/projects/proj/commits/abcdef0123456789abcdef0123456789abcdef01/file?path=foo.go"`,
+		`hx-get="/projects/proj/commits/abcdef0123456789abcdef0123456789abcdef01/file?`,
+		`path=foo.go`,
+		`owner=acme`,
+		`repo=app`,
 		"function scopeFromLocation",
 	} {
 		if !strings.Contains(body, want) {
@@ -1121,6 +1140,95 @@ func TestCommitsFetch(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "Fetched remotes") {
 		t.Fatalf("missing flash: %s", w.Body.String())
+	}
+}
+
+// Multi-repo folder layout: project path is not a git root; each catalog entry
+// is a child checkout named after the GitHub repo.
+func TestCommitsMultiRepoFolder(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	root, ok := cfg.ProjectPath("proj")
+	if !ok {
+		t.Fatal("proj path")
+	}
+	// Parent is not a git repo.
+	if gitworktree.IsRepo(root) {
+		t.Fatal("parent must not be a git root")
+	}
+	appDir := filepath.Join(root, "app")
+	apiDir := filepath.Join(root, "api")
+	if err := execGitInit(t, appDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := execGitInit(t, apiDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectGitHubRepos("proj", []config.GitHubRepoRef{
+		{Owner: "acme", Repo: "app"},
+		{Owner: "acme", Repo: "api"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var logDirs []string
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if name == "git" && len(args) > 0 && args[0] == "log" {
+			logDirs = append(logDirs, dir)
+			return []byte("abcdef0123456789\x1fFrom " + filepath.Base(dir) + "\x1fAlice\x1fa@ex.com\x1f2026-07-20T12:00:00Z\n"), nil
+		}
+		if name == "git" && len(args) > 0 && args[0] == "fetch" {
+			return []byte(""), nil
+		}
+		return []byte(""), nil
+	}
+
+	h := srv.Handler()
+	// Default catalog entry → app child.
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/commits", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("default status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "From app") {
+		t.Fatalf("default list want app commits: %s", body)
+	}
+	if !strings.Contains(body, "acme/app") {
+		t.Fatalf("missing active repo banner: %s", body)
+	}
+
+	// Explicit api selection → api child.
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/commits?owner=acme&repo=api", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("api status=%d body=%s", w.Code, w.Body.String())
+	}
+	body = w.Body.String()
+	if !strings.Contains(body, "From api") {
+		t.Fatalf("api list want api commits: %s", body)
+	}
+	if len(logDirs) < 2 {
+		t.Fatalf("expected git log in both children, dirs=%v", logDirs)
+	}
+	if filepath.Base(logDirs[0]) != "app" || filepath.Base(logDirs[1]) != "api" {
+		t.Fatalf("log dirs=%v", logDirs)
+	}
+
+	// Missing child → error flash, not 500.
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/commits?owner=acme&repo=missing", nil)
+	// not in catalog
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("missing catalog status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "not in project catalog") && !strings.Contains(w.Body.String(), "not in project") {
+		// ResolveRepoPicker error message
+		if !strings.Contains(w.Body.String(), "catalog") {
+			t.Fatalf("want catalog error: %s", w.Body.String())
+		}
 	}
 }
 

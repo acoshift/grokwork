@@ -22,7 +22,7 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	if err := s.ensureProjectAccess(ctx, project); err != nil {
 		return ctx.Status(http.StatusForbidden).Error(err.Error())
 	}
-	path, err := s.projectPath(project)
+	root, err := s.projectPath(project)
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).Error(err.Error())
 	}
@@ -55,10 +55,6 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	if n, err := strconv.Atoi(strings.TrimSpace(ctx.FormValue("n"))); err == nil && n > 0 {
 		limit = n
 	}
-	list, listErr := ghpr.ListCommitsWith(ctx.Context(), s.ghRun(), path, ghpr.CommitListOpts{
-		Ref:   ref,
-		Limit: limit,
-	})
 	d := s.basePage(ctx)
 	d.Title = "Commits · " + project
 	d.IsCommits = true
@@ -67,18 +63,30 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	d.ActiveOwner = active.Owner
 	d.ActiveRepo = active.Repo
 	d.CommitRef = ref
-	d.Commits = list
 	d.CanReviewCommit = d.CanStartSession
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e
-	} else if listErr != nil {
+	}
+	repoPath, pathErr := gitworktree.ResolveLocalRepo(ctx.Context(), root, active.Owner, active.Repo)
+	if pathErr != nil {
+		if d.Error == "" {
+			d.Error = pathErr.Error()
+		}
+		return s.viewPage(ctx, "commits", d)
+	}
+	list, listErr := ghpr.ListCommitsWith(ctx.Context(), s.ghRun(), repoPath, ghpr.CommitListOpts{
+		Ref:   ref,
+		Limit: limit,
+	})
+	d.Commits = list
+	if d.Error == "" && listErr != nil {
 		d.Error = listErr.Error()
 	}
 	return s.viewPage(ctx, "commits", d)
 }
 
-// postCommitsFetch runs git fetch --all --prune on the project's main checkout
+// postCommitsFetch runs git fetch --all --prune on the selected repo checkout
 // so the commits browser can show up-to-date remote-tracking refs.
 func (s *Server) postCommitsFetch(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
@@ -89,17 +97,28 @@ func (s *Server) postCommitsFetch(ctx *hime.Context) error {
 	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
 	ref := strings.TrimSpace(ctx.PostFormValue("ref"))
 	n := strings.TrimSpace(ctx.PostFormValue("n"))
-	path, err := s.projectPath(project)
+	root, err := s.projectPath(project)
 	if err != nil {
 		return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "", err)
+	}
+	catalog, _ := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
+	active, pickErr := config.ResolveRepoPicker(catalog, owner, repo)
+	if pickErr != nil {
+		return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "", pickErr)
+	}
+	path, err := gitworktree.ResolveLocalRepo(ctx.Context(), root, active.Owner, active.Repo)
+	if err != nil {
+		return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, n, "", err)
 	}
 	err = ghpr.FetchWith(ctx.Context(), s.ghRun(), path)
-	s.auditAction(ctx, audit.ActionGitFetch, err, map[string]any{"project": project})
+	s.auditAction(ctx, audit.ActionGitFetch, err, map[string]any{
+		"project": project, "owner": active.Owner, "repo": active.Repo,
+	})
 	if err != nil {
-		return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "", err)
+		return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, n, "", err)
 	}
 	gitworktree.NoteFetched(path)
-	return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "Fetched remotes", nil)
+	return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, n, "Fetched remotes", nil)
 }
 
 func (s *Server) commitsListRedirect(ctx *hime.Context, project, owner, repo, ref, n, okMsg string, err error) error {
@@ -137,19 +156,38 @@ func (s *Server) commitDetail(ctx *hime.Context) error {
 	if sha == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing commit sha")
 	}
-	path, err := s.projectPath(project)
+	root, err := s.projectPath(project)
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).Error(err.Error())
 	}
 	catalog, _ := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
 	owner := strings.TrimSpace(ctx.FormValue("owner"))
 	repo := strings.TrimSpace(ctx.FormValue("repo"))
-	_, active, _, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
-	if err != nil {
-		if owner == "" && repo == "" && len(catalog) > 0 {
-			active = catalog[0]
-		} else {
+	var active config.GitHubRepoRef
+	var path string
+	if owner != "" || repo != "" {
+		_, active, path, err = s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+		if err != nil {
 			return ctx.Status(http.StatusForbidden).Error(err.Error())
+		}
+	} else if len(catalog) > 0 {
+		active = catalog[0]
+		path, err = gitworktree.ResolveLocalRepo(ctx.Context(), root, active.Owner, active.Repo)
+		if err != nil {
+			d := s.basePage(ctx)
+			d.Title = "commit · " + project
+			d.IsCommits = true
+			d.Project = project
+			d.RepoCatalog = catalog
+			d.ActiveOwner = active.Owner
+			d.ActiveRepo = active.Repo
+			d.Error = err.Error()
+			return s.viewPage(ctx, "commit_detail", d)
+		}
+	} else {
+		path, err = gitworktree.ResolveLocalRepo(ctx.Context(), root, "", "")
+		if err != nil {
+			return ctx.Status(http.StatusBadRequest).Error(err.Error())
 		}
 	}
 	detail, showErr := ghpr.ShowCommitMetaWith(ctx.Context(), s.ghRun(), path, sha)
@@ -164,8 +202,15 @@ func (s *Server) commitDetail(ctx *hime.Context) error {
 	if showErr == nil && detail.SHA != "" {
 		index, idxErr := ghpr.CommitDiffIndexWith(ctx.Context(), s.ghRun(), path, detail.SHA)
 		fragBase := fmt.Sprintf("/projects/%s/commits/%s/file", url.PathEscape(project), url.PathEscape(detail.SHA))
+		qExtra := url.Values{}
+		if active.Owner != "" {
+			qExtra.Set("owner", active.Owner)
+		}
+		if active.Repo != "" {
+			qExtra.Set("repo", active.Repo)
+		}
 		d.DiffReview = buildDiffReview(index, "c:"+detail.SHA, func(f ghpr.FileStat) string {
-			return fragBase + "?" + fragQuery(f, nil)
+			return fragBase + "?" + fragQuery(f, qExtra)
 		})
 		if idxErr != nil {
 			showErr = idxErr

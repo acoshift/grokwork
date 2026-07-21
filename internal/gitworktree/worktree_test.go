@@ -70,6 +70,102 @@ func TestIsRepoRequiresWorktreeRoot(t *testing.T) {
 	}
 }
 
+func TestResolveLocalRepoSingleAndMulti(t *testing.T) {
+	ctx := context.Background()
+	// Single-repo: project path is the git root.
+	single := initTestRepo(t)
+	got, err := ResolveLocalRepo(ctx, single, "acme", "app")
+	if err != nil || got != single {
+		t.Fatalf("single: got %q err=%v want %q", got, err, single)
+	}
+
+	// Multi-repo folder: parent has no .git; children are named after repos.
+	root := t.TempDir()
+	api := filepath.Join(root, "api")
+	if err := os.MkdirAll(api, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Minimal git root without full initTestRepo (just .git dir).
+	if err := os.Mkdir(filepath.Join(api, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	console := filepath.Join(root, "console")
+	if err := os.MkdirAll(console, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(console, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err = ResolveLocalRepo(ctx, root, "deploys-app", "api")
+	if err != nil || got != api {
+		t.Fatalf("multi api: got %q err=%v want %q", got, err, api)
+	}
+	got, err = ResolveLocalRepo(ctx, root, "deploys-app", "console")
+	if err != nil || got != console {
+		t.Fatalf("multi console: got %q err=%v want %q", got, err, console)
+	}
+	if _, err := ResolveLocalRepo(ctx, root, "deploys-app", "missing"); err == nil {
+		t.Fatal("expected error for missing child")
+	}
+	if _, err := ResolveLocalRepo(ctx, root, "", ""); err == nil {
+		t.Fatal("expected error for empty multi-repo root without repo name")
+	}
+}
+
+func TestResolveLocalRepoByRemote(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	// Child folder name ≠ GitHub repo name; match via origin remote.
+	child := filepath.Join(root, "local-name")
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=t@e.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=t@e.com",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(child, "init")
+	if err := os.WriteFile(filepath.Join(child, "README"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(child, "add", "README")
+	run(child, "commit", "-m", "init")
+	run(child, "remote", "add", "origin", "git@github.com:acme/other-name.git")
+
+	got, err := ResolveLocalRepo(ctx, root, "acme", "other-name")
+	if err != nil || got != child {
+		t.Fatalf("got %q err=%v want %q", got, err, child)
+	}
+}
+
+func TestParseGitHubRemote(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"git@github.com:acme/app.git", "acme/app", true},
+		{"https://github.com/acme/app", "acme/app", true},
+		{"ssh://git@github.com/acme/app.git", "acme/app", true},
+		{"https://gitlab.com/acme/app", "", false},
+		{"", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := parseGitHubRemote(tc.in)
+		if ok != tc.ok || got != tc.want {
+			t.Fatalf("%q: got %q ok=%v want %q ok=%v", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
 func TestFindOnDiskByUnitID(t *testing.T) {
 	data := t.TempDir()
 	repo := initTestRepo(t)
