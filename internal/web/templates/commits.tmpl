@@ -5,9 +5,11 @@
   · ref <span class="mono">{{.CommitRef}}</span>
   · <a href="/projects/{{.Project}}">Overview</a>
 </p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
-<form method="get" action="/projects/{{.Project}}/commits" class="toolbar" id="commits-filter">
+<div class="toolbar" id="commits-toolbar">
+<form method="get" action="/projects/{{.Project}}/commits" id="commits-filter" style="display:contents">
   <div class="field" style="flex-basis:18rem">
     <label for="repo-pick">Repository</label>
     <select id="repo-pick" name="repo_full" data-autosubmit>
@@ -28,6 +30,14 @@
   </div>
   <button type="submit" class="btn-secondary">Apply</button>
 </form>
+<form method="post" action="/projects/{{.Project}}/commits/fetch" id="commits-fetch" hx-boost="false" style="display:contents">
+  {{template "csrf" .}}
+  <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+  <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+  <input type="hidden" name="ref" value="{{.CommitRef}}">
+  <button type="submit" class="btn-secondary" title="git fetch --all --prune">Fetch</button>
+</form>
+</div>
 <script>
 (function(){
   var form=document.getElementById('commits-filter');

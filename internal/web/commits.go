@@ -46,7 +46,12 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 		d.IsCommits = true
 		d.Project = project
 		d.RepoCatalog = catalog
-		d.Error = err.Error()
+		d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
+		if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
+			d.Error = e
+		} else {
+			d.Error = err.Error()
+		}
 		return s.viewPage(ctx, "commits", d)
 	}
 	ref := strings.TrimSpace(ctx.FormValue("ref"))
@@ -71,10 +76,62 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	d.CommitRef = ref
 	d.Commits = list
 	d.CanReviewCommit = d.CanGitHubWrite && d.CanStartSession
-	if listErr != nil {
+	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
+	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
+		d.Error = e
+	} else if listErr != nil {
 		d.Error = listErr.Error()
 	}
 	return s.viewPage(ctx, "commits", d)
+}
+
+// postCommitsFetch runs git fetch --all --prune on the project's main checkout
+// so the commits browser can show up-to-date remote-tracking refs.
+func (s *Server) postCommitsFetch(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return ctx.Status(http.StatusForbidden).Error(err.Error())
+	}
+	owner := strings.TrimSpace(ctx.PostFormValue("owner"))
+	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
+	ref := strings.TrimSpace(ctx.PostFormValue("ref"))
+	n := strings.TrimSpace(ctx.PostFormValue("n"))
+	path, err := s.projectPath(project)
+	if err != nil {
+		return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "", err)
+	}
+	err = ghpr.FetchWith(ctx.Context(), s.ghRun(), path)
+	s.auditAction(ctx, audit.ActionGitFetch, err, map[string]any{"project": project})
+	if err != nil {
+		return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "", err)
+	}
+	return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "Fetched remotes", nil)
+}
+
+func (s *Server) commitsListRedirect(ctx *hime.Context, project, owner, repo, ref, n, okMsg string, err error) error {
+	q := url.Values{}
+	if owner != "" {
+		q.Set("owner", owner)
+	}
+	if repo != "" {
+		q.Set("repo", repo)
+	}
+	if ref != "" {
+		q.Set("ref", ref)
+	}
+	if n != "" {
+		q.Set("n", n)
+	}
+	if err != nil {
+		q.Set("err", err.Error())
+	} else if okMsg != "" {
+		q.Set("ok", okMsg)
+	}
+	u := fmt.Sprintf("/projects/%s/commits", url.PathEscape(project))
+	if enc := q.Encode(); enc != "" {
+		u += "?" + enc
+	}
+	return ctx.Redirect(u)
 }
 
 func (s *Server) commitDetail(ctx *hime.Context) error {

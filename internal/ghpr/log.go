@@ -40,6 +40,27 @@ type CommitListOpts struct {
 	Limit int
 }
 
+// Fetch updates remote-tracking branches in cwd (git fetch --all --prune).
+// Does not move local branch tips or touch the working tree.
+func Fetch(ctx context.Context, cwd string) error {
+	return FetchWith(ctx, defaultRunner, cwd)
+}
+
+// FetchWith is Fetch with an injectable runner.
+func FetchWith(ctx context.Context, run Runner, cwd string) error {
+	if run == nil {
+		run = defaultRunner
+	}
+	if strings.TrimSpace(cwd) == "" {
+		return fmt.Errorf("empty repo path")
+	}
+	_, err := run(ctx, cwd, "git", "fetch", "--all", "--prune")
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // ListCommits runs git log on the main checkout.
 func ListCommits(ctx context.Context, cwd string, opts CommitListOpts) ([]CommitSummary, error) {
 	return ListCommitsWith(ctx, defaultRunner, cwd, opts)

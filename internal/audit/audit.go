@@ -35,6 +35,7 @@ const (
 	ActionPRMerge             = "pr.merge"
 	ActionSessionStart        = "session.start" // Fix with Grok / web session start
 	ActionCommitReviewStart   = "commit.review.start"
+	ActionGitFetch            = "git.fetch"
 )
 
 // ActorAnonymous is used when web auth is off or no session is present.

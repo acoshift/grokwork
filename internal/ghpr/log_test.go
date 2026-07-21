@@ -62,6 +62,26 @@ func TestListCommitsWith(t *testing.T) {
 	}
 }
 
+func TestFetchWith(t *testing.T) {
+	var saw []string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if dir != "/repo" {
+			t.Fatalf("dir=%q", dir)
+		}
+		saw = append([]string{name}, args...)
+		return []byte("ok\n"), nil
+	}
+	if err := FetchWith(context.Background(), run, "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(saw, " ") != "git fetch --all --prune" {
+		t.Fatalf("args %v", saw)
+	}
+	if err := FetchWith(context.Background(), run, "  "); err == nil {
+		t.Fatal("expected empty path error")
+	}
+}
+
 func TestListCommitsDefaultRefAndCap(t *testing.T) {
 	var nArg string
 	var ref string

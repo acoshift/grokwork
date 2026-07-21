@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -812,6 +813,8 @@ func TestCommitsListAndDetail(t *testing.T) {
 		"abcdef0",
 		`name="repo_full"`,
 		`class="active">Commits</a>`,
+		`action="/projects/proj/commits/fetch"`,
+		`>Fetch</button>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list missing %q in %s", want, body)
@@ -853,6 +856,58 @@ func TestCommitsListAndDetail(t *testing.T) {
 	}
 	if !strings.Contains(body, `<span class="ln">1</span>`) {
 		t.Fatalf("frag missing line numbers: %s", body)
+	}
+}
+
+func TestCommitsFetch(t *testing.T) {
+	srv := workflowServer(t)
+	var fetched bool
+	orig := srv.ghRunner
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if name == "git" && len(args) > 0 && args[0] == "fetch" {
+			fetched = true
+			if strings.Join(args, " ") != "fetch --all --prune" {
+				t.Fatalf("fetch args %v", args)
+			}
+			return []byte(""), nil
+		}
+		return orig(ctx, dir, name, args...)
+	}
+	form := url.Values{
+		"owner": {"acme"},
+		"repo":  {"app"},
+		"ref":   {"origin/main"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/projects/proj/commits/fetch", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !fetched {
+		t.Fatal("expected git fetch")
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "/projects/proj/commits?") {
+		t.Fatalf("Location=%q", loc)
+	}
+	if !strings.Contains(loc, "ok=") || !strings.Contains(loc, "owner=acme") || !strings.Contains(loc, "repo=app") {
+		t.Fatalf("Location missing flash/repo params: %q", loc)
+	}
+	if !strings.Contains(loc, "ref=origin") { // origin%2Fmain or origin/main
+		t.Fatalf("Location missing ref: %q", loc)
+	}
+
+	// Flash lands on the list page.
+	req = httptest.NewRequest(http.MethodGet, loc, nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "Fetched remotes") {
+		t.Fatalf("missing flash: %s", w.Body.String())
 	}
 }
 
