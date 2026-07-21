@@ -1381,7 +1381,14 @@
 
     /* ── Responsive ──────────────────────────────────────────────────── */
     @media (max-width: 920px) {
-      .wrap { display: block; }
+      /* min-width:0 on the shell chain so the horizontal tab strip scrolls
+         inside .nav-links instead of expanding the page (flex default
+         min-width:auto sizes to content and blows out the viewport). */
+      .wrap {
+        display: block;
+        max-width: 100%;
+        min-width: 0;
+      }
       .review-cols { grid-template-columns: 1fr; }
       .file-rail { display: none; }
       .rv-kbd { display: none; }
@@ -1390,6 +1397,10 @@
         position: relative;
         z-index: 40;
         height: auto;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
         flex-direction: row;
         flex-wrap: wrap;
         align-items: center;
@@ -1399,9 +1410,14 @@
         border-bottom: 1px solid var(--border);
         overflow: visible;
       }
+      .brand { flex-shrink: 0; min-width: 0; }
       nav {
         order: 3;
+        flex: 1 1 100%;
         flex-basis: 100%;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
         flex-direction: row;
         align-items: center;
         margin-top: 0.15rem;
@@ -1411,18 +1427,24 @@
       }
       /* Scroll only the tab strip — not the project switcher (its menu would clip). */
       .nav-links {
-        flex: 1 1 auto;
+        flex: 1 1 0;
+        min-width: 0;
         flex-direction: row;
         overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
         gap: 0.25rem;
-        min-width: 0;
       }
       .nav-links::-webkit-scrollbar { display: none; }
       .nav-links > a { padding: 0.38rem 0.7rem; font-size: 0.86rem; flex-shrink: 0; }
       .nav-label { display: none; }
-      .proj-switch { margin: 0; flex-shrink: 0; min-width: 9rem; max-width: 42%; }
-      .proj-switch summary { padding: 0.32rem 0.55rem; }
+      .proj-switch {
+        margin: 0;
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 42%;
+      }
+      .proj-switch summary { padding: 0.32rem 0.55rem; min-width: 0; }
       .proj-menu { min-width: 11rem; right: auto; width: max-content; max-width: min(18rem, 85vw); }
       .side-foot {
         margin-top: 0;
@@ -1445,7 +1467,11 @@
       .side-user-meta { display: none; }
       .logout-form { padding: 0; flex-shrink: 0; }
       .logout-form button { width: auto; padding: 0 0.65rem; }
-      main.main { padding: 1.25rem 1rem 3rem; }
+      main.main {
+        padding: 1.25rem 1rem 3rem;
+        max-width: 100%;
+        min-width: 0;
+      }
       form.inline,
       .inline { grid-template-columns: 1fr; }
       th, td { padding: 0.55rem 0.65rem; font-size: 0.88rem; }
