@@ -132,26 +132,33 @@ func TestExtractFilePatch(t *testing.T) {
 func TestFileDiffRunnersPassPathspec(t *testing.T) {
 	var gotArgs []string
 	run := func(_ context.Context, _ string, name string, args ...string) ([]byte, error) {
-		gotArgs = append([]string{name}, args...)
+		gotArgs = append(gotArgs, name+" "+strings.Join(args, " "))
+		if name == "git" && len(args) > 0 && args[0] == "merge-base" {
+			return []byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"), nil
+		}
 		return []byte("diff --git a/old.go b/renamed.go\n--- a/old.go\n+++ b/renamed.go\n@@ -1 +1 @@\n-x\n+y\n"), nil
 	}
 	d, err := ShowCommitFileWith(context.Background(), run, "/repo", "abc", "renamed.go", "old.go", FileCaps())
 	if err != nil {
 		t.Fatal(err)
 	}
-	joined := strings.Join(gotArgs, " ")
-	if !strings.HasSuffix(joined, "abc -- renamed.go old.go") {
+	joined := strings.Join(gotArgs, " | ")
+	if !strings.Contains(joined, "git show --format= -p --no-ext-diff abc -- renamed.go old.go") {
 		t.Fatalf("pathspec args = %q", joined)
 	}
 	if len(d.Files) != 1 || d.Files[0].PathNew != "renamed.go" {
 		t.Fatalf("diff = %+v", d)
 	}
 
+	gotArgs = nil
 	if _, err := WorktreeDiffFileWith(context.Background(), run, "/wt", "origin/main", "renamed.go", "", FileCaps()); err != nil {
 		t.Fatal(err)
 	}
-	joined = strings.Join(gotArgs, " ")
-	if !strings.HasSuffix(joined, "diff origin/main -- renamed.go") {
+	joined = strings.Join(gotArgs, " | ")
+	if !strings.Contains(joined, "git merge-base origin/main HEAD") {
+		t.Fatalf("want merge-base call in %q", joined)
+	}
+	if !strings.Contains(joined, "git diff bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb -- renamed.go") {
 		t.Fatalf("worktree args = %q", joined)
 	}
 

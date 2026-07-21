@@ -62,8 +62,8 @@ func CommitDiffIndexWith(ctx context.Context, run Runner, cwd, sha string) (Diff
 	return buildIndex(num, st), nil
 }
 
-// WorktreeDiffIndexWith lists working-tree changes vs baseRef (two-dot, same
-// semantics as WorktreeDiffWith).
+// WorktreeDiffIndexWith lists working-tree changes vs the merge-base of
+// baseRef and HEAD (same semantics as WorktreeDiffWith).
 func WorktreeDiffIndexWith(ctx context.Context, run Runner, cwd, baseRef string) (DiffIndex, error) {
 	if run == nil {
 		run = defaultRunner
@@ -72,15 +72,15 @@ func WorktreeDiffIndexWith(ctx context.Context, run Runner, cwd, baseRef string)
 	if cwd == "" {
 		return DiffIndex{}, fmt.Errorf("empty worktree path")
 	}
-	baseRef = strings.TrimSpace(baseRef)
-	if baseRef == "" {
-		baseRef = "HEAD"
-	}
-	num, err := run(ctx, cwd, "git", "diff", "--numstat", "-z", baseRef)
+	left, err := worktreeDiffLeft(ctx, run, cwd, baseRef)
 	if err != nil {
 		return DiffIndex{}, err
 	}
-	st, err := run(ctx, cwd, "git", "diff", "--name-status", "-z", baseRef)
+	num, err := run(ctx, cwd, "git", "diff", "--numstat", "-z", left)
+	if err != nil {
+		return DiffIndex{}, err
+	}
+	st, err := run(ctx, cwd, "git", "diff", "--name-status", "-z", left)
 	if err != nil {
 		return DiffIndex{}, err
 	}
@@ -277,7 +277,8 @@ func ShowCommitFileWith(ctx context.Context, run Runner, cwd, sha, path, oldPath
 	return ParseUnifiedDiff(raw, caps), nil
 }
 
-// WorktreeDiffFileWith returns one file's working-tree diff vs baseRef.
+// WorktreeDiffFileWith returns one file's working-tree diff vs the merge-base
+// of baseRef and HEAD (same semantics as WorktreeDiffWith).
 func WorktreeDiffFileWith(ctx context.Context, run Runner, cwd, baseRef, path, oldPath string, caps DiffCaps) (Diff, error) {
 	if run == nil {
 		run = defaultRunner
@@ -289,11 +290,11 @@ func WorktreeDiffFileWith(ctx context.Context, run Runner, cwd, baseRef, path, o
 	if strings.TrimSpace(path) == "" {
 		return Diff{}, fmt.Errorf("empty path")
 	}
-	baseRef = strings.TrimSpace(baseRef)
-	if baseRef == "" {
-		baseRef = "HEAD"
+	left, err := worktreeDiffLeft(ctx, run, cwd, baseRef)
+	if err != nil {
+		return Diff{}, err
 	}
-	args := append([]string{"diff", baseRef}, filePathspec(path, oldPath)...)
+	args := append([]string{"diff", left}, filePathspec(path, oldPath)...)
 	raw, err := run(ctx, cwd, "git", args...)
 	if err != nil {
 		return Diff{}, err

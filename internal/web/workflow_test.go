@@ -92,6 +92,9 @@ func workflowServer(t *testing.T) *Server {
 			return []byte("M\x00wt.go\x00"), nil
 		case name == "git" && len(args) > 0 && args[0] == "diff":
 			return []byte("diff --git a/wt.go b/wt.go\n--- a/wt.go\n+++ b/wt.go\n@@ -1 +1 @@\n-a\n+b\n"), nil
+		case name == "git" && len(args) > 0 && args[0] == "merge-base":
+			// Session worktree diff resolves merge-base(base, HEAD) before diff.
+			return []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"), nil
 		case name == "git" && len(args) > 0 && args[0] == "log":
 			return []byte("abcdef0123456789\x1fFixture commit\x1fAlice\x1fa@ex.com\x1f2026-07-20T12:00:00Z\n"), nil
 		case name == "git" && len(args) > 0 && args[0] == "rev-parse":

@@ -90,7 +90,9 @@ func PRDiffWith(ctx context.Context, run Runner, repoDir, selector string, opts 
 	return ParseUnifiedDiff(raw, opts.Caps), nil
 }
 
-// WorktreeDiff runs `git diff baseRef` (or baseRef...HEAD) in cwd and parses it.
+// WorktreeDiff runs a working-tree diff in cwd against the merge-base of
+// baseRef and HEAD (so it matches PR-style branch changes, not "everything
+// missing from tip of baseRef").
 func WorktreeDiff(ctx context.Context, cwd, baseRef string) (Diff, error) {
 	return WorktreeDiffWith(ctx, defaultRunner, cwd, baseRef, DiffCaps{})
 }
@@ -105,17 +107,39 @@ func WorktreeDiffWith(ctx context.Context, run Runner, cwd, baseRef string, caps
 		// Empty Dir would make the process cwd the git root (often the bot repo).
 		return Diff{}, fmt.Errorf("empty worktree path")
 	}
-	baseRef = strings.TrimSpace(baseRef)
-	if baseRef == "" {
-		baseRef = "HEAD"
+	left, err := worktreeDiffLeft(ctx, run, cwd, baseRef)
+	if err != nil {
+		return Diff{}, err
 	}
-	// Two-dot working-tree diff: includes uncommitted changes vs baseRef (e.g. origin/main).
-	// Not origin/main...HEAD (committed-only three-dot).
-	raw, err := run(ctx, cwd, "git", "diff", baseRef)
+	// Working tree (committed branch tip + staged + unstaged) vs merge-base.
+	// Includes uncommitted changes; does not invent deletions for files only
+	// added on baseRef after the branch point (unlike two-dot `git diff baseRef`).
+	raw, err := run(ctx, cwd, "git", "diff", left)
 	if err != nil {
 		return Diff{}, err
 	}
 	return ParseUnifiedDiff(raw, caps), nil
+}
+
+// worktreeDiffLeft picks the left side of a worktree diff.
+// baseRef empty or HEAD → HEAD (uncommitted only).
+// Otherwise → merge-base(baseRef, HEAD), i.e. three-dot fork point, so the
+// working tree can still be the right side (unlike baseRef...HEAD which is
+// commit trees only).
+func worktreeDiffLeft(ctx context.Context, run Runner, cwd, baseRef string) (string, error) {
+	baseRef = strings.TrimSpace(baseRef)
+	if baseRef == "" || baseRef == "HEAD" {
+		return "HEAD", nil
+	}
+	out, err := run(ctx, cwd, "git", "merge-base", baseRef, "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("merge-base %s HEAD: %w", baseRef, err)
+	}
+	mb := strings.TrimSpace(string(out))
+	if mb == "" {
+		return "", fmt.Errorf("empty merge-base for %s and HEAD", baseRef)
+	}
+	return mb, nil
 }
 
 func parseNameOnlyDiff(raw []byte, caps DiffCaps) Diff {

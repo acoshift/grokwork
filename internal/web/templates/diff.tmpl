@@ -8,7 +8,7 @@
 </p>
 <h1 id="page-diff">{{.Title}}</h1>
 <p class="sub">
-  {{if and .ThreadID (not .PRNumber)}}base <span class="mono">{{.DiffBase}}</span> · {{end}}
+  {{if and .ThreadID (not .PRNumber)}}vs merge-base of <span class="mono">{{.DiffBase}}</span> · {{end}}
   {{with .DiffReview}}{{len .Files}} files changed
   {{if .TotalAdds}} <span class="rv-tadd">+{{.TotalAdds}}</span>{{end}}
   {{if .TotalDels}} <span class="rv-tdel">−{{.TotalDels}}</span>{{end}}

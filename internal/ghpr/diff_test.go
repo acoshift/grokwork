@@ -109,14 +109,32 @@ func TestPRDiffNameOnly(t *testing.T) {
 }
 
 func TestWorktreeDiffWithMock(t *testing.T) {
+	var calls []string
 	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
-		if name != "git" || args[0] != "diff" {
+		if name != "git" {
 			t.Fatalf("%s %v", name, args)
 		}
 		if dir != "/wt" {
 			t.Fatalf("dir=%q", dir)
 		}
-		return []byte(samplePatch), nil
+		joined := strings.Join(args, " ")
+		calls = append(calls, joined)
+		switch {
+		case args[0] == "merge-base":
+			if joined != "merge-base origin/main HEAD" {
+				t.Fatalf("merge-base args = %q", joined)
+			}
+			return []byte("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"), nil
+		case args[0] == "diff":
+			// Must diff against merge-base, not tip of origin/main.
+			if args[1] != "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" {
+				t.Fatalf("diff left = %q, want merge-base sha", args[1])
+			}
+			return []byte(samplePatch), nil
+		default:
+			t.Fatalf("unexpected git %v", args)
+			return nil, nil
+		}
 	}
 	d, err := WorktreeDiffWith(context.Background(), run, "/wt", "origin/main", DiffCaps{})
 	if err != nil {
@@ -124,6 +142,24 @@ func TestWorktreeDiffWithMock(t *testing.T) {
 	}
 	if len(d.Files) != 2 {
 		t.Fatalf("%+v", d)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("calls = %v", calls)
+	}
+}
+
+func TestWorktreeDiffHEADSkipsMergeBase(t *testing.T) {
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if name != "git" || args[0] != "diff" || args[1] != "HEAD" {
+			t.Fatalf("want git diff HEAD, got %s %v", name, args)
+		}
+		return []byte(samplePatch), nil
+	}
+	if _, err := WorktreeDiffWith(context.Background(), run, "/wt", "HEAD", DiffCaps{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WorktreeDiffWith(context.Background(), run, "/wt", "", DiffCaps{}); err != nil {
+		t.Fatal(err)
 	}
 }
 
