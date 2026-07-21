@@ -98,7 +98,7 @@
 
 {{if .CanMerge}}
 <div class="section card" id="pr-merge-form">
-  <h2>Merge PR (admin)</h2>
+  <h2>Merge PR</h2>
   <p class="sub" style="margin-top:0">Uses host <span class="mono">gh pr merge</span> with branch protection. Never passes <span class="mono">--admin</span>.</p>
   <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/merge" onsubmit="return confirm('Merge this pull request?');">
     {{template "csrf" $}}

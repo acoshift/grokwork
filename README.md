@@ -91,7 +91,7 @@ While the process runs it also serves a small server-rendered admin UI (hime + `
 | Feature flag | Effect |
 |--------------|--------|
 | `webAuth.features.githubWrites` | Members can comment / close issues & PRs |
-| `webAuth.features.merge` | Admins can merge (default `webMergeMethod`: `squash`). Never passes `--admin` |
+| `webAuth.features.merge` | Members can merge (default `webMergeMethod`: `squash`). Never passes `--admin` |
 | `webAuth.features.startSessions` | Members can **Fix** from a GitHub/Linear issue and **Address CI / Address review** from a PR (starts/queues a Grok run on the project’s Discord channel) |
 
 Bind for Tailscale or LAN with `"httpListen": "0.0.0.0:8787"` (or a Tailscale IP).

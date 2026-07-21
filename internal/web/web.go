@@ -211,7 +211,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/close",
 		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postPRClose))))
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/merge",
-		s.requireFeature("merge", s.requireAdmin(hime.Handler(s.postPRMerge))))
+		s.requireFeature("merge", s.requireMember(hime.Handler(s.postPRMerge))))
 	// Fix with Grok (PR11a)
 	mux.Handle("POST /projects/{project}/issues/{n}/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssueFix))))
@@ -394,13 +394,11 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 		d.UserAvatar = sess.AvatarURL
 		d.UserRole = string(sess.Role)
 		d.IsAdmin = config.RoleAtLeast(sess.Role, config.WebRoleAdmin)
-		// Gate UI by role (handlers still enforce).
+		// Gate UI by role (handlers still enforce). Member+ for writes/merge/sessions.
 		if !config.RoleAtLeast(sess.Role, config.WebRoleMember) {
 			d.CanGitHubWrite = false
-			d.CanStartSession = false
-		}
-		if !d.IsAdmin {
 			d.CanMerge = false
+			d.CanStartSession = false
 		}
 	} else {
 		d.CanGitHubWrite = false

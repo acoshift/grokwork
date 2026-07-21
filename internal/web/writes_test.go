@@ -143,9 +143,30 @@ func TestMemberCommentAndClose(t *testing.T) {
 	}
 }
 
-func TestMemberCannotMerge(t *testing.T) {
-	srv, _, _ := writeEnabledServer(t)
+func TestMemberCanMerge(t *testing.T) {
+	srv, _, calls := writeEnabledServer(t)
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"project": {"proj"}, "csrf": {csrf}, "method": {"squash"}}
+	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/merge", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	joined := strings.Join(*calls, " | ")
+	if !strings.Contains(joined, "pr merge") || !strings.Contains(joined, "--squash") {
+		t.Fatalf("calls=%v", *calls)
+	}
+}
+
+func TestViewerCannotMerge(t *testing.T) {
+	srv, _, _ := writeEnabledServer(t)
+	sid, csrf, err := srv.LoginAs("viewer-1", "V", config.WebRoleViewer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,6 +336,54 @@ func TestPRDetailShowsWriteFormsForAdmin(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q", want)
+		}
+	}
+}
+
+func TestPRDetailShowsWriteFormsForMember(t *testing.T) {
+	srv, _, _ := writeEnabledServer(t)
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/prs/acme/app/9?project=proj", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="pr-comment-form"`,
+		`id="pr-close-form"`,
+		`id="pr-merge-form"`,
+		`confirm('Close this pull request?')`,
+		`confirm('Merge this pull request?')`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+}
+
+func TestPRDetailHidesWriteFormsForViewer(t *testing.T) {
+	srv, _, _ := writeEnabledServer(t)
+	sid, _, err := srv.LoginAs("viewer-1", "V", config.WebRoleViewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/prs/acme/app/9?project=proj", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	for _, hide := range []string{`id="pr-close-form"`, `id="pr-merge-form"`, `id="pr-comment-form"`} {
+		if strings.Contains(body, hide) {
+			t.Fatalf("viewer should not see %q", hide)
 		}
 	}
 }
