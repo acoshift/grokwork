@@ -1,28 +1,20 @@
 package web
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/moonrhythm/hime"
 
 	"github.com/acoshift/grokwork/internal/audit"
-	"github.com/acoshift/grokwork/internal/commitreview"
+	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 )
-
-func (s *Server) reviewStore() (*commitreview.Store, error) {
-	s.reviewsOnce.Do(func() {
-		s.reviews, s.reviewsErr = commitreview.NewStore(s.cfg.DataDir)
-	})
-	return s.reviews, s.reviewsErr
-}
 
 func (s *Server) commitsList(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
@@ -75,7 +67,7 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	d.ActiveRepo = active.Repo
 	d.CommitRef = ref
 	d.Commits = list
-	d.CanReviewCommit = d.CanGitHubWrite && d.CanStartSession
+	d.CanReviewCommit = d.CanStartSession
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e
@@ -177,94 +169,20 @@ func (s *Server) commitDetail(ctx *hime.Context) error {
 			showErr = idxErr
 		}
 	}
-	d.CanReviewCommit = d.CanGitHubWrite && d.CanStartSession
+	d.CanReviewCommit = d.CanStartSession
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e
 	} else if showErr != nil {
 		d.Error = showErr.Error()
 	}
-
-	// Attach review job if requested or latest for this SHA.
-	d.ReviewJob = s.loadReviewJob(project, active.Owner, active.Repo, detail.SHA, ctx.FormValue("job"))
 	return s.viewPage(ctx, "commit_detail", d)
 }
 
-// commitReviewStatus is a lightweight htmx poll target for the review job card.
-// Avoids re-running git show / diff index on every tick while a review runs.
-func (s *Server) commitReviewStatus(ctx *hime.Context) error {
-	project := strings.TrimSpace(ctx.PathValue("project"))
-	if err := s.ensureProjectAccess(ctx, project); err != nil {
-		return ctx.Status(http.StatusForbidden).Error(err.Error())
-	}
-	sha := strings.TrimSpace(ctx.PathValue("sha"))
-	if sha == "" {
-		return ctx.Status(http.StatusBadRequest).Error("missing commit sha")
-	}
-	owner := strings.TrimSpace(ctx.FormValue("owner"))
-	repo := strings.TrimSpace(ctx.FormValue("repo"))
-	_, active, _, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
-	if err != nil {
-		catalog, _ := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
-		if owner == "" && repo == "" && len(catalog) > 0 {
-			active = catalog[0]
-		} else {
-			return ctx.Status(http.StatusForbidden).Error(err.Error())
-		}
-	}
-	d := s.basePage(ctx)
-	d.Project = project
-	d.ActiveOwner = active.Owner
-	d.ActiveRepo = active.Repo
-	d.ReviewJob = s.loadReviewJob(project, active.Owner, active.Repo, sha, ctx.FormValue("job"))
-	if d.ReviewJob == nil {
-		return ctx.Status(http.StatusNotFound).Error("review job not found")
-	}
-	return s.viewFragment(ctx, "commit_detail", "commit_review_job", d)
-}
-
-// loadReviewJob returns the requested job, else the latest for this SHA, and
-// soft-fails jobs orphaned by a process restart.
-func (s *Server) loadReviewJob(project, owner, repo, sha, jobID string) *commitreview.Job {
-	store, err := s.reviewStore()
-	if err != nil {
-		return nil
-	}
-	var j *commitreview.Job
-	if id := strings.TrimSpace(jobID); id != "" {
-		if got, gerr := store.Get(id); gerr == nil {
-			j = got
-		}
-	}
-	if j == nil && strings.TrimSpace(sha) != "" {
-		j, _ = store.LatestForSHA(project, owner, repo, sha)
-	}
-	if j != nil {
-		s.maybeFailStaleJob(store, j)
-	}
-	return j
-}
-
-func (s *Server) maybeFailStaleJob(store *commitreview.Store, j *commitreview.Job) {
-	if j == nil {
-		return
-	}
-	switch j.Status {
-	case commitreview.StatusQueued, commitreview.StatusRunning, commitreview.StatusCreatingIssues:
-	default:
-		return
-	}
-	// In-memory active jobs are tracked; if process restarted, mark old ones failed.
-	if time.Since(j.UpdatedAt) > 30*time.Minute {
-		j.Status = commitreview.StatusFailed
-		j.Error = "review job timed out or server restarted"
-		_ = store.Save(j)
-	}
-}
-
+// postCommitReview starts a new Discord/web session that agentically reviews the
+// commit and opens GitHub issues (Grok owns gh issue create; bot does not file).
 func (s *Server) postCommitReview(ctx *hime.Context) error {
-	// Dual feature gate (middleware only enforces startSessions).
-	if !s.cfg.FeatureGitHubWrites() || !s.cfg.FeatureStartSessions() {
+	if !s.cfg.FeatureStartSessions() {
 		return ctx.Status(http.StatusNotFound).Error("not found")
 	}
 	project := strings.TrimSpace(ctx.PathValue("project"))
@@ -276,7 +194,7 @@ func (s *Server) postCommitReview(ctx *hime.Context) error {
 	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
 	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
 	if err != nil {
-		return s.commitReviewRedirect(ctx, project, sha, owner, repo, "", err)
+		return s.commitReviewSourceRedirect(ctx, project, sha, owner, repo, err)
 	}
 	owner, repo = ref.Owner, ref.Repo
 
@@ -287,83 +205,86 @@ func (s *Server) postCommitReview(ctx *hime.Context) error {
 		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
 	}
 
-	store, err := s.reviewStore()
-	if err != nil {
-		return s.commitReviewRedirect(ctx, project, sha, owner, repo, "", err)
-	}
-	if active, _ := store.ActiveForSHA(project, owner, repo, sha); active != nil {
-		return s.commitReviewRedirect(ctx, project, sha, owner, repo, active.ID, nil)
-	}
-
-	// Resolve SHA / subject for job metadata.
 	detail, showErr := ghpr.ShowCommitMetaWith(ctx.Context(), s.ghRun(), cwd, sha)
 	if showErr != nil {
 		s.auditAction(ctx, audit.ActionCommitReviewStart, showErr, map[string]any{
 			"project": project, "owner": owner, "repo": repo, "sha": sha,
 		})
-		return s.commitReviewRedirect(ctx, project, sha, owner, repo, "", showErr)
+		return s.commitReviewSourceRedirect(ctx, project, sha, owner, repo, showErr)
 	}
 
 	actor := s.fixActor(ctx)
-	actorLabel := actor.DisplayName
-	if actorLabel == "" {
-		actorLabel = actor.ID
+	author := strings.TrimSpace(detail.AuthorName)
+	if detail.AuthorEmail != "" {
+		if author != "" {
+			author += " <" + detail.AuthorEmail + ">"
+		} else {
+			author = detail.AuthorEmail
+		}
 	}
-	if actorLabel == "" {
-		actorLabel = audit.ActorAnonymous
+	date := ""
+	if !detail.AuthorDate.IsZero() {
+		date = detail.AuthorDate.UTC().Format("2006-01-02 15:04 UTC")
 	}
-	job := commitreview.NewQueuedJob(commitreview.StartOpts{
+
+	res, startErr := s.bot.StartCommitReview(bot.CommitReviewOpts{
 		Project:  project,
+		Actor:    actor,
 		Owner:    owner,
 		Repo:     repo,
 		SHA:      detail.SHA,
 		ShortSHA: detail.ShortSHA,
 		Subject:  detail.Subject,
-		Actor:    actorLabel,
-		Cwd:      cwd,
+		Body:     detail.Body,
+		Author:   author,
+		Date:     date,
 	})
-	if err := store.Save(job); err != nil {
-		return s.commitReviewRedirect(ctx, project, sha, owner, repo, "", err)
+
+	detailMap := map[string]any{
+		"project": project, "owner": owner, "repo": repo, "sha": detail.SHA,
+		"threadId": res.ThreadID, "status": string(res.Status),
+		"queuePos": res.QueuePos, "created": res.Created,
 	}
+	if startErr != nil {
+		s.auditAction(ctx, audit.ActionCommitReviewStart, startErr, detailMap)
+		return s.mapCommitReviewError(ctx, project, detail.SHA, owner, repo, startErr)
+	}
+	s.auditAction(ctx, audit.ActionCommitReviewStart, nil, detailMap)
 
-	s.auditAction(ctx, audit.ActionCommitReviewStart, nil, map[string]any{
-		"project": project, "owner": owner, "repo": repo, "sha": detail.SHA, "job": job.ID,
-	})
-
-	// Detach from request context; bound slightly above Execute's default timeout.
-	go func() {
-		bg, cancel := context.WithTimeout(context.Background(), commitreview.DefaultTimeout+time.Minute)
-		defer cancel()
-		commitreview.Execute(bg, commitreview.Deps{
-			Store:   store,
-			Git:     s.ghRun(),
-			GrokBin: s.cfg.GrokBin,
-			Model:   s.cfg.Model,
-			DataDir: s.cfg.DataDir,
-		}, job, cwd)
-		// Audit issue creates after job finishes.
-		if j, err := store.Get(job.ID); err == nil && s.audit != nil {
-			for _, f := range j.Findings {
-				if f.IssueNumber > 0 {
-					_ = s.audit.Append(audit.Event{
-						Action: audit.ActionIssueCreate,
-						Actor:  actorLabel,
-						OK:     true,
-						Detail: map[string]any{
-							"project": project, "owner": owner, "repo": repo,
-							"number": f.IssueNumber, "url": f.IssueURL,
-							"sha": detail.SHA, "job": job.ID, "severity": f.Severity,
-						},
-					})
-				}
-			}
-		}
-	}()
-
-	return s.commitReviewRedirect(ctx, project, detail.SHA, owner, repo, job.ID, nil)
+	ok := string(res.Status)
+	if res.DiscordOffline {
+		ok = ok + "&discord=offline"
+	}
+	return s.sessionRedirect(ctx, res.ThreadID, ok, "")
 }
 
-func (s *Server) commitReviewRedirect(ctx *hime.Context, project, sha, owner, repo, jobID string, err error) error {
+func (s *Server) mapCommitReviewError(ctx *hime.Context, project, sha, owner, repo string, err error) error {
+	msg := err.Error()
+	switch {
+	case errors.Is(err, bot.ErrDiscordNotReady):
+		return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusServiceUnavailable)
+	case errors.Is(err, bot.ErrQueueFull):
+		return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusConflict)
+	case errors.Is(err, bot.ErrProjectRequired):
+		return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusBadRequest)
+	default:
+		low := strings.ToLower(msg)
+		if strings.Contains(low, "channel") || strings.Contains(low, "mapped") {
+			return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusBadRequest)
+		}
+		return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusBadRequest)
+	}
+}
+
+func (s *Server) commitReviewSourceRedirect(ctx *hime.Context, project, sha, owner, repo string, err error) error {
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusFound)
+}
+
+func (s *Server) commitReviewSourceRedirectStatus(ctx *hime.Context, project, sha, owner, repo, errMsg string, status int) error {
 	q := url.Values{}
 	if owner != "" {
 		q.Set("owner", owner)
@@ -371,19 +292,22 @@ func (s *Server) commitReviewRedirect(ctx *hime.Context, project, sha, owner, re
 	if repo != "" {
 		q.Set("repo", repo)
 	}
-	if jobID != "" {
-		q.Set("job", jobID)
-	}
-	if err != nil {
-		q.Set("err", err.Error())
-	} else if jobID != "" {
-		q.Set("ok", "Review started — filing GitHub issues when done.")
+	if errMsg != "" {
+		q.Set("err", errMsg)
 	}
 	u := fmt.Sprintf("/projects/%s/commits/%s", url.PathEscape(project), url.PathEscape(sha))
 	if enc := q.Encode(); enc != "" {
 		u += "?" + enc
 	}
-	return ctx.Redirect(u)
+	// Match fixSourceRedirect: 400 → browser flash redirect; 409/503 keep status for tests.
+	switch status {
+	case http.StatusFound, http.StatusSeeOther, 0, http.StatusBadRequest:
+		return ctx.Redirect(u)
+	case http.StatusTooManyRequests, http.StatusConflict, http.StatusServiceUnavailable, http.StatusForbidden:
+		return ctx.Status(status).Error(errMsg)
+	default:
+		return ctx.Redirect(u)
+	}
 }
 
 func shortOr(a, b string) string {

@@ -15,7 +15,6 @@ import (
 
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/bot"
-	"github.com/acoshift/grokwork/internal/commitreview"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/history"
@@ -45,13 +44,9 @@ type Server struct {
 	linearNew func(apiKey string) *linear.Client
 	// Fix-with-Grok rate limit (lazy init).
 	startLimit *startRateLimiter
-	// Commit review job store (lazy under data/commit-reviews).
-	reviews     *commitreview.Store
-	reviewsOnce sync.Once
 	// PR raw-patch cache (page + per-file fragments share one gh pr diff).
 	prPatchMu sync.Mutex
 	prPatches map[string]prPatchEntry
-	reviewsErr  error
 }
 
 // New builds a hime app with dashboard, history, config, and SSE routes.
@@ -201,7 +196,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /projects/{project}/commits/fetch", s.requireMember(hime.Handler(s.postCommitsFetch)))
 	mux.Handle("GET /projects/{project}/commits/{sha}", s.requireAuth(hime.Handler(s.commitDetail)))
 	mux.Handle("GET /projects/{project}/commits/{sha}/file", s.requireAuth(hime.Handler(s.commitDiffFile)))
-	mux.Handle("GET /projects/{project}/commits/{sha}/review-status", s.requireAuth(hime.Handler(s.commitReviewStatus)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}", s.requireAuth(hime.Handler(s.prDetail)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}/diff", s.requireAuth(hime.Handler(s.prDiffPage)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}/diff/file", s.requireAuth(hime.Handler(s.prDiffFile)))
@@ -228,7 +222,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAddressReview))))
 	mux.Handle("POST /sessions/{threadID}/continue",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionContinue))))
-	// Commit review (read-only Grok job → auto-create GitHub issues)
+	// Commit review → new Discord/web session; Grok opens issues agentically
 	mux.Handle("POST /projects/{project}/commits/{sha}/review",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCommitReview))))
 	mux.Handle("GET /events", s.requireAuth(http.HandlerFunc(s.sse)))
@@ -346,7 +340,6 @@ type pageData struct {
 	Commits         []ghpr.CommitSummary
 	Commit          ghpr.CommitDetail
 	CommitRef       string
-	ReviewJob       *commitreview.Job
 	CanReviewCommit bool
 	// Write UI flags (from config snapshot + session)
 	CanGitHubWrite  bool

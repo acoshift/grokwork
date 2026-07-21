@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acoshift/grokwork/internal/commitreview"
+	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -843,6 +843,13 @@ func TestCommitsListAndDetail(t *testing.T) {
 			t.Fatalf("detail missing %q", want)
 		}
 	}
+	// Auth off → review gated (no job card from the old auto-file path).
+	if strings.Contains(body, `id="review-job"`) {
+		t.Fatal("old review-job card must be gone")
+	}
+	if !strings.Contains(body, "startSessions") {
+		t.Fatal("expected startSessions gate copy when sessions feature is off")
+	}
 	assertNavActive(t, body, "Commits")
 
 	// Per-file fragment for the commit.
@@ -861,95 +868,105 @@ func TestCommitsListAndDetail(t *testing.T) {
 	}
 }
 
-// TestCommitReviewStatusPoll pins the job card polls via htmx (every 3s) instead
-// of full-page meta refresh — meta refresh reloads the whole commit page for the
-// duration of the review and looks like a stuck refresh loop.
-func TestCommitReviewStatusPoll(t *testing.T) {
-	srv := workflowServer(t)
-	const (
-		sha    = "abcdef0123456789abcdef0123456789abcdef01"
-		jobID  = "jobpoll01"
-		detail = "/projects/proj/commits/" + sha + "?owner=acme&repo=app&job=" + jobID
-		status = "/projects/proj/commits/" + sha + "/review-status?owner=acme&repo=app&job=" + jobID
-	)
-	store, err := commitreview.NewStore(srv.cfg.DataDir)
+// TestCommitReviewStartsSession posts review and redirects into a new session
+// (Discord thread when threadAPI is set; otherwise web-native).
+func TestCommitReviewStartsSession(t *testing.T) {
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.StartSessions = true
+	cfg.DiscordGuildID = "guild-review"
+	if err := cfg.SetProjectGitHubRepos("proj", []config.GitHubRepoRef{{Owner: "acme", Repo: "app"}}); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Channels = map[string]string{"ch-proj": "proj"}
+	_ = cfg.SetProjectDiscordChannel("proj", "ch-proj")
+	fakeGrok := writeWebFakeGrok(t)
+	cfg.GrokBin = fakeGrok
+	f := false
+	cfg.WorktreeIsolation = &f
+	bot.SetThreadAPIForTest(srv.bot, &bot.FakeThreadAPI{NextMsg: "m1", NextTh: "th-commit-review"})
+	const sha = "abcdef0123456789abcdef0123456789abcdef01"
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "show" && strings.Contains(joined, "-s") {
+			return []byte(sha + "\x1fFixture commit\x1fAlice\x1fa@ex.com\x1f2026-07-20T12:00:00Z\x1fbody note\n"), nil
+		}
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte(sha + "\n"), nil
+		}
+		return []byte(""), nil
+	}
+	t.Cleanup(func() { bot.WaitIdleForTest(srv.bot, 5*time.Second) })
+
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
-	job := &commitreview.Job{
-		ID: jobID, CreatedAt: now, UpdatedAt: now,
-		Actor: "tester", Project: "proj", Owner: "acme", Repo: "app",
-		SHA: sha, ShortSHA: sha[:7], Subject: "Fixture commit",
-		Status: commitreview.StatusRunning,
+	form := url.Values{"csrf": {csrf}, "owner": {"acme"}, "repo": {"app"}}
+	req := httptest.NewRequest(http.MethodPost, "/projects/proj/commits/"+sha+"/review", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s loc=%s", w.Code, w.Body.String(), w.Header().Get("Location"))
 	}
-	if err := store.Save(job); err != nil {
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "/sessions/th-commit-review") {
+		t.Fatalf("want session redirect, got %q", loc)
+	}
+	e, ok := srv.sessions.Get("th-commit-review")
+	if !ok || e.Project != "proj" {
+		t.Fatalf("session missing: ok=%v %+v", ok, e)
+	}
+	if e.Goal == "" || (!strings.Contains(e.Goal, "Fixture") && !strings.Contains(e.Goal, "abcdef0")) {
+		t.Fatalf("goal=%q", e.Goal)
+	}
+}
+
+func TestCommitReviewFeatureOff404(t *testing.T) {
+	srv, _, _ := authOnServer(t) // startSessions false
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
 		t.Fatal(err)
 	}
-	h := srv.Handler()
-
-	// Full page while running: htmx poll attrs, never meta refresh.
-	req := httptest.NewRequest(http.MethodGet, detail, nil)
+	form := url.Values{"csrf": {csrf}, "owner": {"acme"}, "repo": {"app"}}
+	req := httptest.NewRequest(http.MethodPost, "/projects/proj/commits/abcdef0/review", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestCommitDetailReviewButton(t *testing.T) {
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.StartSessions = true
+	if err := cfg.SetProjectGitHubRepos("proj", []config.GitHubRepoRef{{Owner: "acme", Repo: "app"}}); err != nil {
+		t.Fatal(err)
+	}
+	// Admins see all projects; members need project allowlist (not set for member-1).
+	ws := workflowServer(t)
+	srv.ghRunner = ws.ghRunner
+	const sha = "abcdef0123456789abcdef0123456789abcdef01"
+	sid, _, err := srv.LoginAs("admin-1", "Admin", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/commits/"+sha+"?owner=acme&repo=app", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("detail status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if strings.Contains(body, `http-equiv="refresh"`) || strings.Contains(body, "http-equiv='refresh'") {
-		t.Fatal("commit detail must not full-page meta-refresh while review runs")
+	if !strings.Contains(body, "Review in new session") {
+		t.Fatalf("missing review button: %s", body)
 	}
-	for _, want := range []string{
-		`id="review-job"`,
-		`hx-trigger="every 3s"`,
-		`/projects/proj/commits/` + sha + `/review-status?job=` + jobID,
-		`hx-target="this"`,
-		`hx-select="unset"`,
-		`hx-swap="outerHTML"`,
-		`>running</span>`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("running detail missing %q", want)
-		}
-	}
-
-	// Status fragment is chrome-free and still polling while non-terminal.
-	req = httptest.NewRequest(http.MethodGet, status, nil)
-	req.Header.Set("HX-Request", "true")
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status frag status=%d body=%s", w.Code, w.Body.String())
-	}
-	frag := w.Body.String()
-	if !strings.Contains(frag, `id="review-job"`) || !strings.Contains(frag, `hx-trigger="every 3s"`) {
-		t.Fatalf("status frag should poll while running: %s", frag)
-	}
-	for _, ban := range []string{`id="sse-status"`, "<nav", "/static/htmx.min.js", `id="page-commit-detail"`} {
-		if strings.Contains(frag, ban) {
-			t.Fatalf("status frag should not include %q (got full page?)", ban)
-		}
-	}
-
-	// Terminal job: poll attrs drop so the client stops requesting.
-	job.Status = commitreview.StatusDone
-	job.Summary = "clean"
-	if err := store.Save(job); err != nil {
-		t.Fatal(err)
-	}
-	req = httptest.NewRequest(http.MethodGet, status, nil)
-	req.Header.Set("HX-Request", "true")
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("done frag status=%d", w.Code)
-	}
-	frag = w.Body.String()
-	if strings.Contains(frag, `hx-trigger="every 3s"`) || strings.Contains(frag, "hx-get=") {
-		t.Fatalf("done job must stop polling: %s", frag)
-	}
-	if !strings.Contains(frag, `>done</span>`) || !strings.Contains(frag, "clean") {
-		t.Fatalf("done frag missing status/summary: %s", frag)
+	if strings.Contains(body, "Requires member role") {
+		t.Fatal("should show review button when startSessions on")
 	}
 }
 
