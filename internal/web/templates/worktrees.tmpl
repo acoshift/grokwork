@@ -32,7 +32,7 @@
      hx-target="this"
      hx-select="unset"
      hx-swap="innerHTML"
-     hx-sync="this:replace">
+     hx-sync="this:queue last">
   {{template "worktrees_table" .}}
 </div>
 {{end}}

@@ -5,7 +5,9 @@
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
-{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page.
+     hx-sync queue last (not replace): SSE can tick every 2s while a run is active; replace aborts the
+     in-flight XHR and htmx console.errors htmx:sendAbort / htmx:afterRequest on every abort. */}}
 <div class="live-region"
      id="live-home-projects"
      hx-get="{{route "partial.home.projects"}}"
@@ -13,7 +15,7 @@
      hx-target="this"
      hx-select="unset"
      hx-swap="innerHTML"
-     hx-sync="this:replace">
+     hx-sync="this:queue last">
   {{template "home_projects" .}}
 </div>
 
@@ -26,7 +28,7 @@
        hx-target="this"
        hx-select="unset"
        hx-swap="innerHTML"
-       hx-sync="this:replace">
+       hx-sync="this:queue last">
     {{template "home_runs" .}}
   </div>
 </div>
