@@ -130,8 +130,11 @@ func (s *Server) issuesList(ctx *hime.Context) error {
 	d.IssueState = state
 	d.Issues = issues
 	d.LinearEnabled = s.cfg.ProjectLinearEnabled(project)
+	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if listErr != nil {
 		d.Error = listErr.Error()
+	} else if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
+		d.Error = e
 	}
 	return s.viewPage(ctx, "issues", d)
 }

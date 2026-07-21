@@ -5,6 +5,7 @@
   · <a href="/projects/{{.Project}}">Overview</a>
   {{if .LinearEnabled}} · <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}
 </p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
 <form method="get" action="/projects/{{.Project}}/issues" class="toolbar" id="issues-filter">
@@ -49,12 +50,31 @@
 
 <div class="section">
   {{if .Issues}}
+  {{if .CanStartSession}}<form method="post" action="/projects/{{.Project}}/issues/fix" id="issues-bulk-fix">
+    {{template "csrf" $}}
+    <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    <div class="toolbar" id="issues-fix-bar" style="margin-bottom:0.75rem">
+      <button type="button" id="btn-issues-fix" class="btn-secondary">Fix</button>
+      <button type="button" id="btn-issues-fix-cancel" class="btn-secondary" hidden>Cancel</button>
+      <span id="issues-fix-hint" class="sub" style="margin:0;align-self:center" hidden>Select issues, then Confirm. Each gets a new fix session.</span>
+    </div>{{end}}
   <div class="table-scroll">
-  <table>
-    <thead><tr><th>#</th><th>Title</th><th>State</th><th>Author</th><th title="Pull requests that reference this issue">PRs</th></tr></thead>
+  <table id="issues-table">
+    <thead><tr>
+      {{if $.CanStartSession}}<th class="col-fix-select" hidden aria-label="Select"></th>{{end}}
+      <th>#</th><th>Title</th><th>State</th><th>Author</th><th title="Pull requests that reference this issue">PRs</th>
+    </tr></thead>
     <tbody>
     {{range .Issues}}
       <tr>
+        {{if $.CanStartSession}}
+        <td class="col-fix-select" hidden>
+          <label class="check" style="min-height:0;margin:0">
+            <input type="checkbox" name="numbers" value="{{.Number}}" disabled>
+          </label>
+        </td>
+        {{end}}
         <td class="mono"><a href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">#{{.Number}}</a></td>
         <td><a class="pr-title" href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.Title}}</a></td>
         <td>{{if eq .State "open" "OPEN"}}<span class="badge live">{{.State}}</span>{{else}}<span class="badge">{{.State}}</span>{{end}}</td>
@@ -65,6 +85,55 @@
     </tbody>
   </table>
   </div>
+  {{if .CanStartSession}}
+  </form>
+  <script>
+  (function(){
+    var form=document.getElementById('issues-bulk-fix');
+    if(!form) return;
+    var btn=document.getElementById('btn-issues-fix');
+    var cancel=document.getElementById('btn-issues-fix-cancel');
+    var hint=document.getElementById('issues-fix-hint');
+    var cols=form.querySelectorAll('.col-fix-select');
+    var boxes=form.querySelectorAll('input[name="numbers"]');
+    var mode=false;
+    function countChecked(){
+      var n=0;
+      for(var i=0;i<boxes.length;i++) if(boxes[i].checked) n++;
+      return n;
+    }
+    function updateConfirm(){
+      if(!mode) return;
+      var n=countChecked();
+      btn.disabled=n===0;
+      btn.textContent=n>0?('Confirm ('+n+')'):'Confirm';
+    }
+    function setMode(on){
+      mode=on;
+      for(var i=0;i<cols.length;i++) cols[i].hidden=!on;
+      for(var j=0;j<boxes.length;j++){
+        boxes[j].disabled=!on;
+        if(!on) boxes[j].checked=false;
+      }
+      btn.type=on?'submit':'button';
+      btn.disabled=false;
+      btn.textContent=on?'Confirm':'Fix';
+      if(cancel) cancel.hidden=!on;
+      if(hint) hint.hidden=!on;
+      updateConfirm();
+    }
+    btn.addEventListener('click', function(e){
+      if(!mode){
+        e.preventDefault();
+        setMode(true);
+      }
+    });
+    form.addEventListener('change', updateConfirm);
+    if(cancel) cancel.addEventListener('click', function(){ setMode(false); });
+    setMode(false);
+  })();
+  </script>
+  {{end}}
   {{else}}
   <div class="empty">No issues loaded.</div>
   {{end}}

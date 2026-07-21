@@ -297,6 +297,10 @@ func (s *Server) sessionsScoped(ctx *hime.Context) error {
 	d.IsSessions = true
 	d.Project = project
 	d.Threads = s.projectThreads(project)
+	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
+	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
+		d.Error = e
+	}
 	return s.viewPage(ctx, "sessions", d)
 }
 

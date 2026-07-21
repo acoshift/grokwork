@@ -211,6 +211,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/merge",
 		s.requireFeature("merge", s.requireMember(hime.Handler(s.postPRMerge))))
 	// Fix with Grok (PR11a)
+	mux.Handle("POST /projects/{project}/issues/fix",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssuesBulkFix))))
 	mux.Handle("POST /projects/{project}/issues/{n}/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssueFix))))
 	mux.Handle("POST /projects/{project}/linear/{identifier}/fix",

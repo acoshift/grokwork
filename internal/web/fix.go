@@ -87,6 +87,156 @@ func (s *Server) fixLimiter() *startRateLimiter {
 	return s.startLimit
 }
 
+// Max issues accepted by list bulk Fix in one request.
+const fixBulkMax = 10
+
+func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return ctx.Status(http.StatusForbidden).Error(err.Error())
+	}
+	owner := strings.TrimSpace(ctx.PostFormValue("owner"))
+	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
+
+	project, ref, path, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	if err != nil {
+		return s.issuesListRedirect(ctx, project, owner, repo, "", err.Error())
+	}
+	owner, repo = ref.Owner, ref.Repo
+
+	if err := ctx.Request.ParseForm(); err != nil {
+		return s.issuesListRedirect(ctx, project, owner, repo, "", "invalid form")
+	}
+	numbers, err := parseIssueNumbers(ctx.Request.PostForm["numbers"])
+	if err != nil {
+		return s.issuesListRedirect(ctx, project, owner, repo, "", err.Error())
+	}
+	if len(numbers) == 0 {
+		return s.issuesListRedirect(ctx, project, owner, repo, "", "select at least one issue")
+	}
+	if len(numbers) > fixBulkMax {
+		return s.issuesListRedirect(ctx, project, owner, repo, "",
+			fmt.Sprintf("too many issues (max %d per bulk Fix)", fixBulkMax))
+	}
+
+	if err := s.checkFixRate(ctx); err != nil {
+		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
+			"project": project, "kind": "github-bulk", "owner": owner, "repo": repo, "count": len(numbers),
+		})
+		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
+	}
+
+	actor := s.fixActor(ctx)
+	started := 0
+	var failMsgs []string
+	for _, n := range numbers {
+		info, _ := ghpr.ViewIssueWith(ctx.Context(), s.ghRun(), path, n, owner, repo)
+		title := strings.TrimSpace(info.Title)
+		body := info.Body
+		issueURL := info.URL
+		if issueURL == "" {
+			issueURL = fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, n)
+		}
+		res, startErr := s.bot.StartFix(bot.FixStartOpts{
+			Kind:     bot.FixKindGitHub,
+			Project:  project,
+			Actor:    actor,
+			ForceNew: true,
+			Owner:    owner,
+			Repo:     repo,
+			Number:   n,
+			Title:    title,
+			URL:      issueURL,
+			Body:     body,
+		})
+		detail := map[string]any{
+			"project": project, "kind": "github-bulk",
+			"owner": owner, "repo": repo, "number": n,
+			"threadId": res.ThreadID, "status": string(res.Status),
+			"queuePos": res.QueuePos, "created": res.Created,
+		}
+		if startErr != nil {
+			s.auditAction(ctx, audit.ActionSessionStart, startErr, detail)
+			failMsgs = append(failMsgs, fmt.Sprintf("#%d: %s", n, startErr.Error()))
+			continue
+		}
+		s.auditAction(ctx, audit.ActionSessionStart, nil, detail)
+		started++
+	}
+
+	switch {
+	case started == 0:
+		msg := "no fix sessions started"
+		if len(failMsgs) > 0 {
+			msg = strings.Join(failMsgs, "; ")
+		}
+		return s.issuesListRedirect(ctx, project, owner, repo, "", msg)
+	default:
+		q := url.Values{}
+		if len(failMsgs) > 0 {
+			q.Set("ok", fmt.Sprintf("Started %d of %d fix sessions", started, len(numbers)))
+			q.Set("err", strings.Join(failMsgs, "; "))
+		} else {
+			q.Set("ok", fmt.Sprintf("Started %d fix session%s", started, pluralS(started)))
+		}
+		loc := fmt.Sprintf("/projects/%s/sessions", url.PathEscape(project))
+		if enc := q.Encode(); enc != "" {
+			loc += "?" + enc
+		}
+		return ctx.Redirect(loc)
+	}
+}
+
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// parseIssueNumbers dedupes positive ints from form multi-values (order preserved).
+func parseIssueNumbers(raw []string) ([]int, error) {
+	seen := make(map[int]struct{}, len(raw))
+	out := make([]int, 0, len(raw))
+	for _, s := range raw {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		n, err := strconv.Atoi(s)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("invalid issue number %q", s)
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+func (s *Server) issuesListRedirect(ctx *hime.Context, project, owner, repo, ok, errMsg string) error {
+	q := url.Values{}
+	if owner != "" {
+		q.Set("owner", owner)
+	}
+	if repo != "" {
+		q.Set("repo", repo)
+	}
+	if ok != "" {
+		q.Set("ok", ok)
+	}
+	if errMsg != "" {
+		q.Set("err", errMsg)
+	}
+	loc := fmt.Sprintf("/projects/%s/issues", url.PathEscape(project))
+	if enc := q.Encode(); enc != "" {
+		loc += "?" + enc
+	}
+	return ctx.Redirect(loc)
+}
+
 func (s *Server) postIssueFix(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
 	n, err := strconv.Atoi(strings.TrimSpace(ctx.PathValue("n")))

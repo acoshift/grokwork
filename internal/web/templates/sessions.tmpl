@@ -1,6 +1,8 @@
 {{define "content"}}
 <h1 id="page-sessions">{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· sessions</span>{{else}}Sessions{{end}}</h1>
 <p class="sub">Work units (Discord threads / Grok sessions) with {{if .Project}}turn activity in this project{{else}}project and turn activity{{end}} ({{len .Threads}}).</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
 {{if .Threads}}
 <div class="table-scroll" id="sessions-table">
