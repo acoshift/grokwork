@@ -3,7 +3,7 @@
 <p class="sub">
   Repo: <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span>
   · ref <span class="mono">{{.CommitRef}}</span>
-  · <a href="/commits">All projects</a>
+  · <a href="/projects/{{.Project}}">Overview</a>
 </p>
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 

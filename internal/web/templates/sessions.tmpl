@@ -1,6 +1,6 @@
 {{define "content"}}
-<h1 id="page-sessions">Sessions</h1>
-<p class="sub">Work units (Discord threads / Grok sessions) with project and turn activity ({{len .Threads}}).</p>
+<h1 id="page-sessions">{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· sessions</span>{{else}}Sessions{{end}}</h1>
+<p class="sub">Work units (Discord threads / Grok sessions) with {{if .Project}}turn activity in this project{{else}}project and turn activity{{end}} ({{len .Threads}}).</p>
 
 {{if .Threads}}
 <div class="table-scroll" id="sessions-table">
@@ -8,7 +8,7 @@
   <thead>
     <tr>
       <th>Thread</th>
-      <th>Project</th>
+      {{if not .Project}}<th>Project</th>{{end}}
       <th>Turns</th>
       <th>Last user</th>
       <th>Updated</th>
@@ -18,8 +18,8 @@
   <tbody>
     {{range .Threads}}
     <tr>
-      <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}">{{.ThreadID}}</a></td>
-      <td>{{if .Project}}{{.Project}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}{{if or $.Project .Project}}?project={{urlquery (or $.Project .Project)}}{{end}}">{{.ThreadID}}</a></td>
+      {{if not $.Project}}<td>{{if .Project}}<a href="/projects/{{.Project}}">{{.Project}}</a>{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
       <td class="mono">{{.TurnCount}}</td>
       <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
       <td class="mono muted">{{if .UpdatedAt}}{{.UpdatedAt}}{{else}}—{{end}}</td>
@@ -30,6 +30,6 @@
 </table>
 </div>
 {{else}}
-<div class="empty" id="sessions-empty">No sessions yet. Work units appear after Discord or web starts a Grok task.</div>
+<div class="empty" id="sessions-empty">No sessions {{if .Project}}in this project {{end}}yet. Work units appear after Discord or web starts a Grok task.</div>
 {{end}}
 {{end}}

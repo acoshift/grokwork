@@ -103,8 +103,8 @@ func TestLiveHTTPLaunch(t *testing.T) {
 		text := string(body)
 		switch path {
 		case "/":
-			if !strings.Contains(text, `id="page-dashboard"`) {
-				t.Fatalf("dashboard marker missing")
+			if !strings.Contains(text, `id="page-home"`) {
+				t.Fatalf("home launcher marker missing")
 			}
 		case "/ship":
 			if !strings.Contains(text, `id="page-ship"`) {

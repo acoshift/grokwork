@@ -92,12 +92,20 @@ func TestPagesRender(t *testing.T) {
 		path   string
 		marker string
 	}{
-		{"/", `id="page-dashboard"`},
+		{"/", `id="page-home"`},
+		{"/", `class="proj-card"`},
+		{"/", `href="/projects/proj"`},
 		{"/ship", `id="page-ship"`},
 		{"/sessions", `id="page-sessions"`},
 		{"/history", `id="page-history"`},
 		{"/worktrees", `id="page-worktrees"`},
 		{"/worktrees", "Prune idle now"},
+		// Project workspace pages (project-first UX).
+		{"/projects/proj", `id="page-project-overview"`},
+		{"/projects/proj", `id="live-project-pulse"`},
+		{"/projects/proj/ship", `id="page-ship"`},
+		{"/projects/proj/sessions", `id="page-sessions"`},
+		{"/projects/proj/worktrees", `id="page-worktrees"`},
 		{"/config", `id="page-config"`},
 		{"/config", `id="bot-invite"`},
 		{"/config", "discord.com/oauth2/authorize"},
@@ -149,6 +157,10 @@ func TestPagesRender(t *testing.T) {
 				`hx-boost="true"`,
 				`hx-target="#live-root"`,
 				`hx-select="#live-root"`,
+				// Scope-aware sidebar swaps with every boosted response.
+				`hx-select-oob="#side-nav"`,
+				`id="side-nav"`,
+				`data-scope=`,
 				`hx-swap="outerHTML show:none focus-scroll:false"`,
 				`hx-inherit="*"`,
 				// Config is set from htmx script onload (inline defer is a no-op without src).
@@ -172,8 +184,9 @@ func TestPagesRender(t *testing.T) {
 			marker string
 			domain string // hx-trigger domain expected on full page, empty for partial-only
 		}{
-			{"/partials/dashboard/stats", `id="stats"`, "dashboard"},
-			{"/partials/dashboard/runs", `id="runs-wrap"`, "dashboard"},
+			{"/partials/home/projects", `id="proj-grid"`, "dashboard"},
+			{"/partials/home/runs", `id="runs-wrap"`, "dashboard"},
+			{"/partials/projects/pulse?project=proj", `id="pulse"`, "dashboard"},
 			{"/partials/ship/stats", "CI failing", "ship"},
 			{"/partials/ship/table", "Pull requests", "ship"},
 			{"/partials/history/table", "thread-99", "history"},
@@ -199,7 +212,7 @@ func TestPagesRender(t *testing.T) {
 			}
 			for _, ban := range []string{
 				`id="sse-status"`,
-				"<nav>",
+				"<nav",
 				"/static/htmx.min.js",
 				`hx-ext="sse"`,
 			} {
@@ -214,7 +227,9 @@ func TestPagesRender(t *testing.T) {
 			path   string
 			events []string
 		}{
-			{"/", []string{`hx-trigger="sse:dashboard"`}},
+			{"/", []string{`hx-trigger="sse:dashboard, sse:ship, sse:history"`, `hx-trigger="sse:dashboard"`}},
+			{"/projects/proj", []string{`hx-trigger="sse:dashboard, sse:ship"`}},
+			{"/projects/proj/worktrees", []string{`hx-trigger="sse:worktrees"`, "/partials/worktrees/table?project=proj"}},
 			{"/ship", []string{`hx-trigger="sse:ship"`}},
 			{"/history", []string{`hx-trigger="sse:history"`}},
 			{"/history/thread-99", []string{`hx-trigger="sse:history"`}},
@@ -440,31 +455,176 @@ func TestSessionsHub(t *testing.T) {
 func TestNavBrandChrome(t *testing.T) {
 	srv, _, _ := testServer(t)
 	h := srv.Handler()
+
+	// Global shell: launcher + cross-project lead views. Feature-first hubs
+	// (Issues/Commits pickers) are gone — projects are picked first.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	body := w.Body.String()
-	// Primary nav order markers (labels present as nav links).
 	for _, want := range []string{
-		">Dashboard<",
+		`data-scope=""`,
+		">Projects<",
 		">Ship<",
-		">Issues<",
 		">Sessions<",
 		">Worktrees<",
 		">Config<",
+		"Across projects",
 		"Grok Work",
 		"· Grok Work",
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("chrome missing %q", want)
+			t.Fatalf("global chrome missing %q", want)
 		}
 	}
-	if strings.Contains(body, "Grok Discord") {
-		t.Fatal("legacy Grok Discord brand")
+	for _, ban := range []string{">Dashboard<", ">Issues<", ">Commits<", ">History</a>", "Grok Discord"} {
+		if strings.Contains(body, ban) {
+			t.Fatalf("global chrome must not contain %q", ban)
+		}
 	}
-	// History is not a primary nav link.
-	if strings.Contains(body, `>History</a>`) {
-		t.Fatal("History must not appear as primary nav label")
+
+	// Workspace shell: scoped nav + switcher; global lead views hidden.
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	body = w.Body.String()
+	for _, want := range []string{
+		`data-scope="proj"`,
+		`class="proj-switch"`,
+		"All projects",
+		">Overview<",
+		">Ship<",
+		">Issues<",
+		">Commits<",
+		">Sessions<",
+		">Worktrees<",
+		">Settings<",
+		`href="/projects/proj/ship"`,
+		`href="/projects/proj/issues"`,
+		`href="/projects/proj/commits"`,
+		`href="/projects/proj/sessions"`,
+		`href="/projects/proj/worktrees"`,
+		`href="/config/projects/proj"`,
+		// Overview is the active workspace tab (bare-label contract).
+		`class="active">Overview</a>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("workspace chrome missing %q", want)
+		}
+	}
+	if strings.Contains(body, ">Projects<") {
+		t.Fatal("workspace nav must not show the global Projects tab")
+	}
+}
+
+// TestNavScopeRules pins the URL→shell-scope contract (mirrored by the layout
+// JS scopeFromLocation): path scopes /projects/… and /config/projects/…;
+// ?project= scopes only /sessions/{id…} and /prs/… detail pages; global list
+// pages using ?project= as a data filter stay global; unknown projects fall
+// back to the global shell.
+func TestNavScopeRules(t *testing.T) {
+	srv, _, _ := testServer(t)
+	h := srv.Handler()
+	cases := []struct {
+		path  string
+		scope string
+	}{
+		{"/", ""},
+		{"/ship", ""},
+		{"/ship?project=proj", ""}, // data filter, not workspace scope
+		{"/projects/proj", "proj"},
+		{"/projects/proj/ship", "proj"},
+		{"/projects/proj/sessions", "proj"},
+		{"/config/projects/proj", "proj"},
+		{"/sessions/thread-99?project=proj", "proj"},
+		{"/sessions/thread-99", ""},
+		{"/sessions/thread-99?project=nope", ""}, // unknown → global shell
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", tc.path, w.Code, w.Body.String())
+		}
+		want := `data-scope="` + tc.scope + `"`
+		if !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("%s missing %q", tc.path, want)
+		}
+	}
+
+	// Unknown project workspace pages are forbidden, not silently global.
+	req := httptest.NewRequest(http.MethodGet, "/projects/nope", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("unknown workspace status=%d want 403", w.Code)
+	}
+
+	// Retired feature-first hubs redirect to the launcher.
+	for _, path := range []string{"/issues", "/commits"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+			t.Fatalf("%s status=%d want redirect", path, w.Code)
+		}
+		if loc := w.Header().Get("Location"); loc != "/" {
+			t.Fatalf("%s Location=%q want /", path, loc)
+		}
+	}
+}
+
+// TestShipPartialScopedLayout pins SSE-refresh layout parity: workspace ship
+// regions refresh with &scoped=1 and must keep the Project column hidden;
+// the global board filtered by ?project= must keep the column.
+func TestShipPartialScopedLayout(t *testing.T) {
+	srv, _, _ := testServer(t)
+	// A tracked PR so the fragments render the table, not the empty state.
+	if err := srv.sessions.Set("thread-99", sessionstore.Entry{
+		SessionID: "sess-99",
+		Project:   "proj",
+		PRs: []sessionstore.TrackedPR{{
+			URL:    "https://github.com/acme/proj/pull/7",
+			Number: 7,
+			State:  "OPEN",
+			Title:  "add feature x",
+			Owner:  "acme",
+			Repo:   "proj",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+
+	get := func(path string) string {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("HX-Request", "true")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status=%d", path, w.Code)
+		}
+		return w.Body.String()
+	}
+
+	if body := get("/partials/ship/table?project=proj&state=open"); !strings.Contains(body, "<th>Project</th>") {
+		t.Fatal("global ship partial must keep the Project column")
+	}
+	if body := get("/partials/ship/table?project=proj&state=open&scoped=1"); strings.Contains(body, "<th>Project</th>") {
+		t.Fatal("scoped ship partial must hide the Project column")
+	}
+	// The workspace page must emit scoped refresh URLs.
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/ship", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if body := w.Body.String(); !strings.Contains(body, "scoped=1") {
+		t.Fatal("workspace ship page missing scoped=1 on live-region URLs")
+	}
+	// Worktrees partial parity: ?project= scopes both data and layout
+	// (the worktrees page has no cross-project filter UI to collide with).
+	if body := get("/partials/worktrees/table?project=proj"); strings.Contains(body, "<th>Project</th>") {
+		t.Fatal("scoped worktrees partial must hide the Project column")
 	}
 }
 

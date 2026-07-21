@@ -211,9 +211,9 @@ func TestIssuesListAndDetail(t *testing.T) {
 		}
 	}
 	assertNavActive(t, body, "Issues")
-	// Boosted nav path rules must know issue detail lives under /projects/…/issues/…
-	if !strings.Contains(body, "function navActiveFor") || !strings.Contains(body, `href === "/issues"`) {
-		t.Fatal("layout missing navActiveFor path rules for Issues detail URLs")
+	// History-restore sync must re-derive the workspace scope from the URL.
+	if !strings.Contains(body, "function navActiveFor") || !strings.Contains(body, "function scopeFromLocation") {
+		t.Fatal("layout missing navActiveFor/scopeFromLocation for workspace URLs")
 	}
 }
 
@@ -230,7 +230,8 @@ func TestLinearListAndDetail(t *testing.T) {
 	if !strings.Contains(body, "ENG-1") || !strings.Contains(body, "Lin fixture") {
 		t.Fatalf("body=%s", body)
 	}
-	assertNavActive(t, body, "Issues")
+	// Workspace nav gives Linear its own tab when enabled for the project.
+	assertNavActive(t, body, "Linear")
 	req = httptest.NewRequest(http.MethodGet, "/projects/proj/linear/ENG-1", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -241,7 +242,7 @@ func TestLinearListAndDetail(t *testing.T) {
 	if !strings.Contains(body, "detail desc") {
 		t.Fatalf("body=%s", body)
 	}
-	assertNavActive(t, body, "Issues")
+	assertNavActive(t, body, "Linear")
 }
 
 func TestPRDetailAndDiff(t *testing.T) {
@@ -485,7 +486,7 @@ func TestCommitsListAndDetail(t *testing.T) {
 		"Fixture commit",
 		"body note",
 		"foo.go",
-		`href === "/commits"`,
+		"function scopeFromLocation",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("detail missing %q", want)
@@ -494,20 +495,20 @@ func TestCommitsListAndDetail(t *testing.T) {
 	assertNavActive(t, body, "Commits")
 }
 
+// Feature-first hubs are retired: /commits and /issues redirect to the
+// project launcher (projects are picked first, then the feature).
 func TestCommitsIndex(t *testing.T) {
 	srv := workflowServer(t)
 	h := srv.Handler()
 	req := httptest.NewRequest(http.MethodGet, "/commits", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status=%d", w.Code)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d want redirect", w.Code)
 	}
-	body := w.Body.String()
-	if !strings.Contains(body, `id="page-commits"`) || !strings.Contains(body, "/projects/proj/commits") {
-		t.Fatalf("body=%s", body)
+	if loc := w.Header().Get("Location"); loc != "/" {
+		t.Fatalf("Location=%q want /", loc)
 	}
-	assertNavActive(t, body, "Commits")
 }
 
 func TestIssuesIndexNav(t *testing.T) {
@@ -515,15 +516,10 @@ func TestIssuesIndexNav(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/issues", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status=%d", w.Code)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d want redirect", w.Code)
 	}
-	body := w.Body.String()
-	if !strings.Contains(body, `id="page-issues"`) || !strings.Contains(body, "/projects/proj/issues") {
-		t.Fatalf("body=%s", body)
-	}
-	// Nav has Issues
-	if !strings.Contains(body, `href="/issues"`) {
-		t.Fatal("nav missing Issues")
+	if loc := w.Header().Get("Location"); loc != "/" {
+		t.Fatalf("Location=%q want /", loc)
 	}
 }

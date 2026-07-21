@@ -24,14 +24,6 @@ func (s *Server) reviewStore() (*commitreview.Store, error) {
 	return s.reviews, s.reviewsErr
 }
 
-func (s *Server) commitsIndex(ctx *hime.Context) error {
-	d := s.basePage(ctx)
-	d.Title = "Commits"
-	d.IsCommits = true
-	d.Config = s.filterSnapshotToVisible(ctx, s.cfg.Snapshot())
-	return s.viewPage(ctx, "commits_index", d)
-}
-
 func (s *Server) commitsList(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
 	if err := s.ensureProjectAccess(ctx, project); err != nil {

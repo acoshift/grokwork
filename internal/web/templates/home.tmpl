@@ -1,0 +1,88 @@
+{{define "content"}}
+<h1 id="page-home">Projects</h1>
+<p class="sub">Pick a project to work inside its scope — runs, PRs, issues, commits, and worktrees. Cross-project lead views stay in the sidebar.</p>
+
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
+<div class="live-region"
+     id="live-home-projects"
+     hx-get="{{route "partial.home.projects"}}"
+     hx-trigger="sse:dashboard, sse:ship, sse:history"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML"
+     hx-sync="this:replace">
+  {{template "home_projects" .}}
+</div>
+
+<div class="section">
+  <h2>Now running</h2>
+  <div class="live-region"
+       id="live-home-runs"
+       hx-get="{{route "partial.home.runs"}}"
+       hx-trigger="sse:dashboard"
+       hx-target="this"
+       hx-select="unset"
+       hx-swap="innerHTML"
+       hx-sync="this:replace">
+    {{template "home_runs" .}}
+  </div>
+</div>
+{{end}}
+
+{{define "home_projects"}}
+<div class="proj-grid" id="proj-grid">
+  {{range .ProjectCards}}
+  <a class="proj-card" href="/projects/{{.Name}}">
+    <span class="proj-card-head">
+      <span class="proj-mark" aria-hidden="true">{{printf "%.1s" .Name}}</span>
+      <span class="proj-card-name">{{.Name}}</span>
+    </span>
+    <span class="proj-card-stats">
+      {{if gt .Running 0}}<span class="badge live">{{.Running}} running</span>{{end}}
+      {{if gt .Queued 0}}<span class="badge">{{.Queued}} queued</span>{{end}}
+      {{if gt .OpenPRs 0}}<span class="badge">{{.OpenPRs}} open PR{{if gt .OpenPRs 1}}s{{end}}</span>{{end}}
+      {{if gt .ChecksFailing 0}}<span class="badge status-error">{{.ChecksFailing}} CI failing</span>{{end}}
+      {{if and (eq .Running 0) (eq .Queued 0) (eq .OpenPRs 0)}}<span class="badge">idle</span>{{end}}
+    </span>
+    <span class="proj-card-foot">
+      <span>{{if .LastActivity}}{{.Sessions}} session{{if ne .Sessions 1}}s{{end}} · {{.LastActivity}}{{else}}no activity yet{{end}}</span>
+      <span class="open-arrow">Open →</span>
+    </span>
+  </a>
+  {{end}}
+  {{if not .ProjectCards}}
+  <div class="empty" id="home-empty" style="grid-column: 1 / -1;">
+    No projects yet.{{if .IsAdmin}} Add one on <a href="{{route "config"}}">Config</a> and map a Discord channel to start working.{{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "home_runs"}}
+<div id="runs-wrap">
+  {{if .Status.ActiveRuns}}
+  <div class="table-scroll">
+  <table id="runs-table">
+    <thead>
+      <tr><th>Thread</th><th>Project</th><th>Elapsed</th><th>Queue</th></tr>
+    </thead>
+    <tbody id="runs-body">
+      {{range .Status.ActiveRuns}}
+      <tr>
+        <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}">{{.ThreadID}}</a></td>
+        <td>{{if .Project}}<a href="/projects/{{.Project}}">{{.Project}}</a>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="mono">{{.Elapsed}}</td>
+        <td>{{if gt .QueueLen 0}}<span class="badge">{{.QueueLen}} queued</span>{{else}}<span class="muted">—</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty" id="runs-empty">No active runs. Tag <span class="mono">@Grok</span> in a mapped Discord channel to start one.</div>
+  {{end}}
+</div>
+{{end}}

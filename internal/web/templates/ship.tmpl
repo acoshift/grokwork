@@ -1,11 +1,11 @@
 {{define "content"}}
-<h1 id="page-ship">Ship board</h1>
-<p class="sub">All bot-tracked pull requests for leads — filter by project and state. Status comes from the session store (updated by the Discord PR poller), not a live <span class="mono">gh</span> call.</p>
+<h1 id="page-ship">{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· ship</span>{{else}}Ship board{{end}}</h1>
+<p class="sub">{{if .Project}}Bot-tracked pull requests in this project, by state.{{else}}All bot-tracked pull requests for leads — filter by project and state.{{end}} Status comes from the session store (updated by the Discord PR poller), not a live <span class="mono">gh</span> call.</p>
 
 {{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
      id="live-ship-stats"
-     hx-get="{{route "partial.ship.stats"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
+     hx-get="{{route "partial.ship.stats"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}{{if .Project}}&amp;scoped=1{{end}}"
      hx-trigger="sse:ship"
      hx-target="this"
      hx-select="unset"
@@ -14,7 +14,8 @@
   {{template "ship_stats" .}}
 </div>
 
-<form method="get" action="{{route "ship"}}" class="toolbar" id="ship-filters">
+<form method="get" action="{{if .Project}}/projects/{{.Project}}/ship{{else}}{{route "ship"}}{{end}}" class="toolbar" id="ship-filters">
+  {{if not .Project}}
   <div class="field">
     <label for="project">Project</label>
     <select id="project" name="project" data-autosubmit>
@@ -24,6 +25,7 @@
       {{end}}
     </select>
   </div>
+  {{end}}
   <div class="field">
     <label for="state">State</label>
     <select id="state" name="state" data-autosubmit>
@@ -40,7 +42,7 @@
 
 <div class="live-region"
      id="live-ship-table"
-     hx-get="{{route "partial.ship.table"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}"
+     hx-get="{{route "partial.ship.table"}}?project={{urlquery .Ship.ProjectFilter}}&amp;state={{urlquery .Ship.StateFilter}}{{if .Project}}&amp;scoped=1{{end}}"
      hx-trigger="sse:ship"
      hx-target="this"
      hx-select="unset"
@@ -87,7 +89,7 @@
         <th>State</th>
         <th>Checks</th>
         <th>Review</th>
-        <th>Project</th>
+        {{if not $.Project}}<th>Project</th>{{end}}
         <th>Owner</th>
         <th>Label</th>
         <th>Thread</th>
@@ -143,13 +145,13 @@
           <span class="muted">—</span>
           {{end}}
         </td>
-        <td>{{if .Project}}{{.Project}}{{else}}<span class="muted">—</span>{{end}}</td>
+        {{if not $.Project}}<td>{{if .Project}}<a href="/projects/{{.Project}}">{{.Project}}</a>{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
         <td>{{if .OwnerName}}{{.OwnerName}}{{else if .OwnerID}}<span class="mono">{{.OwnerID}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
         <td>
           <span class="badge">{{.Label}}</span>
           {{if .LabelManual}} <span class="muted" style="font-size:0.75rem;">manual</span>{{end}}
         </td>
-        <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}">{{.ThreadID}}</a></td>
+        <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}">{{.ThreadID}}</a></td>
       </tr>
       {{end}}
     </tbody>

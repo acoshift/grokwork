@@ -3,7 +3,7 @@
   {{if .PRNumber}}
   <a href="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}{{if .Project}}?project={{urlquery .Project}}{{end}}">← PR</a>
   {{else if .ThreadID}}
-  <a href="/sessions/{{.ThreadID}}">← Session</a>
+  <a href="/sessions/{{.ThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}">← Session</a>
   {{end}}
 </p>
 <h1 id="page-diff">{{.Title}}</h1>

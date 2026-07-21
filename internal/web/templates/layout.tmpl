@@ -233,7 +233,7 @@
       gap: 0.15rem;
       margin-top: 1.6rem;
     }
-    nav a {
+    nav > a {
       display: flex;
       align-items: center;
       gap: 0.6rem;
@@ -246,7 +246,7 @@
       font-weight: 500;
       transition: background 0.12s ease, color 0.12s ease;
     }
-    nav a::before {
+    nav > a[data-icon]::before {
       content: "";
       flex-shrink: 0;
       width: 1.02rem;
@@ -256,25 +256,126 @@
       -webkit-mask: var(--icon) center / contain no-repeat;
       mask: var(--icon) center / contain no-repeat;
     }
-    nav a[href="/"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='7' height='7' rx='1.5'/%3E%3Crect x='14' y='3' width='7' height='7' rx='1.5'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1.5'/%3E%3Crect x='14' y='14' width='7' height='7' rx='1.5'/%3E%3C/svg%3E"); }
-    nav a[href="/ship"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 2 11 13'/%3E%3Cpath d='M22 2 15 22l-4-9-9-4z'/%3E%3C/svg%3E"); }
-    nav a[href="/issues"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='3' fill='black' stroke='none'/%3E%3C/svg%3E"); }
-    nav a[href="/commits"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cline x1='1.5' y1='12' x2='8' y2='12'/%3E%3Cline x1='16' y1='12' x2='22.5' y2='12'/%3E%3C/svg%3E"); }
-    nav a[href="/sessions"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3C/svg%3E"); }
-    nav a[href="/worktrees"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='6' y1='3' x2='6' y2='15'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }
-    nav a[href="/config"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' y1='21' x2='4' y2='14'/%3E%3Cline x1='4' y1='10' x2='4' y2='3'/%3E%3Cline x1='12' y1='21' x2='12' y2='12'/%3E%3Cline x1='12' y1='8' x2='12' y2='3'/%3E%3Cline x1='20' y1='21' x2='20' y2='16'/%3E%3Cline x1='20' y1='12' x2='20' y2='3'/%3E%3Cline x1='1' y1='14' x2='7' y2='14'/%3E%3Cline x1='9' y1='8' x2='15' y2='8'/%3E%3Cline x1='17' y1='16' x2='23' y2='16'/%3E%3C/svg%3E"); }
-    nav a:hover {
+    /* Icons keyed by data-icon (not href): workspace URLs embed the project
+       name, so href selectors cannot be static. */
+    nav a[data-icon="projects"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='7' height='7' rx='1.5'/%3E%3Crect x='14' y='3' width='7' height='7' rx='1.5'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1.5'/%3E%3Crect x='14' y='14' width='7' height='7' rx='1.5'/%3E%3C/svg%3E"); }
+    nav a[data-icon="overview"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E"); }
+    nav a[data-icon="ship"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 2 11 13'/%3E%3Cpath d='M22 2 15 22l-4-9-9-4z'/%3E%3C/svg%3E"); }
+    nav a[data-icon="issues"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='3' fill='black' stroke='none'/%3E%3C/svg%3E"); }
+    nav a[data-icon="linear"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2 2 7l10 5 10-5-10-5z'/%3E%3Cpath d='M2 17l10 5 10-5'/%3E%3Cpath d='M2 12l10 5 10-5'/%3E%3C/svg%3E"); }
+    nav a[data-icon="commits"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cline x1='1.5' y1='12' x2='8' y2='12'/%3E%3Cline x1='16' y1='12' x2='22.5' y2='12'/%3E%3C/svg%3E"); }
+    nav a[data-icon="sessions"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3C/svg%3E"); }
+    nav a[data-icon="worktrees"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='6' y1='3' x2='6' y2='15'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }
+    nav a[data-icon="config"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' y1='21' x2='4' y2='14'/%3E%3Cline x1='4' y1='10' x2='4' y2='3'/%3E%3Cline x1='12' y1='21' x2='12' y2='12'/%3E%3Cline x1='12' y1='8' x2='12' y2='3'/%3E%3Cline x1='20' y1='21' x2='20' y2='16'/%3E%3Cline x1='20' y1='12' x2='20' y2='3'/%3E%3Cline x1='1' y1='14' x2='7' y2='14'/%3E%3Cline x1='9' y1='8' x2='15' y2='8'/%3E%3Cline x1='17' y1='16' x2='23' y2='16'/%3E%3C/svg%3E"); }
+    nav > a:hover {
       color: var(--text);
       background: var(--surface-l2);
       text-decoration: none;
     }
-    nav a.active {
+    nav > a.active {
       color: var(--text);
       background: var(--surface);
       border-color: var(--border);
       box-shadow: var(--shadow-1);
     }
-    nav a.active::before { opacity: 1; }
+    nav > a.active::before { opacity: 1; }
+
+    /* Sidebar section caption (global shell: cross-project lead views). */
+    .nav-label {
+      margin: 0.9rem 0.65rem 0.25rem;
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--muted-soft);
+    }
+
+    /* Workspace switcher: current project + dropdown of visible projects. */
+    .proj-switch { position: relative; margin: 0 0 0.6rem; }
+    .proj-switch summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid var(--border-strong);
+      border-radius: 0.55rem;
+      background: var(--surface);
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.12s ease;
+    }
+    .proj-switch summary::-webkit-details-marker { display: none; }
+    .proj-switch summary::after {
+      content: "";
+      margin-left: auto;
+      width: 1rem;
+      height: 1rem;
+      flex-shrink: 0;
+      background: var(--chev) center / contain no-repeat;
+      transition: transform 0.15s ease;
+    }
+    .proj-switch summary:hover { border-color: var(--hover-border); }
+    .proj-switch[open] summary { border-color: var(--focus-border); }
+    .proj-switch[open] summary::after { transform: rotate(180deg); }
+    .proj-mark {
+      flex-shrink: 0;
+      width: 1.35rem;
+      height: 1.35rem;
+      border-radius: 0.4rem;
+      background: var(--text);
+      color: var(--bg);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      font-weight: 650;
+      text-transform: uppercase;
+    }
+    .proj-name {
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .proj-menu {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 0.3rem);
+      z-index: 40;
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+      padding: 0.3rem;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-2);
+      max-height: 16rem;
+      overflow-y: auto;
+    }
+    .proj-menu a {
+      display: block;
+      padding: 0.4rem 0.6rem;
+      border-radius: 0.45rem;
+      color: var(--text);
+      font-size: 0.88rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .proj-menu a:hover { background: var(--surface-l2); text-decoration: none; }
+    .proj-menu a.proj-menu-all {
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      border-radius: 0 0 0.45rem 0.45rem;
+      margin-top: 0.15rem;
+      padding-top: 0.5rem;
+    }
 
     .side-foot {
       margin-top: auto;
@@ -499,6 +600,66 @@
       line-height: 1.2;
     }
     .card .hint { color: var(--muted); font-size: 0.8rem; margin-top: 0.3rem; }
+
+    /* ── Project launcher (home) ─────────────────────────────────────── */
+    .proj-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
+      gap: 0.85rem;
+      margin-bottom: 1.5rem;
+    }
+    a.proj-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+      padding: 1.05rem 1.15rem 0.95rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-1);
+      color: var(--text);
+      transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+    }
+    a.proj-card:hover {
+      text-decoration: none;
+      color: var(--text);
+      border-color: var(--hover-border);
+      box-shadow: var(--shadow-2);
+      transform: translateY(-1px);
+    }
+    .proj-card-head {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      min-width: 0;
+    }
+    .proj-card-head .proj-mark { width: 1.65rem; height: 1.65rem; border-radius: 0.5rem; font-size: 0.85rem; }
+    .proj-card-name {
+      font-weight: 650;
+      font-size: 1.02rem;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .proj-card-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .proj-card-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      border-top: 1px solid var(--border);
+      padding-top: 0.65rem;
+      margin-top: auto;
+    }
+    .proj-card-foot .open-arrow { color: var(--muted-soft); font-weight: 600; }
+    a.proj-card:hover .open-arrow { color: var(--text); }
 
     .flash {
       background: var(--ok-bg);
@@ -1013,7 +1174,10 @@
         padding-bottom: 0.1rem;
       }
       nav::-webkit-scrollbar { display: none; }
-      nav a { padding: 0.38rem 0.7rem; font-size: 0.86rem; flex-shrink: 0; }
+      nav > a { padding: 0.38rem 0.7rem; font-size: 0.86rem; flex-shrink: 0; }
+      .nav-label { display: none; }
+      .proj-switch { margin: 0; flex-shrink: 0; min-width: 9rem; }
+      .proj-switch summary { padding: 0.32rem 0.55rem; }
       .side-foot {
         margin-top: 0;
         margin-left: auto;
@@ -1043,6 +1207,9 @@
        sse-connect EventSource on this element stays open across in-app navigation
        (nav, table rows, back links, form redirects). target=_blank is not boosted.
        hx-inherit="*" re-enables shell attrs for descendants under disableInheritance.
+       hx-select-oob="#side-nav": the sidebar is scope-aware (global vs project
+       workspace) and lives outside #live-root, so every boosted response also
+       swaps in its server-rendered nav. Partials contain no #side-nav → no-op.
        Live-region partials set their own hx-target/hx-select (not inherited by children)
        so SSE swaps into the region instead of wiping #live-root. */}}
   <div class="wrap{{if .IsLogin}} is-login{{end}}"
@@ -1050,6 +1217,7 @@
        hx-boost="true"
        hx-target="#live-root"
        hx-select="#live-root"
+       hx-select-oob="#side-nav"
        hx-swap="outerHTML show:none focus-scroll:false"
        hx-inherit="*"
        {{if .SSEPath}}sse-connect="{{.SSEPath}}"{{end}}>
@@ -1059,14 +1227,40 @@
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-name">Grok Work <span>admin console</span></span>
       </div>
-      <nav>
-        <a href="{{route "dashboard"}}" class="{{if .IsDashboard}}active{{end}}">Dashboard</a>
-        <a href="{{route "ship"}}" class="{{if .IsShip}}active{{end}}">Ship</a>
-        <a href="{{route "issues"}}" class="{{if or .IsIssues .IsLinear}}active{{end}}">Issues</a>
-        <a href="{{route "commits"}}" class="{{if .IsCommits}}active{{end}}">Commits</a>
-        <a href="{{route "sessions"}}" class="{{if .IsSessions}}active{{end}}">Sessions</a>
-        <a href="{{route "worktrees"}}" class="{{if .IsWorktrees}}active{{end}}">Worktrees</a>
-        {{if .IsAdmin}}<a href="{{route "config"}}" class="{{if .IsConfig}}active{{end}}">Config</a>{{end}}
+      {{/* Scope-aware sidebar. data-scope mirrors the server's URL-derived
+           workspace project (navScopeFromURL); the layout JS re-derives it on
+           history restores and reloads on mismatch. Swapped whole via the
+           shell's hx-select-oob="#side-nav" on every boosted navigation. */}}
+      <nav id="side-nav" data-scope="{{.NavProject}}">
+        {{if .NavProject}}
+        <details class="proj-switch">
+          <summary>
+            <span class="proj-mark" aria-hidden="true">{{printf "%.1s" .NavProject}}</span>
+            <span class="proj-name">{{.NavProject}}</span>
+          </summary>
+          <div class="proj-menu">
+            {{range .NavProjects}}{{if ne . $.NavProject}}
+            <a href="/projects/{{.}}">{{.}}</a>
+            {{end}}{{end}}
+            <a href="{{route "home"}}" class="proj-menu-all">All projects</a>
+          </div>
+        </details>
+        <a href="/projects/{{.NavProject}}" data-icon="overview" class="{{if .IsOverview}}active{{end}}">Overview</a>
+        <a href="/projects/{{.NavProject}}/ship" data-icon="ship" class="{{if .IsShip}}active{{end}}">Ship</a>
+        <a href="/projects/{{.NavProject}}/issues" data-icon="issues" class="{{if .IsIssues}}active{{end}}">Issues</a>
+        {{if .NavLinearEnabled}}<a href="/projects/{{.NavProject}}/linear" data-icon="linear" class="{{if .IsLinear}}active{{end}}">Linear</a>{{end}}
+        <a href="/projects/{{.NavProject}}/commits" data-icon="commits" class="{{if .IsCommits}}active{{end}}">Commits</a>
+        <a href="/projects/{{.NavProject}}/sessions" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">Sessions</a>
+        <a href="/projects/{{.NavProject}}/worktrees" data-icon="worktrees" class="{{if .IsWorktrees}}active{{end}}">Worktrees</a>
+        {{if .IsAdmin}}<a href="/config/projects/{{.NavProject}}" data-icon="config" class="{{if .IsConfig}}active{{end}}">Settings</a>{{end}}
+        {{else}}
+        <a href="{{route "home"}}" data-icon="projects" class="{{if .IsDashboard}}active{{end}}">Projects</a>
+        <span class="nav-label">Across projects</span>
+        <a href="{{route "ship"}}" data-icon="ship" class="{{if .IsShip}}active{{end}}">Ship</a>
+        <a href="{{route "sessions"}}" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">Sessions</a>
+        <a href="{{route "worktrees"}}" data-icon="worktrees" class="{{if .IsWorktrees}}active{{end}}">Worktrees</a>
+        {{if .IsAdmin}}<a href="{{route "config"}}" data-icon="config" class="{{if .IsConfig}}active{{end}}">Config</a>{{end}}
+        {{end}}
       </nav>
       <div class="side-foot">
         <span id="sse-status" title="Live updates via SSE">connecting…</span>
@@ -1261,47 +1455,75 @@
       }
     });
 
-    // Nav active class is server-rendered on full load; keep it in sync after
-    // boosted SPA navigations (and browser back/forward restores). Nav lives
-    // outside #live-root so boost swaps never re-render Is* flags — path rules
-    // must cover detail URLs that are not under the tab's own href prefix
-    // (e.g. Issues hub is /issues but detail is /projects/{p}/issues/{n}).
+    // The sidebar (#side-nav) is server-rendered per navigation via the
+    // shell's hx-select-oob, so active classes and scope are normally always
+    // correct. Browser back/forward restores from htmx's history cache swap
+    // only #live-root, so JS must (a) re-derive the workspace scope from the
+    // URL — mirror of Go navScopeFromURL — and reload once on mismatch, and
+    // (b) re-sync active classes when the scope matches.
+    function scopeFromLocation() {
+      var seg = location.pathname.replace(/^\/+|\/+$/g, "").split("/");
+      try {
+        if (seg[0] === "projects" && seg.length >= 2) return decodeURIComponent(seg[1]);
+        if (seg[0] === "config" && seg[1] === "projects" && seg.length >= 3) return decodeURIComponent(seg[2]);
+      } catch (e) { return ""; }
+      if ((seg[0] === "sessions" || seg[0] === "prs") && seg.length >= 2) {
+        return new URLSearchParams(location.search).get("project") || "";
+      }
+      return "";
+    }
     function navActiveFor(path, href) {
       if (href === "/") {
         return path === "/";
       }
-      if (href === "/issues") {
-        if (path === "/issues" || path.indexOf("/issues/") === 0) return true;
-        // GitHub issue list/detail + Linear list/detail under /projects/…
-        if (path.indexOf("/projects/") === 0) {
-          return path.indexOf("/issues") !== -1 || path.indexOf("/linear") !== -1;
-        }
-        return false;
+      // Workspace overview: exact match only (siblings extend the path).
+      if (/^\/projects\/[^\/]+$/.test(href)) {
+        return path === href;
       }
-      if (href === "/commits") {
-        if (path === "/commits" || path.indexOf("/commits/") === 0) return true;
-        if (path.indexOf("/projects/") === 0 && path.indexOf("/commits") !== -1) return true;
-        return false;
+      // Workspace Ship/Sessions also cover detail pages living outside the
+      // /projects/{p} prefix (/prs/…, /sessions/{id}); scope already matched.
+      if (href.slice(-5) === "/ship" || href === "/ship") {
+        if (path.indexOf("/prs/") === 0) return true;
       }
-      if (href === "/ship") {
-        // Ship board + PR detail/diff hub.
-        return path === "/ship" || path.indexOf("/ship/") === 0 || path.indexOf("/prs/") === 0;
-      }
-      if (href === "/sessions") {
-        return path === "/sessions" || path.indexOf("/sessions/") === 0;
+      if (href.slice(-9) === "/sessions" || href === "/sessions") {
+        if (path.indexOf("/sessions/") === 0) return true;
       }
       return path === href || path.indexOf(href + "/") === 0;
     }
     function updateNavActive() {
       var path = location.pathname || "/";
-      document.querySelectorAll("nav a[href]").forEach(function (a) {
+      document.querySelectorAll("nav > a[href]").forEach(function (a) {
         var href = a.getAttribute("href") || "";
         a.classList.toggle("active", !!navActiveFor(path, href));
       });
     }
     document.body.addEventListener("htmx:pushedIntoHistory", updateNavActive);
     document.body.addEventListener("htmx:replacedInHistory", updateNavActive);
-    document.body.addEventListener("htmx:historyRestore", updateNavActive);
+    document.body.addEventListener("htmx:historyRestore", function () {
+      var nav = document.getElementById("side-nav");
+      if (!nav) return;
+      var want = scopeFromLocation();
+      var have = nav.getAttribute("data-scope") || "";
+      if (want === have) {
+        updateNavActive();
+        return;
+      }
+      // Server may render a narrower scope than the URL implies (unknown or
+      // forbidden project falls back to global) — guard against reload loops.
+      var key = "gw-scope-reload:" + location.href;
+      try {
+        if (sessionStorage.getItem(key)) { updateNavActive(); return; }
+        sessionStorage.setItem(key, "1");
+      } catch (e) { updateNavActive(); return; }
+      location.reload();
+    });
+
+    // Workspace switcher: close the dropdown when clicking elsewhere.
+    document.addEventListener("click", function (e) {
+      document.querySelectorAll("details.proj-switch[open]").forEach(function (d) {
+        if (!d.contains(e.target)) d.removeAttribute("open");
+      });
+    });
 
     // Per-path scroll for boosted navigations (e.g. history detail → list via
     // "← History"). show:none keeps the *leaving* page's scrollY; without this

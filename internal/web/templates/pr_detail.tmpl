@@ -1,5 +1,5 @@
 {{define "content"}}
-<p class="sub" style="margin-bottom:0.5rem"><a href="{{route "ship"}}">← Ship board</a></p>
+<p class="sub" style="margin-bottom:0.5rem"><a href="{{if .Project}}/projects/{{.Project}}/ship{{else}}{{route "ship"}}{{end}}">← Ship board</a></p>
 <h1 id="page-pr-detail">{{.ActiveOwner}}/{{.ActiveRepo}}#{{.PRNumber}}</h1>
 <p class="sub">
   <a href="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/diff{{if .Project}}?project={{urlquery .Project}}{{end}}">View diff</a>

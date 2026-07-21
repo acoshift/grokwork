@@ -1,5 +1,5 @@
 {{define "content"}}
-<h1 id="page-worktrees">Worktrees</h1>
+<h1 id="page-worktrees">{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· worktrees</span>{{else}}Worktrees{{end}}</h1>
 <p class="sub">Per-thread git worktrees under <span class="mono">data/worktrees/</span>. Prune removes the worktree, managed branch, and session. Busy threads cannot be pruned.</p>
 
 {{if .Flash}}
@@ -9,6 +9,7 @@
 <div class="flash err">{{.Error}}</div>
 {{end}}
 
+{{if not .Project}}
 <div class="section card">
   <h2>Idle cleanup</h2>
   <form method="post" action="{{route "worktrees.pruneIdle"}}" class="inline" style="grid-template-columns: 1fr auto;" onsubmit="return confirm('Prune all worktrees idle longer than {{.IdleTTLDays}} day(s)?');">
@@ -16,16 +17,17 @@
     <p class="sub" style="margin:0">
       Configured TTL: <span class="mono">{{.IdleTTLDays}}</span> day(s)
       {{if eq .IdleTTLDays 0}}(disabled){{end}}.
-      Run a one-shot prune of worktrees past that threshold.
+      Run a one-shot prune of worktrees past that threshold, across all projects.
     </p>
     <button type="submit" {{if eq .IdleTTLDays 0}}disabled title="Set worktreeIdleTTLDays &gt; 0 on Config"{{end}}>Prune idle now</button>
   </form>
 </div>
+{{end}}
 
 {{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
      id="live-worktrees-table"
-     hx-get="{{route "partial.worktrees.table"}}"
+     hx-get="{{route "partial.worktrees.table"}}{{if .Project}}?project={{urlquery .Project}}{{end}}"
      hx-trigger="sse:worktrees"
      hx-target="this"
      hx-select="unset"
@@ -37,14 +39,14 @@
 
 {{define "worktrees_table"}}
 <div class="section">
-  <h2>All worktrees <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Worktrees}})</span></h2>
+  <h2>{{if .Project}}Project worktrees{{else}}All worktrees{{end}} <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Worktrees}})</span></h2>
   {{if .Worktrees}}
   <div class="table-scroll">
   <table>
     <thead>
       <tr>
         <th>Thread</th>
-        <th>Project</th>
+        {{if not .Project}}<th>Project</th>{{end}}
         <th>Branch</th>
         <th>Last active</th>
         <th>Idle</th>
@@ -55,8 +57,8 @@
     <tbody>
       {{range .Worktrees}}
       <tr>
-        <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}">{{.ThreadID}}</a></td>
-        <td>{{if .Project}}{{.Project}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}{{if or $.Project .Project}}?project={{urlquery (or $.Project .Project)}}{{end}}">{{.ThreadID}}</a></td>
+        {{if not $.Project}}<td>{{if .Project}}<a href="/projects/{{.Project}}">{{.Project}}</a>{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
         <td class="mono">{{if .Branch}}{{.Branch}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono muted">{{if .LastActiveAt}}{{.LastActiveAt}}{{else}}—{{end}}</td>
         <td>{{if .IdleFor}}{{.IdleFor}}{{else}}<span class="muted">—</span>{{end}}{{if .IdlePastTTL}} <span class="badge status-warn">past TTL</span>{{end}}</td>
@@ -72,6 +74,7 @@
           <form method="post" action="{{route "worktrees.prune"}}" onsubmit="return confirm('Prune worktree for thread {{.ThreadID}}? This removes the worktree, branch, and session.');">
             {{template "csrf" $}}
             <input type="hidden" name="threadId" value="{{.ThreadID}}">
+            {{if $.Project}}<input type="hidden" name="project" value="{{$.Project}}">{{end}}
             <button type="submit" class="btn-danger">Prune</button>
           </form>
           {{end}}
@@ -82,7 +85,7 @@
   </table>
   </div>
   {{else}}
-  <div class="empty">No thread worktrees found.</div>
+  <div class="empty">No thread worktrees found{{if .Project}} in this project{{end}}.</div>
   {{end}}
 </div>
 {{end}}

@@ -2,7 +2,7 @@
 <h1 id="page-issues-list">Issues · {{.Project}}</h1>
 <p class="sub">
   Repo: <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span>
-  · <a href="/issues">All projects</a>
+  · <a href="/projects/{{.Project}}">Overview</a>
   {{if .LinearEnabled}} · <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}
 </p>
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}

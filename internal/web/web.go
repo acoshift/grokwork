@@ -78,7 +78,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	app.Server().GraceTimeout = time.Millisecond
 
 	app.Routes(hime.Routes{
-		"dashboard":               "/",
+		"home":                    "/",
 		"login":                   "/login",
 		"auth.discord":            "/auth/discord",
 		"auth.discord.callback":   "/auth/discord/callback",
@@ -112,8 +112,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"sse":                     "/events",
 		// Live partials (htmx SSE domain swaps) — separate URLs so each region
 		// can refresh independently. Fragments render via View("page#define").
-		"partial.dashboard.stats": "/partials/dashboard/stats",
-		"partial.dashboard.runs":  "/partials/dashboard/runs",
+		"partial.home.projects":   "/partials/home/projects",
+		"partial.home.runs":       "/partials/home/runs",
+		"partial.project.pulse":   "/partials/projects/pulse",
 		"partial.ship.stats":      "/partials/ship/stats",
 		"partial.ship.table":      "/partials/ship/table",
 		"partial.history.table":   "/partials/history/table",
@@ -141,7 +142,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.FS(templateFS)
 	tp.Dir("templates")
 	tp.Root("layout")
-	tp.ParseFiles("dashboard", "layout.tmpl", "dashboard.tmpl")
+	tp.ParseFiles("home", "layout.tmpl", "home.tmpl")
+	tp.ParseFiles("project_overview", "layout.tmpl", "project_overview.tmpl")
 	tp.ParseFiles("history", "layout.tmpl", "history.tmpl")
 	tp.ParseFiles("history_detail", "layout.tmpl", "history_detail.tmpl")
 	tp.ParseFiles("sessions", "layout.tmpl", "sessions.tmpl")
@@ -150,7 +152,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("config", "layout.tmpl", "config.tmpl")
 	tp.ParseFiles("project_config", "layout.tmpl", "project_config.tmpl")
 	tp.ParseFiles("login", "layout.tmpl", "login.tmpl")
-	tp.ParseFiles("issues_index", "layout.tmpl", "issues_index.tmpl")
 	tp.ParseFiles("issues", "layout.tmpl", "issues.tmpl")
 	tp.ParseFiles("issue_detail", "layout.tmpl", "issue_detail.tmpl")
 	tp.ParseFiles("linear_issues", "layout.tmpl", "linear_issues.tmpl")
@@ -158,7 +159,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("pr_detail", "layout.tmpl", "pr_detail.tmpl")
 	tp.ParseFiles("diff", "layout.tmpl", "diff.tmpl")
 	tp.ParseFiles("session", "layout.tmpl", "session.tmpl")
-	tp.ParseFiles("commits_index", "layout.tmpl", "commits_index.tmpl")
 	tp.ParseFiles("commits", "layout.tmpl", "commits.tmpl")
 	tp.ParseFiles("commit_detail", "layout.tmpl", "commit_detail.tmpl")
 
@@ -177,7 +177,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /logout", hime.Handler(s.logout))
 
 	// Authenticated pages + SSE + partials
-	mux.Handle("GET /{$}", s.requireAuth(hime.Handler(s.dashboard)))
+	mux.Handle("GET /{$}", s.requireAuth(hime.Handler(s.home)))
 	mux.Handle("GET /history", s.requireAuth(hime.Handler(s.historyList)))
 	mux.Handle("GET /history/{threadID}", s.requireAuth(hime.Handler(s.historyDetail)))
 	mux.Handle("GET /sessions", s.requireAuth(hime.Handler(s.sessionsList)))
@@ -187,12 +187,18 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /worktrees", s.requireAuth(hime.Handler(s.worktreesPage)))
 	mux.Handle("GET /config", s.requireAdmin(hime.Handler(s.configPage)))
 	mux.Handle("GET /config/projects/{name}", s.requireAdmin(hime.Handler(s.projectConfigPage)))
-	mux.Handle("GET /issues", s.requireAuth(hime.Handler(s.issuesIndex)))
+	// Project workspace (project-first UX): overview + scoped list pages.
+	mux.Handle("GET /projects/{project}", s.requireAuth(hime.Handler(s.projectOverview)))
+	mux.Handle("GET /projects/{project}/ship", s.requireAuth(hime.Handler(s.shipScoped)))
+	mux.Handle("GET /projects/{project}/sessions", s.requireAuth(hime.Handler(s.sessionsScoped)))
+	mux.Handle("GET /projects/{project}/worktrees", s.requireAuth(hime.Handler(s.worktreesScoped)))
+	// Retired feature-first hubs → launcher.
+	mux.Handle("GET /issues", s.requireAuth(hime.Handler(s.redirectHome)))
 	mux.Handle("GET /projects/{project}/issues", s.requireAuth(hime.Handler(s.issuesList)))
 	mux.Handle("GET /projects/{project}/issues/{n}", s.requireAuth(hime.Handler(s.issueDetail)))
 	mux.Handle("GET /projects/{project}/linear", s.requireAuth(hime.Handler(s.linearList)))
 	mux.Handle("GET /projects/{project}/linear/{identifier}", s.requireAuth(hime.Handler(s.linearDetail)))
-	mux.Handle("GET /commits", s.requireAuth(hime.Handler(s.commitsIndex)))
+	mux.Handle("GET /commits", s.requireAuth(hime.Handler(s.redirectHome)))
 	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))
 	mux.Handle("GET /projects/{project}/commits/{sha}", s.requireAuth(hime.Handler(s.commitDetail)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}", s.requireAuth(hime.Handler(s.prDetail)))
@@ -222,8 +228,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /projects/{project}/commits/{sha}/review",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCommitReview))))
 	mux.Handle("GET /events", s.requireAuth(http.HandlerFunc(s.sse)))
-	mux.Handle("GET /partials/dashboard/stats", s.requireAuth(hime.Handler(s.partialDashboardStats)))
-	mux.Handle("GET /partials/dashboard/runs", s.requireAuth(hime.Handler(s.partialDashboardRuns)))
+	mux.Handle("GET /partials/home/projects", s.requireAuth(hime.Handler(s.partialHomeProjects)))
+	mux.Handle("GET /partials/home/runs", s.requireAuth(hime.Handler(s.partialHomeRuns)))
+	mux.Handle("GET /partials/projects/pulse", s.requireAuth(hime.Handler(s.partialProjectPulse)))
 	mux.Handle("GET /partials/ship/stats", s.requireAuth(hime.Handler(s.partialShipStats)))
 	mux.Handle("GET /partials/ship/table", s.requireAuth(hime.Handler(s.partialShipTable)))
 	mux.Handle("GET /partials/history/table", s.requireAuth(hime.Handler(s.partialHistoryTable)))
@@ -272,6 +279,7 @@ func (s *Server) Shutdown() error {
 type pageData struct {
 	Title       string
 	IsDashboard bool
+	IsOverview  bool
 	IsHistory   bool
 	IsSessions  bool
 	IsShip      bool
@@ -294,6 +302,14 @@ type pageData struct {
 	ProjectItem       config.ProjectItem
 	DiscordUserNames  map[string]string // Discord user id → display name (best-effort)
 	SSEPath           string
+	// Project-first shell scope: NavProject switches the sidebar into
+	// workspace mode. URL-derived only (see navScopeFromURL) so history
+	// restores can recompute it client-side.
+	NavProject       string
+	NavProjects      []string // visible projects for the sidebar switcher
+	NavLinearEnabled bool     // workspace nav: show the Linear item
+	// Home launcher cards.
+	ProjectCards []projectCard
 	// Auth chrome
 	AuthEnabled bool
 	IsAdmin     bool // true when auth off, or session role ≥ admin
@@ -349,6 +365,12 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 		AuthEnabled:    s.cfg.WebAuthEnabled(),
 		WebMergeMethod: s.cfg.WebMergeMethodValue(),
 	}
+	// Sidebar workspace scope (project-first shell).
+	d.NavProject = s.navScope(ctx)
+	if d.NavProject != "" {
+		d.NavProjects = s.filterProjectNames(ctx)
+		d.NavLinearEnabled = s.cfg.ProjectLinearEnabled(d.NavProject)
+	}
 	// Write affordances: feature on + (auth off never enables Feature*; auth on needs role).
 	d.CanGitHubWrite = s.cfg.FeatureGitHubWrites()
 	d.CanMerge = s.cfg.FeatureMerge()
@@ -396,14 +418,6 @@ func (s *Server) viewPage(ctx *hime.Context, name string, d pageData) error {
 // non-htmx / boosted / history-restore clients).
 func (s *Server) viewFragment(ctx *hime.Context, page, fragment string, d pageData) error {
 	return ctx.NoCache().View(page+"#"+fragment, d)
-}
-
-func (s *Server) dashboard(ctx *hime.Context) error {
-	d := s.basePage(ctx)
-	d.Title = "Dashboard"
-	d.IsDashboard = true
-	d.Status = s.bot.StatusSnapshot()
-	return s.viewPage(ctx, "dashboard", d)
 }
 
 func (s *Server) historyList(ctx *hime.Context) error {
@@ -577,23 +591,18 @@ func (s *Server) worktreesPage(ctx *hime.Context) error {
 
 // --- Live partial handlers (content-only, no layout) ---
 
-func (s *Server) partialDashboardStats(ctx *hime.Context) error {
-	d := s.basePage(ctx)
-	d.Status = s.bot.StatusSnapshot()
-	return s.viewFragment(ctx, "dashboard", "dashboard_stats", d)
-}
-
-func (s *Server) partialDashboardRuns(ctx *hime.Context) error {
-	d := s.basePage(ctx)
-	d.Status = s.bot.StatusSnapshot()
-	return s.viewFragment(ctx, "dashboard", "dashboard_runs", d)
-}
-
 func (s *Server) shipPartialData(ctx *hime.Context) pageData {
 	project := strings.TrimSpace(ctx.FormValue("project"))
 	state := strings.TrimSpace(ctx.FormValue("state"))
 	d := s.basePage(ctx)
 	d.Ship = s.bot.ListShipBoard(project, state)
+	// Workspace ship pages refresh with &scoped=1 so fragments keep the
+	// scoped layout (no Project column). The global board also passes
+	// ?project= as a data filter but must keep the column — hence the
+	// explicit marker instead of inferring from the filter.
+	if ctx.FormValue("scoped") == "1" {
+		d.Project = project
+	}
 	return d
 }
 
@@ -636,6 +645,11 @@ func (s *Server) partialHistoryTurns(ctx *hime.Context) error {
 func (s *Server) partialWorktreesTable(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Worktrees = s.filterWorktreesVisible(ctx, s.bot.ListWorktrees())
+	// Workspace pages refresh with ?project= so the region stays scoped.
+	if p := strings.TrimSpace(ctx.FormValue("project")); p != "" {
+		d.Project = p
+		d.Worktrees = filterWorktreesProject(d.Worktrees, p)
+	}
 	d.IdleTTLDays = s.cfg.WorktreeIdleTTLDaysValue()
 	return s.viewFragment(ctx, "worktrees", "worktrees_table", d)
 }
@@ -647,10 +661,17 @@ func (s *Server) partialConfigLists(ctx *hime.Context) error {
 }
 
 func (s *Server) worktreesRedirect(ctx *hime.Context, okMsg string, err error) error {
+	q := url.Values{}
 	if err != nil {
-		return ctx.RedirectTo("worktrees", map[string]string{"err": err.Error()})
+		q.Set("err", err.Error())
+	} else {
+		q.Set("ok", okMsg)
 	}
-	return ctx.RedirectTo("worktrees", map[string]string{"ok": okMsg})
+	// Prune forms on workspace pages carry the project → return to that scope.
+	if p := strings.TrimSpace(ctx.PostFormValue("project")); p != "" {
+		return ctx.Redirect("/projects/" + url.PathEscape(p) + "/worktrees?" + q.Encode())
+	}
+	return ctx.Redirect(ctx.Route("worktrees") + "?" + q.Encode())
 }
 
 func (s *Server) pruneWorktree(ctx *hime.Context) error {

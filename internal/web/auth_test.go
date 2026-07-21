@@ -153,7 +153,7 @@ func TestAuthOnHTMXUnauthenticatedRedirectsFullPage(t *testing.T) {
 	}{
 		{
 			name:       "partial uses current page as next",
-			path:       "/partials/dashboard/stats",
+			path:       "/partials/home/projects",
 			currentURL: "http://127.0.0.1:8787/",
 			wantNext:   "/",
 		},
@@ -240,7 +240,7 @@ func TestLoginNextFromRequest(t *testing.T) {
 		want string
 	}{
 		{mk("/config", false, ""), "/config"},
-		{mk("/partials/dashboard/stats", false, ""), "/"},
+		{mk("/partials/home/projects", false, ""), "/"},
 		{mk("/events", false, ""), "/"},
 		// Partial: recover browser page from HX-Current-URL.
 		{mk("/partials/ship/table", true, "http://host/ship"), "/ship"},

@@ -395,11 +395,3 @@ func (s *Server) resolveSessionDiffCwd(ent sessionstore.Entry, threadID string) 
 	return "", project
 }
 
-func (s *Server) issuesIndex(ctx *hime.Context) error {
-	// Landing: pick a project
-	d := s.basePage(ctx)
-	d.Title = "Issues"
-	d.IsIssues = true
-	d.Config = s.filterSnapshotToVisible(ctx, s.cfg.Snapshot())
-	return s.viewPage(ctx, "issues_index", d)
-}

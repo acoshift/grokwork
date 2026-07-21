@@ -1,0 +1,98 @@
+{{define "content"}}
+<h1 id="page-project-overview">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· overview</span></h1>
+<p class="sub">Live pulse of this workspace. Queue work by tagging <span class="mono">@Grok</span> in a mapped Discord channel; browse
+  <a href="/projects/{{.Project}}/issues">issues</a>{{if .NavLinearEnabled}}, <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}
+  or <a href="/projects/{{.Project}}/commits">commits</a> to start from existing work.</p>
+
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
+<div class="live-region"
+     id="live-project-pulse"
+     hx-get="{{route "partial.project.pulse"}}?project={{urlquery .Project}}"
+     hx-trigger="sse:dashboard, sse:ship"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML"
+     hx-sync="this:replace">
+  {{template "project_pulse" .}}
+</div>
+
+<div class="section">
+  <h2>Recent sessions <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Threads}} shown)</span></h2>
+  {{if .Threads}}
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Thread</th>
+        <th>Turns</th>
+        <th>Last user</th>
+        <th>Updated</th>
+        <th>Last prompt</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Threads}}
+      <tr>
+        <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}">{{.ThreadID}}</a></td>
+        <td class="mono">{{.TurnCount}}</td>
+        <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="mono muted">{{if .UpdatedAt}}{{.UpdatedAt}}{{else}}—{{end}}</td>
+        <td>{{if .LastPrompt}}<span class="clamp muted">{{.LastPrompt}}</span>{{else}}<span class="muted">{{if eq .TurnCount 0}}no turns recorded yet{{else}}—{{end}}</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  <div class="form-actions">
+    <a class="btn" href="/projects/{{.Project}}/sessions">All sessions</a>
+    <a class="btn" href="/projects/{{.Project}}/worktrees">Worktrees</a>
+  </div>
+  {{else}}
+  <div class="empty">No sessions in this project yet. Tag <span class="mono">@Grok</span> in a mapped Discord channel to start one.</div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "project_pulse"}}
+<div class="grid" id="pulse">
+  <div class="card">
+    <div class="label">Running</div>
+    <div class="value" id="pulse-running">{{.Status.ActiveCount}}</div>
+    <div class="hint">{{if gt .Status.ActiveCount 0}}<span class="badge live">running</span>{{else}}idle{{end}}</div>
+  </div>
+  <div class="card">
+    <div class="label">Queued</div>
+    <div class="value" id="pulse-queued">{{.Status.QueuedTotal}}</div>
+    <div class="hint">follow-ups waiting</div>
+  </div>
+  <div class="card">
+    <div class="label">Open PRs</div>
+    <div class="value" id="pulse-open">{{.Ship.Open}}</div>
+    <div class="hint"><a href="/projects/{{.Project}}/ship">{{.Ship.Draft}} draft · ship board</a></div>
+  </div>
+  <div class="card">
+    <div class="label">CI failing</div>
+    <div class="value" id="pulse-failing">{{.Ship.ChecksFailing}}</div>
+    <div class="hint">{{if gt .Ship.ChecksFailing 0}}<span class="badge status-error">needs attention</span>{{else}}all green{{end}}</div>
+  </div>
+</div>
+{{if .Status.ActiveRuns}}
+<div class="table-scroll" style="margin-bottom:1.5rem">
+<table>
+  <thead>
+    <tr><th>Thread</th><th>Elapsed</th><th>Activity</th><th>Queue</th></tr>
+  </thead>
+  <tbody>
+    {{range .Status.ActiveRuns}}
+    <tr>
+      <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}">{{.ThreadID}}</a></td>
+      <td class="mono">{{.Elapsed}}</td>
+      <td>{{if .Activity}}<span class="clamp muted">{{.Activity}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+      <td>{{if gt .QueueLen 0}}<span class="badge">{{.QueueLen}} queued</span>{{else}}<span class="muted">—</span>{{end}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+{{end}}

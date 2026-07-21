@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1 id="page-linear-list">Linear · {{.Project}}</h1>
-<p class="sub">Team <span class="mono">{{.LinearTeam}}</span> · <a href="/projects/{{.Project}}/issues">GitHub issues</a> · <a href="/issues">All projects</a></p>
+<p class="sub">Team <span class="mono">{{.LinearTeam}}</span> · <a href="/projects/{{.Project}}/issues">GitHub issues</a> · <a href="/projects/{{.Project}}">Overview</a></p>
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 <div class="section">
   {{if .LinearIssues}}
