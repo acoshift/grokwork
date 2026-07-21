@@ -80,10 +80,11 @@ func ListIssuesWith(ctx context.Context, run Runner, repoDir string, opts IssueL
 	if limit <= 0 {
 		limit = 30
 	}
+	// List UI needs metadata only — omit body/labels (large; detail uses ViewIssue).
 	args := []string{"issue", "list",
 		"--state", state,
 		"--limit", strconv.Itoa(limit),
-		"--json", "number,url,title,state,author,labels,body,closedByPullRequestsReferences",
+		"--json", "number,url,title,state,author,closedByPullRequestsReferences",
 	}
 	if o, r := strings.TrimSpace(opts.Owner), strings.TrimSpace(opts.Repo); o != "" && r != "" {
 		args = append(args, "--repo", o+"/"+r)

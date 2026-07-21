@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/moonrhythm/hime"
 
@@ -84,34 +85,100 @@ func (s *Server) resolveCatalogRepo(ctx context.Context, project, owner, repo st
 	return "", config.GitHubRepoRef{}, "", fmt.Errorf("repository %s/%s is not in any project catalog", owner, repo)
 }
 
+// issuesList renders the issues page shell immediately. The table is loaded via
+// /partials/issues/table (hx-trigger=load) so navigation is not blocked on gh.
 func (s *Server) issuesList(ctx *hime.Context) error {
-	project := strings.TrimSpace(ctx.PathValue("project"))
-	if err := s.ensureProjectAccess(ctx, project); err != nil {
-		return ctx.Status(http.StatusForbidden).Error(err.Error())
-	}
-	path, err := s.projectPath(project)
+	d, err := s.issuesPageShell(ctx)
 	if err != nil {
-		return ctx.Status(http.StatusNotFound).Error(err.Error())
+		return err
+	}
+	return s.viewPage(ctx, "issues", d)
+}
+
+// partialIssuesTable streams the issues table (and Fix bar) after the shell paints.
+func (s *Server) partialIssuesTable(ctx *hime.Context) error {
+	d, err := s.issuesPageShell(ctx)
+	if err != nil {
+		return err
+	}
+	if d.Error != "" && d.ActiveOwner == "" {
+		// Catalog/access error already set; still render empty table region.
+		return s.viewFragment(ctx, "issues", "issues_table", d)
+	}
+	s.loadIssuesInto(&d, ctx)
+	return s.viewFragment(ctx, "issues", "issues_table", d)
+}
+
+// issuesPageShell resolves project access, catalog, and filter UI state without
+// calling GitHub. Shared by the full page and the table partial.
+func (s *Server) issuesPageShell(ctx *hime.Context) (pageData, error) {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if project == "" {
+		// Partial uses query param so it can be shared with filter form values.
+		project = strings.TrimSpace(ctx.FormValue("project"))
+	}
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return pageData{}, ctx.Status(http.StatusForbidden).Error(err.Error())
+	}
+	if _, err := s.projectPath(project); err != nil {
+		return pageData{}, ctx.Status(http.StatusNotFound).Error(err.Error())
 	}
 	catalog, err := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
 	if err != nil {
-		return ctx.Status(http.StatusBadRequest).Error(err.Error())
+		return pageData{}, ctx.Status(http.StatusBadRequest).Error(err.Error())
 	}
-	// Allow test injection of catalog via ghRunner only — catalog still from config.
 	owner := strings.TrimSpace(ctx.FormValue("owner"))
 	repo := strings.TrimSpace(ctx.FormValue("repo"))
 	active, err := config.ResolveRepoPicker(catalog, owner, repo)
+	d := s.basePage(ctx)
+	d.Title = "Issues · " + project
+	d.IsIssues = true
+	d.Project = project
+	d.RepoCatalog = catalog
+	d.LinearEnabled = s.cfg.ProjectLinearEnabled(project)
+	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if err != nil {
-		// still render page with error if catalog empty
-		d := s.basePage(ctx)
-		d.Title = "Issues · " + project
-		d.IsIssues = true
-		d.Project = project
-		d.RepoCatalog = catalog
+		// Still render page with error if catalog empty / bad picker.
 		d.Error = err.Error()
-		return s.viewPage(ctx, "issues", d)
+		return d, nil
 	}
 	state := strings.TrimSpace(ctx.FormValue("state"))
+	if state == "" {
+		state = "open"
+	}
+	d.ActiveOwner = active.Owner
+	d.ActiveRepo = active.Repo
+	d.IssueState = state
+	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
+		d.Error = e
+	}
+	return d, nil
+}
+
+const (
+	issueListTTL        = 20 * time.Second
+	issueListMaxEntries = 32
+	issueListLimit      = 40
+)
+
+type issueListCacheEntry struct {
+	issues []ghpr.IssueInfo
+	at     time.Time
+}
+
+// loadIssuesInto fetches (or reuses a short-TTL cache of) GitHub issues and
+// applies the FIXING overlay / state=fixing filter.
+func (s *Server) loadIssuesInto(d *pageData, ctx *hime.Context) {
+	if d == nil || d.ActiveOwner == "" || d.ActiveRepo == "" {
+		return
+	}
+	project := d.Project
+	path, err := s.projectPath(project)
+	if err != nil {
+		d.Error = err.Error()
+		return
+	}
+	state := d.IssueState
 	if state == "" {
 		state = "open"
 	}
@@ -120,14 +187,16 @@ func (s *Server) issuesList(ctx *hime.Context) error {
 	if state == "fixing" {
 		ghState = "open"
 	}
-	issues, listErr := ghpr.ListIssuesWith(ctx.Context(), s.ghRun(), path, ghpr.IssueListOpts{
-		Owner: active.Owner,
-		Repo:  active.Repo,
+	cacheKey := project + "\x00" + d.ActiveOwner + "\x00" + d.ActiveRepo + "\x00" + ghState
+
+	issues, listErr := s.cachedListIssues(ctx.Context(), cacheKey, path, ghpr.IssueListOpts{
+		Owner: d.ActiveOwner,
+		Repo:  d.ActiveRepo,
 		State: ghState,
-		Limit: 40,
+		Limit: issueListLimit,
 	})
 	if listErr == nil {
-		issues = s.annotateGitHubIssueWorkState(project, active.Owner, active.Repo, issues)
+		issues = s.annotateGitHubIssueWorkState(project, d.ActiveOwner, d.ActiveRepo, issues)
 		if state == "fixing" {
 			filtered := issues[:0]
 			for _, iss := range issues {
@@ -137,24 +206,70 @@ func (s *Server) issuesList(ctx *hime.Context) error {
 			}
 			issues = filtered
 		}
-	}
-	d := s.basePage(ctx)
-	d.Title = "Issues · " + project
-	d.IsIssues = true
-	d.Project = project
-	d.RepoCatalog = catalog
-	d.ActiveOwner = active.Owner
-	d.ActiveRepo = active.Repo
-	d.IssueState = state
-	d.Issues = issues
-	d.LinearEnabled = s.cfg.ProjectLinearEnabled(project)
-	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
-	if listErr != nil {
+		d.Issues = issues
+	} else if d.Error == "" {
 		d.Error = listErr.Error()
-	} else if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
-		d.Error = e
 	}
-	return s.viewPage(ctx, "issues", d)
+}
+
+func (s *Server) cachedListIssues(ctx context.Context, key, path string, opts ghpr.IssueListOpts) ([]ghpr.IssueInfo, error) {
+	now := time.Now()
+	s.issueListMu.Lock()
+	if e, ok := s.issueLists[key]; ok && now.Sub(e.at) < issueListTTL {
+		issues := append([]ghpr.IssueInfo(nil), e.issues...)
+		s.issueListMu.Unlock()
+		return issues, nil
+	}
+	s.issueListMu.Unlock()
+
+	issues, err := ghpr.ListIssuesWith(ctx, s.ghRun(), path, opts)
+	if err != nil {
+		// Do not cache failures — retries should hit GitHub again.
+		return nil, err
+	}
+
+	s.issueListMu.Lock()
+	if s.issueLists == nil {
+		s.issueLists = map[string]issueListCacheEntry{}
+	}
+	for k, e := range s.issueLists {
+		if now.Sub(e.at) >= issueListTTL {
+			delete(s.issueLists, k)
+		}
+	}
+	if len(s.issueLists) >= issueListMaxEntries {
+		oldest, oldestAt := "", now
+		for k, e := range s.issueLists {
+			if e.at.Before(oldestAt) {
+				oldest, oldestAt = k, e.at
+			}
+		}
+		delete(s.issueLists, oldest)
+	}
+	s.issueLists[key] = issueListCacheEntry{
+		issues: append([]ghpr.IssueInfo(nil), issues...),
+		at:     now,
+	}
+	s.issueListMu.Unlock()
+	return issues, nil
+}
+
+// invalidateIssueListCache drops cached lists for a repo (after write mutations).
+func (s *Server) invalidateIssueListCache(project, owner, repo string) {
+	project = strings.TrimSpace(project)
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if project == "" || owner == "" || repo == "" {
+		return
+	}
+	prefix := project + "\x00" + owner + "\x00" + repo + "\x00"
+	s.issueListMu.Lock()
+	defer s.issueListMu.Unlock()
+	for k := range s.issueLists {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.issueLists, k)
+		}
+	}
 }
 
 func (s *Server) issueDetail(ctx *hime.Context) error {

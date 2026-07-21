@@ -163,6 +163,9 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 		s.auditAction(ctx, audit.ActionSessionStart, nil, detail)
 		started++
 	}
+	if started > 0 {
+		s.invalidateIssueListCache(project, owner, repo)
+	}
 
 	switch {
 	case started == 0:
@@ -368,6 +371,9 @@ func (s *Server) handleFixResult(ctx *hime.Context, startErr error, res bot.FixS
 		return s.mapFixError(ctx, startErr, rc)
 	}
 	s.auditAction(ctx, audit.ActionSessionStart, nil, detail)
+	if rc.Kind == "github" {
+		s.invalidateIssueListCache(rc.Project, rc.Owner, rc.Repo)
+	}
 
 	ok := string(res.Status)
 	if res.DiscordOffline {

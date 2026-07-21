@@ -47,6 +47,9 @@ type Server struct {
 	// PR raw-patch cache (page + per-file fragments share one gh pr diff).
 	prPatchMu sync.Mutex
 	prPatches map[string]prPatchEntry
+	// Short-TTL GitHub issue list cache (page shell + partial share one gh call).
+	issueListMu sync.Mutex
+	issueLists  map[string]issueListCacheEntry
 }
 
 // New builds a hime app with dashboard, history, config, and SSE routes.
@@ -123,6 +126,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"partial.history.table":   "/partials/history/table",
 		"partial.history.turns":   "/partials/history/turns/",
 		"partial.worktrees.table": "/partials/worktrees/table",
+		"partial.issues.table":    "/partials/issues/table",
 		"partial.config.lists":    "/partials/config/lists",
 	})
 
@@ -236,6 +240,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/history/table", s.requireAuth(hime.Handler(s.partialHistoryTable)))
 	mux.Handle("GET /partials/history/turns/{threadID}", s.requireAuth(hime.Handler(s.partialHistoryTurns)))
 	mux.Handle("GET /partials/worktrees/table", s.requireAuth(hime.Handler(s.partialWorktreesTable)))
+	mux.Handle("GET /partials/issues/table", s.requireAuth(hime.Handler(s.partialIssuesTable)))
 	mux.Handle("GET /partials/config/lists", s.requireAdmin(hime.Handler(s.partialConfigLists)))
 
 	// Admin + CSRF mutations (no-op gates when auth disabled)

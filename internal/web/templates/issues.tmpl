@@ -49,7 +49,39 @@
 <p class="sub">No repos in catalog. Set <span class="mono">projects.{{.Project}}.github.repos</span> on Config, or ensure git remotes exist.</p>
 {{end}}
 
+{{/* Shell paints immediately; table loads via partial so enter is not blocked on gh. */}}
+{{if and .ActiveOwner .ActiveRepo}}
+<div class="live-region"
+     id="live-issues-table"
+     hx-get="{{route "partial.issues.table"}}?project={{urlquery .Project}}&amp;owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;state={{urlquery .IssueState}}"
+     hx-trigger="load"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML"
+     hx-sync="this:queue last">
+  <div class="section"><div class="empty muted">Loading issues…</div></div>
+</div>
+{{else}}
+<div class="section"><div class="empty">No issues loaded.</div></div>
+{{end}}
+{{end}}
+
+{{define "issues_table"}}
+<style>
+  /* Global button { display:inline-flex } would otherwise unhide these. */
+  #issues-fix-bar [hidden],
+  #issues-table .col-fix-select[hidden] { display: none !important; }
+  #issues-table.is-selecting tbody tr { cursor: pointer; }
+  #issues-table.is-selecting tbody tr.is-checked td { background: var(--surface-l2); }
+  #issues-table.is-selecting a.issue-link {
+    pointer-events: none;
+    color: inherit;
+    text-decoration: none;
+    cursor: inherit;
+  }
+</style>
 <div class="section">
+  {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
   {{if .Issues}}
   {{if .CanStartSession}}<form method="post" action="/projects/{{.Project}}/issues/fix" id="issues-bulk-fix">
     {{template "csrf" $}}
@@ -76,8 +108,8 @@
           </label>
         </td>
         {{end}}
-        <td class="mono"><a href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">#{{.Number}}</a></td>
-        <td><a class="pr-title" href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.Title}}</a></td>
+        <td class="mono"><a class="issue-link" href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">#{{.Number}}</a></td>
+        <td><a class="pr-title issue-link" href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.Title}}</a></td>
         <td>
           {{if eq .WorkState "FIXING"}}
           <span class="badge status-fixing" title="Active Grok fix session">FIXING</span>
@@ -103,19 +135,28 @@
     var btn=document.getElementById('btn-issues-fix');
     var cancel=document.getElementById('btn-issues-fix-cancel');
     var hint=document.getElementById('issues-fix-hint');
+    var table=document.getElementById('issues-table');
     var cols=form.querySelectorAll('.col-fix-select');
     var boxes=form.querySelectorAll('input[name="numbers"]');
+    var links=form.querySelectorAll('a.issue-link');
     var mode=false;
     function countChecked(){
       var n=0;
       for(var i=0;i<boxes.length;i++) if(boxes[i].checked) n++;
       return n;
     }
+    function syncRowChecked(){
+      for(var i=0;i<boxes.length;i++){
+        var tr=boxes[i].closest('tr');
+        if(tr) tr.classList.toggle('is-checked', !!boxes[i].checked);
+      }
+    }
     function updateConfirm(){
       if(!mode) return;
       var n=countChecked();
       btn.disabled=n===0;
       btn.textContent=n>0?('Confirm ('+n+')'):'Confirm';
+      syncRowChecked();
     }
     function setMode(on){
       mode=on;
@@ -124,11 +165,37 @@
         boxes[j].disabled=!on;
         if(!on) boxes[j].checked=false;
       }
+      for(var k=0;k<links.length;k++){
+        var a=links[k];
+        if(on){
+          if(a.hasAttribute('href')){
+            a.setAttribute('data-href', a.getAttribute('href'));
+            a.removeAttribute('href');
+          }
+          a.setAttribute('tabindex','-1');
+          a.setAttribute('aria-disabled','true');
+        }else{
+          var href=a.getAttribute('data-href');
+          if(href){
+            a.setAttribute('href', href);
+            a.removeAttribute('data-href');
+          }
+          a.removeAttribute('tabindex');
+          a.removeAttribute('aria-disabled');
+        }
+      }
+      if(table) table.classList.toggle('is-selecting', on);
       btn.type=on?'submit':'button';
       btn.disabled=false;
       btn.textContent=on?'Confirm':'Fix';
       if(cancel) cancel.hidden=!on;
       if(hint) hint.hidden=!on;
+      if(!on){
+        for(var r=0;r<boxes.length;r++){
+          var row=boxes[r].closest('tr');
+          if(row) row.classList.remove('is-checked');
+        }
+      }
       updateConfirm();
     }
     btn.addEventListener('click', function(e){
@@ -138,6 +205,19 @@
       }
     });
     form.addEventListener('change', updateConfirm);
+    form.addEventListener('click', function(e){
+      if(!mode) return;
+      if(e.target.closest('#issues-fix-bar')) return;
+      var tr=e.target.closest('tbody tr');
+      if(!tr || !form.contains(tr)) return;
+      // Checkbox / label already toggle; still refresh confirm via change.
+      if(e.target.closest('input[name="numbers"]') || e.target.closest('label.check')) return;
+      e.preventDefault();
+      var box=tr.querySelector('input[name="numbers"]');
+      if(!box || box.disabled) return;
+      box.checked=!box.checked;
+      updateConfirm();
+    });
     if(cancel) cancel.addEventListener('click', function(){ setMode(false); });
     setMode(false);
   })();

@@ -206,18 +206,35 @@ func TestIssuesListAndDetail(t *testing.T) {
 		t.Fatalf("list status=%d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
+	// Shell paints without waiting on gh; table loads via partial.
 	for _, want := range []string{
 		`id="page-issues-list"`,
 		"acme/api",
+		`name="repo_full"`,
+		`hx-trigger="load"`,
+		`/partials/issues/table`,
+		"Loading issues…",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("list shell missing %q in %s", want, body)
+		}
+	}
+	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("partial status=%d body=%s", w.Code, w.Body.String())
+	}
+	body = w.Body.String()
+	for _, want := range []string{
 		"Fixture bug api",
 		"#7",
-		`name="repo_full"`,
 		">PRs</th>",
 		// Linked PR count column (one PR in fixture).
 		"<td class=\"mono\">1</td>",
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("list missing %q in %s", want, body)
+			t.Fatalf("list partial missing %q in %s", want, body)
 		}
 	}
 
@@ -263,15 +280,19 @@ func TestIssuesListShowsFixingWorkState(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
+	if !strings.Contains(body, `value="fixing"`) {
+		t.Fatal("expected Fixing filter option on shell")
+	}
+	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	body = w.Body.String()
 	if !strings.Contains(body, `class="badge status-fixing"`) || !strings.Contains(body, "FIXING") {
 		t.Fatalf("expected status-fixing FIXING badge in list: %s", body)
 	}
-	if !strings.Contains(body, `value="fixing"`) {
-		t.Fatal("expected Fixing filter option")
-	}
 
 	// Filter state=fixing keeps the issue
-	req = httptest.NewRequest(http.MethodGet, "/projects/proj/issues?owner=acme&repo=api&state=fixing", nil)
+	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api&state=fixing", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	body = w.Body.String()

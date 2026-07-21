@@ -19,10 +19,11 @@ func TestListIssuesWithMock(t *testing.T) {
 		if !strings.Contains(joined, "closedByPullRequestsReferences") {
 			t.Fatalf("list missing linked PR field: %v", args)
 		}
+		// Slim list fields (no body/labels) — matches production --json.
 		return []byte(`[
-			{"number":1,"url":"https://github.com/acme/app/issues/1","title":"Bug","state":"OPEN","author":{"login":"alice"},"labels":[{"name":"bug"}],"body":"hi",
+			{"number":1,"url":"https://github.com/acme/app/issues/1","title":"Bug","state":"OPEN","author":{"login":"alice"},
 			 "closedByPullRequestsReferences":[{"number":9,"url":"https://github.com/acme/app/pull/9","repository":{"name":"app","owner":{"login":"acme"}}}]},
-			{"number":2,"url":"https://github.com/acme/app/issues/2","title":"Feat","state":"CLOSED","author":{"login":"bob"},"labels":[],"body":"",
+			{"number":2,"url":"https://github.com/acme/app/issues/2","title":"Feat","state":"CLOSED","author":{"login":"bob"},
 			 "closedByPullRequestsReferences":[]}
 		]`), nil
 	}
@@ -36,8 +37,8 @@ func TestListIssuesWithMock(t *testing.T) {
 	if list[0].Number != 1 || list[0].Title != "Bug" || list[0].Author != "alice" {
 		t.Fatalf("first=%+v", list[0])
 	}
-	if list[0].State != "OPEN" || len(list[0].Labels) != 1 || list[0].Labels[0] != "bug" {
-		t.Fatalf("first labels/state=%+v", list[0])
+	if list[0].State != "OPEN" {
+		t.Fatalf("first state=%+v", list[0])
 	}
 	if len(list[0].LinkedPRs) != 1 || list[0].LinkedPRs[0].Number != 9 {
 		t.Fatalf("first linked=%+v", list[0].LinkedPRs)

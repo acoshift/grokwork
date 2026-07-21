@@ -425,7 +425,7 @@ func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/projects/proj/issues?owner=acme&repo=app", nil)
+	req := httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=app", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -435,15 +435,21 @@ func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		`id="btn-issues-fix"`,
+		`id="btn-issues-fix-cancel"`,
 		`id="issues-bulk-fix"`,
 		`action="/projects/proj/issues/fix"`,
 		`name="numbers"`,
 		`value="1"`,
 		`value="2"`,
+		`class="issue-link"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list missing %q", want)
 		}
+	}
+	// Cancel must start hidden until the user enters multi-select via Fix.
+	if !strings.Contains(body, `id="btn-issues-fix-cancel" class="btn-secondary" hidden`) {
+		t.Fatal("cancel button must render with hidden before Fix is clicked")
 	}
 }
 
@@ -463,7 +469,7 @@ func TestIssuesListHidesBulkFixForViewer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/projects/proj/issues?owner=acme&repo=app", nil)
+	req := httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=app", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)

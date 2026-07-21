@@ -81,6 +81,7 @@ func (s *Server) postIssueComment(ctx *hime.Context) error {
 	if err != nil {
 		return s.issueRedirect(ctx, project, owner, repo, n, "", err)
 	}
+	s.invalidateIssueListCache(project, owner, repo)
 	return s.issueRedirect(ctx, project, owner, repo, n, "Comment posted", nil)
 }
 
@@ -108,6 +109,7 @@ func (s *Server) postIssueClose(ctx *hime.Context) error {
 	if err != nil {
 		return s.issueRedirect(ctx, project, owner, repo, n, "", err)
 	}
+	s.invalidateIssueListCache(project, owner, repo)
 	return s.issueRedirect(ctx, project, owner, repo, n, "Issue closed", nil)
 }
 

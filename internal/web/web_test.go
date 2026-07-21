@@ -202,6 +202,7 @@ func TestPagesRender(t *testing.T) {
 			{"/partials/history/table", "thread-99", "history"},
 			{"/partials/history/turns/thread-99", `id="turns"`, "history"},
 			{"/partials/worktrees/table", "All worktrees", "worktrees"},
+			{"/partials/issues/table?project=proj&owner=acme&repo=app", "No issues loaded", ""},
 			{"/partials/config/lists", "Projects", "config"},
 		}
 		for _, tc := range paths {

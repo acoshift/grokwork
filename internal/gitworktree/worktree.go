@@ -167,33 +167,21 @@ func FindOnDiskByUnitID(dataDir, unitID string) (OnDisk, bool) {
 // IsRepo reports whether dir is a git worktree root (not merely inside a parent
 // repo). Nested empty dirs under the bot's own checkout must return false so
 // callers never run git and accidentally diff the bot repository.
+//
+// Uses a filesystem probe only (no git subprocess): a root has a .git directory
+// (normal checkout) or a .git file (linked worktree / submodule). Nested paths
+// have neither. ListWorktrees / SSE fingerprints call this for every path, so
+// spawning git here made the worktrees page and live revs measurably slow.
 func IsRepo(dir string) bool {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return false
 	}
-	cmd := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
+	st, err := os.Lstat(filepath.Join(dir, ".git"))
 	if err != nil {
 		return false
 	}
-	top := strings.TrimSpace(string(out))
-	if top == "" {
-		return false
-	}
-	absDir, err1 := filepath.Abs(dir)
-	absTop, err2 := filepath.Abs(top)
-	if err1 != nil || err2 != nil {
-		return false
-	}
-	// Prefer symlink-resolved paths when available (macOS /var vs /private/var).
-	if resolved, err := filepath.EvalSymlinks(absDir); err == nil {
-		absDir = resolved
-	}
-	if resolved, err := filepath.EvalSymlinks(absTop); err == nil {
-		absTop = resolved
-	}
-	return filepath.Clean(absDir) == filepath.Clean(absTop)
+	return st.IsDir() || st.Mode().IsRegular()
 }
 
 // CleanupIfPRDone removes the worktree/branch when the PR is merged or closed.
