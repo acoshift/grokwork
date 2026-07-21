@@ -138,6 +138,131 @@ func TestAuthOnUnauthenticatedRedirect(t *testing.T) {
 	}
 }
 
+// Session expiry (or missing cookie) on htmx partial/boosted requests must full-page
+// redirect via HX-Redirect — not 302, which htmx follows and swaps into each live-region.
+func TestAuthOnHTMXUnauthenticatedRedirectsFullPage(t *testing.T) {
+	srv, _, _ := authOnServer(t)
+	h := srv.Handler()
+
+	cases := []struct {
+		name       string
+		path       string
+		currentURL string // HX-Current-URL
+		wantNext   string
+		boosted    bool
+	}{
+		{
+			name:       "partial uses current page as next",
+			path:       "/partials/dashboard/stats",
+			currentURL: "http://127.0.0.1:8787/",
+			wantNext:   "/",
+		},
+		{
+			name:       "partial ship table keeps ship page next",
+			path:       "/partials/ship/table",
+			currentURL: "http://127.0.0.1:8787/ship?project=proj",
+			wantNext:   "/ship?project=proj",
+		},
+		{
+			name:     "partial without current URL falls back to home",
+			path:     "/partials/history/table",
+			wantNext: "/",
+		},
+		{
+			name:       "boosted navigation to protected page",
+			path:       "/config",
+			currentURL: "http://127.0.0.1:8787/",
+			wantNext:   "/config",
+			boosted:    true,
+		},
+		{
+			name:       "boosted history detail",
+			path:       "/history/thread-1",
+			currentURL: "http://127.0.0.1:8787/history",
+			wantNext:   "/history/thread-1",
+			boosted:    true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.Header.Set("HX-Request", "true")
+			if tc.boosted {
+				req.Header.Set("HX-Boosted", "true")
+			}
+			if tc.currentURL != "" {
+				req.Header.Set("HX-Current-URL", tc.currentURL)
+			}
+			// Stale cookie as after session TTL expiry server-side.
+			req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "expired-or-unknown"})
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent {
+				t.Fatalf("status=%d want 204; body=%s", w.Code, w.Body.String())
+			}
+			if loc := w.Header().Get("Location"); loc != "" {
+				t.Fatalf("unexpected Location=%q (would swap login into fragment)", loc)
+			}
+			hx := w.Header().Get("HX-Redirect")
+			if !strings.HasPrefix(hx, "/login?") {
+				t.Fatalf("HX-Redirect=%q", hx)
+			}
+			u, err := url.Parse(hx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotNext := u.Query().Get("next")
+			if gotNext != tc.wantNext {
+				t.Fatalf("next=%q want %q (full HX-Redirect=%q)", gotNext, tc.wantNext, hx)
+			}
+			// Must not return login HTML body for fragment swap.
+			if strings.Contains(w.Body.String(), "Log in with Discord") || strings.Contains(w.Body.String(), "page-login") {
+				t.Fatal("response body must not contain login page HTML")
+			}
+		})
+	}
+}
+
+func TestLoginNextFromRequest(t *testing.T) {
+	t.Parallel()
+	mk := func(path string, hx bool, current string) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if hx {
+			req.Header.Set("HX-Request", "true")
+		}
+		if current != "" {
+			req.Header.Set("HX-Current-URL", current)
+		}
+		return req
+	}
+	cases := []struct {
+		req  *http.Request
+		want string
+	}{
+		{mk("/config", false, ""), "/config"},
+		{mk("/partials/dashboard/stats", false, ""), "/"},
+		{mk("/events", false, ""), "/"},
+		// Partial: recover browser page from HX-Current-URL.
+		{mk("/partials/ship/table", true, "http://host/ship"), "/ship"},
+		{mk("/partials/ship/table", true, "http://host/ship?p=1"), "/ship?p=1"},
+		{mk("/partials/ship/table", true, ""), "/"},
+		// Boosted page nav: request path is the destination (ignore current URL).
+		{mk("/config", true, "http://host/"), "/config"},
+		{mk("/history/thread-1", true, "http://host/history"), "/history/thread-1"},
+		// Unsafe current URL must not leak into next when used.
+		{mk("/partials/ship/table", true, "http://evil.example//phish"), "/"},
+		{mk("/auth/discord", false, ""), "/"},
+	}
+	for i, tc := range cases {
+		if got := loginNextFromRequest(tc.req); got != tc.want {
+			t.Errorf("case %d: got %q want %q path=%s hx=%v cur=%q",
+				i, got, tc.want, tc.req.URL.RequestURI(),
+				tc.req.Header.Get("HX-Request") == "true",
+				tc.req.Header.Get("HX-Current-URL"))
+		}
+	}
+}
+
 func TestAuthOnOAuthCallbackAndAdminMutate(t *testing.T) {
 	srv, cfg, _ := authOnServer(t)
 	h := srv.Handler()

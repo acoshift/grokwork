@@ -119,6 +119,31 @@ func (s *Server) checkCSRF(r *http.Request, sess *Session) bool {
 	return subtle.ConstantTimeCompare([]byte(token), []byte(sess.CSRF)) == 1
 }
 
+// isNonNavigableWebPath is true for endpoints that are not full pages after login
+// (SSE stream, live-region partials, OAuth).
+func isNonNavigableWebPath(p string) bool {
+	return strings.HasPrefix(p, "/partials/") || p == "/events" || strings.HasPrefix(p, "/auth/")
+}
+
+// loginNextFromRequest picks a post-login path. Boosted navigations use the
+// request path (the page the user tried to open). Live-region partials use the
+// fragment URL as the request path, so recover the browser page via HX-Current-URL.
+func loginNextFromRequest(r *http.Request) string {
+	next := r.URL.RequestURI()
+	if isNonNavigableWebPath(next) && r.Header.Get("HX-Request") == "true" {
+		if cur := strings.TrimSpace(r.Header.Get("HX-Current-URL")); cur != "" {
+			if u, err := url.Parse(cur); err == nil {
+				next = u.RequestURI()
+			}
+		}
+	}
+	next = safeLocalNext(next)
+	if isNonNavigableWebPath(next) {
+		return "/"
+	}
+	return next
+}
+
 // requireAuth redirects unauthenticated users to /login when web auth is enabled.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,8 +153,16 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		}
 		sess := s.sessionFromRequest(r)
 		if sess == nil {
-			nextURL := r.URL.RequestURI()
-			http.Redirect(w, r, "/login?next="+url.QueryEscape(nextURL), http.StatusFound)
+			loginURL := "/login?next=" + url.QueryEscape(loginNextFromRequest(r))
+			// htmx follows HTTP 302 and swaps the final body into the request
+			// target (each live-region / #live-root), so every component shows
+			// the login page. Force a full document navigation instead.
+			if r.Header.Get("HX-Request") == "true" {
+				w.Header().Set("HX-Redirect", loginURL)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			http.Redirect(w, r, loginURL, http.StatusFound)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(withSession(r.Context(), sess)))
