@@ -10,7 +10,7 @@
   <h2>{{.LinearIssue.Title}}</h2>
   <p class="sub" style="margin:0">
     {{if eq .LinearIssue.WorkState "FIXING"}}
-    <span class="badge live" title="Active Grok fix session">FIXING</span>
+    <span class="badge status-fixing" title="Active Grok fix session">FIXING</span>
     {{else}}
     <span class="badge">{{.LinearIssue.State}}</span>
     {{end}}

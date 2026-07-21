@@ -11,7 +11,7 @@
   <h2>{{.Issue.Title}}</h2>
   <p class="sub" style="margin:0">
     {{if eq .Issue.WorkState "FIXING"}}
-    <span class="badge live" title="Active Grok fix session">FIXING</span>
+    <span class="badge status-fixing" title="Active Grok fix session">FIXING</span>
     {{else if eq .Issue.State "open" "OPEN"}}
     <span class="badge live">{{.Issue.State}}</span>
     {{else}}

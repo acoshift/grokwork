@@ -80,7 +80,7 @@
         <td><a class="pr-title" href="/projects/{{$.Project}}/issues/{{.Number}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.Title}}</a></td>
         <td>
           {{if eq .WorkState "FIXING"}}
-          <span class="badge live" title="Active Grok fix session">FIXING</span>
+          <span class="badge status-fixing" title="Active Grok fix session">FIXING</span>
           {{else if eq .State "open" "OPEN"}}
           <span class="badge live">{{.State}}</span>
           {{else}}

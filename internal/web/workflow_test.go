@@ -263,8 +263,8 @@ func TestIssuesListShowsFixingWorkState(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "FIXING") {
-		t.Fatalf("expected FIXING badge in list: %s", body)
+	if !strings.Contains(body, `class="badge status-fixing"`) || !strings.Contains(body, "FIXING") {
+		t.Fatalf("expected status-fixing FIXING badge in list: %s", body)
 	}
 	if !strings.Contains(body, `value="fixing"`) {
 		t.Fatal("expected Fixing filter option")

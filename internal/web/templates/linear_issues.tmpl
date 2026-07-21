@@ -14,7 +14,7 @@
         <td><a class="pr-title" href="/projects/{{$.Project}}/linear/{{.Identifier}}">{{.Title}}</a></td>
         <td>
           {{if eq .WorkState "FIXING"}}
-          <span class="badge live" title="Active Grok fix session">FIXING</span>
+          <span class="badge status-fixing" title="Active Grok fix session">FIXING</span>
           {{else}}
           <span class="badge">{{.State}}</span>
           {{end}}

@@ -1051,6 +1051,15 @@
       border-color: hsl(var(--green-600) / 20%);
     }
     .badge.live::before { background: var(--ok); animation: pulse 2.4s ease-out infinite; }
+    .badge.status-fixing {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: hsl(var(--blue-500) / 22%);
+    }
+    .badge.status-fixing::before {
+      background: var(--accent);
+      animation: pulse 2.4s ease-out infinite;
+    }
     .badge.status-done {
       background: var(--ok-bg);
       color: var(--ok);
