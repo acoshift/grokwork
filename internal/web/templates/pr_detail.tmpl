@@ -91,8 +91,6 @@
   <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/close" onsubmit="return confirm('Close this pull request?');">
     {{template "csrf" $}}
     <input type="hidden" name="project" value="{{.Project}}">
-    <label for="close-confirm">Type <span class="mono">close</span> to confirm</label>
-    <input id="close-confirm" type="text" name="confirm" required autocomplete="off" placeholder="close">
     <div class="form-actions"><button type="submit" class="btn-danger">Close pull request</button></div>
   </form>
 </div>
@@ -105,20 +103,12 @@
   <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/merge" onsubmit="return confirm('Merge this pull request?');">
     {{template "csrf" $}}
     <input type="hidden" name="project" value="{{.Project}}">
-    <div class="inline" style="grid-template-columns: 1fr 1fr; margin-bottom:0.65rem;">
-      <div>
-        <label for="merge-method">Method</label>
-        <select id="merge-method" name="method">
-          <option value="squash" {{if eq .WebMergeMethod "squash"}}selected{{end}}>Squash</option>
-          <option value="merge" {{if eq .WebMergeMethod "merge"}}selected{{end}}>Merge commit</option>
-          <option value="rebase" {{if eq .WebMergeMethod "rebase"}}selected{{end}}>Rebase</option>
-        </select>
-      </div>
-      <div>
-        <label for="merge-confirm">Type <span class="mono">merge</span> to confirm</label>
-        <input id="merge-confirm" type="text" name="confirm" required autocomplete="off" placeholder="merge">
-      </div>
-    </div>
+    <label for="merge-method">Method</label>
+    <select id="merge-method" name="method">
+      <option value="squash" {{if eq .WebMergeMethod "squash"}}selected{{end}}>Squash</option>
+      <option value="merge" {{if eq .WebMergeMethod "merge"}}selected{{end}}>Merge commit</option>
+      <option value="rebase" {{if eq .WebMergeMethod "rebase"}}selected{{end}}>Rebase</option>
+    </select>
     <label class="check"><input type="checkbox" name="attemptAnyway" value="1"> Attempt merge even if checks look failing (still no protection bypass)</label>
     <div class="form-actions"><button type="submit">Merge pull request</button></div>
   </form>

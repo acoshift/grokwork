@@ -116,10 +116,6 @@ func (s *Server) postPRClose(ctx *hime.Context) error {
 		return ctx.Status(http.StatusBadRequest).Error("invalid PR number")
 	}
 	project := strings.TrimSpace(ctx.PostFormValue("project"))
-	confirm := strings.TrimSpace(ctx.PostFormValue("confirm"))
-	if !strings.EqualFold(confirm, "close") {
-		return s.prRedirect(ctx, owner, repo, n, project, "", fmt.Errorf("type close to confirm"))
-	}
 	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
 	if err != nil {
 		return s.prRedirect(ctx, owner, repo, n, project, "", err)
@@ -146,10 +142,6 @@ func (s *Server) postPRMerge(ctx *hime.Context) error {
 		return ctx.Status(http.StatusBadRequest).Error("invalid PR number")
 	}
 	project := strings.TrimSpace(ctx.PostFormValue("project"))
-	confirm := strings.TrimSpace(ctx.PostFormValue("confirm"))
-	if !strings.EqualFold(confirm, "merge") {
-		return s.prRedirect(ctx, owner, repo, n, project, "", fmt.Errorf("type merge to confirm"))
-	}
 	method := ghpr.NormalizeMergeMethod(ctx.PostFormValue("method"))
 	if method == "" || ctx.PostFormValue("method") == "" {
 		method = ghpr.NormalizeMergeMethod(s.cfg.WebMergeMethodValue())

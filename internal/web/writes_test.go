@@ -115,7 +115,7 @@ func TestMemberCommentAndClose(t *testing.T) {
 		t.Fatalf("calls=%v", *calls)
 	}
 	// PR close
-	form = url.Values{"confirm": {"close"}, "project": {"proj"}, "csrf": {csrf}}
+	form = url.Values{"project": {"proj"}, "csrf": {csrf}}
 	req = httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/close", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
@@ -149,7 +149,7 @@ func TestMemberCannotMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	form := url.Values{"confirm": {"merge"}, "project": {"proj"}, "csrf": {csrf}, "method": {"squash"}}
+	form := url.Values{"project": {"proj"}, "csrf": {csrf}, "method": {"squash"}}
 	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/merge", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
@@ -174,7 +174,7 @@ func TestAdminMergeUpdatesSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	form := url.Values{"confirm": {"merge"}, "project": {"proj"}, "csrf": {csrf}, "method": {"squash"}}
+	form := url.Values{"project": {"proj"}, "csrf": {csrf}, "method": {"squash"}}
 	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/merge", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
@@ -233,7 +233,7 @@ func TestMergePreflightConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	form := url.Values{"confirm": {"merge"}, "project": {"proj"}, "csrf": {csrf}}
+	form := url.Values{"project": {"proj"}, "csrf": {csrf}}
 	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/merge", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
@@ -278,7 +278,7 @@ func TestOffCatalogWriteRejected(t *testing.T) {
 		}
 	}
 	// PR path
-	form = url.Values{"confirm": {"close"}, "project": {"proj"}, "csrf": {csrf}}
+	form = url.Values{"project": {"proj"}, "csrf": {csrf}}
 	req = httptest.NewRequest(http.MethodPost, "/prs/evil/other/1/close", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
@@ -305,7 +305,14 @@ func TestPRDetailShowsWriteFormsForAdmin(t *testing.T) {
 		t.Fatalf("status=%d", w.Code)
 	}
 	body := w.Body.String()
-	for _, want := range []string{`id="pr-comment-form"`, `id="pr-close-form"`, `id="pr-merge-form"`, `name="confirm"`, "squash"} {
+	for _, want := range []string{
+		`id="pr-comment-form"`,
+		`id="pr-close-form"`,
+		`id="pr-merge-form"`,
+		`confirm('Close this pull request?')`,
+		`confirm('Merge this pull request?')`,
+		"squash",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q", want)
 		}
