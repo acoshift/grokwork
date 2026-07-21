@@ -25,6 +25,25 @@
   </form>
 </div>
 
+<div class="section card" id="project-repo-fetch">
+  <h2>Repo fetch before worktree</h2>
+  <p class="sub" style="margin-top:0">
+    When creating a <strong>new</strong> thread worktree, run <span class="mono">git fetch --all --prune</span> on this
+    project’s main checkout (throttled) and branch from <span class="mono">origin/*</span> when available.
+    Default is <span class="mono">5</span> minutes when unset. <span class="mono">0</span> disables auto-fetch.
+  </p>
+  <form class="inline" method="post" action="{{route "config.setProjectFetch"}}" style="grid-template-columns: 12rem auto;">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div>
+      <label for="project-fetch-interval">Interval (minutes)</label>
+      <input id="project-fetch-interval" type="number" name="repoFetchIntervalMinutes" min="0" step="1" required
+        value="{{.ProjectItem.RepoFetchIntervalMinutes}}" autocomplete="off">
+    </div>
+    <div class="form-actions" style="align-self:end"><button type="submit">Save</button></div>
+  </form>
+</div>
+
 <div class="section card" id="project-discord">
   <h2>Discord</h2>
   <p class="sub" style="margin-top:0">

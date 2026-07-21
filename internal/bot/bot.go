@@ -653,7 +653,7 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		return cwd, "", nil
 	}
 
-	opts := b.ensureOptsForUnit(threadID)
+	opts := b.ensureOptsForUnit(threadID, proj.Name)
 	if cleaned, state, cErr := gitworktree.CleanupIfPRDoneWith(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID, opts); cErr != nil {
 		log.Printf("warn: worktree PR cleanup check thread=%s: %v", threadID, cErr)
 	} else if cleaned {
@@ -680,16 +680,24 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 	return tree.Path, tree.Branch, nil
 }
 
-// ensureOptsForUnit picks managed branch prefix from session WorktreeBranch or unit id form.
-func (b *Bot) ensureOptsForUnit(unitID string) gitworktree.EnsureOpts {
+// ensureOptsForUnit picks managed branch prefix from session WorktreeBranch or unit id form
+// and the per-project repo fetch interval for new worktree creation.
+func (b *Bot) ensureOptsForUnit(unitID, project string) gitworktree.EnsureOpts {
+	opts := gitworktree.EnsureOpts{BranchPrefix: gitworktree.PrefixForUnitID(unitID)}
 	if b != nil && b.sessions != nil {
 		if e, ok := b.sessions.Get(unitID); ok {
 			if p := gitworktree.PrefixFromBranch(e.WorktreeBranch); p != "" {
-				return gitworktree.EnsureOpts{BranchPrefix: p}
+				opts.BranchPrefix = p
+			}
+			if project == "" {
+				project = e.Project
 			}
 		}
 	}
-	return gitworktree.EnsureOpts{BranchPrefix: gitworktree.PrefixForUnitID(unitID)}
+	if b != nil && b.cfg != nil {
+		opts.FetchInterval = b.cfg.ProjectRepoFetchInterval(project)
+	}
+	return opts
 }
 
 func remoteWorkPromptPrefix(branch string) string {

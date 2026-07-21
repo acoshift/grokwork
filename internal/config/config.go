@@ -14,9 +14,13 @@ import (
 const (
 	defaultHTTPListen          = ":8787"
 	DefaultWorktreeIdleTTLDays = 30
-	DefaultAutoFixCIMax        = 2
-	DefaultMaxTurns            = 40
-	DefaultTimeoutMs           = 30 * 60 * 1000 // 30 minutes
+	// DefaultRepoFetchIntervalMinutes is used when a project omits
+	// repoFetchIntervalMinutes. Auto git fetch before new worktree create is
+	// throttled to at most once per this many minutes per main checkout.
+	DefaultRepoFetchIntervalMinutes = 5
+	DefaultAutoFixCIMax             = 2
+	DefaultMaxTurns                 = 40
+	DefaultTimeoutMs                = 30 * 60 * 1000 // 30 minutes
 	// DefaultBoardStaleDays is days of inactivity before a thread is "stale" on /board.
 	DefaultBoardStaleDays = 3
 	// MinTimeoutMs is the smallest allowed per-run timeout (1 second).
@@ -111,18 +115,19 @@ type Config struct {
 
 // ProjectItem is a project row for the config UI.
 type ProjectItem struct {
-	Name               string
-	Path               string
-	LinearEnabled      bool
-	LinearTeamKey      string
-	LinearAPIKeySet    bool   // true when config or env has a key (never expose the secret)
-	LinearEnvHint      string // e.g. LINEAR_API_KEY_HOMECONNECT
-	DiscordChannelID   string
-	DiscordGuildID     string
-	GitHubReposText     string // "owner/repo" lines for config form
-	ChannelOptions     []string // channel IDs mapped to this project (preferred dropdown)
-	AllowedUserIDs     []string
-	AllowedRoleIDs     []string
+	Name                     string
+	Path                     string
+	LinearEnabled            bool
+	LinearTeamKey            string
+	LinearAPIKeySet          bool   // true when config or env has a key (never expose the secret)
+	LinearEnvHint            string // e.g. LINEAR_API_KEY_HOMECONNECT
+	DiscordChannelID         string
+	DiscordGuildID           string
+	GitHubReposText           string // "owner/repo" lines for config form
+	ChannelOptions           []string // channel IDs mapped to this project (preferred dropdown)
+	AllowedUserIDs           []string
+	AllowedRoleIDs           []string
+	RepoFetchIntervalMinutes int // effective minutes (default when unset; 0 = disabled)
 }
 
 // ChannelItem is a channel→project mapping row for the config UI.
@@ -707,14 +712,23 @@ func (c *Config) Snapshot() Snapshot {
 	projects := make([]ProjectItem, 0, len(names))
 	for _, n := range names {
 		pc := c.Projects[n]
+		fetchMins := DefaultRepoFetchIntervalMinutes
+		if pc.RepoFetchIntervalMinutes != nil {
+			if *pc.RepoFetchIntervalMinutes < 0 {
+				fetchMins = DefaultRepoFetchIntervalMinutes
+			} else {
+				fetchMins = *pc.RepoFetchIntervalMinutes
+			}
+		}
 		item := ProjectItem{
-			Name:             n,
-			Path:             pc.Path,
-			LinearEnvHint:    "LINEAR_API_KEY_" + ProjectEnvKeySuffix(n),
-			DiscordChannelID: strings.TrimSpace(pc.DiscordChannelID),
-			DiscordGuildID:   strings.TrimSpace(pc.DiscordGuildID),
-			AllowedUserIDs:   slices.Clone(pc.AllowedUserIDs),
-			AllowedRoleIDs:   slices.Clone(pc.AllowedRoleIDs),
+			Name:                     n,
+			Path:                     pc.Path,
+			LinearEnvHint:            "LINEAR_API_KEY_" + ProjectEnvKeySuffix(n),
+			DiscordChannelID:         strings.TrimSpace(pc.DiscordChannelID),
+			DiscordGuildID:           strings.TrimSpace(pc.DiscordGuildID),
+			AllowedUserIDs:           slices.Clone(pc.AllowedUserIDs),
+			AllowedRoleIDs:           slices.Clone(pc.AllowedRoleIDs),
+			RepoFetchIntervalMinutes: fetchMins,
 		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled

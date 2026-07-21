@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Tree struct {
@@ -33,6 +34,10 @@ const (
 // Empty BranchPrefix means DiscordBranchPrefix.
 type EnsureOpts struct {
 	BranchPrefix string
+	// FetchInterval throttles git fetch --all --prune before creating a new
+	// managed branch worktree. 0 disables auto-fetch. Reuse of an existing
+	// worktree path never fetches.
+	FetchInterval time.Duration
 }
 
 // BranchName returns the Discord-managed branch for a unit id (thread snowflake).
@@ -344,17 +349,26 @@ func EnsureWith(ctx context.Context, repo, dataDir, project, unitID string, opts
 		return Tree{}, fmt.Errorf("mkdir worktree parent: %w", err)
 	}
 
-	err := runGit(ctx, repo, "worktree", "add", "-b", branch, path, "HEAD")
-	if err != nil {
-		if branchExists(ctx, repo, branch) {
-			// Branch may still look "checked out" via a stale registration.
-			_ = pruneStaleWorktrees(ctx, repo)
-			_ = removeRegisteredWorktreesForBranch(ctx, repo, branch)
-			err = runGit(ctx, repo, "worktree", "add", path, branch)
-		}
+	// New branch: optional fetch + start from origin/* (not stale local HEAD).
+	// Existing branch: re-attach only (no fetch).
+	var err error
+	if branchExists(ctx, repo, branch) {
+		_ = pruneStaleWorktrees(ctx, repo)
+		_ = removeRegisteredWorktreesForBranch(ctx, repo, branch)
+		err = runGit(ctx, repo, "worktree", "add", path, branch)
+	} else {
+		start := fetchBeforeCreate(ctx, repo, opts.FetchInterval)
+		err = runGit(ctx, repo, "worktree", "add", "-b", branch, path, start)
 		if err != nil {
-			return Tree{}, fmt.Errorf("git worktree add: %w", err)
+			// Fallback to HEAD if origin ref vanished mid-flight.
+			if start != "HEAD" {
+				log.Printf("gitworktree: start %s failed (%v); retrying with HEAD", start, err)
+				err = runGit(ctx, repo, "worktree", "add", "-b", branch, path, "HEAD")
+			}
 		}
+	}
+	if err != nil {
+		return Tree{}, fmt.Errorf("git worktree add: %w", err)
 	}
 
 	log.Printf("gitworktree: created path=%s branch=%s repo=%s", path, branch, repo)

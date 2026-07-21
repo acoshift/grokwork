@@ -6,6 +6,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -25,8 +26,12 @@ type ProjectConfig struct {
 	// Empty both → fail-closed (no one may @Grok on this project's channels).
 	AllowedUserIDs []string             `json:"allowedUserIds,omitempty"`
 	AllowedRoleIDs []string             `json:"allowedRoleIds,omitempty"`
-	GitHub         *ProjectGitHubConfig `json:"github,omitempty"`
-	Linear         *ProjectLinearConfig `json:"linear,omitempty"`
+	// RepoFetchIntervalMinutes controls auto git fetch before creating a new
+	// worktree. nil/omitted → DefaultRepoFetchIntervalMinutes (5). 0 disables
+	// auto-fetch for this project (worktrees still prefer origin/* when present).
+	RepoFetchIntervalMinutes *int                 `json:"repoFetchIntervalMinutes,omitempty"`
+	GitHub                   *ProjectGitHubConfig `json:"github,omitempty"`
+	Linear                   *ProjectLinearConfig `json:"linear,omitempty"`
 }
 
 // ProjectsMap is project name → config. JSON accepts either a path string or a full object.
@@ -99,24 +104,26 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 	}
 	// Always write object form so Linear/GitHub fields round-trip.
 	type outObj struct {
-		Path             string               `json:"path"`
-		DiscordChannelID string               `json:"discordChannelId,omitempty"`
-		DiscordGuildID   string               `json:"discordGuildId,omitempty"`
-		AllowedUserIDs   []string             `json:"allowedUserIds,omitempty"`
-		AllowedRoleIDs   []string             `json:"allowedRoleIds,omitempty"`
-		GitHub           *ProjectGitHubConfig `json:"github,omitempty"`
-		Linear           *ProjectLinearConfig `json:"linear,omitempty"`
+		Path                     string               `json:"path"`
+		DiscordChannelID         string               `json:"discordChannelId,omitempty"`
+		DiscordGuildID           string               `json:"discordGuildId,omitempty"`
+		AllowedUserIDs           []string             `json:"allowedUserIds,omitempty"`
+		AllowedRoleIDs           []string             `json:"allowedRoleIds,omitempty"`
+		RepoFetchIntervalMinutes *int                 `json:"repoFetchIntervalMinutes,omitempty"`
+		GitHub                   *ProjectGitHubConfig `json:"github,omitempty"`
+		Linear                   *ProjectLinearConfig `json:"linear,omitempty"`
 	}
 	out := make(map[string]outObj, len(m))
 	for name, pc := range m {
 		out[name] = outObj{
-			Path:             pc.Path,
-			DiscordChannelID: pc.DiscordChannelID,
-			DiscordGuildID:   pc.DiscordGuildID,
-			AllowedUserIDs:   slices.Clone(pc.AllowedUserIDs),
-			AllowedRoleIDs:   slices.Clone(pc.AllowedRoleIDs),
-			GitHub:           cloneProjectGitHub(pc.GitHub),
-			Linear:           cloneProjectLinear(pc.Linear),
+			Path:                     pc.Path,
+			DiscordChannelID:         pc.DiscordChannelID,
+			DiscordGuildID:           pc.DiscordGuildID,
+			AllowedUserIDs:           slices.Clone(pc.AllowedUserIDs),
+			AllowedRoleIDs:           slices.Clone(pc.AllowedRoleIDs),
+			RepoFetchIntervalMinutes: cloneIntPtr(pc.RepoFetchIntervalMinutes),
+			GitHub:                   cloneProjectGitHub(pc.GitHub),
+			Linear:                   cloneProjectLinear(pc.Linear),
 		}
 	}
 	return json.Marshal(out)
@@ -137,16 +144,68 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 	out := make(ProjectsMap, len(m))
 	for k, v := range m {
 		out[k] = ProjectConfig{
-			Path:             v.Path,
-			DiscordChannelID: v.DiscordChannelID,
-			DiscordGuildID:   v.DiscordGuildID,
-			AllowedUserIDs:   slices.Clone(v.AllowedUserIDs),
-			AllowedRoleIDs:   slices.Clone(v.AllowedRoleIDs),
-			GitHub:           cloneProjectGitHub(v.GitHub),
-			Linear:           cloneProjectLinear(v.Linear),
+			Path:                     v.Path,
+			DiscordChannelID:         v.DiscordChannelID,
+			DiscordGuildID:           v.DiscordGuildID,
+			AllowedUserIDs:           slices.Clone(v.AllowedUserIDs),
+			AllowedRoleIDs:           slices.Clone(v.AllowedRoleIDs),
+			RepoFetchIntervalMinutes: cloneIntPtr(v.RepoFetchIntervalMinutes),
+			GitHub:                   cloneProjectGitHub(v.GitHub),
+			Linear:                   cloneProjectLinear(v.Linear),
 		}
 	}
 	return out
+}
+
+// ProjectRepoFetchIntervalMinutes returns the effective auto-fetch interval
+// in minutes for a project. Unknown/empty project uses the default. Explicit 0
+// disables auto-fetch.
+func (c *Config) ProjectRepoFetchIntervalMinutes(name string) int {
+	if c == nil {
+		return DefaultRepoFetchIntervalMinutes
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	if !ok || pc.RepoFetchIntervalMinutes == nil {
+		return DefaultRepoFetchIntervalMinutes
+	}
+	if *pc.RepoFetchIntervalMinutes < 0 {
+		return DefaultRepoFetchIntervalMinutes
+	}
+	return *pc.RepoFetchIntervalMinutes
+}
+
+// ProjectRepoFetchInterval returns the auto-fetch throttle as a duration.
+// 0 means auto-fetch is disabled for this project.
+func (c *Config) ProjectRepoFetchInterval(name string) time.Duration {
+	mins := c.ProjectRepoFetchIntervalMinutes(name)
+	if mins <= 0 {
+		return 0
+	}
+	return time.Duration(mins) * time.Minute
+}
+
+// SetProjectRepoFetchIntervalMinutes sets the per-project auto-fetch interval
+// and persists. 0 disables auto-fetch. Negative values are rejected.
+func (c *Config) SetProjectRepoFetchIntervalMinutes(name string, minutes int) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	if minutes < 0 {
+		return fmt.Errorf("repoFetchIntervalMinutes must be >= 0 (0 disables auto-fetch)")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	d := minutes
+	pc.RepoFetchIntervalMinutes = &d
+	c.Projects[name] = pc
+	return c.saveLocked()
 }
 
 // ProjectEnvKeySuffix maps a project name to the env suffix for LINEAR_API_KEY_<SUFFIX>.

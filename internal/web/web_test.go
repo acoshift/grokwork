@@ -1116,6 +1116,19 @@ func TestProjectConfigPage(t *testing.T) {
 		t.Fatalf("channel not mapped: %q %v", p, ok)
 	}
 
+	// Repo fetch interval save.
+	form = url.Values{"name": {"proj"}, "repoFetchIntervalMinutes": {"15"}}
+	req = httptest.NewRequest(http.MethodPost, "/config/projects/fetch", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("set fetch status=%d body=%s", w.Code, w.Body.String())
+	}
+	if cfg.ProjectRepoFetchIntervalMinutes("proj") != 15 {
+		t.Fatalf("fetch interval=%d", cfg.ProjectRepoFetchIntervalMinutes("proj"))
+	}
+
 	// Project page renders the saved state.
 	req = httptest.NewRequest(http.MethodGet, "/config/projects/proj", nil)
 	w = httptest.NewRecorder()
@@ -1130,6 +1143,8 @@ func TestProjectConfigPage(t *testing.T) {
 		"ch-proj-2",
 		`name="return_to"`,
 		"Remove project",
+		`name="repoFetchIntervalMinutes"`,
+		`value="15"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("project page missing %q", want)

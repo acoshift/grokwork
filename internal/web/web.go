@@ -103,6 +103,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.setProjectLinear": "/config/projects/linear",
 		"config.setProjectGitHub": "/config/projects/github",
 		"config.setProjectChannel": "/config/projects/channel",
+		"config.setProjectFetch":  "/config/projects/fetch",
 		"config.setGuild":         "/config/guild",
 		"config.addProjectUser":   "/config/projects/users",
 		"config.removeProjectUser": "/config/projects/users/remove",
@@ -251,6 +252,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/linear", s.requireAdmin(hime.Handler(s.setProjectLinear)))
 	mux.Handle("POST /config/projects/github", s.requireAdmin(hime.Handler(s.setProjectGitHub)))
 	mux.Handle("POST /config/projects/channel", s.requireAdmin(hime.Handler(s.setProjectChannel)))
+	mux.Handle("POST /config/projects/fetch", s.requireAdmin(hime.Handler(s.setProjectFetch)))
 	mux.Handle("POST /config/guild", s.requireAdmin(hime.Handler(s.setGuild)))
 	mux.Handle("POST /config/projects/users", s.requireAdmin(hime.Handler(s.addProjectUser)))
 	mux.Handle("POST /config/projects/users/remove", s.requireAdmin(hime.Handler(s.removeProjectUser)))
@@ -801,6 +803,23 @@ func (s *Server) setProjectChannel(ctx *hime.Context) error {
 		"name": name, "channelId": channelID, "guildId": guildID,
 	})
 	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Updated Discord settings for project %q", name), err)
+}
+
+func (s *Server) setProjectFetch(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	raw := strings.TrimSpace(ctx.PostFormValue("repoFetchIntervalMinutes"))
+	if raw == "" {
+		return s.projectConfigRedirect(ctx, name, "", fmt.Errorf("repoFetchIntervalMinutes is required"))
+	}
+	mins, err := strconv.Atoi(raw)
+	if err != nil {
+		return s.projectConfigRedirect(ctx, name, "", fmt.Errorf("repoFetchIntervalMinutes must be an integer"))
+	}
+	err = s.cfg.SetProjectRepoFetchIntervalMinutes(name, mins)
+	s.auditAction(ctx, "config.set_project_fetch", err, map[string]any{
+		"name": name, "repoFetchIntervalMinutes": mins,
+	})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Updated repo fetch interval for project %q", name), err)
 }
 
 func (s *Server) setGuild(ctx *hime.Context) error {

@@ -12,6 +12,7 @@
       "allowedRoleIds": [],
       "discordChannelId": "",
       "discordGuildId": "",
+      "repoFetchIntervalMinutes": 5,
       "github": {
         "repos": [
           { "owner": "your-org", "repo": "app" }

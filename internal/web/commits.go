@@ -14,6 +14,7 @@ import (
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/gitworktree"
 )
 
 func (s *Server) commitsList(ctx *hime.Context) error {
@@ -97,6 +98,7 @@ func (s *Server) postCommitsFetch(ctx *hime.Context) error {
 	if err != nil {
 		return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "", err)
 	}
+	gitworktree.NoteFetched(path)
 	return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "Fetched remotes", nil)
 }
 

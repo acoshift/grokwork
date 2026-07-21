@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestProjectsMapDualShape(t *testing.T) {
@@ -98,6 +99,85 @@ func TestProjectLinearAccessorsAndEnv(t *testing.T) {
 
 	if ProjectEnvKeySuffix("hah-platform") != "HAH_PLATFORM" {
 		t.Fatalf("%q", ProjectEnvKeySuffix("hah-platform"))
+	}
+}
+
+func TestProjectRepoFetchInterval(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{
+		Projects: ProjectsMap{
+			"app":  {Path: filepath.Join(dir, "app")},
+			"fast": {Path: filepath.Join(dir, "fast")},
+		},
+		ConfigPath: filepath.Join(dir, "config.json"),
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "fast"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.ProjectRepoFetchIntervalMinutes("app") != DefaultRepoFetchIntervalMinutes {
+		t.Fatalf("default minutes=%d", cfg.ProjectRepoFetchIntervalMinutes("app"))
+	}
+	if cfg.ProjectRepoFetchInterval("app") != time.Duration(DefaultRepoFetchIntervalMinutes)*time.Minute {
+		t.Fatalf("default dur=%v", cfg.ProjectRepoFetchInterval("app"))
+	}
+	// Unknown project still gets default (not zero).
+	if cfg.ProjectRepoFetchIntervalMinutes("missing") != DefaultRepoFetchIntervalMinutes {
+		t.Fatal("missing project should use default")
+	}
+
+	if err := cfg.SetProjectRepoFetchIntervalMinutes("app", 0); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProjectRepoFetchIntervalMinutes("app") != 0 || cfg.ProjectRepoFetchInterval("app") != 0 {
+		t.Fatalf("0 should disable: mins=%d dur=%v",
+			cfg.ProjectRepoFetchIntervalMinutes("app"), cfg.ProjectRepoFetchInterval("app"))
+	}
+	if err := cfg.SetProjectRepoFetchIntervalMinutes("fast", 15); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProjectRepoFetchIntervalMinutes("fast") != 15 {
+		t.Fatalf("fast=%d", cfg.ProjectRepoFetchIntervalMinutes("fast"))
+	}
+	if err := cfg.SetProjectRepoFetchIntervalMinutes("app", -1); err == nil {
+		t.Fatal("expected reject negative")
+	}
+
+	// Round-trip via ProjectsMap JSON.
+	raw, err := json.Marshal(cfg.Projects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m ProjectsMap
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["app"].RepoFetchIntervalMinutes == nil || *m["app"].RepoFetchIntervalMinutes != 0 {
+		t.Fatalf("app interval after marshal: %v", m["app"].RepoFetchIntervalMinutes)
+	}
+	if m["fast"].RepoFetchIntervalMinutes == nil || *m["fast"].RepoFetchIntervalMinutes != 15 {
+		t.Fatalf("fast interval after marshal: %v", m["fast"].RepoFetchIntervalMinutes)
+	}
+
+	// Snapshot shows effective values.
+	snap := cfg.Snapshot()
+	var appItem, fastItem ProjectItem
+	for _, p := range snap.Projects {
+		switch p.Name {
+		case "app":
+			appItem = p
+		case "fast":
+			fastItem = p
+		}
+	}
+	if appItem.RepoFetchIntervalMinutes != 0 {
+		t.Fatalf("snapshot app=%d", appItem.RepoFetchIntervalMinutes)
+	}
+	if fastItem.RepoFetchIntervalMinutes != 15 {
+		t.Fatalf("snapshot fast=%d", fastItem.RepoFetchIntervalMinutes)
 	}
 }
 
