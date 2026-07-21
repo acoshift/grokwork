@@ -86,6 +86,7 @@
     <div class="form-actions"><button type="submit">Post comment</button></div>
   </form>
 </div>
+{{if eq .PR.State "OPEN"}}
 <div class="section card" id="pr-close-form">
   <h2>Close PR</h2>
   <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/close" onsubmit="return confirm('Close this pull request?');">
@@ -95,8 +96,9 @@
   </form>
 </div>
 {{end}}
+{{end}}
 
-{{if .CanMerge}}
+{{if and .CanMerge (eq .PR.State "OPEN")}}
 <div class="section card" id="pr-merge-form">
   <h2>Merge PR</h2>
   <p class="sub" style="margin-top:0">Uses host <span class="mono">gh pr merge</span> with branch protection. Never passes <span class="mono">--admin</span>.</p>

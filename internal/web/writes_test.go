@@ -470,3 +470,44 @@ func TestPRDetailHidesWriteFormsForViewer(t *testing.T) {
 		}
 	}
 }
+
+func TestPRDetailHidesCloseAndMergeWhenMerged(t *testing.T) {
+	srv, _, _ := writeEnabledServer(t)
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := name + " " + strings.Join(args, " ")
+		switch {
+		case strings.Contains(joined, "pr view"):
+			return []byte(`{
+				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"MERGED",
+				"isDraft":false,"reviewDecision":"APPROVED","headRefOid":"a","headRefName":"f",
+				"baseRefName":"main","body":"b","mergeable":"UNKNOWN","author":{"login":"z"},
+				"additions":1,"deletions":0,"changedFiles":1
+			}`), nil
+		case strings.Contains(joined, "pr checks"):
+			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil
+		default:
+			t.Fatalf("unexpected: %s", joined)
+			return nil, nil
+		}
+	}
+	sid, _, err := srv.LoginAs("admin-1", "A", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/prs/acme/app/9?project=proj", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="pr-comment-form"`) {
+		t.Fatal("comment form should still show on merged PR")
+	}
+	for _, hide := range []string{`id="pr-close-form"`, `id="pr-merge-form"`} {
+		if strings.Contains(body, hide) {
+			t.Fatalf("merged PR should not show %q", hide)
+		}
+	}
+}
