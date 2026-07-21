@@ -30,12 +30,17 @@ type Options struct {
 	MaxTurns        int
 	Timeout         time.Duration
 	ExtraArgs       []string
-	// Tools non-nil → --tools; pointer to "" requests no tools.
+	// Tools non-nil → --tools allowlist. Pointer to "" means tools-off: the CLI
+	// treats an empty --tools value as unrestricted, so we rewrite it to a
+	// single non-agentic built-in and deny MCP meta-tools (see toolsOffAllowlist).
 	Tools            *string
 	NoSubagents      bool
 	NoPlan           bool
 	NoMemory         bool
 	DisableWebSearch bool
+	// JSONSchema, when set, passes --json-schema so the model is constrained to
+	// that shape (implies --output-format json in the CLI).
+	JSONSchema string
 
 	// OnTextDelta/OnThought enable streaming-json output.
 	OnTextDelta func(delta string)
@@ -44,6 +49,27 @@ type Options struct {
 	OnActivity func(line string)
 	// OnStartPID is called with the child process id after Start succeeds.
 	OnStartPID func(pid int)
+}
+
+// toolsOffAllowlist is used when Options.Tools points to "".
+// Grok CLI: empty --tools means "no allowlist" (all built-ins), not "zero tools".
+// A real allowlist entry that cannot explore the repo gives tools-off behavior;
+// MCP meta-tools still attach unless denied separately.
+const toolsOffAllowlist = "ask_user_question"
+
+// toolFlags maps Options.Tools to CLI args. nil → no flag; "" → tools-off rewrite.
+func toolFlags(tools *string) []string {
+	if tools == nil {
+		return nil
+	}
+	t := *tools
+	if t == "" {
+		// Empty allowlist is unrestricted in the CLI; pin a non-agentic tool
+		// and block MCP meta-tools so headless "tools-off" tasks cannot burn
+		// max-turns exploring the repo.
+		return []string{"--deny", "MCPTool", "--tools", toolsOffAllowlist}
+	}
+	return []string{"--tools", t}
 }
 
 // MaxTurnsUserMessage is posted to Discord when Grok hits --max-turns.
@@ -196,9 +222,7 @@ func Run(ctx context.Context, opt Options) Result {
 	} else if newSession {
 		args = append(args, "-s", runSessionID)
 	}
-	if opt.Tools != nil {
-		args = append(args, "--tools", *opt.Tools)
-	}
+	args = append(args, toolFlags(opt.Tools)...)
 	if opt.NoSubagents {
 		args = append(args, "--no-subagents")
 	}
@@ -210,6 +234,9 @@ func Run(ctx context.Context, opt Options) Result {
 	}
 	if opt.DisableWebSearch {
 		args = append(args, "--disable-web-search")
+	}
+	if schema := strings.TrimSpace(opt.JSONSchema); schema != "" {
+		args = append(args, "--json-schema", schema)
 	}
 	args = append(args, opt.ExtraArgs...)
 

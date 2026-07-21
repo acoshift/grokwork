@@ -3,6 +3,7 @@ package commitreview
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +45,9 @@ func TestExecuteHappyPath(t *testing.T) {
 	grok := func(ctx context.Context, opt grokrun.Options) grokrun.Result {
 		if opt.Yolo || opt.Tools == nil || *opt.Tools != "" {
 			t.Fatalf("expected tools-off yolo-off: %+v", opt)
+		}
+		if strings.TrimSpace(opt.JSONSchema) == "" {
+			t.Fatal("expected findings JSON schema")
 		}
 		return grokrun.Result{Code: 0, Text: `{"summary":"risky","findings":[
 			{"title":"Bug one","body":"details","severity":"high","paths":["f.go"]}
@@ -108,6 +112,52 @@ func TestExecuteParseFail(t *testing.T) {
 	got, _ := store.Get(job.ID)
 	if got.Status != StatusFailed {
 		t.Fatalf("%+v", got)
+	}
+	if !strings.Contains(got.Error, "parse findings") || !strings.Contains(got.Error, "model said") {
+		t.Fatalf("error should include parse failure + model text: %q", got.Error)
+	}
+}
+
+func TestExecuteMaxTurnsParseFail(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(dir)
+	full := "dddddddddddddddddddddddddddddddddddddddd"
+	git := func(ctx context.Context, d, name string, args ...string) ([]byte, error) {
+		if args[0] == "rev-parse" {
+			return []byte(full + "\n"), nil
+		}
+		if args[0] == "show" && contains(args, "-s") {
+			return []byte(full + "\x1fS\x1fA\x1fa@b\x1f2026-07-01T00:00:00Z\x1f\n"), nil
+		}
+		if args[0] == "show" {
+			return []byte(""), nil
+		}
+		return nil, nil
+	}
+	job := NewQueuedJob(StartOpts{Project: "p", Owner: "o", Repo: "r", SHA: full})
+	_ = store.Save(job)
+	Execute(context.Background(), Deps{
+		Store: store,
+		Git:   git,
+		Grok: func(ctx context.Context, opt grokrun.Options) grokrun.Result {
+			return grokrun.Result{
+				Code:            1,
+				Text:            "Looking at related files next…",
+				Stderr:          "Error: max turns reached\n",
+				MaxTurnsReached: true,
+			}
+		},
+		Create: func(ctx context.Context, repoDir, owner, repo string, opts ghpr.CreateIssueOpts) (int, string, error) {
+			t.Fatal("should not create")
+			return 0, "", nil
+		},
+	}, job, dir)
+	got, _ := store.Get(job.ID)
+	if got.Status != StatusFailed {
+		t.Fatalf("%+v", got)
+	}
+	if !strings.Contains(got.Error, "max turns") {
+		t.Fatalf("want max turns error, got %q", got.Error)
 	}
 }
 

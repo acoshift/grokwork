@@ -58,6 +58,8 @@ func Execute(ctx context.Context, deps Deps, job *Job, cwd string) {
 		deps.Timeout = 5 * time.Minute
 	}
 	if deps.MaxTurns <= 0 {
+		// Tools-off + json-schema should finish in one model turn; keep a small
+		// cushion for occasional retries without re-opening a tool explore loop.
 		deps.MaxTurns = 2
 	}
 
@@ -90,6 +92,7 @@ func Execute(ctx context.Context, deps Deps, job *Job, cwd string) {
 		NoPlan:           true,
 		NoMemory:         true,
 		DisableWebSearch: true,
+		JSONSchema:       FindingsJSONSchema,
 	})
 	if res.Cancelled {
 		fail(deps.Store, job, fmt.Errorf("review cancelled"))
@@ -102,7 +105,11 @@ func Execute(ctx context.Context, deps Deps, job *Job, cwd string) {
 
 	summary, findings, err := ParseFindings(res.Text)
 	if err != nil {
-		fail(deps.Store, job, fmt.Errorf("parse findings: %w", err))
+		if res.MaxTurnsReached || isMaxTurnsStderr(res.Stderr) {
+			fail(deps.Store, job, fmt.Errorf("review hit max turns without findings JSON: %w; model said: %s", err, truncate(res.Text, 240)))
+			return
+		}
+		fail(deps.Store, job, fmt.Errorf("parse findings: %w; model said: %s", err, truncate(res.Text, 240)))
 		return
 	}
 	job.Summary = summary
@@ -152,6 +159,11 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+func isMaxTurnsStderr(stderr string) bool {
+	s := strings.ToLower(stderr)
+	return strings.Contains(s, "max turns reached") || strings.Contains(s, "max_turns_reached")
 }
 
 // NewQueuedJob builds a queued job ready to save + execute.

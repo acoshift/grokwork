@@ -7,6 +7,30 @@ import (
 	"github.com/acoshift/grokwork/internal/ghpr"
 )
 
+// FindingsJSONSchema is the --json-schema passed to grok so the model is
+// constrained to emit summary+findings JSON (not free-form prose or tool turns).
+const FindingsJSONSchema = `{
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "body": { "type": "string" },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info"] },
+          "paths": { "type": "array", "items": { "type": "string" } },
+          "labels": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["title", "body", "severity"]
+      }
+    }
+  },
+  "required": ["summary", "findings"]
+}`
+
 // BuildPrompt builds a tools-off review prompt for one commit.
 func BuildPrompt(detail ghpr.CommitDetail, maxFindings int) string {
 	if maxFindings <= 0 {
