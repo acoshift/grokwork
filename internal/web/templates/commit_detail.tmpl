@@ -43,56 +43,72 @@
   <p class="muted">Requires member role with <span class="mono">startSessions</span> and <span class="mono">githubWrites</span> enabled.</p>
   {{end}}
 
-  {{if .ReviewJob}}
-  <div style="margin-top:1rem;">
-    <p>
-      Job <span class="mono">{{.ReviewJob.ID}}</span>
-      ·
-      {{if eq .ReviewJob.Status "done"}}<span class="badge live">{{.ReviewJob.Status}}</span>
-      {{else if eq .ReviewJob.Status "failed"}}<span class="badge status-warn">{{.ReviewJob.Status}}</span>
-      {{else}}<span class="badge">{{.ReviewJob.Status}}</span>{{end}}
-    </p>
-    {{if or (eq .ReviewJob.Status "queued") (eq .ReviewJob.Status "running") (eq .ReviewJob.Status "creating_issues")}}
-    <meta http-equiv="refresh" content="3">
-    <p class="muted">Refreshing…</p>
-    {{end}}
-    {{if .ReviewJob.Error}}<div class="flash err">{{.ReviewJob.Error}}</div>{{end}}
-    {{if .ReviewJob.Summary}}
-    <p style="margin-top:0.5rem;">{{.ReviewJob.Summary}}</p>
-    {{end}}
-    {{if .ReviewJob.Findings}}
-    <div class="table-scroll" style="margin-top:0.75rem;">
-    <table>
-      <thead><tr><th>Severity</th><th>Title</th><th>Issue</th></tr></thead>
-      <tbody>
-      {{range .ReviewJob.Findings}}
-        <tr>
-          <td><span class="badge">{{.Severity}}</span></td>
-          <td>{{.Title}}</td>
-          <td>
-            {{if .IssueNumber}}
-              <a class="mono" href="/projects/{{$.Project}}/issues/{{.IssueNumber}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">#{{.IssueNumber}}</a>
-              {{if .IssueURL}} · <a href="{{.IssueURL}}" target="_blank" rel="noopener">GitHub</a>{{end}}
-            {{else if .CreateError}}
-              <span class="muted">{{.CreateError}}</span>
-            {{else}}
-              <span class="muted">—</span>
-            {{end}}
-          </td>
-        </tr>
-      {{end}}
-      </tbody>
-    </table>
-    </div>
-    {{else if eq .ReviewJob.Status "done"}}
-    <p class="muted" style="margin-top:0.5rem;">No issues filed — review clean.</p>
-    {{end}}
-  </div>
-  {{end}}
+  {{template "commit_review_job" .}}
 </div>
 
 <div class="section" style="margin-top:1rem;">
   {{template "diff_review" .}}
+</div>
+{{end}}
+{{end}}
+
+{{/* Job status card. While non-terminal, self-polls a lightweight fragment every
+     3s (hx-trigger drops off once done/failed so polling stops). Never use
+     meta http-equiv refresh here — full-page reload loops for minutes. */}}
+{{define "commit_review_job"}}
+{{if .ReviewJob}}
+{{$inProgress := or (eq .ReviewJob.Status "queued") (eq .ReviewJob.Status "running") (eq .ReviewJob.Status "creating_issues")}}
+<div id="review-job"
+     style="margin-top:1rem;"
+     {{if $inProgress}}
+     hx-get="/projects/{{.Project}}/commits/{{.ReviewJob.SHA}}/review-status?job={{urlquery .ReviewJob.ID}}&amp;owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}"
+     hx-trigger="every 3s"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="outerHTML"
+     hx-sync="this:replace"
+     {{end}}>
+  <p>
+    Job <span class="mono">{{.ReviewJob.ID}}</span>
+    ·
+    {{if eq .ReviewJob.Status "done"}}<span class="badge live">{{.ReviewJob.Status}}</span>
+    {{else if eq .ReviewJob.Status "failed"}}<span class="badge status-warn">{{.ReviewJob.Status}}</span>
+    {{else}}<span class="badge">{{.ReviewJob.Status}}</span>{{end}}
+  </p>
+  {{if $inProgress}}
+  <p class="muted">Review in progress…</p>
+  {{end}}
+  {{if .ReviewJob.Error}}<div class="flash err">{{.ReviewJob.Error}}</div>{{end}}
+  {{if .ReviewJob.Summary}}
+  <p style="margin-top:0.5rem;">{{.ReviewJob.Summary}}</p>
+  {{end}}
+  {{if .ReviewJob.Findings}}
+  <div class="table-scroll" style="margin-top:0.75rem;">
+  <table>
+    <thead><tr><th>Severity</th><th>Title</th><th>Issue</th></tr></thead>
+    <tbody>
+    {{range .ReviewJob.Findings}}
+      <tr>
+        <td><span class="badge">{{.Severity}}</span></td>
+        <td>{{.Title}}</td>
+        <td>
+          {{if .IssueNumber}}
+            <a class="mono" href="/projects/{{$.Project}}/issues/{{.IssueNumber}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">#{{.IssueNumber}}</a>
+            {{if .IssueURL}} · <a href="{{.IssueURL}}" target="_blank" rel="noopener">GitHub</a>{{end}}
+          {{else if .CreateError}}
+            <span class="muted">{{.CreateError}}</span>
+          {{else}}
+            <span class="muted">—</span>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else if eq .ReviewJob.Status "done"}}
+  <p class="muted" style="margin-top:0.5rem;">No issues filed — review clean.</p>
+  {{end}}
 </div>
 {{end}}
 {{end}}

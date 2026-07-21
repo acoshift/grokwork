@@ -186,24 +186,63 @@ func (s *Server) commitDetail(ctx *hime.Context) error {
 	}
 
 	// Attach review job if requested or latest for this SHA.
-	store, storeErr := s.reviewStore()
-	if storeErr == nil {
-		if jobID := strings.TrimSpace(ctx.FormValue("job")); jobID != "" {
-			if j, gerr := store.Get(jobID); gerr == nil {
-				d.ReviewJob = j
-			}
-		}
-		if d.ReviewJob == nil && detail.SHA != "" {
-			if j, _ := store.LatestForSHA(project, active.Owner, active.Repo, detail.SHA); j != nil {
-				d.ReviewJob = j
-			}
-		}
-		// Soft age-out of orphaned running jobs after process restart.
-		if d.ReviewJob != nil {
-			s.maybeFailStaleJob(store, d.ReviewJob)
+	d.ReviewJob = s.loadReviewJob(project, active.Owner, active.Repo, detail.SHA, ctx.FormValue("job"))
+	return s.viewPage(ctx, "commit_detail", d)
+}
+
+// commitReviewStatus is a lightweight htmx poll target for the review job card.
+// Avoids re-running git show / diff index on every tick while a review runs.
+func (s *Server) commitReviewStatus(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return ctx.Status(http.StatusForbidden).Error(err.Error())
+	}
+	sha := strings.TrimSpace(ctx.PathValue("sha"))
+	if sha == "" {
+		return ctx.Status(http.StatusBadRequest).Error("missing commit sha")
+	}
+	owner := strings.TrimSpace(ctx.FormValue("owner"))
+	repo := strings.TrimSpace(ctx.FormValue("repo"))
+	_, active, _, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	if err != nil {
+		catalog, _ := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
+		if owner == "" && repo == "" && len(catalog) > 0 {
+			active = catalog[0]
+		} else {
+			return ctx.Status(http.StatusForbidden).Error(err.Error())
 		}
 	}
-	return s.viewPage(ctx, "commit_detail", d)
+	d := s.basePage(ctx)
+	d.Project = project
+	d.ActiveOwner = active.Owner
+	d.ActiveRepo = active.Repo
+	d.ReviewJob = s.loadReviewJob(project, active.Owner, active.Repo, sha, ctx.FormValue("job"))
+	if d.ReviewJob == nil {
+		return ctx.Status(http.StatusNotFound).Error("review job not found")
+	}
+	return s.viewFragment(ctx, "commit_detail", "commit_review_job", d)
+}
+
+// loadReviewJob returns the requested job, else the latest for this SHA, and
+// soft-fails jobs orphaned by a process restart.
+func (s *Server) loadReviewJob(project, owner, repo, sha, jobID string) *commitreview.Job {
+	store, err := s.reviewStore()
+	if err != nil {
+		return nil
+	}
+	var j *commitreview.Job
+	if id := strings.TrimSpace(jobID); id != "" {
+		if got, gerr := store.Get(id); gerr == nil {
+			j = got
+		}
+	}
+	if j == nil && strings.TrimSpace(sha) != "" {
+		j, _ = store.LatestForSHA(project, owner, repo, sha)
+	}
+	if j != nil {
+		s.maybeFailStaleJob(store, j)
+	}
+	return j
 }
 
 func (s *Server) maybeFailStaleJob(store *commitreview.Store, j *commitreview.Job) {

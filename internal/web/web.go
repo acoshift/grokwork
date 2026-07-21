@@ -201,6 +201,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /projects/{project}/commits/fetch", s.requireMember(hime.Handler(s.postCommitsFetch)))
 	mux.Handle("GET /projects/{project}/commits/{sha}", s.requireAuth(hime.Handler(s.commitDetail)))
 	mux.Handle("GET /projects/{project}/commits/{sha}/file", s.requireAuth(hime.Handler(s.commitDiffFile)))
+	mux.Handle("GET /projects/{project}/commits/{sha}/review-status", s.requireAuth(hime.Handler(s.commitReviewStatus)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}", s.requireAuth(hime.Handler(s.prDetail)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}/diff", s.requireAuth(hime.Handler(s.prDiffPage)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}/diff/file", s.requireAuth(hime.Handler(s.prDiffFile)))

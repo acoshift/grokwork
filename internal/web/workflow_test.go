@@ -12,7 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/acoshift/grokwork/internal/commitreview"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -856,6 +858,98 @@ func TestCommitsListAndDetail(t *testing.T) {
 	}
 	if !strings.Contains(body, `<span class="ln">1</span>`) {
 		t.Fatalf("frag missing line numbers: %s", body)
+	}
+}
+
+// TestCommitReviewStatusPoll pins the job card polls via htmx (every 3s) instead
+// of full-page meta refresh — meta refresh reloads the whole commit page for the
+// duration of the review and looks like a stuck refresh loop.
+func TestCommitReviewStatusPoll(t *testing.T) {
+	srv := workflowServer(t)
+	const (
+		sha    = "abcdef0123456789abcdef0123456789abcdef01"
+		jobID  = "jobpoll01"
+		detail = "/projects/proj/commits/" + sha + "?owner=acme&repo=app&job=" + jobID
+		status = "/projects/proj/commits/" + sha + "/review-status?owner=acme&repo=app&job=" + jobID
+	)
+	store, err := commitreview.NewStore(srv.cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	job := &commitreview.Job{
+		ID: jobID, CreatedAt: now, UpdatedAt: now,
+		Actor: "tester", Project: "proj", Owner: "acme", Repo: "app",
+		SHA: sha, ShortSHA: sha[:7], Subject: "Fixture commit",
+		Status: commitreview.StatusRunning,
+	}
+	if err := store.Save(job); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+
+	// Full page while running: htmx poll attrs, never meta refresh.
+	req := httptest.NewRequest(http.MethodGet, detail, nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, `http-equiv="refresh"`) || strings.Contains(body, "http-equiv='refresh'") {
+		t.Fatal("commit detail must not full-page meta-refresh while review runs")
+	}
+	for _, want := range []string{
+		`id="review-job"`,
+		`hx-trigger="every 3s"`,
+		`/projects/proj/commits/` + sha + `/review-status?job=` + jobID,
+		`hx-target="this"`,
+		`hx-select="unset"`,
+		`hx-swap="outerHTML"`,
+		`>running</span>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("running detail missing %q", want)
+		}
+	}
+
+	// Status fragment is chrome-free and still polling while non-terminal.
+	req = httptest.NewRequest(http.MethodGet, status, nil)
+	req.Header.Set("HX-Request", "true")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status frag status=%d body=%s", w.Code, w.Body.String())
+	}
+	frag := w.Body.String()
+	if !strings.Contains(frag, `id="review-job"`) || !strings.Contains(frag, `hx-trigger="every 3s"`) {
+		t.Fatalf("status frag should poll while running: %s", frag)
+	}
+	for _, ban := range []string{`id="sse-status"`, "<nav", "/static/htmx.min.js", `id="page-commit-detail"`} {
+		if strings.Contains(frag, ban) {
+			t.Fatalf("status frag should not include %q (got full page?)", ban)
+		}
+	}
+
+	// Terminal job: poll attrs drop so the client stops requesting.
+	job.Status = commitreview.StatusDone
+	job.Summary = "clean"
+	if err := store.Save(job); err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodGet, status, nil)
+	req.Header.Set("HX-Request", "true")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("done frag status=%d", w.Code)
+	}
+	frag = w.Body.String()
+	if strings.Contains(frag, `hx-trigger="every 3s"`) || strings.Contains(frag, "hx-get=") {
+		t.Fatalf("done job must stop polling: %s", frag)
+	}
+	if !strings.Contains(frag, `>done</span>`) || !strings.Contains(frag, "clean") {
+		t.Fatalf("done frag missing status/summary: %s", frag)
 	}
 }
 
