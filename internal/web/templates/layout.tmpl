@@ -477,7 +477,9 @@
     }
     .logout-form button:hover { background: var(--surface-l2); color: var(--text); }
 
-    /* SSE telemetry status: JS owns className ("", "ok", "err") on #sse-status. */
+    /* SSE telemetry status: JS owns className ("", "ok", "err") on #sse-status.
+       Visible label is short on narrow viewports (no refresh clock); full text
+       stays in title for long-press/hover. */
     #sse-status {
       display: inline-flex;
       align-items: center;
@@ -489,6 +491,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      max-width: 12rem;
     }
     #sse-status::before {
       content: "";
@@ -1392,12 +1395,22 @@
         margin-left: auto;
         padding-top: 0;
         flex-direction: row;
+        flex-wrap: nowrap;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.45rem;
+        flex-shrink: 1;
+        min-width: 0;
+      }
+      /* Dot + short state only — no "live · 3:45:12 PM" clock (see setStatus). */
+      #sse-status {
+        max-width: 4.5rem;
+        padding: 0 0.25rem;
+        gap: 0.35rem;
       }
       .side-user { border-top: none; padding: 0; }
       .side-user-meta { display: none; }
-      .logout-form { padding: 0; }
+      .logout-form { padding: 0; flex-shrink: 0; }
+      .logout-form button { width: auto; padding: 0 0.65rem; }
       main.main { padding: 1.25rem 1rem 3rem; }
       form.inline,
       .inline { grid-template-columns: 1fr; }
@@ -1506,10 +1519,26 @@
   <script>
   (function () {
     var statusEl = document.getElementById("sse-status");
+    // Matches the layout.tmpl mobile shell breakpoint.
+    var narrowMQ = window.matchMedia("(max-width: 920px)");
 
     function setStatus(text, cls) {
       if (!statusEl) return;
-      statusEl.textContent = text;
+      // Full detail always available on hover/long-press.
+      statusEl.title = text || "Live updates via SSE";
+      var shown = text;
+      if (narrowMQ.matches && text) {
+        // Drop the refresh clock; keep a one-word state so the top bar stays
+        // single-line next to brand + avatar + logout.
+        if (text.indexOf("live · ") === 0) {
+          shown = text === "live · paused while editing" ? "paused" : "live";
+        } else if (text === "reconnecting…") {
+          shown = "retry…";
+        } else if (text === "refresh failed") {
+          shown = "failed";
+        }
+      }
+      statusEl.textContent = shown;
       statusEl.className = cls || "";
     }
 
@@ -1721,6 +1750,7 @@
     document.body.addEventListener("htmx:afterSwap", function (e) {
       var elt = e.detail && e.detail.elt;
       if (elt && elt.classList && elt.classList.contains("live-region")) {
+        // Desktop shows the clock; mobile setStatus strips it to "live".
         setStatus("live · " + new Date().toLocaleTimeString(), "ok");
       }
     });
