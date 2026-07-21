@@ -31,7 +31,7 @@ const FindingsJSONSchema = `{
   "required": ["summary", "findings"]
 }`
 
-// BuildPrompt builds a tools-off review prompt for one commit.
+// BuildPrompt builds a read-only context-aware review prompt for one commit.
 func BuildPrompt(detail ghpr.CommitDetail, maxFindings int) string {
 	if maxFindings <= 0 {
 		maxFindings = MaxFindings
@@ -39,18 +39,24 @@ func BuildPrompt(detail ghpr.CommitDetail, maxFindings int) string {
 	var b strings.Builder
 	b.WriteString(`You are a senior engineer reviewing a single git commit for a team.
 
-Review ONLY the provided commit metadata and patch. Look for:
+Primary evidence is the commit metadata and patch below. Look for:
 - correctness bugs and regressions
 - security issues
 - missing tests for risky changes
 - broken contracts / API misuse
 - data loss or concurrency hazards
 
-Do NOT bikeshed style, naming, or formatting unless it causes a real defect.
-Do NOT invent files or lines not present in the patch.
-Do NOT suggest running shell commands or opening PRs.
+You may use read-only tools (read_file, grep, list_dir) sparingly to pull surrounding
+context when the patch alone is not enough — e.g. call sites, interfaces, similar
+providers, existing tests, or symbols referenced but not fully shown. Prefer the
+patch first; do not roam the repo broadly.
 
-Reply with JSON ONLY (no markdown prose outside JSON). Schema:
+Do NOT bikeshed style, naming, or formatting unless it causes a real defect.
+Do NOT invent files or lines you did not see in the patch or tool results.
+Do NOT edit files, run shell commands, open PRs, or use web/MCP tools.
+Every finding must be grounded in this commit (the change introduced or worsened it).
+
+When finished, reply with JSON ONLY (no markdown prose outside JSON). Schema:
 {
   "summary": "one short paragraph overall assessment",
   "findings": [
@@ -71,6 +77,7 @@ Rules:
 	b.WriteString(` findings; prefer highest severity
 - paths relative to repo root
 - severity must be one of the enum values
+- finish with the JSON object; do not end after tool calls only
 
 ## Commit
 

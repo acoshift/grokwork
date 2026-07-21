@@ -1,4 +1,4 @@
-// Package commitreview runs read-only AI commit reviews and files GitHub issues per finding.
+// Package commitreview runs AI commit reviews (read-only tools for context) and files GitHub issues per finding.
 package commitreview
 
 import (

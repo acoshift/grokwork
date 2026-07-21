@@ -330,9 +330,9 @@ func (s *Server) postCommitReview(ctx *hime.Context) error {
 		"project": project, "owner": owner, "repo": repo, "sha": detail.SHA, "job": job.ID,
 	})
 
-	// Detach from request context; bound by Execute timeout.
+	// Detach from request context; bound slightly above Execute's default timeout.
 	go func() {
-		bg, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+		bg, cancel := context.WithTimeout(context.Background(), commitreview.DefaultTimeout+time.Minute)
 		defer cancel()
 		commitreview.Execute(bg, commitreview.Deps{
 			Store:   store,

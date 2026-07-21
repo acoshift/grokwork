@@ -16,6 +16,16 @@ type GrokRunner func(ctx context.Context, opt grokrun.Options) grokrun.Result
 // IssueCreator abstracts ghpr.CreateIssueWith for tests.
 type IssueCreator func(ctx context.Context, repoDir, owner, repo string, opts ghpr.CreateIssueOpts) (number int, url string, err error)
 
+// Read-only tool allowlist for review: gather context without shell or edits.
+// MCP meta-tools are denied separately via ExtraArgs.
+const ReviewTools = "read_file,grep,list_dir"
+
+// DefaultMaxTurns allows a few read-only lookups plus a final JSON answer.
+const DefaultMaxTurns = 25
+
+// DefaultTimeout bounds a context-heavy review (tools + large patches).
+const DefaultTimeout = 12 * time.Minute
+
 // Deps wires external systems for Run.
 type Deps struct {
 	Store     *Store
@@ -55,12 +65,10 @@ func Execute(ctx context.Context, deps Deps, job *Job, cwd string) {
 		}
 	}
 	if deps.Timeout <= 0 {
-		deps.Timeout = 5 * time.Minute
+		deps.Timeout = DefaultTimeout
 	}
 	if deps.MaxTurns <= 0 {
-		// Tools-off + json-schema should finish in one model turn; keep a small
-		// cushion for occasional retries without re-opening a tool explore loop.
-		deps.MaxTurns = 2
+		deps.MaxTurns = DefaultMaxTurns
 	}
 
 	job.Status = StatusRunning
@@ -78,7 +86,7 @@ func Execute(ctx context.Context, deps Deps, job *Job, cwd string) {
 	_ = deps.Store.Save(job)
 
 	prompt := BuildPrompt(detail, MaxFindings)
-	noTools := ""
+	tools := ReviewTools
 	res := deps.Grok(ctx, grokrun.Options{
 		GrokBin:          deps.GrokBin,
 		Prompt:           prompt,
@@ -87,12 +95,14 @@ func Execute(ctx context.Context, deps Deps, job *Job, cwd string) {
 		Model:            deps.Model,
 		MaxTurns:         deps.MaxTurns,
 		Timeout:          deps.Timeout,
-		Tools:            &noTools,
+		Tools:            &tools,
 		NoSubagents:      true,
 		NoPlan:           true,
 		NoMemory:         true,
 		DisableWebSearch: true,
 		JSONSchema:       FindingsJSONSchema,
+		// Allowlist still leaves MCP meta-tools; block them so review stays local.
+		ExtraArgs: []string{"--deny", "MCPTool"},
 	})
 	if res.Cancelled {
 		fail(deps.Store, job, fmt.Errorf("review cancelled"))

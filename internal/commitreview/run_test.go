@@ -43,11 +43,26 @@ func TestExecuteHappyPath(t *testing.T) {
 		return 10 + created, "https://github.com/" + owner + "/" + repo + "/issues/1", nil
 	}
 	grok := func(ctx context.Context, opt grokrun.Options) grokrun.Result {
-		if opt.Yolo || opt.Tools == nil || *opt.Tools != "" {
-			t.Fatalf("expected tools-off yolo-off: %+v", opt)
+		if opt.Yolo {
+			t.Fatalf("expected yolo-off: %+v", opt)
+		}
+		if opt.Tools == nil || *opt.Tools != ReviewTools {
+			t.Fatalf("expected read-only tools %q, got %+v", ReviewTools, opt.Tools)
 		}
 		if strings.TrimSpace(opt.JSONSchema) == "" {
 			t.Fatal("expected findings JSON schema")
+		}
+		if opt.MaxTurns != DefaultMaxTurns {
+			t.Fatalf("expected default max turns %d, got %d", DefaultMaxTurns, opt.MaxTurns)
+		}
+		hasDenyMCP := false
+		for i := 0; i+1 < len(opt.ExtraArgs); i++ {
+			if opt.ExtraArgs[i] == "--deny" && opt.ExtraArgs[i+1] == "MCPTool" {
+				hasDenyMCP = true
+			}
+		}
+		if !hasDenyMCP {
+			t.Fatalf("expected --deny MCPTool in ExtraArgs: %v", opt.ExtraArgs)
 		}
 		return grokrun.Result{Code: 0, Text: `{"summary":"risky","findings":[
 			{"title":"Bug one","body":"details","severity":"high","paths":["f.go"]}
