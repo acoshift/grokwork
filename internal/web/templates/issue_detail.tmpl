@@ -45,7 +45,7 @@
           {{if eq .State "OPEN"}}
           <span class="badge live">{{.State}}</span>
           {{else if eq .State "MERGED"}}
-          <span class="badge status-done">{{.State}}</span>
+          <span class="badge status-merged">{{.State}}</span>
           {{else if eq .State "CLOSED"}}
           <span class="badge status-cancelled">{{.State}}</span>
           {{else if .State}}

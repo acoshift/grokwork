@@ -65,6 +65,9 @@
       --red-500: 355 63% 44%;
       --yellow-100: 48 88% 88%;
       --yellow-700: 45 100% 29%;
+      /* Discord timelineColorMerged 0x9B59B6 */
+      --purple-100: 282 45% 92%;
+      --purple-600: 282 39% 45%;
 
       --bg: hsl(var(--neutral-50));
       --bg-secondary: #fdfdfc;
@@ -86,6 +89,8 @@
       --warn-bg: hsl(var(--yellow-100) / 55%);
       --danger: hsl(var(--red-500));
       --danger-bg: hsl(var(--red-50));
+      --merged: hsl(var(--purple-600));
+      --merged-bg: hsl(var(--purple-100) / 55%);
       --button: hsl(var(--neutral-1000));
       --button-fg: hsl(var(--white));
       --button-hover: hsl(var(--neutral-800));
@@ -124,6 +129,8 @@
         --warn-bg: hsl(45 85% 55% / 12%);
         --danger: hsl(0 68% 66%);
         --danger-bg: hsl(0 68% 60% / 11%);
+        --merged: hsl(282 45% 68%);
+        --merged-bg: hsl(282 40% 50% / 15%);
         --button: hsl(0 0% 93%);
         --button-fg: hsl(0 0% 8%);
         --button-hover: hsl(0 0% 82%);
@@ -831,6 +838,12 @@
       border-color: hsl(var(--green-600) / 20%);
     }
     .badge.status-done::before { background: var(--ok); }
+    .badge.status-merged {
+      background: var(--merged-bg);
+      color: var(--merged);
+      border-color: hsl(var(--purple-600) / 20%);
+    }
+    .badge.status-merged::before { background: var(--merged); }
     .badge.status-cancelled,
     .badge.status-warn {
       background: var(--warn-bg);

@@ -11,7 +11,7 @@
 <div class="section card">
   <h2>{{.PR.Title}}</h2>
   <p class="sub" style="margin:0">
-    {{if eq .PR.State "OPEN"}}<span class="badge live">{{.PR.State}}</span>{{else if eq .PR.State "MERGED"}}<span class="badge status-done">{{.PR.State}}</span>{{else if eq .PR.State "CLOSED"}}<span class="badge status-cancelled">{{.PR.State}}</span>{{else}}<span class="badge">{{.PR.State}}</span>{{end}}
+    {{if eq .PR.State "OPEN"}}<span class="badge live">{{.PR.State}}</span>{{else if eq .PR.State "MERGED"}}<span class="badge status-merged">{{.PR.State}}</span>{{else if eq .PR.State "CLOSED"}}<span class="badge status-cancelled">{{.PR.State}}</span>{{else}}<span class="badge">{{.PR.State}}</span>{{end}}
     {{if .PR.IsDraft}} <span class="badge">draft</span>{{end}}
     · review <span class="mono">{{.PR.ReviewDecision}}</span>
     · checks <span class="mono">{{.PR.Checks}}</span>
