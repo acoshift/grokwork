@@ -14,6 +14,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
 )
 
@@ -118,11 +119,20 @@ func CollectDiffSummary(ctx context.Context, cwd string, riskyGlobs []string) (D
 }
 
 func detectBaseRef(ctx context.Context, cwd string) (string, error) {
-	candidates := []string{"origin/main", "origin/master", "main", "master"}
-	for _, c := range candidates {
-		if _, err := gitOutput(ctx, cwd, "rev-parse", "--verify", c); err == nil {
-			return c, nil
+	// Same closest-base heuristic as the worktree diff page (backports → prod
+	// must not score against origin/main).
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if name != "git" {
+			return nil, fmt.Errorf("unexpected %s", name)
 		}
+		out, err := gitOutput(ctx, dir, args...)
+		if err != nil {
+			return nil, err
+		}
+		return []byte(out + "\n"), nil
+	}
+	if base := ghpr.DetectClosestBaseRef(ctx, run, cwd); base != "" {
+		return base, nil
 	}
 	return "", fmt.Errorf("no base branch found")
 }

@@ -236,7 +236,7 @@ func (s *Server) sessionDiffFile(ctx *hime.Context) error {
 	if cwd == "" {
 		return ctx.Status(http.StatusNotFound).Error(fmt.Sprintf("no git worktree found for this session (project=%q)", project))
 	}
-	base := s.sessionDiffBase(ent, cwd, project, ctx.FormValue("base"))
+	base := s.sessionDiffBase(ctx.Context(), ent, cwd, ctx.FormValue("base"))
 	reqPath, okP := cleanDiffPath(ctx.FormValue("path"))
 	if !okP {
 		return ctx.Status(http.StatusBadRequest).Error("invalid path")

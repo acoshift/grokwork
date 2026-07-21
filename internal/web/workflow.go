@@ -335,7 +335,7 @@ func (s *Server) sessionDiffPage(ctx *hime.Context) error {
 		return ctx.Status(http.StatusNotFound).Error("unknown session/thread")
 	}
 	cwd, project := s.resolveSessionDiffCwd(ent, threadID)
-	base := s.sessionDiffBase(ent, cwd, project, ctx.FormValue("base"))
+	base := s.sessionDiffBase(ctx.Context(), ent, cwd, ctx.FormValue("base"))
 	var index ghpr.DiffIndex
 	var diffErr error
 	if cwd == "" {
@@ -360,20 +360,57 @@ func (s *Server) sessionDiffPage(ctx *hime.Context) error {
 	return s.viewPage(ctx, "diff", d)
 }
 
-// sessionDiffBase resolves the diff base ref: explicit request wins, else
-// branch-vs-main when a worktree or main checkout exists, else HEAD.
-func (s *Server) sessionDiffBase(ent sessionstore.Entry, cwd, project, requested string) string {
+// sessionDiffBase resolves the diff base ref.
+// Priority: ?base= query → tracked PR baseRefName → closest local base
+// (fewest commits from merge-base to HEAD) → HEAD.
+// Hardcoding origin/main is wrong for backports (e.g. → prod): the worktree
+// then looks like it adds/removes hundreds of unrelated files.
+func (s *Server) sessionDiffBase(ctx context.Context, ent sessionstore.Entry, cwd, requested string) string {
 	if b := strings.TrimSpace(requested); b != "" {
+		if cwd != "" {
+			return ghpr.PreferOriginRef(ctx, s.ghRun(), cwd, b)
+		}
 		return b
 	}
-	mainCwd := strings.TrimSpace(ent.MainCwd)
-	if mainCwd == "" && project != "" {
-		mainCwd, _ = s.cfg.ProjectPath(project)
+	preferred := s.sessionPRBaseName(ctx, ent, cwd)
+	if cwd != "" {
+		return ghpr.ResolveDiffBaseRef(ctx, s.ghRun(), cwd, preferred)
 	}
-	if mainCwd != "" || (cwd != "" && cwd != mainCwd) {
-		return "origin/main"
+	if preferred != "" {
+		// No repo to probe origin/*; keep the PR's short name.
+		return preferred
 	}
 	return "HEAD"
+}
+
+// sessionPRBaseName returns the GitHub PR base branch short name when known
+// (e.g. "prod"), without origin/ prefix.
+func (s *Server) sessionPRBaseName(ctx context.Context, ent sessionstore.Entry, cwd string) string {
+	ent.NormalizePRs()
+	pr, ok := ent.PrimaryPR()
+	if !ok {
+		return ""
+	}
+	sel := pr.Selector()
+	if sel == "" {
+		return ""
+	}
+	// Prefer worktree cwd so gh uses the right repo; fall back to main checkout.
+	repoDir := strings.TrimSpace(cwd)
+	if repoDir == "" {
+		repoDir = strings.TrimSpace(ent.MainCwd)
+	}
+	if repoDir == "" && ent.Project != "" {
+		repoDir, _ = s.cfg.ProjectPath(ent.Project)
+	}
+	if repoDir == "" {
+		return ""
+	}
+	base, err := ghpr.PRBaseRefWith(ctx, s.ghRun(), repoDir, sel)
+	if err != nil {
+		return ""
+	}
+	return base
 }
 
 // resolveSessionDiffCwd picks a real project/worktree root for the session diff

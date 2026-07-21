@@ -95,9 +95,22 @@ func workflowServer(t *testing.T) *Server {
 		case name == "git" && len(args) > 0 && args[0] == "merge-base":
 			// Session worktree diff resolves merge-base(base, HEAD) before diff.
 			return []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"), nil
+		case name == "git" && len(args) > 0 && args[0] == "rev-list":
+			// DetectClosestBaseRef scores candidates by ahead-count.
+			return []byte("1\n"), nil
 		case name == "git" && len(args) > 0 && args[0] == "log":
 			return []byte("abcdef0123456789\x1fFixture commit\x1fAlice\x1fa@ex.com\x1f2026-07-20T12:00:00Z\n"), nil
 		case name == "git" && len(args) > 0 && args[0] == "rev-parse":
+			// DetectClosestBaseRef / PreferOriginRef use --verify --quiet.
+			// Only claim origin/main exists so default session base stays stable.
+			// Other rev-parse (--verify SHA, etc.) still succeeds for commit pages.
+			if strings.Contains(joined, "--verify") && strings.Contains(joined, "--quiet") {
+				ref := args[len(args)-1]
+				if ref == "origin/main" {
+					return []byte(ref + "\n"), nil
+				}
+				return nil, fmt.Errorf("unknown ref %s", ref)
+			}
 			return []byte("abcdef0123456789abcdef0123456789abcdef01\n"), nil
 		case name == "git" && len(args) > 0 && args[0] == "show" && strings.Contains(joined, "--numstat"):
 			return []byte("1\t1\tfoo.go\x00"), nil
@@ -476,6 +489,152 @@ func TestSessionDiffEmptyCwdDoesNotUseProcessDir(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "no git worktree found") {
 		t.Fatalf("want error about missing worktree, got %s", body)
+	}
+}
+
+func TestSessionDiffUsesPRBaseNotMain(t *testing.T) {
+	// Backport-to-prod session: diff must use origin/prod, not origin/main.
+	srv := workflowServer(t)
+	projPath, ok := srv.cfg.ProjectPath("proj")
+	if !ok {
+		t.Fatal("proj path")
+	}
+	if err := execGitInit(t, projPath); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(srv.cfg.DataDir, "worktrees", "proj", "bp-thread")
+	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "-C", projPath, "worktree", "add", "-b", "grok/discord/bp-thread", wt)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=t@e.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=t@e.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("worktree add: %v\n%s", err, out)
+	}
+	if err := srv.sessions.Set("bp-thread", sessionstore.Entry{
+		SessionID: "s", Project: "proj", Cwd: wt, MainCwd: projPath,
+		WorktreeBranch: "grok/discord/bp-thread",
+		PRs: []sessionstore.TrackedPR{{
+			URL: "https://github.com/acme/app/pull/529", Number: 529, State: "OPEN",
+			Owner: "acme", Repo: "app", Title: "[backport→prod] feature",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var mergeBaseLeft string
+	var sawPRBaseJSON bool
+	orig := srv.ghRunner
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "gh" && strings.HasPrefix(joined, "pr view") && strings.Contains(joined, "baseRefName") {
+			sawPRBaseJSON = true
+			// Lightweight PRBaseRefWith call (and full view if ever used).
+			if strings.Contains(joined, "number,url") {
+				return []byte(`{
+					"number":529,"url":"https://github.com/acme/app/pull/529","title":"bp",
+					"state":"OPEN","isDraft":false,"reviewDecision":"","headRefOid":"abc",
+					"headRefName":"grok/discord/bp-thread","baseRefName":"prod","body":"",
+					"mergeable":"MERGEABLE","author":{"login":"z"},
+					"additions":1,"deletions":0,"changedFiles":1
+				}`), nil
+			}
+			return []byte(`{"baseRefName":"prod"}`), nil
+		}
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" && strings.Contains(joined, "--verify") {
+			ref := args[len(args)-1]
+			if ref == "origin/prod" || ref == "origin/main" {
+				return []byte(ref + "\n"), nil
+			}
+			return nil, fmt.Errorf("unknown ref %s", ref)
+		}
+		if name == "git" && len(args) > 0 && args[0] == "merge-base" {
+			// Record which base the worktree diff resolved (left of merge-base is the base ref).
+			if len(args) >= 2 && args[1] != "HEAD" {
+				// PreferOrigin / Resolve may merge-base origin/prod HEAD first.
+				if args[1] == "origin/prod" || args[1] == "origin/main" {
+					// fall through after note
+				}
+			}
+			if len(args) >= 3 && args[2] == "HEAD" {
+				// base is args[1]
+				_ = args[1]
+			}
+			// Distinct merge-bases so we can see which base was chosen for the actual diff.
+			if len(args) >= 2 && args[1] == "origin/prod" {
+				return []byte("cccccccccccccccccccccccccccccccccccccccc\n"), nil
+			}
+			if len(args) >= 2 && args[1] == "origin/main" {
+				return []byte("dddddddddddddddddddddddddddddddddddddddd\n"), nil
+			}
+			return []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"), nil
+		}
+		if name == "git" && len(args) > 0 && args[0] == "rev-list" {
+			if strings.Contains(joined, "cccc") {
+				return []byte("2\n"), nil
+			}
+			if strings.Contains(joined, "dddd") {
+				return []byte("100\n"), nil
+			}
+			return []byte("1\n"), nil
+		}
+		if name == "git" && len(args) > 0 && args[0] == "diff" {
+			// The left side of the worktree diff is the merge-base sha.
+			if len(args) >= 2 {
+				mergeBaseLeft = args[1]
+				if args[1] == "--numstat" || args[1] == "--name-status" {
+					// git diff --numstat -z LEFT
+					for _, a := range args {
+						if len(a) == 40 && a[0] == 'c' {
+							mergeBaseLeft = a
+						}
+						if len(a) == 40 && (a[0] == 'c' || a[0] == 'd' || a[0] == 'a') {
+							mergeBaseLeft = a
+						}
+					}
+					// args like: diff --numstat -z cccc...
+					for i, a := range args {
+						if a == "-z" && i+1 < len(args) {
+							mergeBaseLeft = args[i+1]
+						}
+					}
+				}
+			}
+			if strings.Contains(joined, "--numstat") {
+				return []byte("1\t0\timagine.go\x00"), nil
+			}
+			if strings.Contains(joined, "--name-status") {
+				return []byte("A\x00imagine.go\x00"), nil
+			}
+			return []byte("diff --git a/imagine.go b/imagine.go\n--- /dev/null\n+++ b/imagine.go\n@@ -0,0 +1 @@\n+x\n"), nil
+		}
+		return orig(ctx, dir, name, args...)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/bp-thread/diff", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !sawPRBaseJSON {
+		t.Fatal("expected gh pr view for baseRefName")
+	}
+	if !strings.Contains(body, "origin/prod") {
+		t.Fatalf("page should show origin/prod base, body=%s", body)
+	}
+	if strings.Contains(body, "origin/main") {
+		t.Fatalf("must not use origin/main for prod backport, body=%s", body)
+	}
+	if mergeBaseLeft != "cccccccccccccccccccccccccccccccccccccccc" {
+		t.Fatalf("diff left merge-base=%q want prod's mb", mergeBaseLeft)
+	}
+	if !strings.Contains(body, "imagine.go") {
+		t.Fatalf("want imagine.go in index: %s", body)
 	}
 }
 
