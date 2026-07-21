@@ -57,6 +57,9 @@ type taskItem struct {
 	attempt          int
 	referencedPrompt string
 	triggerMsgID     string
+	// Optional Discord status message posted before the run (early ack).
+	// executeTask reuses it as Working instead of sending a second status.
+	statusMsgID string
 }
 
 type threadState struct {
@@ -79,9 +82,10 @@ type Bot struct {
 	bootGen   uint64
 	hostname  string
 
-	discordMu sync.RWMutex
-	discord   *discordgo.Session // gateway session after Register
-	threadAPI threadAPI          // tests inject; nil → wrap discord
+	discordMu   sync.RWMutex
+	discord     *discordgo.Session // gateway session after Register
+	threadAPI   threadAPI          // tests inject; nil → wrap discord
+	reconnectMu sync.Mutex         // serializes forced gateway reconnects
 }
 
 func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) *Bot {
@@ -334,6 +338,7 @@ func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
 	b.startIdleWorktreeCleanup()
 	b.startPRStatusPoller()
 	b.startBoardDigest(s)
+	b.startGatewayWatch()
 }
 
 func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -504,6 +509,12 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleLink(s, m, parsed)
 	case KindTask:
 		log.Printf("task: starting async for msg=%s", m.ID)
+		// Immediate typing indicator while we open the thread / claim the queue.
+		go func() {
+			if err := s.ChannelTyping(m.ChannelID); err != nil {
+				log.Printf("warn: typing channel=%s: %v", m.ChannelID, err)
+			}
+		}()
 		go b.handleTask(s, m, parsed)
 	}
 }
@@ -814,19 +825,13 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			}
 		}
 	}
-	title := threadNameFromPrompt(titlePrompt, m.Author.Username)
-	needTitle := !isThread(s, m.ChannelID) || shouldRetitleThread(s, m.ChannelID)
-	if needTitle && b.cfg.SummarizeTitleEnabled() {
-		log.Printf("task: summarizing title via grok…")
-		sumCtx, cancel := context.WithTimeout(context.Background(), time.Duration(b.cfg.SummarizeTimeoutMs)*time.Millisecond)
-		if t, ok := grokrun.SummarizeTitle(sumCtx, b.cfg.GrokBin, b.cfg.Model, titlePrompt, proj.Cwd, time.Duration(b.cfg.SummarizeTimeoutMs)*time.Millisecond); ok {
-			title = threadNameFromPrompt(t, m.Author.Username)
-			log.Printf("task: grok title=%q", title)
-		} else {
-			log.Printf("task: summarize failed, using local title=%q", title)
-		}
-		cancel()
+	// Local title first so we can open the thread + early-ack without waiting on Grok.
+	username := ""
+	if m.Author != nil {
+		username = m.Author.Username
 	}
+	title := threadNameFromPrompt(titlePrompt, username)
+	needTitle := !isThread(s, m.ChannelID) || shouldRetitleThread(s, m.ChannelID)
 	// Prefix Discord thread title with bound/parsed issue numbers (#42 …).
 	titleIssues := sessionstore.ParseIssueRefs(titlePrompt)
 	if e, ok := b.sessions.Get(m.ChannelID); ok && e.HasIssues() {
@@ -844,6 +849,26 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	}
 	log.Printf("task: thread=%s title=%q", threadID, title)
 
+	// Non-blocking title improve: rename the thread later if Grok returns a better name.
+	if needTitle && b.cfg.SummarizeTitleEnabled() {
+		go b.improveThreadTitle(s, threadID, titlePrompt, username, proj.Cwd, titleIssues)
+	}
+
+	// Early ack so the user sees activity before materialize / worktree / Grok.
+	statusMsgID := ""
+	if status, ackErr := discordSendComponents(s, threadID,
+		startingStatus(proj.Name),
+		actionBarRunning(threadID),
+	); ackErr != nil {
+		log.Printf("warn: early ack thread=%s: %v", threadID, ackErr)
+		// REST failure can mean a half-dead gateway session; poke the watchdog path.
+		b.maybeForceReconnectOnDiscordErr(ackErr)
+	} else {
+		statusMsgID = status.ID
+		log.Printf("task: early-ack status=%s thread=%s", statusMsgID, threadID)
+	}
+	_ = s.ChannelTyping(threadID)
+
 	// Phase A: materialize attachments / referenced prompt outside st.mu (K11).
 	taskID := runjournal.NewTaskID()
 	var related *discordgo.Message
@@ -860,9 +885,8 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	matCancel()
 	if matErr != nil {
 		log.Printf("error: materialize thread=%s: %v", threadID, matErr)
-		if _, sendErr := s.ChannelMessageSend(threadID, "Could not save attachments for this task: "+matErr.Error()); sendErr != nil {
-			log.Printf("error: reply materialize: %v", sendErr)
-		}
+		msg := "Could not save attachments for this task: " + matErr.Error()
+		b.postOrEditThreadStatus(s, threadID, statusMsgID, msg, actionBarDone(threadID))
 		return
 	}
 
@@ -876,6 +900,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		attachmentPaths:  paths,
 		referencedPrompt: refPrompt,
 		triggerMsgID:     m.ID,
+		statusMsgID:      statusMsgID,
 	}
 	if m.Author != nil {
 		item.createdBy = m.Author.ID
@@ -889,40 +914,105 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		if b.runs != nil {
 			b.runs.RemoveTaskFiles(threadID, taskID)
 		}
+		var msg string
 		switch {
 		case qerr == ErrNotReady:
 			log.Printf("task: not ready thread=%s", threadID)
-			if _, sendErr := s.ChannelMessageSend(threadID, "Bot is starting up; try again in a moment."); sendErr != nil {
-				log.Printf("error: reply not-ready: %v", sendErr)
-			}
+			msg = "Bot is starting up; try again in a moment."
 		case qerr == errQueueFull:
 			log.Printf("task: queue full thread=%s", threadID)
-			if _, sendErr := s.ChannelMessageSend(threadID, fmt.Sprintf(
+			msg = fmt.Sprintf(
 				"Follow-up queue is full (max %d). Wait for a run to finish, or `@Grok /cancel`.", maxFollowupQueue,
-			)); sendErr != nil {
-				log.Printf("error: reply queue-full: %v", sendErr)
-			}
+			)
 		default:
 			log.Printf("task: claim failed thread=%s: %v", threadID, qerr)
-			if _, sendErr := s.ChannelMessageSend(threadID, "Could not queue task (durable state failed). Try again."); sendErr != nil {
-				log.Printf("error: reply claim-fail: %v", sendErr)
-			}
+			msg = "Could not queue task (durable state failed). Try again."
 		}
+		b.postOrEditThreadStatus(s, threadID, statusMsgID, msg, actionBarDone(threadID))
 		return
 	}
 	if !claimed {
 		cancel()
 		log.Printf("task: queued pos=%d thread=%s msg=%s", queuePos, threadID, m.ID)
-		if _, sendErr := s.ChannelMessageSend(threadID, fmt.Sprintf(
+		b.postOrEditThreadStatus(s, threadID, statusMsgID, fmt.Sprintf(
 			"Queued (#%d). Will run after the current task finishes.", queuePos,
-		)); sendErr != nil {
-			log.Printf("error: reply queued: %v", sendErr)
-		}
+		), actionBarDone(threadID))
 		return
+	}
+
+	// Persist early status id so resume / progress can find it.
+	if statusMsgID != "" {
+		b.patchJournal(threadID, func(j *runjournal.Journal) {
+			if j.Active != nil {
+				j.Active.StatusMsgID = statusMsgID
+			}
+		})
 	}
 
 	b.drainWG.Add(1)
 	b.drainTaskQueue(ctx, cancel, item, job)
+}
+
+// improveThreadTitle runs SummarizeTitle off the critical path and renames the thread if useful.
+func (b *Bot) improveThreadTitle(s *discordgo.Session, threadID, titlePrompt, username, cwd string, issues []sessionstore.TrackedIssue) {
+	if b == nil || s == nil || threadID == "" || b.cfg == nil {
+		return
+	}
+	if b.stopping.Load() {
+		return
+	}
+	timeout := time.Duration(b.cfg.SummarizeTimeoutMs) * time.Millisecond
+	if timeout <= 0 {
+		timeout = 45 * time.Second
+	}
+	log.Printf("task: summarizing title async thread=%s…", threadID)
+	sumCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	t, ok := grokrun.SummarizeTitle(sumCtx, b.cfg.GrokBin, b.cfg.Model, titlePrompt, cwd, timeout)
+	if !ok {
+		log.Printf("task: async summarize failed thread=%s (keeping local title)", threadID)
+		return
+	}
+	if b.stopping.Load() {
+		return
+	}
+	name := prefixThreadTitleWithIssues(threadNameFromPrompt(t, username), issues)
+	if name == "" {
+		return
+	}
+	if _, err := s.ChannelEdit(threadID, &discordgo.ChannelEdit{Name: name}); err != nil {
+		log.Printf("warn: async retitle thread=%s: %v", threadID, err)
+		return
+	}
+	log.Printf("task: async retitle thread=%s → %q", threadID, name)
+}
+
+// startingStatus is the early-ack line before worktree / Grok exec.
+func startingStatus(project string) string {
+	return fmt.Sprintf("Starting · **%s**…", project)
+}
+
+// postOrEditThreadStatus edits an existing status message when possible; otherwise sends a new one.
+// Returns the status message id (may be empty on total failure).
+func (b *Bot) postOrEditThreadStatus(s *discordgo.Session, threadID, msgID, content string, components []discordgo.MessageComponent) string {
+	if s == nil || threadID == "" {
+		return msgID
+	}
+	if msgID != "" {
+		if err := discordEditComponents(s, threadID, msgID, content, components, true); err == nil {
+			return msgID
+		} else {
+			log.Printf("warn: status edit thread=%s msg=%s: %v", threadID, msgID, err)
+			b.maybeForceReconnectOnDiscordErr(err)
+		}
+	}
+	msg, err := discordSendComponents(s, threadID, content, components)
+	if err != nil {
+		log.Printf("warn: status send thread=%s: %v", threadID, err)
+		b.maybeForceReconnectOnDiscordErr(err)
+		return msgID
+	}
+	return msg.ID
 }
 
 func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
@@ -946,16 +1036,28 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	var thoughts thoughtTracker
 	var statusID string
 	if present {
-		status, err := discordSendComponents(s, threadID,
-			workingStatus(proj.Name, 0, "", formatPhaseChips([phaseCount]bool{}, -1)),
-			actionBarRunning(threadID),
-		)
-		if err != nil {
-			log.Printf("error: status message thread=%s: %v", threadID, err)
-			// Soft-degrade: continue without live Discord status (still run Grok).
-			present = false
-		} else {
-			statusID = status.ID
+		workHeader := workingStatus(proj.Name, 0, "", formatPhaseChips([phaseCount]bool{}, -1))
+		// Prefer upgrading the early-ack message so the thread stays one status card.
+		if item.statusMsgID != "" {
+			if err := discordEditComponents(s, threadID, item.statusMsgID, workHeader, actionBarRunning(threadID), true); err != nil {
+				log.Printf("warn: status upgrade thread=%s msg=%s: %v", threadID, item.statusMsgID, err)
+				b.maybeForceReconnectOnDiscordErr(err)
+			} else {
+				statusID = item.statusMsgID
+			}
+		}
+		if statusID == "" {
+			status, err := discordSendComponents(s, threadID, workHeader, actionBarRunning(threadID))
+			if err != nil {
+				log.Printf("error: status message thread=%s: %v", threadID, err)
+				b.maybeForceReconnectOnDiscordErr(err)
+				// Soft-degrade: continue without live Discord status (still run Grok).
+				present = false
+			} else {
+				statusID = status.ID
+			}
+		}
+		if statusID != "" {
 			b.patchJournal(threadID, func(j *runjournal.Journal) {
 				if j.Active != nil {
 					j.Active.StatusMsgID = statusID

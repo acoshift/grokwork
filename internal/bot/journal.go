@@ -183,6 +183,7 @@ func taskRecordFromItem(item taskItem, status runjournal.Status) runjournal.Task
 		CreatedByName:    item.createdByName,
 		DiscordURL:       item.discordURL,
 		TriggerMsgID:     trigger,
+		StatusMsgID:      item.statusMsgID,
 		AttachmentPaths:  append([]string(nil), item.attachmentPaths...),
 		ReferencedPrompt: item.referencedPrompt,
 		CreatedAt:        now,
@@ -206,7 +207,10 @@ func (b *Bot) saveJournalFromState(threadID string, st *threadState, activeItem 
 			if hasActive {
 				rec := taskRecordFromItem(activeItem, runjournal.StatusRunning)
 				if j.Active != nil && j.Active.ID == rec.ID {
-					rec.StatusMsgID = j.Active.StatusMsgID
+					// Prefer RAM/item status id; keep journal value if item left it empty.
+					if rec.StatusMsgID == "" {
+						rec.StatusMsgID = j.Active.StatusMsgID
+					}
 					if j.Active.StartedAt != "" {
 						rec.StartedAt = j.Active.StartedAt
 					}

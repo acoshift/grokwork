@@ -268,7 +268,11 @@ func TestFormatElapsed(t *testing.T) {
 }
 
 func TestWorkingStatus(t *testing.T) {
-	got := workingStatus("app", 0, "", "")
+	got := startingStatus("app")
+	if got != "Starting · **app**…" {
+		t.Fatalf("starting: %q", got)
+	}
+	got = workingStatus("app", 0, "", "")
 	if got != "Working in **app**… · Cancel button or `@Grok /cancel`" {
 		t.Fatalf("initial: %q", got)
 	}

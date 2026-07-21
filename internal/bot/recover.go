@@ -283,6 +283,7 @@ func (b *Bot) rehydrateTaskItem(rec runjournal.TaskRecord, proj projectRef, thre
 		attempt:          rec.Attempt,
 		referencedPrompt: rec.ReferencedPrompt,
 		triggerMsgID:     rec.TriggerMsgID,
+		statusMsgID:      rec.StatusMsgID,
 	}
 	if item.origin == "" {
 		item.origin = src

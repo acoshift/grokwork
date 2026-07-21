@@ -445,7 +445,9 @@ func (b *Bot) drainTaskQueue(ctx context.Context, cancel context.CancelFunc, ite
 		if s == nil {
 			s = b.Discord()
 		}
-		if s != nil {
+		// When the queued item already has a status card (Discord early-ack → Queued),
+		// executeTask upgrades it to Working; skip the extra line.
+		if s != nil && next.statusMsgID == "" {
 			if _, sendErr := s.ChannelMessageSend(next.threadID, "Starting queued follow-up…"); sendErr != nil {
 				log.Printf("error: reply queue-start: %v", sendErr)
 			}
