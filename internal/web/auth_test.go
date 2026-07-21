@@ -337,6 +337,11 @@ func TestAuthOnOAuthCallbackAndAdminMutate(t *testing.T) {
 	if sess.AvatarURL != wantAvatar {
 		t.Fatalf("AvatarURL=%q want %q", sess.AvatarURL, wantAvatar)
 	}
+	// Durable profile written on login (separate from session).
+	prof, ok := srv.webUsers.Get("admin-1")
+	if !ok || prof.DisplayName != "Admin User" || prof.AvatarURL != wantAvatar {
+		t.Fatalf("webUsers profile=%+v ok=%v", prof, ok)
+	}
 
 	// Unauthenticated POST rejected.
 	form := url.Values{"section": {"worktree"}, "worktreeIdleTTLDays": {"3"}}
@@ -545,6 +550,9 @@ func TestAuthOnLogout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, ok := srv.webUsers.Get("admin-1"); !ok {
+		t.Fatal("expected durable profile after LoginAs")
+	}
 	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
@@ -555,6 +563,10 @@ func TestAuthOnLogout(t *testing.T) {
 	if _, ok := srv.webSessions.Get(sid); ok {
 		t.Fatal("session should be deleted")
 	}
+	// Durable profile is never cleared on logout.
+	if p, ok := srv.webUsers.Get("admin-1"); !ok || p.DisplayName != "Admin" {
+		t.Fatalf("profile after logout=%+v ok=%v", p, ok)
+	}
 	// Cookie cleared
 	cleared := false
 	for _, c := range w.Result().Cookies() {
@@ -564,6 +576,38 @@ func TestAuthOnLogout(t *testing.T) {
 	}
 	if !cleared {
 		t.Fatal("session cookie not cleared")
+	}
+}
+
+func TestUserStoreUpsertAndPersist(t *testing.T) {
+	dir := t.TempDir()
+	st, err := newUserStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Upsert("u1", "Alice", "https://cdn.example/a.png"); err != nil {
+		t.Fatal(err)
+	}
+	// Reload from disk
+	st2, err := newUserStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := st2.Get("u1")
+	if !ok || p.DisplayName != "Alice" || p.AvatarURL != "https://cdn.example/a.png" {
+		t.Fatalf("reloaded=%+v ok=%v", p, ok)
+	}
+	// Empty fields do not wipe prior values.
+	if err := st2.Upsert("u1", "Alice Updated", ""); err != nil {
+		t.Fatal(err)
+	}
+	p, ok = st2.Get("u1")
+	if !ok || p.DisplayName != "Alice Updated" || p.AvatarURL != "https://cdn.example/a.png" {
+		t.Fatalf("after partial upsert=%+v ok=%v", p, ok)
+	}
+	names := st2.displayNames()
+	if names["u1"] != "Alice Updated" {
+		t.Fatalf("displayNames=%v", names)
 	}
 }
 

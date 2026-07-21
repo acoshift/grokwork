@@ -37,6 +37,7 @@ type Server struct {
 	bot         *bot.Bot
 	app         *hime.App
 	webSessions *sessionStore
+	webUsers    *userStore // durable name/avatar; survives logout
 	oauth       DiscordOAuth // nil → HTTPDiscordOAuth
 	audit       *audit.Logger
 	// Test injectables (nil → production defaults).
@@ -59,11 +60,15 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	if err != nil {
 		panic("web: session store: " + err.Error())
 	}
+	webUsers, err := newUserStore(cfg.DataDir)
+	if err != nil {
+		panic("web: user store: " + err.Error())
+	}
 	auditLog, err := audit.New(cfg.DataDir)
 	if err != nil {
 		panic("web: audit: " + err.Error())
 	}
-	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, audit: auditLog}
+	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, webUsers: webUsers, audit: auditLog}
 	app := hime.New()
 	app.Address(cfg.ListenAddr())
 	// POST forms under hx-boost still use 3xx; non-boosted htmx posts get HX-Redirect.
@@ -519,7 +524,8 @@ func (s *Server) projectConfigPage(ctx *hime.Context) error {
 }
 
 // resolveDiscordUserNames maps Discord user snowflakes to display names.
-// Best-effort: web logins, past thread owners, then live Discord User lookup.
+// Best-effort: durable web-users profiles, active web sessions, past thread
+// owners, then live Discord User lookup.
 func (s *Server) resolveDiscordUserNames(ids []string) map[string]string {
 	out := make(map[string]string, len(ids))
 	need := make(map[string]struct{}, len(ids))
@@ -543,6 +549,12 @@ func (s *Server) resolveDiscordUserNames(ids []string) map[string]string {
 		}
 		out[id] = name
 		delete(need, id)
+	}
+	// Prefer durable profiles (survive logout) over ephemeral sessions.
+	if s.webUsers != nil {
+		for id, name := range s.webUsers.displayNames() {
+			take(id, name)
+		}
 	}
 	if s.webSessions != nil {
 		for id, name := range s.webSessions.displayNames() {
