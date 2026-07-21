@@ -9,14 +9,19 @@ import (
 	"time"
 )
 
+// CreateFetchThrottle is the min gap between git fetches when creating a new
+// worktree. Idle auto-fetch uses the per-project config interval instead.
+const CreateFetchThrottle = 5 * time.Second
+
 // In-process throttle: last successful fetch time per main checkout path.
+// Shared by idle auto-fetch, worktree create, and manual Commits UI fetch.
 var (
 	fetchMu   sync.Mutex
 	lastFetch = map[string]time.Time{}
 )
 
 // NoteFetched records that repo was just fetched (e.g. manual Commits UI fetch)
-// so auto-fetch before the next worktree create can skip within the interval.
+// so idle auto-fetch / create can skip within their respective intervals.
 func NoteFetched(repo string) {
 	key := fetchKey(repo)
 	if key == "" {
@@ -29,30 +34,31 @@ func NoteFetched(repo string) {
 
 // MaybeFetch runs git fetch --all --prune when interval > 0 and this repo has
 // not been successfully fetched within the interval. interval <= 0 is a no-op.
+// ran is true only when a fetch command was executed successfully.
 // Concurrent callers for the same repo serialize on the fetch.
-func MaybeFetch(ctx context.Context, repo string, interval time.Duration) error {
+func MaybeFetch(ctx context.Context, repo string, interval time.Duration) (ran bool, err error) {
 	if interval <= 0 {
-		return nil
+		return false, nil
 	}
 	repo = strings.TrimSpace(repo)
 	if repo == "" || !IsRepo(repo) {
-		return nil
+		return false, nil
 	}
 	key := fetchKey(repo)
 	if key == "" {
-		return nil
+		return false, nil
 	}
 
 	fetchMu.Lock()
 	defer fetchMu.Unlock()
 	if last, ok := lastFetch[key]; ok && time.Since(last) < interval {
-		return nil
+		return false, nil
 	}
 	if err := runGit(ctx, repo, "fetch", "--all", "--prune"); err != nil {
-		return err
+		return false, err
 	}
 	lastFetch[key] = time.Now()
-	return nil
+	return true, nil
 }
 
 // resetFetchStateForTest clears the in-process fetch throttle (tests only).
@@ -113,14 +119,12 @@ func commitRefExists(ctx context.Context, repo, ref string) bool {
 	return err == nil
 }
 
-// fetchBeforeCreate runs optional throttled fetch and returns the start ref for
+// fetchBeforeCreate runs a short-throttle fetch and returns the start ref for
 // worktree add -b. Fetch errors are logged; start ref still resolves from what
 // is already on disk.
-func fetchBeforeCreate(ctx context.Context, repo string, interval time.Duration) string {
-	if interval > 0 {
-		if err := MaybeFetch(ctx, repo, interval); err != nil {
-			log.Printf("gitworktree: fetch before create repo=%s: %v", repo, err)
-		}
+func fetchBeforeCreate(ctx context.Context, repo string) string {
+	if _, err := MaybeFetch(ctx, repo, CreateFetchThrottle); err != nil {
+		log.Printf("gitworktree: fetch before create repo=%s: %v", repo, err)
 	}
 	return resolveNewBranchStart(ctx, repo)
 }

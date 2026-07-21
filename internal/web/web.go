@@ -819,7 +819,7 @@ func (s *Server) setProjectFetch(ctx *hime.Context) error {
 	s.auditAction(ctx, "config.set_project_fetch", err, map[string]any{
 		"name": name, "repoFetchIntervalMinutes": mins,
 	})
-	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Updated repo fetch interval for project %q", name), err)
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Updated idle repo fetch interval for project %q", name), err)
 }
 
 func (s *Server) setGuild(ctx *hime.Context) error {

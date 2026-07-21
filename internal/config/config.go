@@ -15,8 +15,9 @@ const (
 	defaultHTTPListen          = ":8787"
 	DefaultWorktreeIdleTTLDays = 30
 	// DefaultRepoFetchIntervalMinutes is used when a project omits
-	// repoFetchIntervalMinutes. Auto git fetch before new worktree create is
-	// throttled to at most once per this many minutes per main checkout.
+	// repoFetchIntervalMinutes. Idle background git fetch is throttled to at
+	// most once per this many minutes per main checkout. Worktree create uses
+	// a separate hardcoded 5s throttle (gitworktree.CreateFetchThrottle).
 	DefaultRepoFetchIntervalMinutes = 5
 	DefaultAutoFixCIMax             = 2
 	DefaultMaxTurns                 = 40

@@ -8,7 +8,8 @@
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
-<form method="get" action="/projects/{{.Project}}/issues" class="toolbar" id="issues-filter">
+<div class="toolbar" id="issues-toolbar">
+<form method="get" action="/projects/{{.Project}}/issues" id="issues-filter" style="display:contents">
   <div class="field" style="flex-basis:18rem">
     <label for="repo-pick">Repository</label>
     <select id="repo-pick" name="repo_full" data-autosubmit>
@@ -30,6 +31,12 @@
   </div>
   <button type="submit" class="btn-secondary">Apply</button>
 </form>
+{{if .CanStartSession}}
+  <button type="button" id="btn-issues-fix" class="btn-secondary" form="issues-bulk-fix" disabled>Fix</button>
+  <button type="button" id="btn-issues-fix-cancel" class="btn-secondary" hidden>Cancel</button>
+  <span id="issues-fix-hint" class="sub" style="margin:0;align-self:center" hidden>Select issues, then Confirm. Each gets a new fix session.</span>
+{{end}}
+</div>
 <script>
 (function(){
   var form=document.getElementById('issues-filter');
@@ -45,6 +52,140 @@
   sync();
 })();
 </script>
+{{if .CanStartSession}}
+<style>
+  /* Global button { display:inline-flex } would otherwise unhide these. */
+  #issues-toolbar [hidden],
+  #issues-table .col-fix-select[hidden] { display: none !important; }
+  #issues-table.is-selecting tbody tr { cursor: pointer; }
+  #issues-table.is-selecting tbody tr.is-checked td { background: var(--surface-l2); }
+  #issues-table.is-selecting a.issue-link {
+    pointer-events: none;
+    color: inherit;
+    text-decoration: none;
+    cursor: inherit;
+  }
+</style>
+<script>
+(function(){
+  var btn=document.getElementById('btn-issues-fix');
+  if(!btn) return;
+  var cancel=document.getElementById('btn-issues-fix-cancel');
+  var hint=document.getElementById('issues-fix-hint');
+  var mode=false;
+
+  function bulkForm(){ return document.getElementById('issues-bulk-fix'); }
+  function tableEl(){ return document.getElementById('issues-table'); }
+  function cols(){ var f=bulkForm(); return f?f.querySelectorAll('.col-fix-select'):[]; }
+  function boxes(){ var f=bulkForm(); return f?f.querySelectorAll('input[name="numbers"]'):[]; }
+  function links(){ var f=bulkForm(); return f?f.querySelectorAll('a.issue-link'):[]; }
+
+  function countChecked(){
+    var n=0, b=boxes();
+    for(var i=0;i<b.length;i++) if(b[i].checked) n++;
+    return n;
+  }
+  function syncRowChecked(){
+    var b=boxes();
+    for(var i=0;i<b.length;i++){
+      var tr=b[i].closest('tr');
+      if(tr) tr.classList.toggle('is-checked', !!b[i].checked);
+    }
+  }
+  function updateConfirm(){
+    if(!mode) return;
+    var n=countChecked();
+    btn.disabled=n===0;
+    btn.textContent=n>0?('Confirm ('+n+')'):'Confirm';
+    syncRowChecked();
+  }
+  function setMode(on){
+    mode=on;
+    var f=bulkForm();
+    var table=tableEl();
+    var c=cols(), b=boxes(), a=links();
+    for(var i=0;i<c.length;i++) c[i].hidden=!on;
+    for(var j=0;j<b.length;j++){
+      b[j].disabled=!on;
+      if(!on) b[j].checked=false;
+    }
+    for(var k=0;k<a.length;k++){
+      var link=a[k];
+      if(on){
+        if(link.hasAttribute('href')){
+          link.setAttribute('data-href', link.getAttribute('href'));
+          link.removeAttribute('href');
+        }
+        link.setAttribute('tabindex','-1');
+        link.setAttribute('aria-disabled','true');
+      }else{
+        var href=link.getAttribute('data-href');
+        if(href){
+          link.setAttribute('href', href);
+          link.removeAttribute('data-href');
+        }
+        link.removeAttribute('tabindex');
+        link.removeAttribute('aria-disabled');
+      }
+    }
+    if(table) table.classList.toggle('is-selecting', on);
+    btn.type=on?'submit':'button';
+    btn.disabled=on?false:!f;
+    btn.textContent=on?'Confirm':'Fix';
+    if(cancel) cancel.hidden=!on;
+    if(hint) hint.hidden=!on;
+    if(!on){
+      for(var r=0;r<b.length;r++){
+        var row=b[r].closest('tr');
+        if(row) row.classList.remove('is-checked');
+      }
+    }
+    updateConfirm();
+  }
+  function syncFixEnabled(){
+    if(mode) return;
+    btn.disabled=!bulkForm();
+  }
+
+  btn.addEventListener('click', function(e){
+    if(!mode){
+      e.preventDefault();
+      if(!bulkForm()) return;
+      setMode(true);
+    }
+  });
+  document.addEventListener('change', function(e){
+    if(!mode) return;
+    var f=bulkForm();
+    if(!f || !f.contains(e.target)) return;
+    updateConfirm();
+  });
+  document.addEventListener('click', function(e){
+    if(!mode) return;
+    if(e.target.closest('#issues-toolbar')) return;
+    var f=bulkForm();
+    if(!f) return;
+    var tr=e.target.closest('tbody tr');
+    if(!tr || !f.contains(tr)) return;
+    if(e.target.closest('input[name="numbers"]') || e.target.closest('label.check')) return;
+    e.preventDefault();
+    var box=tr.querySelector('input[name="numbers"]');
+    if(!box || box.disabled) return;
+    box.checked=!box.checked;
+    updateConfirm();
+  });
+  if(cancel) cancel.addEventListener('click', function(){ setMode(false); });
+
+  document.body.addEventListener('htmx:afterSwap', function(e){
+    if(e.target && e.target.id==='live-issues-table'){
+      if(mode) setMode(false);
+      else syncFixEnabled();
+    }
+  });
+  syncFixEnabled();
+})();
+</script>
+{{end}}
 {{if not .RepoCatalog}}
 <p class="sub">No repos in catalog. Set <span class="mono">projects.{{.Project}}.github.repos</span> on Config, or ensure git remotes exist.</p>
 {{end}}
@@ -67,19 +208,6 @@
 {{end}}
 
 {{define "issues_table"}}
-<style>
-  /* Global button { display:inline-flex } would otherwise unhide these. */
-  #issues-fix-bar [hidden],
-  #issues-table .col-fix-select[hidden] { display: none !important; }
-  #issues-table.is-selecting tbody tr { cursor: pointer; }
-  #issues-table.is-selecting tbody tr.is-checked td { background: var(--surface-l2); }
-  #issues-table.is-selecting a.issue-link {
-    pointer-events: none;
-    color: inherit;
-    text-decoration: none;
-    cursor: inherit;
-  }
-</style>
 <div class="section">
   {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
   {{if .Issues}}
@@ -87,11 +215,7 @@
     {{template "csrf" $}}
     <input type="hidden" name="owner" value="{{.ActiveOwner}}">
     <input type="hidden" name="repo" value="{{.ActiveRepo}}">
-    <div class="toolbar" id="issues-fix-bar" style="margin-bottom:0.75rem">
-      <button type="button" id="btn-issues-fix" class="btn-secondary">Fix</button>
-      <button type="button" id="btn-issues-fix-cancel" class="btn-secondary" hidden>Cancel</button>
-      <span id="issues-fix-hint" class="sub" style="margin:0;align-self:center" hidden>Select issues, then Confirm. Each gets a new fix session.</span>
-    </div>{{end}}
+  {{end}}
   <div class="table-scroll">
   <table id="issues-table">
     <thead><tr>
@@ -128,100 +252,6 @@
   </div>
   {{if .CanStartSession}}
   </form>
-  <script>
-  (function(){
-    var form=document.getElementById('issues-bulk-fix');
-    if(!form) return;
-    var btn=document.getElementById('btn-issues-fix');
-    var cancel=document.getElementById('btn-issues-fix-cancel');
-    var hint=document.getElementById('issues-fix-hint');
-    var table=document.getElementById('issues-table');
-    var cols=form.querySelectorAll('.col-fix-select');
-    var boxes=form.querySelectorAll('input[name="numbers"]');
-    var links=form.querySelectorAll('a.issue-link');
-    var mode=false;
-    function countChecked(){
-      var n=0;
-      for(var i=0;i<boxes.length;i++) if(boxes[i].checked) n++;
-      return n;
-    }
-    function syncRowChecked(){
-      for(var i=0;i<boxes.length;i++){
-        var tr=boxes[i].closest('tr');
-        if(tr) tr.classList.toggle('is-checked', !!boxes[i].checked);
-      }
-    }
-    function updateConfirm(){
-      if(!mode) return;
-      var n=countChecked();
-      btn.disabled=n===0;
-      btn.textContent=n>0?('Confirm ('+n+')'):'Confirm';
-      syncRowChecked();
-    }
-    function setMode(on){
-      mode=on;
-      for(var i=0;i<cols.length;i++) cols[i].hidden=!on;
-      for(var j=0;j<boxes.length;j++){
-        boxes[j].disabled=!on;
-        if(!on) boxes[j].checked=false;
-      }
-      for(var k=0;k<links.length;k++){
-        var a=links[k];
-        if(on){
-          if(a.hasAttribute('href')){
-            a.setAttribute('data-href', a.getAttribute('href'));
-            a.removeAttribute('href');
-          }
-          a.setAttribute('tabindex','-1');
-          a.setAttribute('aria-disabled','true');
-        }else{
-          var href=a.getAttribute('data-href');
-          if(href){
-            a.setAttribute('href', href);
-            a.removeAttribute('data-href');
-          }
-          a.removeAttribute('tabindex');
-          a.removeAttribute('aria-disabled');
-        }
-      }
-      if(table) table.classList.toggle('is-selecting', on);
-      btn.type=on?'submit':'button';
-      btn.disabled=false;
-      btn.textContent=on?'Confirm':'Fix';
-      if(cancel) cancel.hidden=!on;
-      if(hint) hint.hidden=!on;
-      if(!on){
-        for(var r=0;r<boxes.length;r++){
-          var row=boxes[r].closest('tr');
-          if(row) row.classList.remove('is-checked');
-        }
-      }
-      updateConfirm();
-    }
-    btn.addEventListener('click', function(e){
-      if(!mode){
-        e.preventDefault();
-        setMode(true);
-      }
-    });
-    form.addEventListener('change', updateConfirm);
-    form.addEventListener('click', function(e){
-      if(!mode) return;
-      if(e.target.closest('#issues-fix-bar')) return;
-      var tr=e.target.closest('tbody tr');
-      if(!tr || !form.contains(tr)) return;
-      // Checkbox / label already toggle; still refresh confirm via change.
-      if(e.target.closest('input[name="numbers"]') || e.target.closest('label.check')) return;
-      e.preventDefault();
-      var box=tr.querySelector('input[name="numbers"]');
-      if(!box || box.disabled) return;
-      box.checked=!box.checked;
-      updateConfirm();
-    });
-    if(cancel) cancel.addEventListener('click', function(){ setMode(false); });
-    setMode(false);
-  })();
-  </script>
   {{end}}
   {{else}}
   <div class="empty">No issues loaded.</div>

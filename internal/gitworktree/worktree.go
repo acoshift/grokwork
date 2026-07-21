@@ -13,7 +13,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type Tree struct {
@@ -34,10 +33,6 @@ const (
 // Empty BranchPrefix means DiscordBranchPrefix.
 type EnsureOpts struct {
 	BranchPrefix string
-	// FetchInterval throttles git fetch --all --prune before creating a new
-	// managed branch worktree. 0 disables auto-fetch. Reuse of an existing
-	// worktree path never fetches.
-	FetchInterval time.Duration
 }
 
 // BranchName returns the Discord-managed branch for a unit id (thread snowflake).
@@ -349,15 +344,16 @@ func EnsureWith(ctx context.Context, repo, dataDir, project, unitID string, opts
 		return Tree{}, fmt.Errorf("mkdir worktree parent: %w", err)
 	}
 
-	// New branch: optional fetch + start from origin/* (not stale local HEAD).
-	// Existing branch: re-attach only (no fetch).
+	// New branch: short-throttle fetch + start from origin/* (not stale local HEAD).
+	// Existing branch: re-attach only (no fetch). Idle background fetch keeps
+	// remotes warm; create still fetches unless done within CreateFetchThrottle.
 	var err error
 	if branchExists(ctx, repo, branch) {
 		_ = pruneStaleWorktrees(ctx, repo)
 		_ = removeRegisteredWorktreesForBranch(ctx, repo, branch)
 		err = runGit(ctx, repo, "worktree", "add", path, branch)
 	} else {
-		start := fetchBeforeCreate(ctx, repo, opts.FetchInterval)
+		start := fetchBeforeCreate(ctx, repo)
 		err = runGit(ctx, repo, "worktree", "add", "-b", branch, path, start)
 		if err != nil {
 			// Fallback to HEAD if origin ref vanished mid-flight.

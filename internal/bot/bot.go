@@ -101,8 +101,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) 
 		b.hostname = host
 	}
 	// Discord-independent background work: do not wait for gateway ready so
-	// web-native units still get idle TTL + PR terminal cleanup.
+	// web-native units still get idle TTL + PR terminal cleanup + idle fetch.
 	b.startIdleWorktreeCleanup()
+	b.startIdleRepoFetch()
 	b.startPRStatusPoller()
 	return b
 }
@@ -336,6 +337,7 @@ func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
 	_ = s.UpdateGameStatus(0, "@Grok <task>")
 	// Idle + PR pollers already started in New (Once); re-call is a no-op.
 	b.startIdleWorktreeCleanup()
+	b.startIdleRepoFetch()
 	b.startPRStatusPoller()
 	b.startBoardDigest(s)
 	b.startGatewayWatch()
@@ -653,7 +655,7 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		return cwd, "", nil
 	}
 
-	opts := b.ensureOptsForUnit(threadID, proj.Name)
+	opts := b.ensureOptsForUnit(threadID)
 	if cleaned, state, cErr := gitworktree.CleanupIfPRDoneWith(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID, opts); cErr != nil {
 		log.Printf("warn: worktree PR cleanup check thread=%s: %v", threadID, cErr)
 	} else if cleaned {
@@ -680,24 +682,16 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 	return tree.Path, tree.Branch, nil
 }
 
-// ensureOptsForUnit picks managed branch prefix from session WorktreeBranch or unit id form
-// and the per-project repo fetch interval for new worktree creation.
-func (b *Bot) ensureOptsForUnit(unitID, project string) gitworktree.EnsureOpts {
-	opts := gitworktree.EnsureOpts{BranchPrefix: gitworktree.PrefixForUnitID(unitID)}
+// ensureOptsForUnit picks managed branch prefix from session WorktreeBranch or unit id form.
+func (b *Bot) ensureOptsForUnit(unitID string) gitworktree.EnsureOpts {
 	if b != nil && b.sessions != nil {
 		if e, ok := b.sessions.Get(unitID); ok {
 			if p := gitworktree.PrefixFromBranch(e.WorktreeBranch); p != "" {
-				opts.BranchPrefix = p
-			}
-			if project == "" {
-				project = e.Project
+				return gitworktree.EnsureOpts{BranchPrefix: p}
 			}
 		}
 	}
-	if b != nil && b.cfg != nil {
-		opts.FetchInterval = b.cfg.ProjectRepoFetchInterval(project)
-	}
-	return opts
+	return gitworktree.EnsureOpts{BranchPrefix: gitworktree.PrefixForUnitID(unitID)}
 }
 
 func remoteWorkPromptPrefix(branch string) string {

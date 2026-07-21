@@ -179,6 +179,27 @@ func TestProjectRepoFetchInterval(t *testing.T) {
 	if fastItem.RepoFetchIntervalMinutes != 15 {
 		t.Fatalf("snapshot fast=%d", fastItem.RepoFetchIntervalMinutes)
 	}
+
+	targets := cfg.IdleRepoFetchTargets()
+	// app disabled (0); fast enabled at 15m.
+	var sawApp, sawFast bool
+	for _, tgt := range targets {
+		switch tgt.Name {
+		case "app":
+			sawApp = true
+			if tgt.Interval != 0 {
+				t.Fatalf("app interval=%v", tgt.Interval)
+			}
+		case "fast":
+			sawFast = true
+			if tgt.Interval != 15*time.Minute {
+				t.Fatalf("fast interval=%v", tgt.Interval)
+			}
+		}
+	}
+	if !sawApp || !sawFast {
+		t.Fatalf("targets=%+v", targets)
+	}
 }
 
 func TestLoadStringProjectsStillWorks(t *testing.T) {

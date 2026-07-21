@@ -426,17 +426,40 @@ func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=app", nil)
+	// Fix/Cancel live on the shell toolbar next to Apply (like commits Fetch).
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/issues?owner=acme&repo=app", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("status=%d", w.Code)
+		t.Fatalf("shell status=%d", w.Code)
+	}
+	shell := w.Body.String()
+	for _, want := range []string{
+		`id="issues-toolbar"`,
+		`id="btn-issues-fix"`,
+		`id="btn-issues-fix-cancel"`,
+		`form="issues-bulk-fix"`,
+	} {
+		if !strings.Contains(shell, want) {
+			t.Fatalf("shell missing %q", want)
+		}
+	}
+	// Cancel must start hidden until the user enters multi-select via Fix.
+	if !strings.Contains(shell, `id="btn-issues-fix-cancel" class="btn-secondary" hidden`) {
+		t.Fatal("cancel button must render with hidden before Fix is clicked")
+	}
+
+	// Bulk form + row checkboxes load with the table partial.
+	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=app", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("partial status=%d", w.Code)
 	}
 	body := w.Body.String()
 	for _, want := range []string{
-		`id="btn-issues-fix"`,
-		`id="btn-issues-fix-cancel"`,
 		`id="issues-bulk-fix"`,
 		`action="/projects/proj/issues/fix"`,
 		`name="numbers"`,
@@ -445,12 +468,11 @@ func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
 		`class="issue-link"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("list missing %q", want)
+			t.Fatalf("partial missing %q", want)
 		}
 	}
-	// Cancel must start hidden until the user enters multi-select via Fix.
-	if !strings.Contains(body, `id="btn-issues-fix-cancel" class="btn-secondary" hidden`) {
-		t.Fatal("cancel button must render with hidden before Fix is clicked")
+	if strings.Contains(body, `id="btn-issues-fix"`) {
+		t.Fatal("Fix button belongs on the shell toolbar, not the table partial")
 	}
 }
 
@@ -470,15 +492,25 @@ func TestIssuesListHidesBulkFixForViewer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=app", nil)
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/issues?owner=acme&repo=app", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("shell status=%d body=%s", w.Code, w.Body.String())
 	}
 	if strings.Contains(w.Body.String(), "btn-issues-fix") {
-		t.Fatal("viewer must not see bulk Fix")
+		t.Fatal("viewer must not see bulk Fix on shell")
+	}
+	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=app", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("partial status=%d body=%s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "issues-bulk-fix") {
+		t.Fatal("viewer must not see bulk fix form")
 	}
 }
 

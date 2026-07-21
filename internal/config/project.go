@@ -26,9 +26,10 @@ type ProjectConfig struct {
 	// Empty both → fail-closed (no one may @Grok on this project's channels).
 	AllowedUserIDs []string             `json:"allowedUserIds,omitempty"`
 	AllowedRoleIDs []string             `json:"allowedRoleIds,omitempty"`
-	// RepoFetchIntervalMinutes controls auto git fetch before creating a new
-	// worktree. nil/omitted → DefaultRepoFetchIntervalMinutes (5). 0 disables
-	// auto-fetch for this project (worktrees still prefer origin/* when present).
+	// RepoFetchIntervalMinutes controls idle background git fetch for this
+	// project's main checkout. nil/omitted → DefaultRepoFetchIntervalMinutes (5).
+	// 0 disables idle auto-fetch. New worktrees always fetch with a short
+	// hardcoded throttle (see gitworktree.CreateFetchThrottle).
 	RepoFetchIntervalMinutes *int                 `json:"repoFetchIntervalMinutes,omitempty"`
 	GitHub                   *ProjectGitHubConfig `json:"github,omitempty"`
 	Linear                   *ProjectLinearConfig `json:"linear,omitempty"`
@@ -157,9 +158,9 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 	return out
 }
 
-// ProjectRepoFetchIntervalMinutes returns the effective auto-fetch interval
-// in minutes for a project. Unknown/empty project uses the default. Explicit 0
-// disables auto-fetch.
+// ProjectRepoFetchIntervalMinutes returns the effective idle auto-fetch
+// interval in minutes for a project. Unknown/empty project uses the default.
+// Explicit 0 disables idle auto-fetch.
 func (c *Config) ProjectRepoFetchIntervalMinutes(name string) int {
 	if c == nil {
 		return DefaultRepoFetchIntervalMinutes
@@ -176,8 +177,8 @@ func (c *Config) ProjectRepoFetchIntervalMinutes(name string) int {
 	return *pc.RepoFetchIntervalMinutes
 }
 
-// ProjectRepoFetchInterval returns the auto-fetch throttle as a duration.
-// 0 means auto-fetch is disabled for this project.
+// ProjectRepoFetchInterval returns the idle auto-fetch throttle as a duration.
+// 0 means idle auto-fetch is disabled for this project.
 func (c *Config) ProjectRepoFetchInterval(name string) time.Duration {
 	mins := c.ProjectRepoFetchIntervalMinutes(name)
 	if mins <= 0 {
@@ -186,15 +187,71 @@ func (c *Config) ProjectRepoFetchInterval(name string) time.Duration {
 	return time.Duration(mins) * time.Minute
 }
 
-// SetProjectRepoFetchIntervalMinutes sets the per-project auto-fetch interval
-// and persists. 0 disables auto-fetch. Negative values are rejected.
+// IdleRepoFetchTarget is one project main checkout for the idle fetch loop.
+type IdleRepoFetchTarget struct {
+	Name     string
+	Path     string
+	Interval time.Duration // 0 = disabled
+}
+
+// IdleRepoFetchTargets returns projects with their idle-fetch intervals.
+// Paths are unique by absolute path when possible so shared checkouts fetch once.
+func (c *Config) IdleRepoFetchTargets() []IdleRepoFetchTarget {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	names := make([]string, 0, len(c.Projects))
+	for n := range c.Projects {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	seen := make(map[string]struct{}, len(names))
+	out := make([]IdleRepoFetchTarget, 0, len(names))
+	for _, n := range names {
+		pc := c.Projects[n]
+		path := strings.TrimSpace(pc.Path)
+		if path == "" {
+			continue
+		}
+		mins := DefaultRepoFetchIntervalMinutes
+		if pc.RepoFetchIntervalMinutes != nil {
+			if *pc.RepoFetchIntervalMinutes < 0 {
+				mins = DefaultRepoFetchIntervalMinutes
+			} else {
+				mins = *pc.RepoFetchIntervalMinutes
+			}
+		}
+		var interval time.Duration
+		if mins > 0 {
+			interval = time.Duration(mins) * time.Minute
+		}
+		key := path
+		if interval <= 0 {
+			// Still list disabled projects so callers can count them, but skip
+			// path dedupe so another project sharing the path can stay enabled.
+			out = append(out, IdleRepoFetchTarget{Name: n, Path: path, Interval: 0})
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, IdleRepoFetchTarget{Name: n, Path: path, Interval: interval})
+	}
+	return out
+}
+
+// SetProjectRepoFetchIntervalMinutes sets the per-project idle auto-fetch
+// interval and persists. 0 disables idle auto-fetch. Negative values are rejected.
 func (c *Config) SetProjectRepoFetchIntervalMinutes(name string, minutes int) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("project name is required")
 	}
 	if minutes < 0 {
-		return fmt.Errorf("repoFetchIntervalMinutes must be >= 0 (0 disables auto-fetch)")
+		return fmt.Errorf("repoFetchIntervalMinutes must be >= 0 (0 disables idle auto-fetch)")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

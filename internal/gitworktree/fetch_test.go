@@ -39,22 +39,26 @@ func TestMaybeFetchIntervalThrottle(t *testing.T) {
 	resetFetchStateForTest()
 
 	ctx := context.Background()
-	if err := MaybeFetch(ctx, repo, time.Hour); err != nil {
-		t.Fatal(err)
+	ran, err := MaybeFetch(ctx, repo, time.Hour)
+	if err != nil || !ran {
+		t.Fatalf("first fetch ran=%v err=%v", ran, err)
 	}
-	// Second call within interval must not error; throttle skips git fetch.
-	if err := MaybeFetch(ctx, repo, time.Hour); err != nil {
-		t.Fatal(err)
+	// Second call within interval must skip.
+	ran, err = MaybeFetch(ctx, repo, time.Hour)
+	if err != nil || ran {
+		t.Fatalf("throttled fetch ran=%v err=%v", ran, err)
 	}
-	if err := MaybeFetch(ctx, repo, 0); err != nil {
-		t.Fatal(err)
+	ran, err = MaybeFetch(ctx, repo, 0)
+	if err != nil || ran {
+		t.Fatalf("interval 0 ran=%v err=%v", ran, err)
 	}
 	// NoteFetched from outside should also throttle.
 	resetFetchStateForTest()
 	NoteFetched(repo)
 	runGitTest(t, repo, "remote", "set-url", "origin", "/nonexistent-remote-path")
-	if err := MaybeFetch(ctx, repo, time.Hour); err != nil {
-		t.Fatalf("should skip after NoteFetched: %v", err)
+	ran, err = MaybeFetch(ctx, repo, time.Hour)
+	if err != nil || ran {
+		t.Fatalf("should skip after NoteFetched: ran=%v err=%v", ran, err)
 	}
 	_ = seed
 }
@@ -92,9 +96,7 @@ func TestEnsureFetchesAndStartsFromOrigin(t *testing.T) {
 
 	data := t.TempDir()
 	ctx := context.Background()
-	tr, err := EnsureWith(ctx, repo, data, "app", "fetch-tid", EnsureOpts{
-		FetchInterval: time.Minute,
-	})
+	tr, err := EnsureWith(ctx, repo, data, "app", "fetch-tid", EnsureOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,9 +110,7 @@ func TestEnsureFetchesAndStartsFromOrigin(t *testing.T) {
 	}
 
 	// Reuse must not require fetch (and keeps same path).
-	tr2, err := EnsureWith(ctx, repo, data, "app", "fetch-tid", EnsureOpts{
-		FetchInterval: time.Minute,
-	})
+	tr2, err := EnsureWith(ctx, repo, data, "app", "fetch-tid", EnsureOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
