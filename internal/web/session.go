@@ -17,9 +17,12 @@ import (
 const (
 	sessionCookieName = "grok_web_sid"
 	oauthStateCookie  = "grok_web_oauth_state"
-	sessionTTL        = 12 * time.Hour
-	oauthStateTTL     = 10 * time.Minute
-	sessionsFileName  = "web-sessions.json"
+	// Login sessions last 2 days. When the user is active with ≤1 day left,
+	// ExpiresAt is extended back to 2 days so regular use never forces re-login.
+	sessionTTL       = 48 * time.Hour
+	sessionRenewWhen = 24 * time.Hour
+	oauthStateTTL    = 10 * time.Minute
+	sessionsFileName = "web-sessions.json"
 )
 
 // Session is a server-side web login record.
@@ -37,7 +40,7 @@ type sessionFile struct {
 	Sessions map[string]Session `json:"sessions"`
 }
 
-// sessionStore keeps sessions in memory and persists on Create/Delete or lazy TTL renew.
+// sessionStore keeps sessions in memory and persists on Create/Delete or sliding renew.
 type sessionStore struct {
 	path     string
 	mu       sync.Mutex
@@ -131,32 +134,34 @@ func (st *sessionStore) Create(discordUserID, displayName, avatarURL string, rol
 	return &out, nil
 }
 
-func (st *sessionStore) Get(id string) (*Session, bool) {
+// Get returns a non-expired session. When remaining life is at most
+// sessionRenewWhen, ExpiresAt is extended to now+sessionTTL and persisted;
+// renewed is true so callers can re-issue the browser cookie.
+func (st *sessionStore) Get(id string) (sess *Session, renewed bool, ok bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.sessions == nil {
-		return nil, false
+		return nil, false, false
 	}
-	s, ok := st.sessions[id]
-	if !ok {
-		return nil, false
+	s, found := st.sessions[id]
+	if !found {
+		return nil, false, false
 	}
 	now := time.Now()
 	if now.After(s.ExpiresAt) {
 		delete(st.sessions, id)
 		_ = st.saveLocked()
-		return nil, false
+		return nil, false, false
 	}
-	// Sliding TTL in memory; persist only when remaining life was low to avoid
-	// rewriting the session file on every authenticated request / SSE partial.
 	remaining := s.ExpiresAt.Sub(now)
-	s.ExpiresAt = now.Add(sessionTTL)
-	st.sessions[id] = s
-	if remaining < sessionTTL/2 {
+	if remaining <= sessionRenewWhen {
+		s.ExpiresAt = now.Add(sessionTTL)
+		st.sessions[id] = s
 		_ = st.saveLocked()
+		renewed = true
 	}
 	out := s
-	return &out, true
+	return &out, renewed, true
 }
 
 func (st *sessionStore) Delete(id string) error {

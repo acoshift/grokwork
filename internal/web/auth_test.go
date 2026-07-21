@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
@@ -329,7 +330,7 @@ func TestAuthOnOAuthCallbackAndAdminMutate(t *testing.T) {
 	if sid == "" {
 		t.Fatal("missing session cookie")
 	}
-	sess, ok := srv.webSessions.Get(sid)
+	sess, _, ok := srv.webSessions.Get(sid)
 	if !ok || sess.Role != config.WebRoleAdmin {
 		t.Fatalf("session=%+v ok=%v", sess, ok)
 	}
@@ -560,7 +561,7 @@ func TestAuthOnLogout(t *testing.T) {
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("logout status=%d", w.Code)
 	}
-	if _, ok := srv.webSessions.Get(sid); ok {
+	if _, _, ok := srv.webSessions.Get(sid); ok {
 		t.Fatal("session should be deleted")
 	}
 	// Durable profile is never cleared on logout.
@@ -627,6 +628,127 @@ func TestLoginAsHelper(t *testing.T) {
 	body, _ := io.ReadAll(w.Body)
 	if !strings.Contains(string(body), `name="csrf"`) {
 		t.Fatal("config form should include csrf when authed")
+	}
+}
+
+func TestSessionTTLAndSlidingRenew(t *testing.T) {
+	dir := t.TempDir()
+	st, err := newSessionStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessionTTL != 48*time.Hour || sessionRenewWhen != 24*time.Hour {
+		t.Fatalf("sessionTTL=%v sessionRenewWhen=%v", sessionTTL, sessionRenewWhen)
+	}
+
+	sess, err := st.Create("u1", "Alice", "", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fresh login: ~2 days left → no renew.
+	got, renewed, ok := st.Get(sess.ID)
+	if !ok || renewed {
+		t.Fatalf("fresh Get: ok=%v renewed=%v", ok, renewed)
+	}
+	if remaining := time.Until(got.ExpiresAt); remaining < 47*time.Hour || remaining > sessionTTL {
+		t.Fatalf("fresh remaining=%v", remaining)
+	}
+
+	// Force remaining just under 1 day → renew to 2 days and persist.
+	st.mu.Lock()
+	s := st.sessions[sess.ID]
+	before := time.Now().Add(23 * time.Hour)
+	s.ExpiresAt = before
+	st.sessions[sess.ID] = s
+	if err := st.saveLocked(); err != nil {
+		st.mu.Unlock()
+		t.Fatal(err)
+	}
+	st.mu.Unlock()
+
+	got, renewed, ok = st.Get(sess.ID)
+	if !ok || !renewed {
+		t.Fatalf("near-expiry Get: ok=%v renewed=%v", ok, renewed)
+	}
+	if remaining := time.Until(got.ExpiresAt); remaining < 47*time.Hour {
+		t.Fatalf("after renew remaining=%v want ~2d", remaining)
+	}
+
+	// Reload from disk: extension must have been persisted.
+	st2, err := newSessionStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got2, renewed2, ok2 := st2.Get(sess.ID)
+	if !ok2 {
+		t.Fatal("session missing after reload")
+	}
+	if renewed2 {
+		t.Fatal("just-renewed session should not renew again immediately")
+	}
+	if remaining := time.Until(got2.ExpiresAt); remaining < 47*time.Hour {
+		t.Fatalf("persisted remaining=%v", remaining)
+	}
+
+	// Expired session is dropped.
+	st.mu.Lock()
+	s = st.sessions[sess.ID]
+	s.ExpiresAt = time.Now().Add(-time.Second)
+	st.sessions[sess.ID] = s
+	st.mu.Unlock()
+	if _, _, ok = st.Get(sess.ID); ok {
+		t.Fatal("expired session should be gone")
+	}
+}
+
+func TestSessionSlidingRenewRefreshesCookie(t *testing.T) {
+	srv, _, _ := authOnServer(t)
+	sid, _, err := srv.LoginAs("admin-1", "Admin", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Force server session into the renew window.
+	srv.webSessions.mu.Lock()
+	s := srv.webSessions.sessions[sid]
+	s.ExpiresAt = time.Now().Add(12 * time.Hour)
+	srv.webSessions.sessions[sid] = s
+	srv.webSessions.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	var refreshed *http.Cookie
+	for _, c := range w.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			refreshed = c
+		}
+	}
+	if refreshed == nil || refreshed.Value != sid {
+		t.Fatal("expected Set-Cookie for sliding renew")
+	}
+	if refreshed.MaxAge != int(sessionTTL.Seconds()) {
+		t.Fatalf("cookie MaxAge=%d want %d", refreshed.MaxAge, int(sessionTTL.Seconds()))
+	}
+	// Fresh session (plenty of life) should not re-set the cookie.
+	sid2, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid2})
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	for _, c := range w.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			t.Fatalf("unexpected session cookie re-set when not renewing: MaxAge=%d", c.MaxAge)
+		}
 	}
 }
 

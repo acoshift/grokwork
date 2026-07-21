@@ -81,18 +81,25 @@ func clearSessionCookie(w http.ResponseWriter, secure bool) {
 }
 
 func (s *Server) sessionFromRequest(r *http.Request) *Session {
+	sess, _ := s.sessionFromRequestRenew(r)
+	return sess
+}
+
+// sessionFromRequestRenew is like sessionFromRequest but reports whether the
+// server-side session was sliding-renewed (caller should re-set the cookie).
+func (s *Server) sessionFromRequestRenew(r *http.Request) (*Session, bool) {
 	if s.webSessions == nil {
-		return nil
+		return nil, false
 	}
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil || c.Value == "" {
-		return nil
+		return nil, false
 	}
-	sess, ok := s.webSessions.Get(c.Value)
+	sess, renewed, ok := s.webSessions.Get(c.Value)
 	if !ok {
-		return nil
+		return nil, false
 	}
-	return sess
+	return sess, renewed
 }
 
 func sessionFromContext(ctx context.Context) *Session {
@@ -154,7 +161,7 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		sess := s.sessionFromRequest(r)
+		sess, renewed := s.sessionFromRequestRenew(r)
 		if sess == nil {
 			loginURL := "/login?next=" + url.QueryEscape(loginNextFromRequest(r))
 			// htmx follows HTTP 302 and swaps the final body into the request
@@ -167,6 +174,11 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			}
 			http.Redirect(w, r, loginURL, http.StatusFound)
 			return
+		}
+		// Keep the browser cookie aligned after a sliding renew so MaxAge does
+		// not lag the server-side ExpiresAt.
+		if renewed {
+			s.SetSessionCookie(w, sess.ID)
 		}
 		next.ServeHTTP(w, r.WithContext(withSession(r.Context(), sess)))
 	})
