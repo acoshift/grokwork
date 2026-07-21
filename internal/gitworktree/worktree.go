@@ -251,6 +251,63 @@ func CleanupIfPRDoneWith(ctx context.Context, repo, dataDir, project, unitID str
 	return true, state, nil
 }
 
+// AddDetached creates (or reuses) a detached worktree at commit sha.
+// No branch is created — suitable for ephemeral read-only checkouts (e.g. commit review).
+// path is the worktree directory (must not be the main repo root).
+func AddDetached(ctx context.Context, repo, path, sha string) error {
+	repo = strings.TrimSpace(repo)
+	path = strings.TrimSpace(path)
+	sha = strings.TrimSpace(sha)
+	if repo == "" || path == "" || sha == "" {
+		return fmt.Errorf("repo, path, and sha are required")
+	}
+	if !IsRepo(repo) {
+		return fmt.Errorf("not a git repository: %s", repo)
+	}
+	absRepo, err := filepath.Abs(repo)
+	if err != nil {
+		return err
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if filepath.Clean(absRepo) == filepath.Clean(absPath) {
+		return fmt.Errorf("refuse to add detached worktree at main repo path")
+	}
+
+	if ok, err := isUsableWorktree(ctx, repo, path); err != nil {
+		return err
+	} else if ok {
+		// Reuse only when HEAD matches the requested commit.
+		want, werr := gitOutput(ctx, repo, "rev-parse", sha)
+		have, herr := gitOutput(ctx, path, "rev-parse", "HEAD")
+		if werr == nil && herr == nil && strings.TrimSpace(want) == strings.TrimSpace(have) {
+			short := strings.TrimSpace(have)
+			if len(short) > 12 {
+				short = short[:12]
+			}
+			log.Printf("gitworktree: reuse detached path=%s sha=%s", path, short)
+			return nil
+		}
+		log.Printf("gitworktree: replacing detached path=%s (wrong HEAD)", path)
+		_ = removeWorktreeAtPath(ctx, repo, path)
+	} else if _, err := os.Stat(path); err == nil {
+		_ = removeWorktreeAtPath(ctx, repo, path)
+	} else {
+		_ = pruneStaleWorktrees(ctx, repo)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir worktree parent: %w", err)
+	}
+	if err := runGit(ctx, repo, "worktree", "add", "--detach", path, sha); err != nil {
+		return fmt.Errorf("git worktree add --detach: %w", err)
+	}
+	log.Printf("gitworktree: created detached path=%s sha=%s repo=%s", path, sha, repo)
+	return nil
+}
+
 // Ensure creates or reuses a Discord-prefix worktree for unitID.
 func Ensure(ctx context.Context, repo, dataDir, project, unitID string) (Tree, error) {
 	return EnsureWith(ctx, repo, dataDir, project, unitID, EnsureOpts{})

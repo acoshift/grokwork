@@ -461,6 +461,64 @@ func TestRemoveRefusesUnprotectedBranch(t *testing.T) {
 	}
 }
 
+func TestAddDetachedAtCommit(t *testing.T) {
+	ctx := context.Background()
+	repo := initTestRepo(t)
+	// Second commit so we can pin an older SHA.
+	if err := os.WriteFile(filepath.Join(repo, "README"), []byte("v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "-C", repo, "add", "README")
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	cmd = exec.Command("git", "-C", repo, "commit", "-m", "v2")
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("commit: %v\n%s", err, out)
+	}
+	first, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD~1").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.TrimSpace(string(first))
+	path := filepath.Join(t.TempDir(), "detached-wt")
+	if err := AddDetached(ctx, repo, path, sha); err != nil {
+		t.Fatal(err)
+	}
+	head, err := exec.Command("git", "-C", path, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(head)) != sha {
+		t.Fatalf("HEAD=%s want %s", head, sha)
+	}
+	body, err := os.ReadFile(filepath.Join(path, "README"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "hi\n" {
+		t.Fatalf("want first-commit content, got %q", body)
+	}
+	// Reuse same path/sha is a no-op.
+	if err := AddDetached(ctx, repo, path, sha); err != nil {
+		t.Fatal(err)
+	}
+	if err := Remove(ctx, repo, path, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("path should be gone: %v", err)
+	}
+}
+
 func initTestRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

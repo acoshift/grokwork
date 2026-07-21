@@ -42,6 +42,9 @@ func TestExecuteHappyPath(t *testing.T) {
 		created++
 		return 10 + created, "https://github.com/" + owner + "/" + repo + "/issues/1", nil
 	}
+	repoDir := filepath.Join(dir, "repo")
+	var sawCwd string
+	var addCalled, removeCalled bool
 	grok := func(ctx context.Context, opt grokrun.Options) grokrun.Result {
 		if opt.Yolo {
 			t.Fatalf("expected yolo-off: %+v", opt)
@@ -64,6 +67,7 @@ func TestExecuteHappyPath(t *testing.T) {
 		if !hasDenyMCP {
 			t.Fatalf("expected --deny MCPTool in ExtraArgs: %v", opt.ExtraArgs)
 		}
+		sawCwd = opt.Cwd
 		return grokrun.Result{Code: 0, Text: `{"summary":"risky","findings":[
 			{"title":"Bug one","body":"details","severity":"high","paths":["f.go"]}
 		]}`}
@@ -74,10 +78,33 @@ func TestExecuteHappyPath(t *testing.T) {
 	if err := store.Save(job); err != nil {
 		t.Fatal(err)
 	}
+	wtPath := WorktreePath(dir, job.ID)
 	Execute(context.Background(), Deps{
 		Store: store, Grok: grok, Create: create, Git: git,
 		Timeout: 30 * time.Second,
-	}, job, filepath.Join(dir, "repo"))
+		DataDir: dir,
+		AddWT: func(ctx context.Context, repo, path, sha string) error {
+			addCalled = true
+			if repo != repoDir || path != wtPath || sha != full {
+				t.Fatalf("AddWT repo=%q path=%q sha=%q", repo, path, sha)
+			}
+			return nil
+		},
+		RemoveWT: func(ctx context.Context, repo, path string) error {
+			removeCalled = true
+			if path != wtPath {
+				t.Fatalf("RemoveWT path=%q", path)
+			}
+			return nil
+		},
+	}, job, repoDir)
+
+	if !addCalled || !removeCalled {
+		t.Fatalf("worktree lifecycle add=%v remove=%v", addCalled, removeCalled)
+	}
+	if sawCwd != wtPath {
+		t.Fatalf("grok cwd=%q want worktree %q", sawCwd, wtPath)
+	}
 
 	got, err := store.Get(job.ID)
 	if err != nil {
@@ -118,7 +145,9 @@ func TestExecuteParseFail(t *testing.T) {
 	Execute(context.Background(), Deps{
 		Store: store,
 		Git:   git,
-		Grok:  func(ctx context.Context, opt grokrun.Options) grokrun.Result { return grokrun.Result{Code: 0, Text: "not json"} },
+		Grok: func(ctx context.Context, opt grokrun.Options) grokrun.Result {
+			return grokrun.Result{Code: 0, Text: "not json"}
+		},
 		Create: func(ctx context.Context, repoDir, owner, repo string, opts ghpr.CreateIssueOpts) (int, string, error) {
 			t.Fatal("should not create")
 			return 0, "", nil

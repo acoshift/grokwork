@@ -3,10 +3,13 @@ package commitreview
 import (
 	"context"
 	"fmt"
+	"log"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/grokrun"
 )
 
@@ -15,6 +18,12 @@ type GrokRunner func(ctx context.Context, opt grokrun.Options) grokrun.Result
 
 // IssueCreator abstracts ghpr.CreateIssueWith for tests.
 type IssueCreator func(ctx context.Context, repoDir, owner, repo string, opts ghpr.CreateIssueOpts) (number int, url string, err error)
+
+// WorktreeAdder creates a detached worktree at sha (tests can stub).
+type WorktreeAdder func(ctx context.Context, repo, path, sha string) error
+
+// WorktreeRemover removes a worktree path (tests can stub).
+type WorktreeRemover func(ctx context.Context, repo, path string) error
 
 // Read-only tool allowlist for review: gather context without shell or edits.
 // MCP meta-tools are denied separately via ExtraArgs.
@@ -28,14 +37,29 @@ const DefaultTimeout = 12 * time.Minute
 
 // Deps wires external systems for Run.
 type Deps struct {
-	Store     *Store
-	Grok      GrokRunner
-	Create    IssueCreator
-	Git       ghpr.Runner
-	GrokBin   string
-	Model     string
-	Timeout   time.Duration
-	MaxTurns  int
+	Store    *Store
+	Grok     GrokRunner
+	Create   IssueCreator
+	Git      ghpr.Runner
+	GrokBin  string
+	Model    string
+	Timeout  time.Duration
+	MaxTurns int
+	// DataDir roots ephemeral review worktrees under data/commit-reviews/worktrees/.
+	// Empty skips worktree isolation (tests / fallback) and runs tools in main cwd.
+	DataDir  string
+	AddWT    WorktreeAdder
+	RemoveWT WorktreeRemover
+}
+
+// WorktreePath returns the ephemeral detached checkout path for a review job.
+func WorktreePath(dataDir, jobID string) string {
+	jobID = strings.TrimSpace(jobID)
+	if jobID == "" {
+		jobID = "unknown"
+	}
+	// Keep path segments simple (job ids are hex).
+	return filepath.Join(dataDir, "commit-reviews", "worktrees", jobID)
 }
 
 // StartOpts is input for starting a review job (async caller sets StatusQueued then calls Execute).
@@ -52,6 +76,9 @@ type StartOpts struct {
 
 // Execute runs review + issue create for an existing job (status queued).
 // It updates the store as it progresses. Safe to call from a goroutine.
+//
+// When DataDir is set, creates a detached worktree at the commit SHA so read-only
+// tools see that commit's tree (not whatever HEAD is on the main checkout).
 func Execute(ctx context.Context, deps Deps, job *Job, cwd string) {
 	if job == nil || deps.Store == nil {
 		return
@@ -62,6 +89,14 @@ func Execute(ctx context.Context, deps Deps, job *Job, cwd string) {
 	if deps.Create == nil {
 		deps.Create = func(ctx context.Context, repoDir, owner, repo string, opts ghpr.CreateIssueOpts) (int, string, error) {
 			return ghpr.CreateIssueWith(ctx, deps.Git, repoDir, owner, repo, opts)
+		}
+	}
+	if deps.AddWT == nil {
+		deps.AddWT = gitworktree.AddDetached
+	}
+	if deps.RemoveWT == nil {
+		deps.RemoveWT = func(ctx context.Context, repo, path string) error {
+			return gitworktree.Remove(ctx, repo, path, "")
 		}
 	}
 	if deps.Timeout <= 0 {
@@ -85,12 +120,29 @@ func Execute(ctx context.Context, deps Deps, job *Job, cwd string) {
 	job.Subject = detail.Subject
 	_ = deps.Store.Save(job)
 
+	// Main checkout for git metadata / gh; reviewCwd is the tool root.
+	reviewCwd := cwd
+	var wtPath string
+	if strings.TrimSpace(deps.DataDir) != "" {
+		wtPath = WorktreePath(deps.DataDir, job.ID)
+		if err := deps.AddWT(ctx, cwd, wtPath, job.SHA); err != nil {
+			fail(deps.Store, job, fmt.Errorf("review worktree: %w", err))
+			return
+		}
+		reviewCwd = wtPath
+		defer func() {
+			if err := deps.RemoveWT(context.Background(), cwd, wtPath); err != nil {
+				log.Printf("commitreview: remove worktree %s: %v", wtPath, err)
+			}
+		}()
+	}
+
 	prompt := BuildPrompt(detail, MaxFindings)
 	tools := ReviewTools
 	res := deps.Grok(ctx, grokrun.Options{
 		GrokBin:          deps.GrokBin,
 		Prompt:           prompt,
-		Cwd:              cwd,
+		Cwd:              reviewCwd,
 		Yolo:             false,
 		Model:            deps.Model,
 		MaxTurns:         deps.MaxTurns,
@@ -138,6 +190,7 @@ func Execute(ctx context.Context, deps Deps, job *Job, cwd string) {
 		title := IssueTitle(job.ShortSHA, f.Title)
 		body := IssueBody(job, *f)
 		labels := DefaultLabels(f.Severity, f.Labels)
+		// File issues from the main checkout (remote auth / gh config).
 		n, url, cerr := deps.Create(ctx, cwd, job.Owner, job.Repo, ghpr.CreateIssueOpts{
 			Title:  title,
 			Body:   body,

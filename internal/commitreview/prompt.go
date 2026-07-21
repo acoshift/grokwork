@@ -46,10 +46,11 @@ Primary evidence is the commit metadata and patch below. Look for:
 - broken contracts / API misuse
 - data loss or concurrency hazards
 
-You may use read-only tools (read_file, grep, list_dir) sparingly to pull surrounding
-context when the patch alone is not enough — e.g. call sites, interfaces, similar
-providers, existing tests, or symbols referenced but not fully shown. Prefer the
-patch first; do not roam the repo broadly.
+Your working directory is a detached checkout of THIS commit (tree as of the SHA
+below). You may use read-only tools (read_file, grep, list_dir) sparingly to pull
+surrounding context when the patch alone is not enough — e.g. call sites,
+interfaces, similar providers, existing tests, or symbols referenced but not
+fully shown. Prefer the patch first; do not roam the repo broadly.
 
 Do NOT bikeshed style, naming, or formatting unless it causes a real defect.
 Do NOT invent files or lines you did not see in the patch or tool results.

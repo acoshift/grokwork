@@ -339,6 +339,7 @@ func (s *Server) postCommitReview(ctx *hime.Context) error {
 			Git:     s.ghRun(),
 			GrokBin: s.cfg.GrokBin,
 			Model:   s.cfg.Model,
+			DataDir: s.cfg.DataDir,
 		}, job, cwd)
 		// Audit issue creates after job finishes.
 		if j, err := store.Get(job.ID); err == nil && s.audit != nil {
