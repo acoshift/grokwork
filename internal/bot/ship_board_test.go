@@ -153,3 +153,32 @@ func TestChecksLookFailing(t *testing.T) {
 		t.Fatal("empty not failing")
 	}
 }
+
+func TestSortShipRowsStableAcrossUpdatedAt(t *testing.T) {
+	// Same attention rank, different session activity — order must not follow UpdatedAt.
+	rows := []ShipPRRow{
+		{ThreadID: "t-new", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 10, State: "OPEN", RawState: "OPEN", UpdatedAt: "2026-07-21T12:00:00Z"},
+		{ThreadID: "t-old", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 20, State: "OPEN", RawState: "OPEN", UpdatedAt: "2026-07-01T00:00:00Z"},
+		{ThreadID: "t-fail", Project: "beta", GHOwner: "acme", GHRepo: "api", Number: 3, State: "OPEN", RawState: "OPEN", ChecksFailing: true, UpdatedAt: "2026-07-10T00:00:00Z"},
+		{ThreadID: "t-merge", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 5, State: "MERGED", RawState: "MERGED", UpdatedAt: "2026-07-20T00:00:00Z"},
+		{ThreadID: "t-draft", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 15, State: "DRAFT", RawState: "OPEN", UpdatedAt: "2026-07-19T00:00:00Z"},
+	}
+	// Shuffle input order; result must be deterministic.
+	for i := 0; i < 3; i++ {
+		in := append([]ShipPRRow(nil), rows...)
+		if i == 1 {
+			in[0], in[3] = in[3], in[0]
+		}
+		if i == 2 {
+			in[1], in[2] = in[2], in[1]
+		}
+		sortShipRows(in)
+		// Fail first, then open by project/repo/#desc, then draft, then merged.
+		want := []string{"t-fail", "t-old", "t-new", "t-draft", "t-merge"}
+		for j, id := range want {
+			if in[j].ThreadID != id {
+				t.Fatalf("pass %d pos %d: got %q want %q (rows=%+v)", i, j, in[j].ThreadID, id, in)
+			}
+		}
+	}
+}

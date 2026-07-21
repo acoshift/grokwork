@@ -232,26 +232,26 @@ func sortShipRows(rows []ShipPRRow) {
 		}
 		return 11
 	}
-	slices.SortFunc(rows, func(a, b ShipPRRow) int {
-		ra, rb := rank(a), rank(b)
-		if ra != rb {
+	// Stable keys only — do not sort by session UpdatedAt. The PR poller
+	// patches every open session each cycle, so UpdatedAt thrashing made
+	// the table reshuffle on every SSE reload.
+	slices.SortStableFunc(rows, func(a, b ShipPRRow) int {
+		if ra, rb := rank(a), rank(b); ra != rb {
 			return ra - rb
 		}
-		// Newest session activity first within a bucket.
-		switch {
-		case a.UpdatedAt == b.UpdatedAt:
-			if a.ThreadID != b.ThreadID {
-				return strings.Compare(a.ThreadID, b.ThreadID)
-			}
-			return a.Number - b.Number
-		case a.UpdatedAt == "":
-			return 1
-		case b.UpdatedAt == "":
-			return -1
-		case a.UpdatedAt > b.UpdatedAt:
-			return -1
-		default:
-			return 1
+		if c := strings.Compare(strings.ToLower(a.Project), strings.ToLower(b.Project)); c != 0 {
+			return c
 		}
+		if c := strings.Compare(strings.ToLower(a.GHOwner), strings.ToLower(b.GHOwner)); c != 0 {
+			return c
+		}
+		if c := strings.Compare(strings.ToLower(a.GHRepo), strings.ToLower(b.GHRepo)); c != 0 {
+			return c
+		}
+		// Higher PR number first within a repo (usually newer).
+		if a.Number != b.Number {
+			return b.Number - a.Number
+		}
+		return strings.Compare(a.ThreadID, b.ThreadID)
 	})
 }
