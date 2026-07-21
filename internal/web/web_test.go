@@ -163,10 +163,17 @@ func TestPagesRender(t *testing.T) {
 				`data-scope=`,
 				`hx-swap="outerHTML show:none focus-scroll:false"`,
 				`hx-inherit="*"`,
-				// Config is set from htmx script onload (inline defer is a no-op without src).
-				`disableInheritance=true`,
-				`scrollIntoViewOnBoost=false`,
+				// disableInheritance must be set before processNode (meta) and
+				// again on script onload (belt-and-suspenders). Without it,
+				// live-region hx-target/hx-select nest a full page on boost.
+				`name="htmx-config"`,
+				`disableInheritance`,
+				`scrollIntoViewOnBoost`,
 				`onload=`,
+				// Runtime guards if inheritance still leaks onto child links.
+				`htmx:beforeSwap`,
+				`selectOverride`,
+				`querySelectorAll("#side-nav")`,
 				`boostScrollByPath`,
 				// Mid-session SSE reconnect catch-up (rev compare → partial refresh).
 				`lastLiveRevs`,

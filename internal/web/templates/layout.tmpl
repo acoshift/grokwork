@@ -17,11 +17,12 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/static/favicon-32.png" type="image/png" sizes="32x32">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180">
-  {{/* defer is ignored on inline scripts (no src), so config must run from
-       htmx's onload — otherwise disableInheritance never applies, live-region
-       hx-target/hx-select poison child links, and boosted history rows nest a
-       full page (double navbar). scrollIntoViewOnBoost: boost forces show:top
-       even with show:none. */}}
+  {{/* htmx-config meta is merged synchronously at init (before processNode).
+       Required so disableInheritance is on before any click: live-region
+       hx-target/hx-select must not poison child links, or boosted nav nests a
+       full page (double navbar). onload is a belt-and-suspenders copy for the
+       same flags. scrollIntoViewOnBoost: boost forces show:top even with show:none. */}}
+  <meta name="htmx-config" content='{"disableInheritance":true,"scrollIntoViewOnBoost":false}'>
   <script src="/static/htmx.min.js" defer
           onload="htmx.config.disableInheritance=true;htmx.config.scrollIntoViewOnBoost=false;"></script>
   <script src="/static/sse.js" defer></script>
@@ -1812,7 +1813,31 @@
     document.body.addEventListener("htmx:sseError", function () {
       setStatus("reconnecting…", "err");
     });
+
+    // Boosted navigation must swap #live-root only. If live-region attrs leaked
+    // onto a child link (disableInheritance not applied), htmx would target the
+    // region with no select and nest a full layout — double sidebar/navbar.
+    // Force shell swap when the response is a full document.
+    document.body.addEventListener("htmx:beforeSwap", function (e) {
+      var d = e.detail;
+      if (!d || !d.boosted) return;
+      var html = d.serverResponse || "";
+      if (html.indexOf('id="live-root"') === -1) return;
+      var root = document.getElementById("live-root");
+      if (!root) return;
+      d.target = root;
+      d.selectOverride = "#live-root";
+      d.swapOverride = "outerHTML show:none focus-scroll:false";
+    });
+
     document.body.addEventListener("htmx:afterSwap", function (e) {
+      // Invariant: one shell chrome. Nested full-page swaps leave a second
+      // #side-nav inside main; recover with a hard reload.
+      if (document.querySelectorAll("#side-nav").length > 1 ||
+          document.querySelectorAll("aside.side").length > 1) {
+        location.reload();
+        return;
+      }
       var elt = e.detail && e.detail.elt;
       if (elt && elt.classList && elt.classList.contains("live-region")) {
         // Desktop shows the clock; mobile setStatus strips it to "live".
