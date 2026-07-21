@@ -66,6 +66,27 @@
     cursor: inherit;
   }
 </style>
+{{end}}
+{{if not .RepoCatalog}}
+<p class="sub">No repos in catalog. Set <span class="mono">projects.{{.Project}}.github.repos</span> on Config, or ensure git remotes exist.</p>
+{{end}}
+
+{{/* Shell paints immediately; table loads via partial so enter is not blocked on gh. */}}
+{{if and .ActiveOwner .ActiveRepo}}
+<div class="live-region"
+     id="live-issues-table"
+     hx-get="{{route "partial.issues.table"}}?project={{urlquery .Project}}&amp;owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;state={{urlquery .IssueState}}"
+     hx-trigger="load"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML"
+     hx-sync="this:queue last">
+  <div class="section"><div class="empty muted">Loading issues…</div></div>
+</div>
+{{else}}
+<div class="section"><div class="empty">No issues loaded.</div></div>
+{{end}}
+{{if .CanStartSession}}
 <script>
 (function(){
   var btn=document.getElementById('btn-issues-fix');
@@ -147,6 +168,8 @@
     btn.disabled=!bulkForm();
   }
 
+  // Bind to shell nodes (toolbar + live region), not document — hx-boost
+  // removes this content; document listeners would otherwise stack/zombie.
   btn.addEventListener('click', function(e){
     if(!mode){
       e.preventDefault();
@@ -154,56 +177,37 @@
       setMode(true);
     }
   });
-  document.addEventListener('change', function(e){
-    if(!mode) return;
-    var f=bulkForm();
-    if(!f || !f.contains(e.target)) return;
-    updateConfirm();
-  });
-  document.addEventListener('click', function(e){
-    if(!mode) return;
-    if(e.target.closest('#issues-toolbar')) return;
-    var f=bulkForm();
-    if(!f) return;
-    var tr=e.target.closest('tbody tr');
-    if(!tr || !f.contains(tr)) return;
-    if(e.target.closest('input[name="numbers"]') || e.target.closest('label.check')) return;
-    e.preventDefault();
-    var box=tr.querySelector('input[name="numbers"]');
-    if(!box || box.disabled) return;
-    box.checked=!box.checked;
-    updateConfirm();
-  });
   if(cancel) cancel.addEventListener('click', function(){ setMode(false); });
 
-  document.body.addEventListener('htmx:afterSwap', function(e){
-    if(e.target && e.target.id==='live-issues-table'){
+  var region=document.getElementById('live-issues-table');
+  if(region){
+    region.addEventListener('change', function(e){
+      if(!mode) return;
+      var f=bulkForm();
+      if(!f || !f.contains(e.target)) return;
+      updateConfirm();
+    });
+    region.addEventListener('click', function(e){
+      if(!mode) return;
+      var f=bulkForm();
+      if(!f) return;
+      var tr=e.target.closest('tbody tr');
+      if(!tr || !f.contains(tr)) return;
+      if(e.target.closest('input[name="numbers"]') || e.target.closest('label.check')) return;
+      e.preventDefault();
+      var box=tr.querySelector('input[name="numbers"]');
+      if(!box || box.disabled) return;
+      box.checked=!box.checked;
+      updateConfirm();
+    });
+    region.addEventListener('htmx:afterSwap', function(){
       if(mode) setMode(false);
       else syncFixEnabled();
-    }
-  });
+    });
+  }
   syncFixEnabled();
 })();
 </script>
-{{end}}
-{{if not .RepoCatalog}}
-<p class="sub">No repos in catalog. Set <span class="mono">projects.{{.Project}}.github.repos</span> on Config, or ensure git remotes exist.</p>
-{{end}}
-
-{{/* Shell paints immediately; table loads via partial so enter is not blocked on gh. */}}
-{{if and .ActiveOwner .ActiveRepo}}
-<div class="live-region"
-     id="live-issues-table"
-     hx-get="{{route "partial.issues.table"}}?project={{urlquery .Project}}&amp;owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;state={{urlquery .IssueState}}"
-     hx-trigger="load"
-     hx-target="this"
-     hx-select="unset"
-     hx-swap="innerHTML"
-     hx-sync="this:queue last">
-  <div class="section"><div class="empty muted">Loading issues…</div></div>
-</div>
-{{else}}
-<div class="section"><div class="empty">No issues loaded.</div></div>
 {{end}}
 {{end}}
 
