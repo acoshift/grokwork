@@ -201,6 +201,7 @@ func TestPagesRender(t *testing.T) {
 			{"/partials/ship/table", "Pull requests", "ship"},
 			{"/partials/history/table", "thread-99", "history"},
 			{"/partials/history/turns/thread-99", `id="turns"`, "history"},
+			{"/partials/sessions/thread-99", `id="turns"`, "dashboard"},
 			{"/partials/worktrees/table", "All worktrees", "worktrees"},
 			{"/partials/issues/table?project=proj&owner=acme&repo=app", "No issues loaded", ""},
 			{"/partials/config/lists", "Projects", "config"},
@@ -244,6 +245,7 @@ func TestPagesRender(t *testing.T) {
 			{"/ship", []string{`hx-trigger="sse:ship"`}},
 			{"/history", []string{`hx-trigger="sse:history"`}},
 			{"/history/thread-99", []string{`hx-trigger="sse:history"`}},
+			{"/sessions/thread-99", []string{`hx-trigger="sse:dashboard, sse:history"`, `/partials/sessions/thread-99`}},
 			{"/worktrees", []string{`hx-trigger="sse:worktrees"`}},
 			{"/config", []string{`hx-trigger="sse:config"`}},
 		}
@@ -455,6 +457,9 @@ func TestSessionsHub(t *testing.T) {
 	detail := w.Body.String()
 	for _, want := range []string{
 		`id="page-session"`,
+		`id="live-session"`,
+		`hx-trigger="sse:dashboard, sse:history"`,
+		`/partials/sessions/thread-99`,
 		"thread-99",
 		"Grok Work",
 		`href="/projects/proj/sessions">← Sessions</a>`,
@@ -466,6 +471,58 @@ func TestSessionsHub(t *testing.T) {
 	}
 	if strings.Contains(detail, "Grok Discord") {
 		t.Fatal("legacy brand on session detail")
+	}
+}
+
+func TestSessionDetailStreamsLiveTurn(t *testing.T) {
+	srv, _, _ := testServer(t)
+	h := srv.Handler()
+
+	if err := bot.SeedActiveRunForTest(srv.bot, "thread-99", "proj",
+		"please stream this turn", "Here is the live reply so far…"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { bot.FinishRunForTest(srv.bot, "thread-99") })
+
+	// Full page
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="turn-live"`,
+		`badge live">streaming`,
+		"please stream this turn",
+		"Here is the live reply so far…",
+		`id="live-stream-body"`,
+		"editing files",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("session page missing %q", want)
+		}
+	}
+
+	// SSE partial
+	req = httptest.NewRequest(http.MethodGet, "/partials/sessions/thread-99", nil)
+	req.Header.Set("HX-Request", "true")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("partial status=%d", w.Code)
+	}
+	partial := w.Body.String()
+	if !strings.Contains(partial, "Here is the live reply so far…") {
+		t.Fatal("partial missing live text")
+	}
+	if strings.Contains(partial, "<nav") || strings.Contains(partial, "sse-status") {
+		t.Fatal("partial leaked layout chrome")
+	}
+	// Continue form must stay on the full page only (outside live-region).
+	if strings.Contains(partial, "session-continue-form") {
+		t.Fatal("continue form must not be in live partial")
 	}
 }
 

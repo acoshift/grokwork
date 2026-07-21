@@ -43,6 +43,20 @@ func hashFingerprint(parts ...string) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
+// liveTextFingerprint is a compact rev input for streaming assistant text.
+func liveTextFingerprint(text string) string {
+	n := len(text)
+	if n == 0 {
+		return "0"
+	}
+	// Tail sample catches appends even when length is briefly stable across encodings.
+	start := n - 64
+	if start < 0 {
+		start = 0
+	}
+	return fmt.Sprintf("%d:%s", n, hashFingerprint(text[start:]))
+}
+
 func (s *Server) computeLiveRevs() liveRevs {
 	return liveRevs{
 		Dashboard: s.fpDashboard(),
@@ -61,7 +75,11 @@ func (s *Server) fpDashboard() string {
 		snap.ProjectCount, snap.EmptyMemberProjects)
 	for _, r := range snap.ActiveRuns {
 		// Elapsed is recomputed each snapshot — include it so the UI ticks while runs are active.
-		fmt.Fprintf(&b, "%s|%s|%s|%d\n", r.ThreadID, r.Project, r.Elapsed, r.QueueLen)
+		// LiveText/activity drive session-detail streaming; fingerprint length + a short tail hash
+		// so the domain rev moves as the reply grows without hashing multi-100k bodies.
+		liveFP := liveTextFingerprint(r.LiveText)
+		fmt.Fprintf(&b, "%s|%s|%s|%d|%s|%s|%s\n",
+			r.ThreadID, r.Project, r.Elapsed, r.QueueLen, r.Activity, r.Phases, liveFP)
 	}
 	return hashFingerprint(b.String())
 }

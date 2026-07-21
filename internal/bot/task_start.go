@@ -245,6 +245,49 @@ func (b *Bot) publishRunActivity(threadID string, activity, phases string) {
 	st.job.mu.Unlock()
 }
 
+// publishRunPrompt stores the user-facing prompt for the in-flight turn (web session view).
+func (b *Bot) publishRunPrompt(threadID, prompt string) {
+	if b == nil || threadID == "" {
+		return
+	}
+	v, ok := b.states.Load(threadID)
+	if !ok {
+		return
+	}
+	st := v.(*threadState)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.job == nil {
+		return
+	}
+	st.job.mu.Lock()
+	st.job.prompt = prompt
+	st.job.mu.Unlock()
+}
+
+// publishRunLiveText stores the accumulating assistant reply for web session streaming.
+// Hot path (every text delta): release st.mu before writing job fields so StatusSnapshot
+// and queue ops are not serialized behind stream updates.
+func (b *Bot) publishRunLiveText(threadID, text string) {
+	if b == nil || threadID == "" {
+		return
+	}
+	v, ok := b.states.Load(threadID)
+	if !ok {
+		return
+	}
+	st := v.(*threadState)
+	st.mu.Lock()
+	job := st.job
+	st.mu.Unlock()
+	if job == nil {
+		return
+	}
+	job.mu.Lock()
+	job.liveText = text
+	job.mu.Unlock()
+}
+
 func (b *Bot) clearRunActivity(threadID string) {
 	if b == nil || threadID == "" {
 		return
@@ -262,6 +305,8 @@ func (b *Bot) clearRunActivity(threadID string) {
 	st.job.mu.Lock()
 	st.job.activity = ""
 	st.job.phases = ""
+	st.job.prompt = ""
+	st.job.liveText = ""
 	st.job.mu.Unlock()
 }
 

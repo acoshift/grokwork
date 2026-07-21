@@ -563,10 +563,9 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 	if threadID == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
 	}
-	d := s.basePage(ctx)
+	d := s.sessionPageData(ctx, threadID)
 	d.Title = "Session · " + threadID
 	d.IsSessions = true
-	d.ThreadID = threadID
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e
@@ -577,7 +576,21 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 		}
 		d.Flash += "Discord offline — run continues; no live thread updates"
 	}
+	return s.viewPage(ctx, "session", d)
+}
 
+// partialSession streams work-unit status + turns (including the in-flight reply).
+func (s *Server) partialSession(ctx *hime.Context) error {
+	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
+	if threadID == "" {
+		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
+	}
+	return s.viewFragment(ctx, "session", "session_live", s.sessionPageData(ctx, threadID))
+}
+
+func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
+	d := s.basePage(ctx)
+	d.ThreadID = threadID
 	if ent, ok := s.sessions.Get(threadID); ok {
 		d.SessionEntry = ent
 		d.Project = ent.Project
@@ -588,7 +601,7 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 		cwd, _ := s.resolveSessionDiffCwd(ent, threadID)
 		d.HasWorktree = cwd != ""
 	}
-	// Live run chips from bot snapshot
+	// Live run chips + streaming reply from bot snapshot.
 	if s.bot != nil {
 		snap := s.bot.StatusSnapshot()
 		for _, r := range snap.ActiveRuns {
@@ -598,6 +611,8 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 				d.RunElapsed = r.Elapsed
 				d.RunBusy = true
 				d.RunQueue = r.QueueLen
+				d.RunPrompt = r.Prompt
+				d.RunLiveText = r.LiveText
 				break
 			}
 		}
@@ -619,7 +634,7 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 	if d.NavProject != "" {
 		d.Project = d.NavProject
 	}
-	return s.viewPage(ctx, "session", d)
+	return d
 }
 
 // attachFixPicker populates pageData.FixHits when detail is shown with ?picker=1.

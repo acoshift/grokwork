@@ -66,6 +66,32 @@ func SetThreadAPIForTest(b *Bot, api threadAPI) {
 	b.threadAPI = api
 }
 
+// SeedActiveRunForTest claims an active job and publishes prompt/live stream fields
+// for web session-detail streaming tests.
+func SeedActiveRunForTest(b *Bot, threadID, project, prompt, liveText string) error {
+	if b == nil {
+		return fmt.Errorf("nil bot")
+	}
+	job := &runJob{cancel: func() {}, start: time.Now(), project: project}
+	claimed, _, err := b.claimOrEnqueue(threadID, job, taskItem{threadID: threadID})
+	if err != nil || !claimed {
+		return fmt.Errorf("claim: claimed=%v err=%v", claimed, err)
+	}
+	b.publishRunPrompt(threadID, prompt)
+	b.publishRunLiveText(threadID, liveText)
+	b.publishRunActivity(threadID, "editing files", "✓read · **edit**")
+	return nil
+}
+
+// FinishRunForTest clears the active job for a thread (test cleanup).
+func FinishRunForTest(b *Bot, threadID string) {
+	if b == nil {
+		return
+	}
+	b.clearQueue(threadID)
+	b.finishRun(threadID)
+}
+
 // FillQueueForTest holds an active job and fills the follow-up queue to capacity.
 func FillQueueForTest(b *Bot, threadID, project string) error {
 	if b == nil {

@@ -14,6 +14,35 @@
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
+{{/* Live work-unit + turns: dashboard ticks while a run is active (elapsed + stream text);
+     history fires when a turn is sealed into the log. Continue form stays outside so SSE
+     swaps do not wipe in-progress prompt text. */}}
+<div class="live-region"
+     id="live-session"
+     hx-get="/partials/sessions/{{.ThreadID}}{{if .NavProject}}?project={{urlquery .NavProject}}{{else if .Project}}?project={{urlquery .Project}}{{end}}"
+     hx-trigger="sse:dashboard, sse:history"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML"
+     hx-sync="this:queue last">
+  {{template "session_live" .}}
+</div>
+
+{{if .CanStartSession}}
+<div class="section card" id="session-continue-form">
+  <h2>Continue with Grok</h2>
+  <p class="sub">Queue a follow-up on this work unit only (does not create a new Discord thread).</p>
+  <form method="post" action="/sessions/{{.ThreadID}}/continue">
+    {{template "csrf" $}}
+    <label for="continue-prompt">Prompt</label>
+    <textarea id="continue-prompt" name="prompt" rows="4" required placeholder="What should Grok do next?"></textarea>
+    <div class="form-actions"><button type="submit" id="btn-continue">Continue</button></div>
+  </form>
+</div>
+{{end}}
+{{end}}
+
+{{define "session_live"}}
 <div class="section card">
   <h2>Work unit</h2>
   <p class="sub" style="margin:0">
@@ -42,22 +71,10 @@
   {{end}}
 </div>
 
-{{if .CanStartSession}}
-<div class="section card" id="session-continue-form">
-  <h2>Continue with Grok</h2>
-  <p class="sub">Queue a follow-up on this work unit only (does not create a new Discord thread).</p>
-  <form method="post" action="/sessions/{{.ThreadID}}/continue">
-    {{template "csrf" $}}
-    <label for="continue-prompt">Prompt</label>
-    <textarea id="continue-prompt" name="prompt" rows="4" required placeholder="What should Grok do next?"></textarea>
-    <div class="form-actions"><button type="submit" id="btn-continue">Continue</button></div>
-  </form>
-</div>
-{{end}}
-
 <div class="section">
-  <h2>Turns <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Thread.Turns}})</span></h2>
-  {{if .Thread.Turns}}
+  {{$done := len .Thread.Turns}}
+  <h2>Turns <span class="muted" style="font-weight:500;font-size:0.9rem">({{if .RunBusy}}{{add $done 1}}{{else}}{{$done}}{{end}})</span></h2>
+  {{if or .Thread.Turns .RunBusy}}
   <div class="turns" id="turns">
     {{range $i, $t := .Thread.Turns}}
     <article class="turn">
@@ -80,9 +97,32 @@
       </div>
     </article>
     {{end}}
+    {{if .RunBusy}}
+    <article class="turn turn-live" id="turn-live">
+      <header class="turn-meta">
+        <span class="mono muted">#{{add $done 1}}</span>
+        <span class="badge live">streaming</span>
+        {{if .RunElapsed}}<span class="mono muted">{{.RunElapsed}}</span>{{end}}
+      </header>
+      {{if .RunPrompt}}
+      <div class="bubble user">
+        <div class="bubble-label">User</div>
+        <pre class="bubble-body">{{.RunPrompt}}</pre>
+      </div>
+      {{end}}
+      <div class="bubble assistant">
+        <div class="bubble-label">Grok <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">(live)</span></div>
+        {{if .RunLiveText}}
+        <pre class="bubble-body bubble-stream" id="live-stream-body">{{.RunLiveText}}</pre>
+        {{else}}
+        <pre class="bubble-body muted bubble-stream" id="live-stream-body">_(streaming…)_</pre>
+        {{end}}
+      </div>
+    </article>
+    {{end}}
   </div>
   {{else}}
-  <div class="empty">No turns yet. If a run just started, refresh after it finishes.</div>
+  <div class="empty">No turns yet. If a run just started, the live reply will appear here.</div>
   {{end}}
 </div>
 {{end}}

@@ -32,10 +32,14 @@ type runJob struct {
 	cancel  context.CancelFunc
 	start   time.Time
 	project string
-	// Live phase/activity for web StatusSnapshot (updated by progressLoop).
+	// Live phase/activity/stream for web StatusSnapshot (progressLoop + OnTextDelta).
 	mu       sync.Mutex
 	activity string
 	phases   string
+	// prompt is the user-facing turn prompt (not the remote-work prefix).
+	prompt string
+	// liveText is the accumulating assistant reply while the run is in flight.
+	liveText string
 }
 
 type taskItem struct {
@@ -108,7 +112,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) 
 	return b
 }
 
-// ActiveRun is a thread currently running a Grok job (dashboard).
+// ActiveRun is a thread currently running a Grok job (dashboard / session detail).
 type ActiveRun struct {
 	ThreadID string    `json:"threadId"`
 	Project  string    `json:"project"`
@@ -117,6 +121,10 @@ type ActiveRun struct {
 	QueueLen int       `json:"queueLen"`
 	Activity string    `json:"activity,omitempty"`
 	Phases   string    `json:"phases,omitempty"`
+	// Prompt and LiveText power the session-detail streaming turn (like Discord).
+	// Omitted from SSE JSON (can be large); web session handlers read them in-process.
+	Prompt   string `json:"-"`
+	LiveText string `json:"-"`
 }
 
 // StatusSnapshot is a point-in-time view of bot activity for the web dashboard/SSE.
@@ -157,6 +165,7 @@ func (b *Bot) StatusSnapshot() StatusSnapshot {
 		}
 		job.mu.Lock()
 		activity, phases := job.activity, job.phases
+		prompt, liveText := job.prompt, job.liveText
 		job.mu.Unlock()
 		snap.ActiveRuns = append(snap.ActiveRuns, ActiveRun{
 			ThreadID: threadID,
@@ -166,6 +175,8 @@ func (b *Bot) StatusSnapshot() StatusSnapshot {
 			QueueLen: qlen,
 			Activity: activity,
 			Phases:   phases,
+			Prompt:   prompt,
+			LiveText: liveText,
 		})
 		snap.QueuedTotal += qlen
 		return true
@@ -1080,6 +1091,8 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	} else {
 		streamer = newStreamPosterWith(noopMessenger{}, threadID)
 	}
+	// Seed web session-detail "current turn" before the first delta.
+	b.publishRunPrompt(threadID, parsed.Prompt)
 
 	stopProgress := make(chan struct{})
 	var progressWG sync.WaitGroup
@@ -1253,6 +1266,8 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		ExtraArgs:       b.cfg.ExtraArgs,
 		OnTextDelta: func(delta string) {
 			streamer.OnDelta(delta)
+			// Mirror Discord's live message into StatusSnapshot for the web session page.
+			b.publishRunLiveText(threadID, streamer.Text())
 		},
 		OnThought: func(delta string) {
 			thoughts.OnDelta(delta)

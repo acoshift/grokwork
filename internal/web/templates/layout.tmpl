@@ -1246,6 +1246,13 @@
       border-color: var(--border-strong);
       border-left-color: var(--muted-soft);
     }
+    .turn-live .bubble.assistant .bubble-body {
+      border-left-color: var(--accent, hsl(var(--blue-500) / 70%));
+    }
+    .bubble-stream {
+      /* Prefer showing the latest streamed tail (Discord-style). */
+      scroll-behavior: auto;
+    }
 
     /* ── Diff review (commit / session / PR diffs) ───────────────────── */
     /* Index-only page; hunks stream per file. content-visibility keeps
@@ -1857,8 +1864,16 @@
       if (elt && elt.classList && elt.classList.contains("live-region")) {
         // Desktop shows the clock; mobile setStatus strips it to "live".
         setStatus("live · " + new Date().toLocaleTimeString(), "ok");
+        // Session live stream: keep the assistant bubble pinned to the latest tail.
+        var stream = elt.querySelector("#live-stream-body");
+        if (stream) stream.scrollTop = stream.scrollHeight;
       }
     });
+    // Full-page load of an in-flight session: same pin as afterSwap.
+    (function () {
+      var stream = document.getElementById("live-stream-body");
+      if (stream) stream.scrollTop = stream.scrollHeight;
+    })();
     document.body.addEventListener("htmx:responseError", function (e) {
       var elt = e.detail && e.detail.elt;
       if (elt && elt.classList && elt.classList.contains("live-region")) {

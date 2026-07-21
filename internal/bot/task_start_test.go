@@ -184,6 +184,8 @@ func TestPublishAndClearRunActivity(t *testing.T) {
 		t.Fatalf("claim: %v %v", claimed, err)
 	}
 	b.publishRunActivity("th-act", "editing foo.go", "✓read · **edit**")
+	b.publishRunPrompt("th-act", "fix the flaky test")
+	b.publishRunLiveText("th-act", "Looking at the race…")
 	snap := b.StatusSnapshot()
 	if snap.ActiveCount != 1 {
 		t.Fatalf("active=%d", snap.ActiveCount)
@@ -194,9 +196,16 @@ func TestPublishAndClearRunActivity(t *testing.T) {
 	if snap.ActiveRuns[0].Phases == "" {
 		t.Fatal("expected phases")
 	}
+	if snap.ActiveRuns[0].Prompt != "fix the flaky test" {
+		t.Fatalf("prompt=%q", snap.ActiveRuns[0].Prompt)
+	}
+	if snap.ActiveRuns[0].LiveText != "Looking at the race…" {
+		t.Fatalf("liveText=%q", snap.ActiveRuns[0].LiveText)
+	}
 	b.clearRunActivity("th-act")
 	snap = b.StatusSnapshot()
-	if snap.ActiveRuns[0].Activity != "" || snap.ActiveRuns[0].Phases != "" {
+	if snap.ActiveRuns[0].Activity != "" || snap.ActiveRuns[0].Phases != "" ||
+		snap.ActiveRuns[0].Prompt != "" || snap.ActiveRuns[0].LiveText != "" {
 		t.Fatalf("expected cleared: %+v", snap.ActiveRuns[0])
 	}
 	// finish

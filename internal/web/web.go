@@ -126,6 +126,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"partial.ship.table":      "/partials/ship/table",
 		"partial.history.table":   "/partials/history/table",
 		"partial.history.turns":   "/partials/history/turns/",
+		"partial.session":         "/partials/sessions/",
 		"partial.worktrees.table": "/partials/worktrees/table",
 		"partial.issues.table":    "/partials/issues/table",
 		"partial.config.lists":    "/partials/config/lists",
@@ -240,6 +241,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/ship/table", s.requireAuth(hime.Handler(s.partialShipTable)))
 	mux.Handle("GET /partials/history/table", s.requireAuth(hime.Handler(s.partialHistoryTable)))
 	mux.Handle("GET /partials/history/turns/{threadID}", s.requireAuth(hime.Handler(s.partialHistoryTurns)))
+	mux.Handle("GET /partials/sessions/{threadID}", s.requireAuth(hime.Handler(s.partialSession)))
 	mux.Handle("GET /partials/worktrees/table", s.requireAuth(hime.Handler(s.partialWorktreesTable)))
 	mux.Handle("GET /partials/issues/table", s.requireAuth(hime.Handler(s.partialIssuesTable)))
 	mux.Handle("GET /partials/config/lists", s.requireAdmin(hime.Handler(s.partialConfigLists)))
@@ -366,6 +368,9 @@ type pageData struct {
 	RunElapsed    string
 	RunBusy       bool
 	RunQueue      int
+	// In-flight turn (session detail streaming, mirrors Discord live message).
+	RunPrompt   string
+	RunLiveText string
 }
 
 func (s *Server) basePage(ctx *hime.Context) pageData {
