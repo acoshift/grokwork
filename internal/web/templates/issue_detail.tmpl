@@ -118,7 +118,14 @@
     <input type="hidden" name="repo" value="{{.ActiveRepo}}">
     <label for="issue-body">Comment</label>
     <textarea id="issue-body" name="body" rows="4" required placeholder="Write a comment…"></textarea>
-    <div class="form-actions"><button type="submit">Post comment</button></div>
+    <div class="form-actions">
+      <button type="submit">Post comment</button>
+      {{if eq .Issue.State "open" "OPEN"}}
+      <button type="submit" class="btn-danger" id="btn-issue-close"
+        formaction="/projects/{{.Project}}/issues/{{.Issue.Number}}/close"
+        onclick="return confirm('Post this comment and close the issue?');">Post comment &amp; close</button>
+      {{end}}
+    </div>
   </form>
 </div>
 {{end}}

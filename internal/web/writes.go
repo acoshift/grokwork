@@ -84,6 +84,33 @@ func (s *Server) postIssueComment(ctx *hime.Context) error {
 	return s.issueRedirect(ctx, project, owner, repo, n, "Comment posted", nil)
 }
 
+func (s *Server) postIssueClose(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	n, err := strconv.Atoi(strings.TrimSpace(ctx.PathValue("n")))
+	if err != nil || n <= 0 {
+		return ctx.Status(http.StatusBadRequest).Error("invalid issue number")
+	}
+	owner := strings.TrimSpace(ctx.PostFormValue("owner"))
+	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
+	body := ctx.PostFormValue("body")
+	if strings.TrimSpace(body) == "" {
+		return s.issueRedirect(ctx, project, owner, repo, n, "", fmt.Errorf("comment body required to close"))
+	}
+	project, ref, path, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	if err != nil {
+		return s.issueRedirect(ctx, project, owner, repo, n, "", err)
+	}
+	owner, repo = ref.Owner, ref.Repo
+	err = ghpr.CloseIssueWith(ctx.Context(), s.ghRun(), path, owner, repo, n, body)
+	s.auditAction(ctx, audit.ActionIssueClose, err, map[string]any{
+		"project": project, "owner": owner, "repo": repo, "number": n, "withComment": true,
+	})
+	if err != nil {
+		return s.issueRedirect(ctx, project, owner, repo, n, "", err)
+	}
+	return s.issueRedirect(ctx, project, owner, repo, n, "Issue closed", nil)
+}
+
 func (s *Server) postPRComment(ctx *hime.Context) error {
 	owner := strings.TrimSpace(ctx.PathValue("owner"))
 	repo := strings.TrimSpace(ctx.PathValue("repo"))

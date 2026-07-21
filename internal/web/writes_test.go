@@ -44,6 +44,14 @@ func writeEnabledServer(t *testing.T) (*Server, *config.Config, *[]string) {
 				}
 			}
 			return []byte("ok"), nil
+		case strings.Contains(joined, "issue close"):
+			return []byte("ok"), nil
+		case strings.Contains(joined, "issue view"):
+			return []byte(`{
+				"number":7,"url":"https://github.com/acme/app/issues/7","title":"Open bug",
+				"state":"OPEN","author":{"login":"alice"},"labels":[],
+				"body":"steps","comments":[]
+			}`), nil
 		case strings.Contains(joined, "pr comment"):
 			return []byte("ok"), nil
 		case strings.Contains(joined, "pr close"):
@@ -114,6 +122,24 @@ func TestMemberCommentAndClose(t *testing.T) {
 	if len(*calls) == 0 || !strings.Contains((*calls)[0], "issue comment") {
 		t.Fatalf("calls=%v", *calls)
 	}
+	// Issue close with comment
+	*calls = nil
+	form = url.Values{
+		"body": {"hello issue"}, "owner": {"acme"}, "repo": {"app"}, "csrf": {csrf},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/projects/proj/issues/7/close", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("issue close status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(*calls) != 2 ||
+		!strings.Contains((*calls)[0], "issue comment") ||
+		!strings.Contains((*calls)[1], "issue close") {
+		t.Fatalf("issue close calls=%v", *calls)
+	}
 	// PR close
 	form = url.Values{"project": {"proj"}, "csrf": {csrf}}
 	req = httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/close", strings.NewReader(form.Encode()))
@@ -129,17 +155,46 @@ func TestMemberCommentAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var sawComment, sawClose bool
+	var sawComment, sawIssueClose, sawPRClose bool
 	for _, ev := range evs {
 		if ev.Action == audit.ActionIssueComment && ev.OK && ev.Actor == "member-1" {
 			sawComment = true
 		}
+		if ev.Action == audit.ActionIssueClose && ev.OK && ev.Actor == "member-1" {
+			sawIssueClose = true
+		}
 		if ev.Action == audit.ActionPRClose && ev.OK {
-			sawClose = true
+			sawPRClose = true
 		}
 	}
-	if !sawComment || !sawClose {
+	if !sawComment || !sawIssueClose || !sawPRClose {
 		t.Fatalf("audit missing: %+v", evs)
+	}
+}
+
+func TestIssueCloseRequiresBody(t *testing.T) {
+	srv, _, calls := writeEnabledServer(t)
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{
+		"body": {"  "}, "owner": {"acme"}, "repo": {"app"}, "csrf": {csrf},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/projects/proj/issues/7/close", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "err=") {
+		t.Fatalf("Location=%q want err", loc)
+	}
+	if len(*calls) > 0 {
+		t.Fatalf("gh should not run: %v", *calls)
 	}
 }
 
@@ -308,6 +363,34 @@ func TestOffCatalogWriteRejected(t *testing.T) {
 	for _, c := range *calls {
 		if strings.Contains(c, "pr close") {
 			t.Fatalf("gh close called off-catalog: %s", c)
+		}
+	}
+}
+
+func TestIssueDetailShowsCommentAndClose(t *testing.T) {
+	srv, _, _ := writeEnabledServer(t)
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/issues/7?owner=acme&repo=app", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="issue-comment-form"`,
+		`id="btn-issue-close"`,
+		`formaction="/projects/proj/issues/7/close"`,
+		`confirm('Post this comment and close the issue?')`,
+		"Post comment",
+		"Post comment &amp; close",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in %s", want, body)
 		}
 	}
 }

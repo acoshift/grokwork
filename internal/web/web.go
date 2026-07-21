@@ -206,6 +206,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// GitHub writes (PR8–9): always registered; request-time feature + role gates.
 	mux.Handle("POST /projects/{project}/issues/{n}/comments",
 		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postIssueComment))))
+	mux.Handle("POST /projects/{project}/issues/{n}/close",
+		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postIssueClose))))
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/comments",
 		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postPRComment))))
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/close",

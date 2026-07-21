@@ -188,6 +188,33 @@ func CommentPRWith(ctx context.Context, run Runner, repoDir, owner, repo string,
 	return err
 }
 
+// CloseIssue closes a GitHub issue. If body is non-empty, posts it as a comment first.
+func CloseIssue(ctx context.Context, repoDir, owner, repo string, number int, body string) error {
+	return CloseIssueWith(ctx, defaultRunner, repoDir, owner, repo, number, body)
+}
+
+// CloseIssueWith is CloseIssue with an injectable runner.
+func CloseIssueWith(ctx context.Context, run Runner, repoDir, owner, repo string, number int, body string) error {
+	if run == nil {
+		run = defaultRunner
+	}
+	if number <= 0 {
+		return fmt.Errorf("invalid issue number")
+	}
+	body = strings.TrimSpace(body)
+	if body != "" {
+		if err := CommentIssueWith(ctx, run, repoDir, owner, repo, number, body); err != nil {
+			return err
+		}
+	}
+	args := []string{"issue", "close", strconv.Itoa(number)}
+	if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
+		args = append(args, "--repo", o+"/"+r)
+	}
+	_, err := run(ctx, repoDir, "gh", args...)
+	return err
+}
+
 // ClosePR closes a pull request (no comment required).
 func ClosePR(ctx context.Context, repoDir, owner, repo string, number int) error {
 	return ClosePRWith(ctx, defaultRunner, repoDir, owner, repo, number)

@@ -28,6 +28,7 @@ const (
 	ActionLoginFail           = "login.fail"
 	ActionLoginOK             = "login.ok"
 	ActionIssueComment        = "issue.comment"
+	ActionIssueClose          = "issue.close"
 	ActionIssueCreate         = "issue.create"
 	ActionPRComment           = "pr.comment"
 	ActionPRClose             = "pr.close"

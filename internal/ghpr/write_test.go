@@ -148,6 +148,59 @@ func TestCommentPRAndClose(t *testing.T) {
 	}
 }
 
+func TestCloseIssueWithComment(t *testing.T) {
+	var calls []string
+	var bodyPath string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		for i, a := range args {
+			if a == "--body-file" && i+1 < len(args) {
+				bodyPath = args[i+1]
+				b, err := os.ReadFile(bodyPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(b) != "done" {
+					t.Fatalf("body=%q", b)
+				}
+			}
+		}
+		return nil, nil
+	}
+	if err := CloseIssueWith(context.Background(), run, "/repo", "o", "r", 12, "done"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("calls=%v", calls)
+	}
+	if !strings.Contains(calls[0], "issue comment 12") || !strings.Contains(calls[0], "--body-file") {
+		t.Fatalf("comment call=%q", calls[0])
+	}
+	if !strings.Contains(calls[1], "issue close 12") || !strings.Contains(calls[1], "--repo o/r") {
+		t.Fatalf("close call=%q", calls[1])
+	}
+	if bodyPath == "" {
+		t.Fatal("no body file")
+	}
+	if _, err := os.Stat(bodyPath); !os.IsNotExist(err) {
+		t.Fatalf("body file should be removed: %v", err)
+	}
+}
+
+func TestCloseIssueNoComment(t *testing.T) {
+	var calls []string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		return nil, nil
+	}
+	if err := CloseIssueWith(context.Background(), run, "/repo", "o", "r", 5, "  "); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || !strings.Contains(calls[0], "issue close 5") {
+		t.Fatalf("calls=%v", calls)
+	}
+}
+
 func TestCheckMergePreflight(t *testing.T) {
 	ok := CheckMergePreflight("OPEN", "MERGEABLE", "✓ 1", false)
 	if !ok.Allow {
