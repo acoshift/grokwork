@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
@@ -47,43 +48,109 @@ func parseActionCustomID(id string) (action, threadID string, ok bool) {
 	return action, threadID, true
 }
 
+// webSessionURL builds the absolute admin UI URL for a work unit session page.
+// publicBaseURL is config webPublicBaseURL (or GROK_WORK_PUBLIC_BASE_URL); empty → "".
+// project is optional (?project= scopes the project-first shell).
+func webSessionURL(threadID, publicBaseURL, project string) string {
+	threadID = strings.TrimSpace(threadID)
+	base := strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
+	if threadID == "" || base == "" {
+		return ""
+	}
+	u := base + "/sessions/" + url.PathEscape(threadID)
+	if p := strings.TrimSpace(project); p != "" {
+		u += "?project=" + url.QueryEscape(p)
+	}
+	return u
+}
+
+// sessionWebURL returns the absolute web session URL for a thread when configured.
+func (b *Bot) sessionWebURL(threadID string) string {
+	if b == nil {
+		return ""
+	}
+	base := ""
+	if b.cfg != nil {
+		base = b.cfg.WebPublicBaseURLValue()
+	}
+	project := ""
+	if b.sessions != nil {
+		if e, ok := b.sessions.Get(threadID); ok {
+			project = e.Project
+		}
+	}
+	return webSessionURL(threadID, base, project)
+}
+
+// withWebSessionLine appends a clickable session URL so users can continue on the web UI.
+func withWebSessionLine(content, sessionURL string) string {
+	sessionURL = strings.TrimSpace(sessionURL)
+	if sessionURL == "" {
+		return content
+	}
+	content = strings.TrimRight(content, "\n")
+	if content == "" {
+		return "Continue on web: " + sessionURL
+	}
+	return content + "\nContinue on web: " + sessionURL
+}
+
+// webLinkButton is a Discord link button to the web session page (nil components when url empty).
+func webLinkButton(sessionURL string) (discordgo.MessageComponent, bool) {
+	sessionURL = strings.TrimSpace(sessionURL)
+	if sessionURL == "" {
+		return nil, false
+	}
+	return discordgo.Button{
+		Label: "Open on Web",
+		Style: discordgo.LinkButton,
+		URL:   sessionURL,
+	}, true
+}
+
 // actionBarRunning is shown on the live status message while Grok is working.
-func actionBarRunning(threadID string) []discordgo.MessageComponent {
-	return []discordgo.MessageComponent{
-		discordgo.ActionsRow{
-			Components: []discordgo.MessageComponent{
-				discordgo.Button{
-					Label:    "Cancel",
-					Style:    discordgo.DangerButton,
-					CustomID: actionCustomID(actionCancel, threadID),
-				},
-			},
+// webURL is optional; when set, adds a link button to the web session page.
+func actionBarRunning(threadID, webURL string) []discordgo.MessageComponent {
+	btns := []discordgo.MessageComponent{
+		discordgo.Button{
+			Label:    "Cancel",
+			Style:    discordgo.DangerButton,
+			CustomID: actionCustomID(actionCancel, threadID),
 		},
+	}
+	if link, ok := webLinkButton(webURL); ok {
+		btns = append(btns, link)
+	}
+	return []discordgo.MessageComponent{
+		discordgo.ActionsRow{Components: btns},
 	}
 }
 
 // actionBarDone is shown on the status message after a run finishes (or on /status).
-func actionBarDone(threadID string) []discordgo.MessageComponent {
-	return []discordgo.MessageComponent{
-		discordgo.ActionsRow{
-			Components: []discordgo.MessageComponent{
-				discordgo.Button{
-					Label:    "Continue",
-					Style:    discordgo.PrimaryButton,
-					CustomID: actionCustomID(actionContinue, threadID),
-				},
-				discordgo.Button{
-					Label:    "Reset",
-					Style:    discordgo.SecondaryButton,
-					CustomID: actionCustomID(actionReset, threadID),
-				},
-				discordgo.Button{
-					Label:    "History",
-					Style:    discordgo.SecondaryButton,
-					CustomID: actionCustomID(actionHistory, threadID),
-				},
-			},
+// webURL is optional; when set, adds a link button to the web session page.
+func actionBarDone(threadID, webURL string) []discordgo.MessageComponent {
+	btns := []discordgo.MessageComponent{
+		discordgo.Button{
+			Label:    "Continue",
+			Style:    discordgo.PrimaryButton,
+			CustomID: actionCustomID(actionContinue, threadID),
 		},
+		discordgo.Button{
+			Label:    "Reset",
+			Style:    discordgo.SecondaryButton,
+			CustomID: actionCustomID(actionReset, threadID),
+		},
+		discordgo.Button{
+			Label:    "History",
+			Style:    discordgo.SecondaryButton,
+			CustomID: actionCustomID(actionHistory, threadID),
+		},
+	}
+	if link, ok := webLinkButton(webURL); ok {
+		btns = append(btns, link)
+	}
+	return []discordgo.MessageComponent{
+		discordgo.ActionsRow{Components: btns},
 	}
 }
 

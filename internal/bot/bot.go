@@ -639,11 +639,15 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		} else {
 			lines = append(lines, "**pr:** (none yet)")
 		}
+		webURL := b.sessionWebURL(m.ChannelID)
+		if webURL != "" {
+			lines = append(lines, "**web:** "+webURL)
+		}
 		statusBody := strings.Join(lines, "\n")
 		if _, err := s.ChannelMessageSendComplex(m.ChannelID, &discordgo.MessageSend{
 			Content:    sanitizeDiscordContent(statusBody),
 			Reference:  ref(m),
-			Components: actionBarDone(m.ChannelID),
+			Components: actionBarDone(m.ChannelID, webURL),
 			Flags:      discordgo.MessageFlagsSuppressEmbeds,
 			AllowedMentions: &discordgo.MessageAllowedMentions{
 				Parse: []discordgo.AllowedMentionType{},
@@ -1086,7 +1090,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	statusMsgID := ""
 	if status, ackErr := discordSendComponents(s, threadID,
 		startingStatus(proj.Name),
-		actionBarRunning(threadID),
+		actionBarRunning(threadID, b.sessionWebURL(threadID)),
 	); ackErr != nil {
 		log.Printf("warn: early ack thread=%s: %v", threadID, ackErr)
 		// REST failure can mean a half-dead gateway session; poke the watchdog path.
@@ -1114,7 +1118,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	if matErr != nil {
 		log.Printf("error: materialize thread=%s: %v", threadID, matErr)
 		msg := "Could not save attachments for this task: " + matErr.Error()
-		b.postOrEditThreadStatus(s, threadID, statusMsgID, msg, actionBarDone(threadID))
+		b.postOrEditThreadStatus(s, threadID, statusMsgID, msg, actionBarDone(threadID, b.sessionWebURL(threadID)))
 		return
 	}
 
@@ -1131,7 +1135,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	if e, ok := b.sessions.Get(threadID); ok && e.IsCaseClosed() {
 		b.postOrEditThreadStatus(s, threadID, statusMsgID,
 			"This case is **closed**. Open a new case or ask eng to continue outside case mode.",
-			actionBarDone(threadID))
+			actionBarDone(threadID, b.sessionWebURL(threadID)))
 		if b.runs != nil {
 			b.runs.RemoveTaskFiles(threadID, taskID)
 		}
@@ -1165,7 +1169,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		wantInvestigate := parsed.Kind == KindStartInvestigate || parsed.Kind == KindStartExplain
 		if !wantInvestigate && !caps.StartSessions && !caps.Investigate {
 			b.postOrEditThreadStatus(s, threadID, statusMsgID,
-				"You're not allowed to start tasks on this project (no capabilities).", actionBarDone(threadID))
+				"You're not allowed to start tasks on this project (no capabilities).", actionBarDone(threadID, b.sessionWebURL(threadID)))
 			if b.runs != nil {
 				b.runs.RemoveTaskFiles(threadID, taskID)
 			}
@@ -1174,7 +1178,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		// Freeform/fix without StartSessions: still allowed if Investigate (coerce later).
 		if !wantInvestigate && !caps.StartSessions && !caps.GithubWrites && !caps.Investigate {
 			b.postOrEditThreadStatus(s, threadID, statusMsgID,
-				"You're not allowed to start fix tasks on this project.", actionBarDone(threadID))
+				"You're not allowed to start fix tasks on this project.", actionBarDone(threadID, b.sessionWebURL(threadID)))
 			if b.runs != nil {
 				b.runs.RemoveTaskFiles(threadID, taskID)
 			}
@@ -1204,7 +1208,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			log.Printf("task: claim failed thread=%s: %v", threadID, qerr)
 			msg = "Could not queue task (durable state failed). Try again."
 		}
-		b.postOrEditThreadStatus(s, threadID, statusMsgID, msg, actionBarDone(threadID))
+		b.postOrEditThreadStatus(s, threadID, statusMsgID, msg, actionBarDone(threadID, b.sessionWebURL(threadID)))
 		return
 	}
 	if !claimed {
@@ -1212,7 +1216,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		log.Printf("task: queued pos=%d thread=%s msg=%s", queuePos, threadID, m.ID)
 		b.postOrEditThreadStatus(s, threadID, statusMsgID, fmt.Sprintf(
 			"Queued (#%d). Will run after the current task finishes.", queuePos,
-		), actionBarDone(threadID))
+		), actionBarDone(threadID, b.sessionWebURL(threadID)))
 		return
 	}
 
@@ -1322,7 +1326,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		workHeader := workingStatus(proj.Name, 0, "", formatPhaseChips([phaseCount]bool{}, -1))
 		// Prefer upgrading the early-ack message so the thread stays one status card.
 		if item.statusMsgID != "" {
-			if err := discordEditComponents(s, threadID, item.statusMsgID, workHeader, actionBarRunning(threadID), true); err != nil {
+			if err := discordEditComponents(s, threadID, item.statusMsgID, workHeader, actionBarRunning(threadID, b.sessionWebURL(threadID)), true); err != nil {
 				log.Printf("warn: status upgrade thread=%s msg=%s: %v", threadID, item.statusMsgID, err)
 				b.maybeForceReconnectOnDiscordErr(err)
 			} else {
@@ -1330,7 +1334,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			}
 		}
 		if statusID == "" {
-			status, err := discordSendComponents(s, threadID, workHeader, actionBarRunning(threadID))
+			status, err := discordSendComponents(s, threadID, workHeader, actionBarRunning(threadID, b.sessionWebURL(threadID)))
 			if err != nil {
 				log.Printf("error: status message thread=%s: %v", threadID, err)
 				b.maybeForceReconnectOnDiscordErr(err)
@@ -1374,7 +1378,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		progressWG.Wait()
 		log.Printf("error: worktree thread=%s: %v", threadID, wtErr)
 		if present && statusID != "" {
-			if editErr := discordEditComponents(s, threadID, statusID, "Failed · worktree", actionBarDone(threadID), true); editErr != nil {
+			if editErr := discordEditComponents(s, threadID, statusID, "Failed · worktree", actionBarDone(threadID, b.sessionWebURL(threadID)), true); editErr != nil {
 				log.Printf("error: edit status: %v", editErr)
 			}
 			sendChunks(s, threadID, "Could not create git worktree: "+wtErr.Error())
@@ -1427,7 +1431,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 				log.Printf("error: durable attachment missing %s: %v", p, stErr)
 				msg := "Attachments were lost before the run could start. Please re-send the task with files attached."
 				if present && statusID != "" {
-					if editErr := discordEditComponents(s, threadID, statusID, "Failed · attachments", actionBarDone(threadID), true); editErr != nil {
+					if editErr := discordEditComponents(s, threadID, statusID, "Failed · attachments", actionBarDone(threadID, b.sessionWebURL(threadID)), true); editErr != nil {
 						log.Printf("error: edit status: %v", editErr)
 					}
 				}
@@ -1458,7 +1462,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 				log.Printf("error: attachments: %v", dlErr)
 				msg := "Could not download attachments: " + dlErr.Error()
 				if statusID != "" {
-					if editErr := discordEditComponents(s, threadID, statusID, "Failed · attachments", actionBarDone(threadID), true); editErr != nil {
+					if editErr := discordEditComponents(s, threadID, statusID, "Failed · attachments", actionBarDone(threadID, b.sessionWebURL(threadID)), true); editErr != nil {
 						log.Printf("error: edit status: %v", editErr)
 					}
 				}
@@ -1676,8 +1680,10 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	if ctxSum := result.ContextSummary(); ctxSum != "" {
 		header += " · ctx " + ctxSum
 	}
+	webURL := b.sessionWebURL(threadID)
+	header = withWebSessionLine(header, webURL)
 	if present && statusID != "" {
-		if err := discordEditComponents(s, threadID, statusID, header, actionBarDone(threadID), true); err != nil {
+		if err := discordEditComponents(s, threadID, statusID, header, actionBarDone(threadID, webURL), true); err != nil {
 			log.Printf("error: edit status: %v", err)
 		}
 	}

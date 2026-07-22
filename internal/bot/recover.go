@@ -309,8 +309,9 @@ func (b *Bot) healInterruptedStatus(threadID, statusMsgID, project string) {
 	if s == nil || statusMsgID == "" {
 		return
 	}
-	header := fmt.Sprintf("Interrupted · process restarted · **%s**", project)
-	if err := discordEditComponents(s, threadID, statusMsgID, header, actionBarDone(threadID), true); err != nil {
+	webURL := b.sessionWebURL(threadID)
+	header := withWebSessionLine(fmt.Sprintf("Interrupted · process restarted · **%s**", project), webURL)
+	if err := discordEditComponents(s, threadID, statusMsgID, header, actionBarDone(threadID, webURL), true); err != nil {
 		log.Printf("warn: heal status thread=%s: %v", threadID, err)
 	}
 }

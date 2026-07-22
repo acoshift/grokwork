@@ -312,8 +312,10 @@ type CompletionCardInput struct {
 	PRNumber int
 	// ExtraPRs lists all tracked PRs when more than one (full labels).
 	ExtraPRs []string
-	Diff     DiffSummary
-	Queued   int
+	// SessionURL is the admin web UI session page (continue / inspect on web).
+	SessionURL string
+	Diff       DiffSummary
+	Queued     int
 }
 
 // completionHasContent reports whether the completion card has anything useful.
@@ -473,6 +475,11 @@ func FormatCompletionEmbed(in CompletionCardInput) (*discordgo.MessageEmbed, boo
 			Name: name, Value: value, Inline: false,
 		})
 	}
+	if u := strings.TrimSpace(in.SessionURL); u != "" {
+		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
+			Name: "Web", Value: u, Inline: false,
+		})
+	}
 	if in.Queued > 0 {
 		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
 			Name:   "Queue",
@@ -543,6 +550,9 @@ func FormatCompletionCard(in CompletionCardInput) string {
 				lines = append(lines, "• "+p)
 			}
 		}
+	}
+	if u := strings.TrimSpace(in.SessionURL); u != "" {
+		lines = append(lines, "**web:** "+u)
 	}
 	if in.Queued > 0 {
 		lines = append(lines, fmt.Sprintf("**queue:** %d follow-up%s", in.Queued, plural(in.Queued)))
@@ -654,15 +664,16 @@ func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd
 	}
 
 	in := CompletionCardInput{
-		Status:   status,
-		Project:  project,
-		Elapsed:  elapsed,
-		Branch:   branch,
-		PRURL:    prURL,
-		PRNumber: prNum,
-		ExtraPRs: extraPRs,
-		Diff:     diff,
-		Queued:   b.queueLen(threadID),
+		Status:     status,
+		Project:    project,
+		Elapsed:    elapsed,
+		Branch:     branch,
+		PRURL:      prURL,
+		PRNumber:   prNum,
+		ExtraPRs:   extraPRs,
+		SessionURL: b.sessionWebURL(threadID),
+		Diff:       diff,
+		Queued:     b.queueLen(threadID),
 	}
 	emb, ok := FormatCompletionEmbed(in)
 	if !ok {

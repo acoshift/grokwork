@@ -64,12 +64,13 @@ func TestParseDiffStatSummary(t *testing.T) {
 
 func sampleCompletionInput() CompletionCardInput {
 	return CompletionCardInput{
-		Status:   "Done",
-		Project:  "api",
-		Elapsed:  2*time.Minute + 5*time.Second,
-		Branch:   "grok/discord/1",
-		PRURL:    "https://github.com/o/r/pull/9",
-		PRNumber: 9,
+		Status:     "Done",
+		Project:    "api",
+		Elapsed:    2*time.Minute + 5*time.Second,
+		Branch:     "grok/discord/1",
+		PRURL:      "https://github.com/o/r/pull/9",
+		PRNumber:   9,
+		SessionURL: "http://ui.example/sessions/1?project=api",
 		Diff: DiffSummary{
 			Branch:     "grok/discord/1",
 			HeadShort:  "abc1234",
@@ -103,10 +104,13 @@ func TestFormatCompletionEmbed(t *testing.T) {
 	for _, f := range emb.Fields {
 		fields[f.Name] = f.Value
 	}
-	for _, name := range []string{"Branch", "Base", "Diff", "Files", "Risk", "PR"} {
+	for _, name := range []string{"Branch", "Base", "Diff", "Files", "Risk", "PR", "Web"} {
 		if _, ok := fields[name]; !ok {
 			t.Fatalf("missing field %q; got %v", name, fields)
 		}
+	}
+	if fields["Web"] != "http://ui.example/sessions/1?project=api" {
+		t.Fatalf("web=%q", fields["Web"])
 	}
 	if !strings.Contains(fields["Branch"], "grok/discord/1") || !strings.Contains(fields["Branch"], "abc1234") {
 		t.Fatalf("branch=%q", fields["Branch"])
@@ -152,6 +156,7 @@ func TestFormatCompletionCard(t *testing.T) {
 		"grok/discord/1", "abc1234", "origin/main",
 		"+10", "−1", "M api/a.go", "risk", "migrations",
 		"#9", "https://github.com/o/r/pull/9",
+		"**web:**", "http://ui.example/sessions/1?project=api",
 	} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("missing %q in:\n%s", want, card)

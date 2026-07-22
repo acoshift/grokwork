@@ -24,7 +24,7 @@ func TestParseActionCustomID(t *testing.T) {
 }
 
 func TestActionBarRunningHasCancel(t *testing.T) {
-	comps := actionBarRunning("t1")
+	comps := actionBarRunning("t1", "")
 	if len(comps) != 1 {
 		t.Fatalf("rows=%d", len(comps))
 	}
@@ -41,8 +41,26 @@ func TestActionBarRunningHasCancel(t *testing.T) {
 	}
 }
 
+func TestActionBarRunningWithWebLink(t *testing.T) {
+	comps := actionBarRunning("t1", "http://ui.example/sessions/t1")
+	row := comps[0].(discordgo.ActionsRow)
+	if len(row.Components) != 2 {
+		t.Fatalf("buttons=%d want 2", len(row.Components))
+	}
+	link := row.Components[1].(discordgo.Button)
+	if link.Style != discordgo.LinkButton || link.URL != "http://ui.example/sessions/t1" {
+		t.Fatalf("link=%+v", link)
+	}
+	if link.Label != "Open on Web" {
+		t.Fatalf("label=%q", link.Label)
+	}
+	if link.CustomID != "" {
+		t.Fatalf("link must not set custom_id: %q", link.CustomID)
+	}
+}
+
 func TestActionBarDoneButtons(t *testing.T) {
-	comps := actionBarDone("t9")
+	comps := actionBarDone("t9", "")
 	row := comps[0].(discordgo.ActionsRow)
 	if len(row.Components) != 3 {
 		t.Fatalf("buttons=%d want 3", len(row.Components))
@@ -60,6 +78,21 @@ func TestActionBarDoneButtons(t *testing.T) {
 		if len(btn.CustomID) > 100 {
 			t.Fatalf("custom_id too long: %d", len(btn.CustomID))
 		}
+	}
+}
+
+func TestActionBarDoneWithWebLink(t *testing.T) {
+	comps := actionBarDone("t9", "http://ui.example/sessions/t9?project=api")
+	row := comps[0].(discordgo.ActionsRow)
+	if len(row.Components) != 4 {
+		t.Fatalf("buttons=%d want 4", len(row.Components))
+	}
+	link := row.Components[3].(discordgo.Button)
+	if link.Style != discordgo.LinkButton {
+		t.Fatalf("style=%v", link.Style)
+	}
+	if link.URL != "http://ui.example/sessions/t9?project=api" {
+		t.Fatalf("url=%q", link.URL)
 	}
 }
 
@@ -108,6 +141,36 @@ func TestHistoryHint(t *testing.T) {
 	}
 	if strings.Contains(pathOnly, "http") {
 		t.Fatalf("path-only should not invent host: %q", pathOnly)
+	}
+}
+
+func TestWebSessionURL(t *testing.T) {
+	got := webSessionURL("abc", "http://100.x.y.z:8787/", "api")
+	if got != "http://100.x.y.z:8787/sessions/abc?project=api" {
+		t.Fatalf("got %q", got)
+	}
+	if webSessionURL("abc", "", "api") != "" {
+		t.Fatal("empty base should yield empty URL")
+	}
+	if webSessionURL("", "http://x", "api") != "" {
+		t.Fatal("empty thread should yield empty URL")
+	}
+	noProj := webSessionURL("tid", "http://ui/", "")
+	if noProj != "http://ui/sessions/tid" {
+		t.Fatalf("no project: %q", noProj)
+	}
+	// Path-escape thread IDs that need it (web-native w_ ids are safe; odd chars covered).
+	if got := webSessionURL("a/b", "http://ui", ""); got != "http://ui/sessions/a%2Fb" {
+		t.Fatalf("escape: %q", got)
+	}
+}
+
+func TestWithWebSessionLine(t *testing.T) {
+	if got := withWebSessionLine("Done · **api**", "http://ui/sessions/1"); got != "Done · **api**\nContinue on web: http://ui/sessions/1" {
+		t.Fatalf("got %q", got)
+	}
+	if got := withWebSessionLine("Done", ""); got != "Done" {
+		t.Fatalf("empty url: %q", got)
 	}
 }
 
