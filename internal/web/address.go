@@ -26,7 +26,7 @@ func (s *Server) postPRAddressCI(ctx *hime.Context) error {
 	forceNew := formBool(ctx.PostFormValue("force_new"))
 	pickThread := strings.TrimSpace(ctx.PostFormValue("thread_id"))
 
-	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.prAddressRedirect(ctx, owner, repo, n, project, "", err, http.StatusFound)
 	}
@@ -79,7 +79,7 @@ func (s *Server) postPRAddressReview(ctx *hime.Context) error {
 	forceNew := formBool(ctx.PostFormValue("force_new"))
 	pickThread := strings.TrimSpace(ctx.PostFormValue("thread_id"))
 
-	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.prAddressRedirect(ctx, owner, repo, n, project, "", err, http.StatusFound)
 	}
@@ -132,6 +132,10 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 	if threadID == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
 	}
+	project, err := s.ensureThreadAccess(ctx, threadID)
+	if err != nil {
+		return forbiddenProject(ctx, err)
+	}
 	prompt := strings.TrimSpace(ctx.PostFormValue("prompt"))
 	if prompt == "" {
 		return s.sessionRedirect(ctx, threadID, "", "prompt is required")
@@ -141,10 +145,6 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 			"kind": "continue", "threadId": threadID,
 		})
 		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
-	}
-	project := ""
-	if e, ok := s.sessions.Get(threadID); ok {
-		project = e.Project
 	}
 	actor := s.fixActor(ctx)
 	res, startErr := s.bot.StartContinue(bot.ContinueOpts{

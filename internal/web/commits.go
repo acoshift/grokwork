@@ -244,7 +244,7 @@ func (s *Server) postCommitReview(ctx *hime.Context) error {
 	}
 	owner := strings.TrimSpace(ctx.PostFormValue("owner"))
 	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
-	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.commitReviewSourceRedirect(ctx, project, sha, owner, repo, err)
 	}

@@ -77,7 +77,7 @@ func (s *Server) postPRReview(ctx *hime.Context) error {
 	headSHA := strings.TrimSpace(ctx.PostFormValue("headSha"))
 	mirror := ctx.PostFormValue("mirror") == "1" || strings.EqualFold(ctx.PostFormValue("mirror"), "on")
 
-	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.prRedirect(ctx, owner, repo, n, project, "", err)
 	}
@@ -206,7 +206,7 @@ func (s *Server) postPRReviewRequest(ctx *hime.Context) error {
 	note := strings.TrimSpace(ctx.PostFormValue("note"))
 	headSHA := strings.TrimSpace(ctx.PostFormValue("headSha"))
 
-	project, ref, _, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, _, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.prRedirect(ctx, owner, repo, n, project, "", err)
 	}
@@ -278,7 +278,7 @@ func (s *Server) postPRReviewCancel(ctx *hime.Context) error {
 	}
 	project := strings.TrimSpace(ctx.PostFormValue("project"))
 	requestID := strings.TrimSpace(ctx.PostFormValue("requestId"))
-	project, ref, _, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, _, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.prRedirect(ctx, owner, repo, n, project, "", err)
 	}
@@ -341,11 +341,29 @@ func (s *Server) renderMyReviews(ctx *hime.Context, projectScope string) error {
 	userID, _ := s.sessionIdentity(ctx)
 	store := s.reviewsStore()
 	var rows []reviewRequestRow
+	pending := 0
 	if store != nil && userID != "" {
-		reqs := store.ListForReviewer(userID, projectFilter, statusFilter)
+		// Empty project filter: list across projects, then drop unauthorized ones.
+		// Prefer an explicit projectFilter only when the caller may access it.
+		listFilter := projectFilter
+		if listFilter != "" {
+			if err := s.ensureProjectAccess(ctx, listFilter); err != nil {
+				if projectScope != "" {
+					return forbiddenProject(ctx, err)
+				}
+				listFilter = "" // ignore unauthorized ?project=
+			}
+		}
+		reqs := store.ListForReviewer(userID, listFilter, statusFilter)
 		for _, req := range reqs {
-			if projectScope == "" && req.Project != "" {
+			if req.Project != "" {
 				if err := s.ensureProjectAccess(ctx, req.Project); err != nil {
+					continue
+				}
+			} else {
+				// No project on the request — only admins see it (same as threads).
+				_, role := s.sessionIdentity(ctx)
+				if !config.RoleAtLeast(role, config.WebRoleAdmin) {
 					continue
 				}
 			}
@@ -359,11 +377,23 @@ func (s *Server) renderMyReviews(ctx *hime.Context, projectScope string) error {
 				Stale:   req.HeadSHA != "" && head != "" && !strings.EqualFold(req.HeadSHA, head),
 			})
 		}
+		// Pending badge: recompute from ACL-visible pending rows (not the raw store count).
+		for _, req := range store.ListForReviewer(userID, listFilter, reviewstore.StatusPending) {
+			if req.Project != "" {
+				if err := s.ensureProjectAccess(ctx, req.Project); err != nil {
+					continue
+				}
+			} else {
+				_, role := s.sessionIdentity(ctx)
+				if !config.RoleAtLeast(role, config.WebRoleAdmin) {
+					continue
+				}
+			}
+			pending++
+		}
 	}
 	d.ReviewRequests = rows
-	if store != nil && userID != "" {
-		d.ReviewPendingCount = store.CountPendingForReviewer(userID, projectScope)
-	}
+	d.ReviewPendingCount = pending
 	return s.viewPage(ctx, "reviews", d)
 }
 

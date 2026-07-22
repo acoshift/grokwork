@@ -248,6 +248,9 @@ func (s *Server) commitDiffFile(ctx *hime.Context) error {
 // sessionDiffFile serves one file's hunks for the session worktree diff page.
 func (s *Server) sessionDiffFile(ctx *hime.Context) error {
 	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
+	if _, err := s.ensureThreadAccess(ctx, threadID); err != nil {
+		return forbiddenProject(ctx, err)
+	}
 	ent, ok := s.sessions.Get(threadID)
 	if !ok {
 		return ctx.Status(http.StatusNotFound).Error("unknown session/thread")
@@ -325,7 +328,7 @@ func (s *Server) prDiffFile(ctx *hime.Context) error {
 		return ctx.Status(http.StatusBadRequest).Error("invalid PR number")
 	}
 	project := strings.TrimSpace(ctx.FormValue("project"))
-	_, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	_, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return ctx.Status(http.StatusForbidden).Error(err.Error())
 	}

@@ -98,7 +98,7 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 	owner := strings.TrimSpace(ctx.PostFormValue("owner"))
 	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
 
-	project, ref, path, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, path, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.issuesListRedirect(ctx, project, owner, repo, "", err.Error())
 	}
@@ -270,7 +270,7 @@ func (s *Server) postIssueFix(ctx *hime.Context) error {
 	forceNew := formBool(ctx.PostFormValue("force_new"))
 	pickThread := strings.TrimSpace(ctx.PostFormValue("thread_id"))
 
-	project, ref, path, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, path, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.issueFixRedirect(ctx, project, owner, repo, n, "", err)
 	}
@@ -313,6 +313,9 @@ func (s *Server) postIssueFix(ctx *hime.Context) error {
 
 func (s *Server) postLinearFix(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
 	identifier := strings.TrimSpace(ctx.PathValue("identifier"))
 	if !s.cfg.ProjectLinearEnabled(project) {
 		return ctx.Status(http.StatusBadRequest).Error(bot.ErrLinearDisabled.Error())
@@ -563,6 +566,9 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 	if threadID == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
 	}
+	if _, err := s.ensureThreadAccess(ctx, threadID); err != nil {
+		return forbiddenProject(ctx, err)
+	}
 	d := s.sessionPageData(ctx, threadID)
 	d.Title = "Session · " + threadID
 	d.IsSessions = true
@@ -584,6 +590,9 @@ func (s *Server) partialSession(ctx *hime.Context) error {
 	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
 	if threadID == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
+	}
+	if _, err := s.ensureThreadAccess(ctx, threadID); err != nil {
+		return forbiddenProject(ctx, err)
 	}
 	return s.viewFragment(ctx, "session", "session_live", s.sessionPageData(ctx, threadID))
 }

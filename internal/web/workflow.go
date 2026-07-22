@@ -289,6 +289,9 @@ func (s *Server) invalidateIssueListCache(project, owner, repo string) {
 
 func (s *Server) issueDetail(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
 	nStr := strings.TrimSpace(ctx.PathValue("n"))
 	n, err := strconv.Atoi(nStr)
 	if err != nil || n <= 0 {
@@ -381,6 +384,9 @@ func (s *Server) annotateLinearIssueWorkState(project string, issues []linear.Is
 
 func (s *Server) linearList(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
 	if !s.cfg.ProjectLinearEnabled(project) {
 		return ctx.Status(http.StatusNotFound).Error("Linear is not enabled for this project")
 	}
@@ -413,6 +419,9 @@ func (s *Server) linearList(ctx *hime.Context) error {
 
 func (s *Server) linearDetail(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
 	id := strings.TrimSpace(ctx.PathValue("identifier"))
 	if !s.cfg.ProjectLinearEnabled(project) {
 		return ctx.Status(http.StatusNotFound).Error("Linear is not enabled for this project")
@@ -458,7 +467,7 @@ func (s *Server) prDetail(ctx *hime.Context) error {
 		return ctx.Status(http.StatusBadRequest).Error("invalid PR path")
 	}
 	project := strings.TrimSpace(ctx.FormValue("project"))
-	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return ctx.Status(http.StatusForbidden).Error(err.Error())
 	}
@@ -589,7 +598,7 @@ func (s *Server) prDiffPage(ctx *hime.Context) error {
 		return ctx.Status(http.StatusBadRequest).Error("invalid PR number")
 	}
 	project := strings.TrimSpace(ctx.FormValue("project"))
-	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return ctx.Status(http.StatusForbidden).Error(err.Error())
 	}
@@ -625,6 +634,9 @@ func (s *Server) sessionDiffPage(ctx *hime.Context) error {
 	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
 	if threadID == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
+	}
+	if _, err := s.ensureThreadAccess(ctx, threadID); err != nil {
+		return forbiddenProject(ctx, err)
 	}
 	ent, ok := s.sessions.Get(threadID)
 	if !ok {

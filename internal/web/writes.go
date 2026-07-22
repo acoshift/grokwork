@@ -71,7 +71,7 @@ func (s *Server) postIssueComment(ctx *hime.Context) error {
 	owner := strings.TrimSpace(ctx.PostFormValue("owner"))
 	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
 	body := ctx.PostFormValue("body")
-	project, ref, path, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, path, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.issueRedirect(ctx, project, owner, repo, n, "", err)
 	}
@@ -99,7 +99,7 @@ func (s *Server) postIssueClose(ctx *hime.Context) error {
 	if strings.TrimSpace(body) == "" {
 		return s.issueRedirect(ctx, project, owner, repo, n, "", fmt.Errorf("comment body required to close"))
 	}
-	project, ref, path, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, path, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.issueRedirect(ctx, project, owner, repo, n, "", err)
 	}
@@ -124,7 +124,7 @@ func (s *Server) postPRComment(ctx *hime.Context) error {
 	}
 	project := strings.TrimSpace(ctx.PostFormValue("project"))
 	body := ctx.PostFormValue("body")
-	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.prRedirect(ctx, owner, repo, n, project, "", err)
 	}
@@ -147,7 +147,7 @@ func (s *Server) postPRClose(ctx *hime.Context) error {
 		return ctx.Status(http.StatusBadRequest).Error("invalid PR number")
 	}
 	project := strings.TrimSpace(ctx.PostFormValue("project"))
-	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.prRedirect(ctx, owner, repo, n, project, "", err)
 	}
@@ -180,7 +180,7 @@ func (s *Server) postPRMerge(ctx *hime.Context) error {
 	attemptAnyway := ctx.PostFormValue("attemptAnyway") == "1" ||
 		strings.EqualFold(ctx.PostFormValue("attemptAnyway"), "on")
 
-	project, ref, cwd, err := s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
 		return s.prRedirect(ctx, owner, repo, n, project, "", err)
 	}

@@ -44,6 +44,69 @@ func (s *Server) ensureProjectAccess(ctx *hime.Context, project string) error {
 	return nil
 }
 
+// threadProject resolves the project for a Discord/web thread (session, then history).
+func (s *Server) threadProject(threadID string) string {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return ""
+	}
+	if s.sessions != nil {
+		if e, ok := s.sessions.Get(threadID); ok {
+			if p := strings.TrimSpace(e.Project); p != "" {
+				return p
+			}
+		}
+	}
+	if s.history != nil {
+		if th, err := s.history.Get(threadID); err == nil {
+			return strings.TrimSpace(th.Project)
+		}
+	}
+	return ""
+}
+
+// ensureThreadAccess checks the caller may open a thread's project.
+// Threads with no project are admin-only (matches filterThreadsVisible).
+func (s *Server) ensureThreadAccess(ctx *hime.Context, threadID string) (project string, err error) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return "", fmt.Errorf("thread id is required")
+	}
+	project = s.threadProject(threadID)
+	_, role := s.sessionIdentity(ctx)
+	if config.RoleAtLeast(role, config.WebRoleAdmin) {
+		return project, nil
+	}
+	if project == "" {
+		return "", fmt.Errorf("forbidden: no access to thread")
+	}
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return "", err
+	}
+	return project, nil
+}
+
+// resolveCatalogRepoAccess is resolveCatalogRepo plus web project ACL.
+// When project is empty, only catalogs of projects the session may see are searched
+// (so a hidden project cannot steal the match for a shared owner/repo).
+func (s *Server) resolveCatalogRepoAccess(ctx *hime.Context, project, owner, repo string) (proj string, ref config.GitHubRepoRef, cwd string, err error) {
+	project = strings.TrimSpace(project)
+	if project != "" {
+		if err := s.ensureProjectAccess(ctx, project); err != nil {
+			return "", config.GitHubRepoRef{}, "", err
+		}
+		return s.resolveCatalogRepo(ctx.Context(), project, owner, repo)
+	}
+	for _, name := range s.filterProjectNames(ctx) {
+		p, r, c, rErr := s.resolveCatalogRepo(ctx.Context(), name, owner, repo)
+		if rErr == nil {
+			return p, r, c, nil
+		}
+	}
+	return "", config.GitHubRepoRef{}, "", fmt.Errorf("repository %s/%s is not in any accessible project catalog",
+		strings.TrimSpace(owner), strings.TrimSpace(repo))
+}
+
 // filterSnapshotToVisible limits Snapshot projects to what the session may see.
 func (s *Server) filterSnapshotToVisible(ctx *hime.Context, snap config.Snapshot) config.Snapshot {
 	userID, role := s.sessionIdentity(ctx)

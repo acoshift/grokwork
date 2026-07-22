@@ -498,6 +498,9 @@ func (s *Server) sessionsList(ctx *hime.Context) error {
 
 func (s *Server) historyDetail(ctx *hime.Context) error {
 	threadID := ctx.PathValue("threadID")
+	if _, err := s.ensureThreadAccess(ctx, threadID); err != nil {
+		return forbiddenProject(ctx, err)
+	}
 	th, err := s.history.Get(threadID)
 	if err != nil {
 		return ctx.Status(http.StatusBadRequest).Error(err.Error())
@@ -689,6 +692,9 @@ func (s *Server) partialHistoryTable(ctx *hime.Context) error {
 
 func (s *Server) partialHistoryTurns(ctx *hime.Context) error {
 	threadID := ctx.PathValue("threadID")
+	if _, err := s.ensureThreadAccess(ctx, threadID); err != nil {
+		return forbiddenProject(ctx, err)
+	}
 	th, err := s.history.Get(threadID)
 	if err != nil {
 		return ctx.Status(http.StatusBadRequest).Error(err.Error())
@@ -713,6 +719,9 @@ func (s *Server) partialWorktreesTable(ctx *hime.Context) error {
 	d.Worktrees = s.filterWorktreesVisible(ctx, s.bot.ListWorktrees())
 	// Workspace pages refresh with ?project= so the region stays scoped.
 	if p := strings.TrimSpace(ctx.FormValue("project")); p != "" {
+		if err := s.ensureProjectAccess(ctx, p); err != nil {
+			return forbiddenProject(ctx, err)
+		}
 		d.Project = p
 		d.Worktrees = filterWorktreesProject(d.Worktrees, p)
 	}

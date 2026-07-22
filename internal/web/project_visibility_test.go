@@ -183,3 +183,87 @@ func TestAcrossProjectsHidesUnauthorizedProjects(t *testing.T) {
 		t.Fatalf("admin home should show secret: %s", adminHome)
 	}
 }
+
+// TestDetailRoutesEnforceProjectACL ensures knowing a thread/PR id cannot bypass
+// project membership (IDOR).
+func TestDetailRoutesEnforceProjectACL(t *testing.T) {
+	srv := twoProjectAuthServer(t)
+	if err := srv.cfg.SetProjectGitHubRepos("public", []config.GitHubRepoRef{{Owner: "acme", Repo: "public"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.cfg.SetProjectGitHubRepos("secret", []config.GitHubRepoRef{{Owner: "acme", Repo: "secret"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	sid, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := &http.Cookie{Name: sessionCookieName, Value: sid}
+	getStatus := func(path string) int {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		return w.Code
+	}
+	getBody := func(path string) (int, string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		return w.Code, w.Body.String()
+	}
+
+	// Allowed project resources.
+	if code := getStatus("/sessions/th-public"); code != http.StatusOK {
+		t.Fatalf("session public status=%d", code)
+	}
+	if code := getStatus("/history/th-public"); code != http.StatusOK {
+		t.Fatalf("history public status=%d", code)
+	}
+	if code := getStatus("/projects/public"); code != http.StatusOK {
+		t.Fatalf("project public status=%d", code)
+	}
+
+	// Forbidden project resources (IDOR by id).
+	for _, path := range []string{
+		"/sessions/th-secret",
+		"/history/th-secret",
+		"/partials/sessions/th-secret",
+		"/partials/history/turns/th-secret",
+		"/sessions/th-secret/diff",
+		"/projects/secret",
+		"/projects/secret/ship",
+		"/projects/secret/sessions",
+		"/projects/secret/worktrees",
+		"/projects/secret/issues",
+		"/projects/secret/commits",
+		"/prs/acme/secret/2",
+		"/prs/acme/secret/2?project=secret",
+		"/prs/acme/secret/2/diff",
+	} {
+		code, body := getBody(path)
+		if code != http.StatusForbidden {
+			t.Fatalf("%s status=%d want 403 body=%s", path, code, body)
+		}
+		if strings.Contains(body, "work on secret") || strings.Contains(body, "secret pr") {
+			t.Fatalf("%s leaked secret content: %s", path, body)
+		}
+	}
+
+	// Admin can open secret thread.
+	adminSID, _, err := srv.LoginAs("admin-1", "Admin", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions/th-secret", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: adminSID})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin session secret status=%d", w.Code)
+	}
+}
