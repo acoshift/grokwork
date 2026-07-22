@@ -3,8 +3,6 @@
 <h1 id="page-project-config"><span class="mono">{{.ProjectItem.Name}}</span> <span class="muted" style="font-weight:500;font-size:1.05rem">· project settings</span></h1>
 <p class="sub">
   <span class="mono">{{.ProjectItem.Path}}</span>
-  · <a href="/projects/{{.ProjectItem.Name}}/issues">Issues</a>
-  · <a href="/projects/{{.ProjectItem.Name}}/commits">Commits</a>
   {{if .ProjectItem.LinearEnabled}} · <a href="/projects/{{.ProjectItem.Name}}/linear">Linear</a>{{end}}
 </p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
