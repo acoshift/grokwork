@@ -11,7 +11,9 @@ import (
 // Commit list defaults.
 const (
 	DefaultCommitListLimit = 50
-	MaxCommitListLimit     = 100
+	// MaxCommitListLimit caps the commits browser table size. Full history is
+	// available after Fetch (which unshallows); the UI limit is only the list.
+	MaxCommitListLimit = 2000
 )
 
 // CommitSummary is one row from git log.
@@ -41,7 +43,9 @@ type CommitListOpts struct {
 }
 
 // Fetch updates remote-tracking branches in cwd (git fetch --all --prune).
-// Does not move local branch tips or touch the working tree.
+// Shallow clones are converted to full history (--unshallow) so the commits
+// browser can load the complete log. Does not move local branch tips or touch
+// the working tree.
 func Fetch(ctx context.Context, cwd string) error {
 	return FetchWith(ctx, defaultRunner, cwd)
 }
@@ -54,11 +58,26 @@ func FetchWith(ctx context.Context, run Runner, cwd string) error {
 	if strings.TrimSpace(cwd) == "" {
 		return fmt.Errorf("empty repo path")
 	}
-	_, err := run(ctx, cwd, "git", "fetch", "--all", "--prune")
+	args := []string{"fetch", "--all", "--prune"}
+	if isShallowRepo(ctx, run, cwd) {
+		// --unshallow fails on complete repos; only add when needed.
+		args = append(args, "--unshallow")
+	}
+	_, err := run(ctx, cwd, "git", args...)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+// isShallowRepo reports whether cwd is a shallow clone.
+// Unknown/error → false so fetch keeps the safe non-unshallow path.
+func isShallowRepo(ctx context.Context, run Runner, cwd string) bool {
+	out, err := run(ctx, cwd, "git", "rev-parse", "--is-shallow-repository")
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "true"
 }
 
 // ListCommits runs git log on the main checkout.

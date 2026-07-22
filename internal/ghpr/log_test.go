@@ -63,22 +63,49 @@ func TestListCommitsWith(t *testing.T) {
 }
 
 func TestFetchWith(t *testing.T) {
-	var saw []string
+	var calls []string
 	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		if dir != "/repo" {
 			t.Fatalf("dir=%q", dir)
 		}
-		saw = append([]string{name}, args...)
+		joined := strings.Join(append([]string{name}, args...), " ")
+		calls = append(calls, joined)
+		if len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("false\n"), nil
+		}
 		return []byte("ok\n"), nil
 	}
 	if err := FetchWith(context.Background(), run, "/repo"); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(saw, " ") != "git fetch --all --prune" {
-		t.Fatalf("args %v", saw)
+	if len(calls) != 2 {
+		t.Fatalf("calls %v", calls)
+	}
+	if calls[0] != "git rev-parse --is-shallow-repository" {
+		t.Fatalf("probe %q", calls[0])
+	}
+	if calls[1] != "git fetch --all --prune" {
+		t.Fatalf("fetch %q", calls[1])
 	}
 	if err := FetchWith(context.Background(), run, "  "); err == nil {
 		t.Fatal("expected empty path error")
+	}
+}
+
+func TestFetchWithUnshallowsShallowRepo(t *testing.T) {
+	var fetchArgs []string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "rev-parse" {
+			return []byte("true\n"), nil
+		}
+		fetchArgs = append([]string{name}, args...)
+		return []byte("ok\n"), nil
+	}
+	if err := FetchWith(context.Background(), run, "/shallow"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(fetchArgs, " ") != "git fetch --all --prune --unshallow" {
+		t.Fatalf("args %v", fetchArgs)
 	}
 }
 
@@ -96,12 +123,12 @@ func TestListCommitsDefaultRefAndCap(t *testing.T) {
 		}
 		return nil, nil
 	}
-	_, err := ListCommitsWith(context.Background(), run, "/r", CommitListOpts{Limit: 500})
+	_, err := ListCommitsWith(context.Background(), run, "/r", CommitListOpts{Limit: 5000})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if nArg != "100" {
-		t.Fatalf("limit cap want 100 got %s", nArg)
+	if nArg != "2000" {
+		t.Fatalf("limit cap want 2000 got %s", nArg)
 	}
 	if ref != "HEAD" {
 		t.Fatalf("ref=%q", ref)

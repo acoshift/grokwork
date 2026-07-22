@@ -26,7 +26,7 @@
   </div>
   <div class="field field-sm">
     <label for="n">Limit</label>
-    <input id="n" name="n" type="number" min="1" max="100" value="50">
+    <input id="n" name="n" type="number" min="1" max="2000" value="{{if .CommitLimit}}{{.CommitLimit}}{{else}}50{{end}}">
   </div>
   <button type="submit" class="btn-secondary">Apply</button>
 </form>
@@ -35,7 +35,8 @@
   <input type="hidden" name="owner" value="{{.ActiveOwner}}">
   <input type="hidden" name="repo" value="{{.ActiveRepo}}">
   <input type="hidden" name="ref" value="{{.CommitRef}}">
-  <button type="submit" class="btn-secondary" title="git fetch --all --prune">Fetch</button>
+  <input type="hidden" name="n" value="{{if .CommitLimit}}{{.CommitLimit}}{{else}}50{{end}}">
+  <button type="submit" class="btn-secondary" title="git fetch --all --prune; unshallow if needed">Fetch</button>
 </form>
 </div>
 <script>

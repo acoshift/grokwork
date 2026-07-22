@@ -51,9 +51,12 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	if ref == "" {
 		ref = "HEAD"
 	}
-	limit := 50
+	limit := ghpr.DefaultCommitListLimit
 	if n, err := strconv.Atoi(strings.TrimSpace(ctx.FormValue("n"))); err == nil && n > 0 {
 		limit = n
+	}
+	if limit > ghpr.MaxCommitListLimit {
+		limit = ghpr.MaxCommitListLimit
 	}
 	d := s.basePage(ctx)
 	d.Title = "Commits · " + project
@@ -63,6 +66,7 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	d.ActiveOwner = active.Owner
 	d.ActiveRepo = active.Repo
 	d.CommitRef = ref
+	d.CommitLimit = limit
 	d.CanReviewCommit = d.CanStartSession
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
@@ -87,7 +91,8 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 }
 
 // postCommitsFetch runs git fetch --all --prune on the selected repo checkout
-// so the commits browser can show up-to-date remote-tracking refs.
+// so the commits browser can show up-to-date remote-tracking refs. Shallow
+// clones are unshallowed so full history is available for listing and review.
 func (s *Server) postCommitsFetch(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
 	if err := s.ensureProjectAccess(ctx, project); err != nil {
@@ -118,7 +123,7 @@ func (s *Server) postCommitsFetch(ctx *hime.Context) error {
 		return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, n, "", err)
 	}
 	gitworktree.NoteFetched(path)
-	return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, n, "Fetched remotes", nil)
+	return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, n, "Fetched remotes (full history)", nil)
 }
 
 func (s *Server) commitsListRedirect(ctx *hime.Context, project, owner, repo, ref, n, okMsg string, err error) error {
