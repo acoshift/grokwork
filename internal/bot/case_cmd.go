@@ -8,6 +8,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -121,7 +122,7 @@ func (b *Bot) handleEscalate(s *discordgo.Session, m *discordgo.MessageCreate, p
 	roleIDs := memberRoles(m)
 	if b.cfg != nil {
 		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID, roleIDs)
-		if !caps.FileEscalation && !caps.GithubWrites && !caps.StartSessions {
+		if !canEscalateCase(caps) {
 			replyText(s, m, "You're not allowed to escalate cases (need fileEscalation or builder caps).")
 			return
 		}
@@ -383,6 +384,12 @@ func replyText(s *discordgo.Session, m *discordgo.MessageCreate, text string) {
 	if _, err := s.ChannelMessageSendReply(m.ChannelID, sanitizeDiscordContent(text), ref(m)); err != nil {
 		log.Printf("error: reply: %v", err)
 	}
+}
+
+// canEscalateCase matches /escalate and /start fix on Mode=case (K17).
+// FileEscalation, GithubWrites, or StartSessions (builder-class) required.
+func canEscalateCase(caps config.Capabilities) bool {
+	return caps.FileEscalation || caps.GithubWrites || caps.StartSessions
 }
 
 // promoteCasePhaseBeforeRun updates case phase before investigate freeform (K19 order).

@@ -2012,10 +2012,13 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string, roleIDs []s
 		forceInv = false
 	case KindStartFix:
 		if sessionMode == ModeCase {
-			// Escalate semantics (K17)
+			// Same as /escalate (K17): require escalate caps; never silently promote.
 			reqMode = ModeCase
-			b.promoteCasePhaseBeforeRun(item.threadID, sessionstore.PhaseFixing)
-			sessionPhase = sessionstore.PhaseFixing
+			if canEscalateCase(caps) {
+				b.promoteCasePhaseBeforeRun(item.threadID, sessionstore.PhaseFixing)
+				sessionPhase = sessionstore.PhaseFixing
+			}
+			// else: leave phase unchanged; RunPolicy stays non-ship for investigate phase
 		} else {
 			reqMode = ModeFix
 		}

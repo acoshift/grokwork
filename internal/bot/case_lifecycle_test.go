@@ -204,3 +204,81 @@ func TestEnsureCaseShellAndCloseFreeze(t *testing.T) {
 		}
 	}
 }
+
+// /start fix on Mode=case must not escalate when actor lacks FileEscalation|GithubWrites|StartSessions
+// (same gate as /escalate). Drives real snapshotPolicyOntoItem.
+func TestStartFixOnCaseDeniedWithoutEscalateCaps(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	// Builtin "operator" = Investigate only (no FileEscalation/StartSessions/GithubWrites).
+	// Builtin "investigator" includes FileEscalation (may escalate by design).
+	cfg := &config.Config{
+		Projects: config.ProjectsMap{
+			"app": {
+				Path:             dir,
+				SafeTeamMode:     &on,
+				AllowedUserIDs:   []string{"ops1", "eng1"},
+				CapabilityByUser: map[string]string{"ops1": "operator", "eng1": "builder"},
+			},
+		},
+	}
+	b := &Bot{sessions: store, cfg: cfg}
+	actor := Actor{ID: "ops1", DisplayName: "Ops"}
+	if err := b.ensureCaseShell("th-gate", "app", actor, "high", "", "Cannot escalate", "discord"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _ = store.Patch("th-gate", func(e *sessionstore.Entry) {
+		e.Phase = sessionstore.PhaseInvestigate
+	})
+
+	caps := cfg.ResolveCapabilities("app", "ops1", nil)
+	if canEscalateCase(caps) {
+		t.Fatalf("operator should not canEscalateCase: %+v", caps)
+	}
+
+	parsed := ParseMessage("<@bot> /start fix please ship it", "bot")
+	if parsed.Kind != KindStartFix {
+		t.Fatalf("Kind=%d", parsed.Kind)
+	}
+	item := taskItem{
+		parsed:   parsed,
+		threadID: "th-gate",
+		proj:     projectRef{Name: "app", Cwd: dir},
+		actor:    actor,
+	}
+	b.snapshotPolicyOntoItem(&item, "app", nil)
+
+	after, _ := store.Get("th-gate")
+	if after.Phase == sessionstore.PhaseFixing {
+		t.Fatal("operator must not promote case to fixing via /start fix")
+	}
+	if after.Phase != sessionstore.PhaseInvestigate {
+		t.Fatalf("phase changed unexpectedly: %q", after.Phase)
+	}
+	if after.Mode != ModeCase {
+		t.Fatalf("Mode=%q", after.Mode)
+	}
+	if item.snapAllowPR || item.snapAllowDirect {
+		t.Fatalf("snap must not allow ship: allowPR=%v allowDirect=%v", item.snapAllowPR, item.snapAllowDirect)
+	}
+
+	// Builder can escalate via same path
+	item2 := taskItem{
+		parsed:   parsed,
+		threadID: "th-gate",
+		proj:     projectRef{Name: "app", Cwd: dir},
+		actor:    Actor{ID: "eng1", DisplayName: "Eng"},
+	}
+	b.snapshotPolicyOntoItem(&item2, "app", nil)
+	after2, _ := store.Get("th-gate")
+	if after2.Phase != sessionstore.PhaseFixing {
+		t.Fatalf("builder /start fix should escalate: phase=%q", after2.Phase)
+	}
+	if after2.Mode != ModeCase {
+		t.Fatalf("Mode must stay case: %q", after2.Mode)
+	}
+}
