@@ -209,6 +209,25 @@
   </div>
 </div>
 
+<div class="section card" id="project-verify">
+  <h2>Verify commands</h2>
+  <p class="sub" style="margin-top:0">
+    Shell checks run by <span class="mono">@Grok /verify</span> in a thread (no Grok model call).
+    Commands run with the session worktree as cwd (or main checkout if none).
+    One command per line: <span class="mono">name | command</span>
+    or <span class="mono">name | command | timeoutMs</span> (timeout optional; default 10 minutes).
+    Also accepts <span class="mono">name: command</span>. Lines starting with <span class="mono">#</span> are ignored.
+    Empty saves clears all verify commands.
+  </p>
+  <form method="post" action="{{route "config.setProjectVerify"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <label for="project-verify-cmds">Commands</label>
+    <textarea id="project-verify-cmds" name="verifyCommands" rows="5" placeholder="unit | go test ./...&#10;lint | make lint | 300000" spellcheck="false">{{.ProjectItem.VerifyCommandsText}}</textarea>
+    <div class="form-actions"><button type="submit">Save verify commands</button></div>
+  </form>
+</div>
+
 <div class="section card" id="project-repo-fetch">
   <h2>Idle repo fetch</h2>
   <p class="sub" style="margin-top:0">

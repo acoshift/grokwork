@@ -157,6 +157,8 @@ type ProjectItem struct {
 	UnmappedUserIDs         []string // allowlisted users with no capabilityByUser entry
 	UnmappedRoleIDs         []string // allowlisted roles with no capabilityByRole entry
 	CapabilityTemplateNames []string // builtin + project overlay names for selects
+	// VerifyCommandsText is the config form body: "name | command [| timeoutMs]" per line.
+	VerifyCommandsText string
 }
 
 // ChannelItem is a channel→project mapping row for the config UI.
@@ -883,6 +885,7 @@ func (c *Config) Snapshot() Snapshot {
 			UnmappedUserIDs:          unmappedIDs(pc.AllowedUserIDs, pc.CapabilityByUser),
 			UnmappedRoleIDs:          unmappedIDs(pc.AllowedRoleIDs, pc.CapabilityByRole),
 			CapabilityTemplateNames:  capabilityTemplateNames(pc.CapabilityTemplates),
+			VerifyCommandsText:       FormatVerifyCommandsText(pc.VerifyCommands),
 		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled

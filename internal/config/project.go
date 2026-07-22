@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -259,6 +260,74 @@ func (c *Config) SetProjectVerifyCommands(name string, cmds []VerifyCommand) err
 	}
 	c.Projects[name] = pc
 	return c.saveLocked()
+}
+
+// FormatVerifyCommandsText renders commands for the project config textarea.
+// Each line: "name | command" or "name | command | timeoutMs".
+func FormatVerifyCommandsText(cmds []VerifyCommand) string {
+	if len(cmds) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, cmd := range cmds {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(cmd.Name)
+		b.WriteString(" | ")
+		b.WriteString(cmd.Command)
+		if cmd.TimeoutMs > 0 {
+			b.WriteString(" | ")
+			b.WriteString(strconv.Itoa(cmd.TimeoutMs))
+		}
+	}
+	return b.String()
+}
+
+// ParseVerifyCommandsText parses the project config textarea format.
+// Lines: "name | command" or "name | command | timeoutMs".
+// Also accepts "name: command" for simple entries (no timeout).
+// Blank lines and lines starting with # are ignored.
+func ParseVerifyCommandsText(text string) ([]VerifyCommand, error) {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	var out []VerifyCommand
+	for i, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		var name, command, timeoutStr string
+		if strings.Contains(line, "|") {
+			parts := strings.SplitN(line, "|", 3)
+			name = strings.TrimSpace(parts[0])
+			if len(parts) < 2 {
+				return nil, fmt.Errorf("line %d: expected name | command", i+1)
+			}
+			command = strings.TrimSpace(parts[1])
+			if len(parts) == 3 {
+				timeoutStr = strings.TrimSpace(parts[2])
+			}
+		} else if idx := strings.Index(line, ":"); idx > 0 {
+			name = strings.TrimSpace(line[:idx])
+			command = strings.TrimSpace(line[idx+1:])
+		} else {
+			return nil, fmt.Errorf("line %d: use \"name | command\" or \"name: command\"", i+1)
+		}
+		if name == "" || command == "" {
+			return nil, fmt.Errorf("line %d: name and command are required", i+1)
+		}
+		cmd := VerifyCommand{Name: name, Command: command}
+		if timeoutStr != "" {
+			ms, err := strconv.Atoi(timeoutStr)
+			if err != nil || ms < 0 {
+				return nil, fmt.Errorf("line %d: timeoutMs must be a non-negative integer", i+1)
+			}
+			cmd.TimeoutMs = ms
+		}
+		out = append(out, cmd)
+	}
+	return out, nil
 }
 
 // ProjectRepoFetchIntervalMinutes returns the effective idle auto-fetch

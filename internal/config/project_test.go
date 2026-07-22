@@ -4,9 +4,60 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestParseVerifyCommandsText(t *testing.T) {
+	cmds, err := ParseVerifyCommandsText(`
+# comment
+unit | go test ./...
+lint | make lint | 300000
+fmt: gofmt -l .
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cmds) != 3 {
+		t.Fatalf("len=%d %+v", len(cmds), cmds)
+	}
+	if cmds[0].Name != "unit" || cmds[0].Command != "go test ./..." || cmds[0].TimeoutMs != 0 {
+		t.Fatalf("%+v", cmds[0])
+	}
+	if cmds[1].TimeoutMs != 300000 {
+		t.Fatalf("%+v", cmds[1])
+	}
+	if cmds[2].Name != "fmt" || cmds[2].Command != "gofmt -l ." {
+		t.Fatalf("%+v", cmds[2])
+	}
+	text := FormatVerifyCommandsText(cmds[:2])
+	if text != "unit | go test ./...\nlint | make lint | 300000" {
+		t.Fatalf("format=%q", text)
+	}
+	if _, err := ParseVerifyCommandsText("bad line no separator"); err == nil {
+		t.Fatal("want parse error")
+	}
+	dir := t.TempDir()
+	cfg := &Config{
+		Projects:   PathProjects(map[string]string{"app": dir}),
+		ConfigPath: filepath.Join(dir, "config.json"),
+	}
+	if err := cfg.SetProjectVerifyCommands("app", cmds[:2]); err != nil {
+		t.Fatal(err)
+	}
+	snap := cfg.Snapshot()
+	var item *ProjectItem
+	for i := range snap.Projects {
+		if snap.Projects[i].Name == "app" {
+			item = &snap.Projects[i]
+			break
+		}
+	}
+	if item == nil || !strings.Contains(item.VerifyCommandsText, "unit |") {
+		t.Fatalf("snapshot text: %+v", item)
+	}
+}
 
 func TestProjectSafeTeam(t *testing.T) {
 	dir := t.TempDir()

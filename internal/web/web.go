@@ -108,6 +108,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.setProjectFetch":  "/config/projects/fetch",
 		"config.setProjectShip":   "/config/projects/ship",
 		"config.setProjectSafeTeam": "/config/projects/safe-team",
+		"config.setProjectVerify": "/config/projects/verify",
 		"config.setProjectCapabilityUser": "/config/projects/capabilities/users",
 		"config.removeProjectCapabilityUser": "/config/projects/capabilities/users/remove",
 		"config.setProjectCapabilityRole": "/config/projects/capabilities/roles",
@@ -278,6 +279,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/fetch", s.requireAdmin(hime.Handler(s.setProjectFetch)))
 	mux.Handle("POST /config/projects/ship", s.requireAdmin(hime.Handler(s.setProjectShip)))
 	mux.Handle("POST /config/projects/safe-team", s.requireAdmin(hime.Handler(s.setProjectSafeTeam)))
+	mux.Handle("POST /config/projects/verify", s.requireAdmin(hime.Handler(s.setProjectVerify)))
 	mux.Handle("POST /config/projects/capabilities/users", s.requireAdmin(hime.Handler(s.setProjectCapabilityUser)))
 	mux.Handle("POST /config/projects/capabilities/users/remove", s.requireAdmin(hime.Handler(s.removeProjectCapabilityUser)))
 	mux.Handle("POST /config/projects/capabilities/roles", s.requireAdmin(hime.Handler(s.setProjectCapabilityRole)))
@@ -920,6 +922,26 @@ func (s *Server) setProjectSafeTeam(ctx *hime.Context) error {
 	msg := fmt.Sprintf("Updated safe team settings for project %q", name)
 	if enabled {
 		msg = fmt.Sprintf("Safe team mode ON for project %q — unmapped members use the default template", name)
+	}
+	return s.projectConfigRedirect(ctx, name, msg, err)
+}
+
+func (s *Server) setProjectVerify(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	raw := ctx.PostFormValue("verifyCommands")
+	cmds, err := config.ParseVerifyCommandsText(raw)
+	if err != nil {
+		return s.projectConfigRedirect(ctx, name, "", err)
+	}
+	err = s.cfg.SetProjectVerifyCommands(name, cmds)
+	s.auditAction(ctx, "config.set_project_verify", err, map[string]any{
+		"name": name, "count": len(cmds),
+	})
+	msg := fmt.Sprintf("Cleared verify commands for project %q", name)
+	if len(cmds) == 1 {
+		msg = fmt.Sprintf("Saved 1 verify command for project %q", name)
+	} else if len(cmds) > 1 {
+		msg = fmt.Sprintf("Saved %d verify commands for project %q", len(cmds), name)
 	}
 	return s.projectConfigRedirect(ctx, name, msg, err)
 }

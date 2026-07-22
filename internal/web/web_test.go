@@ -123,6 +123,9 @@ func TestPagesRender(t *testing.T) {
 		{"/config/projects/proj", "Safe team mode"},
 		{"/config/projects/proj", `id="project-safe-team"`},
 		{"/config/projects/proj", "name=\"safeTeamMode\""},
+		{"/config/projects/proj", "Verify commands"},
+		{"/config/projects/proj", `id="project-verify"`},
+		{"/config/projects/proj", "name=\"verifyCommands\""},
 		{"/config/projects/proj", "Danger zone"},
 	}
 	for _, tc := range cases {
@@ -1245,6 +1248,23 @@ func TestProjectConfigPage(t *testing.T) {
 		t.Fatalf("mapped builder cannot ship: %+v", caps)
 	}
 
+	// Verify commands.
+	form = url.Values{
+		"name": {"proj"},
+		"verifyCommands": {"unit | go test ./...\nlint | make lint | 300000"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/config/projects/verify", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("set verify status=%d body=%s", w.Code, w.Body.String())
+	}
+	vc := cfg.ProjectVerifyCommands("proj")
+	if len(vc) != 2 || vc[0].Name != "unit" || vc[1].TimeoutMs != 300000 {
+		t.Fatalf("verify cmds: %+v", vc)
+	}
+
 	// Project page renders the saved state.
 	req = httptest.NewRequest(http.MethodGet, "/config/projects/proj", nil)
 	w = httptest.NewRecorder()
@@ -1266,6 +1286,9 @@ func TestProjectConfigPage(t *testing.T) {
 		"checked",
 		"u-builder",
 		"builder",
+		`id="project-verify"`,
+		"go test ./...",
+		"make lint",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("project page missing %q", want)
