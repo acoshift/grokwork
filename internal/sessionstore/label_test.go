@@ -116,6 +116,16 @@ func TestApplyAutoLabelOnRunStart(t *testing.T) {
 	if e.ApplyAutoLabelOnRunStart() {
 		t.Fatal("manual should block")
 	}
+	// Direct mode revives done → in_progress.
+	e = Entry{ShipMode: ShipModeDirect, Label: LabelDone}
+	if !e.ApplyAutoLabelOnRunStart() || e.Label != LabelInProgress {
+		t.Fatalf("direct done→in_progress: %+v", e)
+	}
+	// PR mode does not revive terminal without open PR.
+	e = Entry{ShipMode: ShipModePR, Label: LabelDone}
+	if e.ApplyAutoLabelOnRunStart() {
+		t.Fatal("PR mode should not revive done")
+	}
 }
 
 func TestSetLabelManualAndClear(t *testing.T) {

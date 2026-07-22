@@ -25,6 +25,25 @@
   </form>
 </div>
 
+<div class="section card" id="project-ship">
+  <h2>Ship workflow</h2>
+  <p class="sub" style="margin-top:0">
+    Default is pull-request mode: each session works on a managed branch and opens a PR.
+    <strong>Direct to primary</strong> keeps per-session worktrees, then the bot fast-forwards
+    the project default branch and pushes — no PR. For solo / fast-moving trusted projects only.
+    Existing threads keep their ship mode until a new thread is started.
+  </p>
+  <form method="post" action="{{route "config.setProjectShip"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <label class="check">
+      <input type="checkbox" name="directToPrimary" value="1" {{if .ProjectItem.DirectToPrimary}}checked{{end}}>
+      Direct to primary (no pull requests)
+    </label>
+    <div class="form-actions"><button type="submit">Save ship workflow</button></div>
+  </form>
+</div>
+
 <div class="section card" id="project-repo-fetch">
   <h2>Idle repo fetch</h2>
   <p class="sub" style="margin-top:0">

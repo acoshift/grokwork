@@ -92,10 +92,14 @@ type Bot struct {
 	discord     *discordgo.Session // gateway session after Register
 	threadAPI   threadAPI          // tests inject; nil → wrap discord
 	reconnectMu sync.Mutex         // serializes forced gateway reconnects
+
+	// Per main-checkout path locks for direct-to-primary ship (abs+symlink key).
+	shipMu    sync.Mutex
+	shipLocks map[string]*sync.Mutex
 }
 
 func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) *Bot {
-	b := &Bot{cfg: cfg, sessions: sessions, history: hist}
+	b := &Bot{cfg: cfg, sessions: sessions, history: hist, shipLocks: map[string]*sync.Mutex{}}
 	if cfg != nil && cfg.DataDir != "" {
 		if store, err := runjournal.New(cfg.DataDir); err != nil {
 			log.Printf("warn: runjournal: %v", err)
@@ -178,6 +182,30 @@ type StatusSnapshot struct {
 	ProjectCount        int         `json:"projectCount"`
 	EmptyMemberProjects int         `json:"emptyMemberProjects"`
 	Time                time.Time   `json:"time"`
+}
+
+// InjectActiveRunForTest claims a synthetic in-flight job so other packages can
+// exercise dashboard filters. Caller must cancel when done (or use t.Cleanup).
+func (b *Bot) InjectActiveRunForTest(threadID, project string) (cancel context.CancelFunc, err error) {
+	if b == nil {
+		return nil, fmt.Errorf("bot is nil")
+	}
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return nil, fmt.Errorf("thread id is required")
+	}
+	_, c := context.WithCancel(context.Background())
+	job := &runJob{cancel: c, start: time.Now(), project: strings.TrimSpace(project)}
+	claimed, _, err := b.claimOrEnqueue(threadID, job, taskItem{threadID: threadID})
+	if err != nil {
+		c()
+		return nil, err
+	}
+	if !claimed {
+		c()
+		return nil, fmt.Errorf("thread %s already has an active run", threadID)
+	}
+	return c, nil
 }
 
 // StatusSnapshot collects active runs and session counts without Discord I/O.
@@ -711,12 +739,19 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 	}
 
 	opts := b.ensureOptsForUnit(threadID)
-	if cleaned, state, cErr := gitworktree.CleanupIfPRDoneWith(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID, opts); cErr != nil {
-		log.Printf("warn: worktree PR cleanup check thread=%s: %v", threadID, cErr)
-	} else if cleaned {
-		log.Printf("task: cleaned worktree after PR %s thread=%s", state, threadID)
-		if delErr := b.sessions.Delete(threadID); delErr != nil {
-			log.Printf("warn: session delete after PR cleanup thread=%s: %v", threadID, delErr)
+	// Direct-to-primary sessions never track PRs for cleanup; skip gh pr list.
+	skipPRCleanup := false
+	if e, ok := b.sessions.Get(threadID); ok && e.IsDirectShip() {
+		skipPRCleanup = true
+	}
+	if !skipPRCleanup {
+		if cleaned, state, cErr := gitworktree.CleanupIfPRDoneWith(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID, opts); cErr != nil {
+			log.Printf("warn: worktree PR cleanup check thread=%s: %v", threadID, cErr)
+		} else if cleaned {
+			log.Printf("task: cleaned worktree after PR %s thread=%s", state, threadID)
+			if delErr := b.sessions.Delete(threadID); delErr != nil {
+				log.Printf("warn: session delete after PR cleanup thread=%s: %v", threadID, delErr)
+			}
 		}
 	}
 
@@ -749,19 +784,47 @@ func (b *Bot) ensureOptsForUnit(unitID string) gitworktree.EnsureOpts {
 	return gitworktree.EnsureOpts{BranchPrefix: gitworktree.PrefixForUnitID(unitID)}
 }
 
+// remoteWorkPromptPrefix is the PR-mode contract (default).
 func remoteWorkPromptPrefix(branch string) string {
+	return remoteWorkPromptPrefixMode(branch, false)
+}
+
+// remoteWorkPromptPrefixMode builds the remote-work contract.
+// direct=true enables No-PR / direct-to-primary wording when a managed branch is present.
+// Without a branch, direct mode falls back to PR-mode wording (ship is skipped).
+func remoteWorkPromptPrefixMode(branch string, direct bool) string {
 	lines := []string{
 		"You are working on a shared workflow unit (Discord thread and/or web session) on a remote machine — not a local interactive session.",
 	}
+	useDirect := direct && branch != ""
 	if branch != "" {
 		lines = append(lines,
 			"Isolated git worktree for this workflow unit / thread.",
 			"Branch: "+branch,
 			"Stay in this worktree; do not switch to the main checkout.",
-			"When you make code changes you MUST:",
-			"1. Commit on this branch only (never commit to main/master).",
-			"2. Push the branch to the remote (`git push -u origin HEAD`).",
-			"3. Open a pull request with `gh pr create` (or push to update an existing PR for this branch).",
+		)
+		if useDirect {
+			lines = append(lines,
+				"Ship mode: direct-to-primary (no pull request for this project's repository).",
+				"When you make code changes you MUST:",
+				"1. Commit on this branch only (never commit to main/master yourself).",
+				"2. Leave the working tree clean for tracked files (commit or discard staged/unstaged changes).",
+				"3. Do NOT open a pull request for this project's repository (`gh pr create` for this repo is forbidden).",
+				"4. Do NOT push to main/master and do NOT run `git push origin HEAD:main` (or similar).",
+				"5. Do NOT merge anything.",
+				"After a successful run the bot will fast-forward integrate this branch onto the project primary and push.",
+				"Summarize your commits in the final reply (no PR URL required for this ship).",
+				"If the task legitimately touches another repository, you may open a PR there; still do not open a PR for this project repo.",
+			)
+		} else {
+			lines = append(lines,
+				"When you make code changes you MUST:",
+				"1. Commit on this branch only (never commit to main/master).",
+				"2. Push the branch to the remote (`git push -u origin HEAD`).",
+				"3. Open a pull request with `gh pr create` (or push to update an existing PR for this branch).",
+			)
+		}
+		lines = append(lines,
 			"",
 			"Uploading files to Discord: only files inside THIS worktree can be attached.",
 			"If the user wants a build artifact, report, APK, Excel, etc. shared back, write the file under the worktree, then end your reply with:",
@@ -782,10 +845,19 @@ func remoteWorkPromptPrefix(branch string) string {
 			"Do not promise Discord attachments when there is no worktree.",
 		)
 	}
+	if useDirect {
+		lines = append(lines,
+			"Do not leave work as uncommitted tracked changes.",
+			"",
+		)
+	} else {
+		lines = append(lines,
+			"Do not leave work as local-only commits. Do not merge the PR.",
+			"Include the PR URL in your final reply.",
+			"",
+		)
+	}
 	lines = append(lines,
-		"Do not leave work as local-only commits. Do not merge the PR.",
-		"Include the PR URL in your final reply.",
-		"",
 		"Filesystem scope (macOS privacy): stay inside this unit's cwd/worktree and the project repo.",
 		"Do NOT scan or search the user's home directory or protected folders — no find/ls/rg/glob over",
 		"~, $HOME, ~/Documents, ~/Desktop, ~/Downloads, ~/Music, ~/Pictures, ~/Library, or similar.",
@@ -1093,7 +1165,10 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	// Bind owner before the run so /cancel is gated for multi-person threads
 	// even on the first task (session used to be written only after grok exits).
 	b.bindThreadOwnerActor(threadID, proj.Name, actor)
+	// Stamp sticky ShipMode from project config on first run (thread-sticky thereafter).
+	shipMode := b.ensureShipMode(threadID, proj.Name)
 	// open → in_progress on first real work (manual labels stay sticky).
+	// Direct-mode sessions also revive done/abandoned after a prior ship.
 	b.applyAutoLabelOnRunStart(threadID, proj.Name, actor)
 
 	var thoughts thoughtTracker
@@ -1285,7 +1360,10 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		issueLines = e.Issues
 	}
 
-	prompt = remoteWorkPromptPrefix(wtBranch) + issueBindingPrompt(issueLines) + prompt
+	direct := shipMode == sessionstore.ShipModeDirect
+	// Direct without managed branch falls back to PR-mode prompt (ship skipped).
+	promptDirect := direct && wtBranch != ""
+	prompt = remoteWorkPromptPrefixMode(wtBranch, promptDirect) + issueBindingPromptMode(issueLines, promptDirect) + prompt
 
 	sessionID, forceNew := b.prebindSessionID(threadID, proj.Name)
 	if sessionID != "" {
@@ -1478,8 +1556,14 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		if repoDir == "" {
 			repoDir = proj.Cwd
 		}
-		// Bind/discover PRs even when Discord is absent (web-native / soft-degrade).
-		b.refreshPRAfterTask(s, threadID, repoDir, wtBranch, replyText)
+		shipped := false
+		if direct && wtBranch != "" {
+			// No-PR path: bot-owned ff push to primary (uploads already ran above).
+			shipped = b.shipDirectAfterTask(s, present, threadID, proj, runCwd, wtBranch, result)
+		} else if !direct {
+			// Bind/discover PRs even when Discord is absent (web-native / soft-degrade).
+			b.refreshPRAfterTask(s, threadID, repoDir, wtBranch, replyText)
+		}
 		b.ensureThreadGoal(threadID, parsed.Prompt)
 		// Completion card + brief pin are Discord-only presentation.
 		if present {
@@ -1487,6 +1571,12 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			if _, err := b.refreshBriefCard(s, threadID, runCwd); err != nil {
 				log.Printf("brief: post-task refresh thread=%s: %v", threadID, err)
 			}
+		}
+		// Direct ship: remove worktree only after successful ship when no follow-ups.
+		// Keep the session entry so Grok resume memory survives.
+		// Exception to PR-mode "don't cleanup while job held" — queue-empty only.
+		if shipped && b.queueLen(threadID) == 0 {
+			b.maybeRemoveDirectWorktree(threadID, proj, runCwd, wtBranch)
 		}
 	}
 

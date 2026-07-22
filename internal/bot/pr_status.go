@@ -645,4 +645,24 @@ func preservePRFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	preserveLabelFields(next, prev)
 	preserveIssueFields(next, prev)
 	preserveWorkflowFields(next, prev)
+	preserveShipFields(next, prev)
+}
+
+// preserveShipFields copies direct-to-primary ship metadata across session Set rebuilds.
+func preserveShipFields(next *sessionstore.Entry, prev sessionstore.Entry) {
+	if next == nil {
+		return
+	}
+	if next.ShipMode == "" {
+		next.ShipMode = prev.ShipMode
+	}
+	if next.ShippedSHA == "" {
+		next.ShippedSHA = prev.ShippedSHA
+	}
+	if next.ShippedAt == "" {
+		next.ShippedAt = prev.ShippedAt
+	}
+	if next.PrimaryBranch == "" {
+		next.PrimaryBranch = prev.PrimaryBranch
+	}
 }

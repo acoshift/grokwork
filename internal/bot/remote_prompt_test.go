@@ -58,3 +58,30 @@ func TestIssueBindingPromptInPrefixChain(t *testing.T) {
 		t.Fatalf("unexpected issues block: %s", head)
 	}
 }
+
+func TestRemoteWorkPromptPrefixDirect(t *testing.T) {
+	p := remoteWorkPromptPrefixMode("grok/discord/123", true)
+	for _, want := range []string{
+		"direct-to-primary",
+		"Branch: grok/discord/123",
+		"Do NOT open a pull request",
+		"Do NOT push to main/master",
+		"fast-forward integrate",
+	} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("missing %q in:\n%s", want, p)
+		}
+	}
+	if strings.Contains(p, "Include the PR URL") {
+		t.Fatalf("direct mode must not require PR URL:\n%s", p)
+	}
+	// Mentions gh pr create only as forbidden for this repo, not as an instruction to run it.
+	if strings.Contains(p, "3. Open a pull request with `gh pr create`") {
+		t.Fatalf("direct mode must not instruct opening a PR:\n%s", p)
+	}
+	// No branch → falls back to PR-style wording even if direct flag set.
+	p2 := remoteWorkPromptPrefixMode("", true)
+	if !strings.Contains(p2, "gh pr create") {
+		t.Fatalf("no-branch direct should fall back to PR wording:\n%s", p2)
+	}
+}

@@ -25,6 +25,12 @@ func preserveIssueFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 
 // issueBindingPrompt injects linked-ticket contract for Grok (PR body + title).
 func issueBindingPrompt(issues []sessionstore.TrackedIssue) string {
+	return issueBindingPromptMode(issues, false)
+}
+
+// issueBindingPromptMode is like issueBindingPrompt; direct=true puts Fixes/Refs
+// in commit messages instead of PR body (No-PR ship mode).
+func issueBindingPromptMode(issues []sessionstore.TrackedIssue, direct bool) string {
 	if len(issues) == 0 {
 		return ""
 	}
@@ -45,6 +51,20 @@ func issueBindingPrompt(issues []sessionstore.TrackedIssue) string {
 			b.WriteString(" · " + u)
 		}
 		b.WriteString("\n")
+	}
+	if direct {
+		b.WriteString("This thread ships direct-to-primary (no PR). When you commit you MUST:\n")
+		b.WriteString("1. Include these exact lines in the commit message body:\n")
+		for _, iss := range issues {
+			if line := iss.PRBodyLine(); line != "" {
+				b.WriteString("   " + line + "\n")
+			}
+		}
+		b.WriteString("2. Prefer a short summary that mentions the ticket ids when relevant (e.g. \"")
+		b.WriteString(strings.TrimSpace(sessionstore.IssueTitlePrefix(issues)))
+		b.WriteString(" short summary\").\n")
+		b.WriteString("Do not invent other issue numbers. Do not open a PR for this project's repository.\n\n")
+		return b.String()
 	}
 	b.WriteString("When you open or update a pull request you MUST:\n")
 	b.WriteString("1. Include these exact lines in the PR body:\n")

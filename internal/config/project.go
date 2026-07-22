@@ -31,8 +31,11 @@ type ProjectConfig struct {
 	// 0 disables idle auto-fetch. New worktrees always fetch with a short
 	// hardcoded throttle (see gitworktree.CreateFetchThrottle).
 	RepoFetchIntervalMinutes *int                 `json:"repoFetchIntervalMinutes,omitempty"`
-	GitHub                   *ProjectGitHubConfig `json:"github,omitempty"`
-	Linear                   *ProjectLinearConfig `json:"linear,omitempty"`
+	// DirectToPrimary, when true, new sessions stamp ShipMode=direct and ship
+	// via fast-forward push to the project primary (no PR). nil/false = PR mode.
+	DirectToPrimary *bool                 `json:"directToPrimary,omitempty"`
+	GitHub          *ProjectGitHubConfig  `json:"github,omitempty"`
+	Linear          *ProjectLinearConfig  `json:"linear,omitempty"`
 }
 
 // ProjectsMap is project name → config. JSON accepts either a path string or a full object.
@@ -111,6 +114,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		AllowedUserIDs           []string             `json:"allowedUserIds,omitempty"`
 		AllowedRoleIDs           []string             `json:"allowedRoleIds,omitempty"`
 		RepoFetchIntervalMinutes *int                 `json:"repoFetchIntervalMinutes,omitempty"`
+		DirectToPrimary          *bool                `json:"directToPrimary,omitempty"`
 		GitHub                   *ProjectGitHubConfig `json:"github,omitempty"`
 		Linear                   *ProjectLinearConfig `json:"linear,omitempty"`
 	}
@@ -123,6 +127,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			AllowedUserIDs:           slices.Clone(pc.AllowedUserIDs),
 			AllowedRoleIDs:           slices.Clone(pc.AllowedRoleIDs),
 			RepoFetchIntervalMinutes: cloneIntPtr(pc.RepoFetchIntervalMinutes),
+			DirectToPrimary:          cloneBoolPtr(pc.DirectToPrimary),
 			GitHub:                   cloneProjectGitHub(pc.GitHub),
 			Linear:                   cloneProjectLinear(pc.Linear),
 		}
@@ -151,6 +156,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			AllowedUserIDs:           slices.Clone(v.AllowedUserIDs),
 			AllowedRoleIDs:           slices.Clone(v.AllowedRoleIDs),
 			RepoFetchIntervalMinutes: cloneIntPtr(v.RepoFetchIntervalMinutes),
+			DirectToPrimary:          cloneBoolPtr(v.DirectToPrimary),
 			GitHub:                   cloneProjectGitHub(v.GitHub),
 			Linear:                   cloneProjectLinear(v.Linear),
 		}
@@ -261,6 +267,41 @@ func (c *Config) SetProjectRepoFetchIntervalMinutes(name string, minutes int) er
 	}
 	d := minutes
 	pc.RepoFetchIntervalMinutes = &d
+	c.Projects[name] = pc
+	return c.saveLocked()
+}
+
+// ProjectDirectToPrimary reports whether new sessions for this project use
+// direct-to-primary ship mode (no PR). nil/false → false (PR mode).
+func (c *Config) ProjectDirectToPrimary(name string) bool {
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	return ok && pc.DirectToPrimary != nil && *pc.DirectToPrimary
+}
+
+// SetProjectDirectToPrimary sets per-project direct-to-primary mode and persists.
+// true enables No-PR ship; false clears the opt-in (PR mode).
+func (c *Config) SetProjectDirectToPrimary(name string, enabled bool) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	if enabled {
+		v := true
+		pc.DirectToPrimary = &v
+	} else {
+		pc.DirectToPrimary = nil
+	}
 	c.Projects[name] = pc
 	return c.saveLocked()
 }

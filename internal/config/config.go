@@ -128,7 +128,8 @@ type ProjectItem struct {
 	ChannelOptions           []string // channel IDs mapped to this project (preferred dropdown)
 	AllowedUserIDs           []string
 	AllowedRoleIDs           []string
-	RepoFetchIntervalMinutes int // effective minutes (default when unset; 0 = disabled)
+	RepoFetchIntervalMinutes int  // effective minutes (default when unset; 0 = disabled)
+	DirectToPrimary          bool // true when project ships without PRs
 }
 
 // ChannelItem is a channel→project mapping row for the config UI.
@@ -731,6 +732,7 @@ func (c *Config) Snapshot() Snapshot {
 			AllowedUserIDs:           slices.Clone(pc.AllowedUserIDs),
 			AllowedRoleIDs:           slices.Clone(pc.AllowedRoleIDs),
 			RepoFetchIntervalMinutes: fetchMins,
+			DirectToPrimary:          pc.DirectToPrimary != nil && *pc.DirectToPrimary,
 		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled

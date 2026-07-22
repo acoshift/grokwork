@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -63,6 +64,24 @@ type Entry struct {
 	CINotifiedSHA  string `json:"ciNotifiedSha,omitempty"`
 	CIAutoFixCount int    `json:"ciAutoFixCount,omitempty"`
 	CIAutoFixSHA   string `json:"ciAutoFixSha,omitempty"`
+
+	// ShipMode is sticky per thread: "" (unset), "pr", or "direct" (No-PR / direct-to-primary).
+	// Stamped on first run from project config; later runs honor the stamp.
+	ShipMode      string `json:"shipMode,omitempty"`
+	ShippedSHA    string `json:"shippedSha,omitempty"`
+	ShippedAt     string `json:"shippedAt,omitempty"` // RFC3339
+	PrimaryBranch string `json:"primaryBranch,omitempty"`
+}
+
+// Ship mode values for Entry.ShipMode.
+const (
+	ShipModePR     = "pr"
+	ShipModeDirect = "direct"
+)
+
+// IsDirectShip reports whether this session uses direct-to-primary shipping.
+func (e Entry) IsDirectShip() bool {
+	return strings.TrimSpace(e.ShipMode) == ShipModeDirect
 }
 
 type Store struct {

@@ -8,6 +8,67 @@ import (
 	"time"
 )
 
+func TestProjectDirectToPrimary(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{
+		Projects: ProjectsMap{
+			"solo": {Path: filepath.Join(dir, "solo")},
+			"team": {Path: filepath.Join(dir, "team")},
+		},
+		ConfigPath: filepath.Join(dir, "config.json"),
+	}
+	if cfg.ProjectDirectToPrimary("solo") {
+		t.Fatal("default should be false")
+	}
+	if err := cfg.SetProjectDirectToPrimary("solo", true); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ProjectDirectToPrimary("solo") {
+		t.Fatal("want true after set")
+	}
+	if cfg.ProjectDirectToPrimary("team") {
+		t.Fatal("team should stay false")
+	}
+	// Disk + marshal round-trip.
+	raw, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var disk struct {
+		Projects ProjectsMap `json:"projects"`
+	}
+	if err := json.Unmarshal(raw, &disk); err != nil {
+		t.Fatal(err)
+	}
+	if disk.Projects["solo"].DirectToPrimary == nil || !*disk.Projects["solo"].DirectToPrimary {
+		t.Fatalf("disk lost flag: %+v", disk.Projects["solo"])
+	}
+	cloned := cloneProjectsMap(cfg.Projects)
+	if cloned["solo"].DirectToPrimary == nil || !*cloned["solo"].DirectToPrimary {
+		t.Fatalf("clone lost flag: %+v", cloned["solo"])
+	}
+	snap := cfg.Snapshot()
+	var soloItem *ProjectItem
+	for i := range snap.Projects {
+		if snap.Projects[i].Name == "solo" {
+			soloItem = &snap.Projects[i]
+			break
+		}
+	}
+	if soloItem == nil || !soloItem.DirectToPrimary {
+		t.Fatalf("snapshot want true: %+v", soloItem)
+	}
+	if err := cfg.SetProjectDirectToPrimary("solo", false); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProjectDirectToPrimary("solo") {
+		t.Fatal("want false after clear")
+	}
+	if err := cfg.SetProjectDirectToPrimary("missing", true); err == nil {
+		t.Fatal("want error for missing project")
+	}
+}
+
 func TestProjectsMapDualShape(t *testing.T) {
 	raw := []byte(`{
 		"stringy": "/tmp/a",

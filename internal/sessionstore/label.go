@@ -189,6 +189,8 @@ func (e *Entry) ApplyAutoLabel(suggested string) bool {
 }
 
 // ApplyAutoLabelOnRunStart sets in_progress from open when a task starts.
+// Direct-to-primary sessions also revive terminal done/abandoned → in_progress
+// so follow-up tasks on the same thread are not stuck after a ship.
 func (e *Entry) ApplyAutoLabelOnRunStart() bool {
 	if e == nil || e.LabelManual {
 		return false
@@ -197,6 +199,14 @@ func (e *Entry) ApplyAutoLabelOnRunStart() bool {
 	case LabelOpen:
 		e.Label = LabelInProgress
 		return true
+	case LabelDone, LabelAbandoned:
+		// PR-mode terminal threads usually get deleted; direct mode keeps the
+		// session. Allow revival without an open PR when ShipMode is direct.
+		if e.IsDirectShip() {
+			e.Label = LabelInProgress
+			return true
+		}
+		return false
 	default:
 		return false
 	}

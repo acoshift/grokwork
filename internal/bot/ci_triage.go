@@ -196,6 +196,14 @@ func (b *Bot) handleFixCI(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		return
 	}
+	if e.IsDirectShip() {
+		if _, err := s.ChannelMessageSendReply(threadID,
+			"This thread is in direct-to-primary mode (no PR). `/fix-ci` needs a tracked PR. Start a new task to fix from the current primary tip.",
+			ref(m)); err != nil {
+			log.Printf("error: reply fix-ci-direct: %v", err)
+		}
+		return
+	}
 	e.NormalizePRs()
 	if !e.HasAnyPR() {
 		if _, err := s.ChannelMessageSendReply(threadID, "No PR linked to this thread yet. Run a task that opens a PR first.", ref(m)); err != nil {

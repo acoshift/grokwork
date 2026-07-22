@@ -41,7 +41,7 @@ Wiring lives in `main.go`: `config.Load()` → `sessionstore.New` → `history.N
 
 ### Core invariant (see TODO.md "Design principles")
 
-**One Discord thread = one git worktree = one branch (`grok/discord/<threadId>`) = one Grok session.** All collaboration metadata (ownership, brief card, PR cards, queue) wraps that unit. The bot owns deterministic git/gh operations; Grok owns judgment. The bot never merges PRs.
+**One Discord thread = one git worktree = one branch (`grok/discord/<threadId>`) = one Grok session.** All collaboration metadata (ownership, brief card, PR cards, queue) wraps that unit. The bot owns deterministic git/gh operations; Grok owns judgment. The bot never merges **GitHub PRs**. When a project has `directToPrimary` enabled, sessions stamp sticky `ShipMode=direct` and the bot may fast-forward a managed session branch onto the project primary and push (No-PR mode) — not `gh pr merge`.
 
 ### Message pipeline (`internal/bot`, the bulk of the code)
 
@@ -52,7 +52,7 @@ A task then flows through `handleTask` (async):
 2. Thread creation + title (optionally one extra `grok` call to summarize, `grokrun.SummarizeTitle`).
 3. Per-thread state machine — `threadState` in `Bot.states` (sync.Map) holds one active `runJob` + FIFO queue (max 5). `claimOrEnqueue`/`finishRun`/`replaceJob` are the only mutation points; queued follow-ups auto-run when the current run ends.
 4. Worktree resolution (`internal/gitworktree`) — per-thread worktree under `data/worktrees/<project>/<threadId>` created from main checkout HEAD.
-5. Prompt assembly — `remoteWorkPromptPrefix` (bot.go) injects the contract Grok must follow: commit on the thread branch only, push, open a PR via `gh`, include the PR URL, optional `DISCORD_UPLOAD:` block for artifacts. Attachments (attachments.go) and replied-to message context are appended.
+5. Prompt assembly — `remoteWorkPromptPrefixMode` (bot.go) injects the contract Grok must follow: PR mode = commit on the thread branch, push, open a PR via `gh`; direct mode = commit on the branch only, no PR (bot ships). Optional `DISCORD_UPLOAD:` block for artifacts. Attachments (attachments.go) and replied-to message context are appended.
 6. `grokrun.Run` executes, streaming into Discord (stream.go): live-edited tail message, sealed chunks when >1900 chars (`maxMsg`), phase chips + activity from the session's `updates.jsonl` (grokrun/activity.go).
 7. Post-run: completion summary card (completion.go — pure git, no model call), brief card refresh (brief.go), PR URL resolution → per-PR status cards + ~90s poller (pr_status.go), CI-failure digest / auto-fix (ci_triage.go), history log.
 
