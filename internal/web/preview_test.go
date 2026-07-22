@@ -139,6 +139,58 @@ func TestPreviewServer(t *testing.T) {
 			OwnerName: "beam", Origin: "discord",
 			Goal: "Investigate slow N+1 queries on /orders",
 		},
+		// Support cases (Mode=case) across the phase pipeline → /projects/webapp/cases.
+		"1390000000000000021": {
+			SessionID: "case-a", Project: "webapp", Mode: "case", Phase: "intake",
+			Severity: "critical", CustomerTitle: "Checkout 500s for EU Visa cards",
+			CustomerRef: "ZD-4821", ReporterName: "beam", Origin: "discord",
+			OwnerID: "222222222222222222", OwnerName: "poon",
+		},
+		"1390000000000000022": {
+			SessionID: "case-b", Project: "webapp", Mode: "case", Phase: "investigate",
+			Severity: "high", CustomerTitle: "Webhook retries fire twice for one order",
+			CustomerRef: "ZD-4780", ReporterName: "mint", Origin: "discord",
+			OwnerID: "111111111111111111", OwnerName: "mint",
+			CustomerUpdate: "We reproduced the duplicate retries on staging and are tracing the debounce window now — next update within the hour.",
+			Dossier: &sessionstore.Dossier{
+				Summary: "Retry queue re-enqueues per webhook event instead of per order; burst of events → duplicate settle jobs.",
+			},
+		},
+		"1390000000000000023": {
+			SessionID: "case-c", Project: "webapp", Mode: "case", Phase: "answered",
+			Severity: "medium", CustomerTitle: "How do refunds settle across currencies?",
+			CustomerRef: "ZD-4790", ReporterName: "beam", Origin: "web",
+			OwnerName:      "poon",
+			CustomerUpdate: "Refunds settle in the original charge currency at the captured FX rate; a worked example is in the reply draft.",
+			Label:          "blocked",
+		},
+		"1390000000000000024": {
+			SessionID: "case-d", Project: "webapp", Mode: "case", Phase: "fixing",
+			Severity: "high", CustomerTitle: "Session cookies dropped on Safari 17",
+			CustomerRef: "ZD-4711", ReporterName: "mint", Origin: "discord",
+			OwnerName: "mint",
+			Dossier: &sessionstore.Dossier{
+				Summary: "SameSite=Lax rollout regressed the payment-redirect return leg on Safari 17; needs Secure+None on the return cookie only.",
+			},
+		},
+		"1390000000000000025": {
+			SessionID: "case-e", Project: "webapp", Mode: "case", Phase: "shipping",
+			Severity: "critical", CustomerTitle: "Duplicate charges on retried payments",
+			CustomerRef: "ZD-4695", ReporterName: "beam", Origin: "discord",
+			OwnerName:      "mint",
+			CustomerUpdate: "Engineering has a fix in review; charges are deduplicated by idempotency key once it ships.",
+			PRs: []sessionstore.TrackedPR{{
+				URL: "https://github.com/acme/webapp/pull/133", Number: 133, State: "OPEN",
+				Title: "fix: idempotent settle jobs", Checks: "✓ 3 · ✗ 1",
+				Owner: "acme", Repo: "webapp",
+			}},
+		},
+		"1390000000000000026": {
+			SessionID: "case-f", Project: "webapp", Mode: "case", Phase: "closed",
+			Severity: "low", CustomerTitle: "Typo on the invoice footer",
+			CustomerRef: "ZD-4602", ReporterName: "beam", Origin: "web",
+			Resolution: "fixed", ResolutionNote: "Shipped in the July invoice template refresh.",
+		},
 	}
 	for id, e := range seedSessions {
 		if err := store.Set(id, e); err != nil {
@@ -173,6 +225,12 @@ func TestPreviewServer(t *testing.T) {
 	}
 
 	srv := New(cfg, store, hist, bot.New(cfg, store, hist))
+	// A live case run so the board shows the running chip on the investigate lane.
+	if err := bot.SeedActiveRunForTest(srv.bot, "1390000000000000022", "webapp",
+		"Trace the duplicate webhook retries",
+		"Reproduced: two settle jobs enqueue for order #9313 when webhooks burst…"); err != nil {
+		t.Fatal(err)
+	}
 	if previewAuth {
 		sid, _, err := srv.LoginAs("111111111111111111", "mint", config.WebRoleAdmin)
 		if err != nil {

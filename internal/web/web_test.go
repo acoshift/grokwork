@@ -104,6 +104,8 @@ func TestPagesRender(t *testing.T) {
 		{"/projects/proj", `id="page-project-overview"`},
 		{"/projects/proj", `id="live-project-pulse"`},
 		{"/projects/proj/ship", `id="page-ship"`},
+		{"/projects/proj/cases", `id="page-cases"`},
+		{"/projects/proj/cases", `id="case-pipeline"`},
 		{"/projects/proj/sessions", `id="page-sessions"`},
 		{"/projects/proj/worktrees", `id="page-worktrees"`},
 		{"/config", `id="page-config"`},
@@ -207,6 +209,8 @@ func TestPagesRender(t *testing.T) {
 			{"/partials/projects/pulse?project=proj", `id="pulse"`, "dashboard"},
 			{"/partials/ship/stats", "CI failing", "ship"},
 			{"/partials/ship/table", "Pull requests", "ship"},
+			{"/partials/cases/pipeline?project=proj", `id="case-pipeline"`, "cases"},
+			{"/partials/cases/list?project=proj", `id="cases-list"`, "cases"},
 			{"/partials/history/table", "thread-99", "history"},
 			{"/partials/history/turns/thread-99", `id="turns"`, "history"},
 			{"/partials/sessions/thread-99", `id="turns"`, "dashboard"},
@@ -249,6 +253,7 @@ func TestPagesRender(t *testing.T) {
 		}{
 			{"/", []string{`hx-trigger="sse:dashboard, sse:ship, sse:history"`, `hx-trigger="sse:dashboard"`}},
 			{"/projects/proj", []string{`hx-trigger="sse:dashboard, sse:ship"`}},
+			{"/projects/proj/cases", []string{`hx-trigger="sse:cases"`, "/partials/cases/pipeline?project=proj", "/partials/cases/list?project=proj"}},
 			{"/projects/proj/worktrees", []string{`hx-trigger="sse:worktrees"`, "/partials/worktrees/table?project=proj"}},
 			{"/ship", []string{`hx-trigger="sse:ship"`}},
 			{"/history", []string{`hx-trigger="sse:history"`}},
@@ -562,7 +567,7 @@ func TestNavBrandChrome(t *testing.T) {
 			t.Fatalf("global chrome missing %q", want)
 		}
 	}
-	for _, ban := range []string{">Dashboard<", ">Issues<", ">Commits<", ">History</a>", "Grok Discord"} {
+	for _, ban := range []string{">Dashboard<", ">Issues<", ">Commits<", ">Cases<", ">History</a>", "Grok Discord"} {
 		if strings.Contains(body, ban) {
 			t.Fatalf("global chrome must not contain %q", ban)
 		}
@@ -579,12 +584,14 @@ func TestNavBrandChrome(t *testing.T) {
 		"All projects",
 		">Overview<",
 		">Ship<",
+		">Cases<",
 		">Issues<",
 		">Commits<",
 		">Sessions<",
 		">Worktrees<",
 		">Settings<",
 		`href="/projects/proj/ship"`,
+		`href="/projects/proj/cases"`,
 		`href="/projects/proj/issues"`,
 		`href="/projects/proj/commits"`,
 		`href="/projects/proj/sessions"`,
@@ -619,6 +626,7 @@ func TestNavScopeRules(t *testing.T) {
 		{"/ship?project=proj", ""}, // data filter, not workspace scope
 		{"/projects/proj", "proj"},
 		{"/projects/proj/ship", "proj"},
+		{"/projects/proj/cases", "proj"},
 		{"/projects/proj/sessions", "proj"},
 		{"/config/projects/proj", "proj"},
 		{"/sessions/thread-99?project=proj", "proj"},
@@ -845,6 +853,122 @@ func TestShipBoardRendersPRs(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "acme/proj#7") {
 		t.Fatal("filtered ship page missing PR")
+	}
+}
+
+// TestCasesBoard pins the support case board: phase lanes with plain-language
+// labels, severity ordering, closed hidden by default, filters, and rows
+// linking into the session workspace.
+func TestCasesBoard(t *testing.T) {
+	srv, _, _ := testServer(t)
+	seed := map[string]sessionstore.Entry{
+		"case-intake": {
+			SessionID: "cs1", Project: "proj", Mode: "case", Phase: "intake",
+			Severity: "critical", CustomerTitle: "EU checkout returns 500",
+			CustomerRef: "ZD-4821", ReporterName: "beam", Origin: "discord",
+		},
+		"case-investigate": {
+			SessionID: "cs2", Project: "proj", Mode: "case", Phase: "investigate",
+			Severity: "high", CustomerTitle: "Webhook retries duplicated",
+			OwnerName: "mint", CustomerUpdate: "We are reproducing the duplicate retries now.",
+		},
+		"case-shipping": {
+			SessionID: "cs3", Project: "proj", Mode: "case", Phase: "shipping",
+			Severity: "medium", CustomerTitle: "Rate limit header missing",
+			PRs: []sessionstore.TrackedPR{{
+				URL: "https://github.com/acme/proj/pull/12", Number: 12,
+				State: "OPEN", Checks: "✓ 2 · ✗ 1", Owner: "acme", Repo: "proj",
+			}},
+		},
+		"case-closed": {
+			SessionID: "cs4", Project: "proj", Mode: "case", Phase: "closed",
+			CustomerTitle: "Resolved ticket", Resolution: "fixed",
+		},
+	}
+	for id, e := range seed {
+		if err := srv.sessions.Set(id, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := srv.Handler()
+	get := func(path string) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", path, w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+
+	body := get("/projects/proj/cases")
+	for _, want := range []string{
+		`id="page-cases"`,
+		// Nav: Cases is the active workspace tab (bare-label contract).
+		`class="active">Cases</a>`,
+		// Pipeline stages with plain-language sublabels.
+		`id="case-pipeline"`,
+		"New case", "Looking into it", "Answer ready", "With engineering", "Fix in review", "Resolved",
+		// Phase lanes in pipeline order with case rows.
+		`id="lane-intake"`, `id="lane-investigate"`, `id="lane-shipping"`,
+		"EU checkout returns 500", "Webhook retries duplicated", "Rate limit header missing",
+		"ZD-4821", "reporter beam", "owner mint",
+		`class="case-row sev-critical"`,
+		// Support-facing customer update snippet.
+		"customer update", "We are reproducing the duplicate retries now.",
+		// Rows open the session workspace; escalated case links its PR.
+		`href="/sessions/case-intake?project=proj"`,
+		`href="/prs/acme/proj/12?project=proj"`,
+		"CI failing",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("cases board missing %q", want)
+		}
+	}
+	// Closed cases are hidden from the default open view.
+	if strings.Contains(body, "Resolved ticket") || strings.Contains(body, `id="lane-closed"`) {
+		t.Fatal("default view must hide closed cases")
+	}
+
+	// scope=all shows the closed lane with its resolution badge.
+	all := get("/projects/proj/cases?scope=all")
+	for _, want := range []string{`id="lane-closed"`, "Resolved ticket", `status-done">fixed`} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("scope=all missing %q", want)
+		}
+	}
+
+	// Phase filter narrows lanes; pipeline counts stay project-wide.
+	investigate := get("/projects/proj/cases?phase=investigate")
+	if !strings.Contains(investigate, `id="lane-investigate"`) || strings.Contains(investigate, `id="lane-intake"`) {
+		t.Fatal("phase filter should show only the investigate lane")
+	}
+	// Severity filter drops non-matching rows.
+	critical := get("/projects/proj/cases?severity=critical")
+	if !strings.Contains(critical, "EU checkout returns 500") || strings.Contains(critical, "Webhook retries duplicated") {
+		t.Fatal("severity filter should keep only critical cases")
+	}
+
+	// Partials carry the same filters and stay content-only.
+	req := httptest.NewRequest(http.MethodGet, "/partials/cases/list?project=proj&phase=investigate", nil)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	partial := w.Body.String()
+	if !strings.Contains(partial, "Webhook retries duplicated") || strings.Contains(partial, "EU checkout returns 500") {
+		t.Fatalf("filtered partial wrong rows: %s", partial)
+	}
+	if strings.Contains(partial, "<nav") || strings.Contains(partial, "sse-status") {
+		t.Fatal("cases partial leaked layout chrome")
+	}
+
+	// Unknown project is forbidden, mirroring the other workspace pages.
+	req = httptest.NewRequest(http.MethodGet, "/projects/nope/cases", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("unknown project cases status=%d want 403", w.Code)
 	}
 }
 
@@ -1460,6 +1584,7 @@ func TestSSE(t *testing.T) {
 		Revs   *struct {
 			Dashboard string `json:"dashboard"`
 			Ship      string `json:"ship"`
+			Cases     string `json:"cases"`
 			History   string `json:"history"`
 			Worktrees string `json:"worktrees"`
 			Config    string `json:"config"`
@@ -1484,8 +1609,8 @@ func TestSSE(t *testing.T) {
 	if hello.Revs == nil {
 		t.Fatal("hello missing revs for reconnect catch-up")
 	}
-	if hello.Revs.Dashboard == "" || hello.Revs.Ship == "" || hello.Revs.History == "" ||
-		hello.Revs.Worktrees == "" || hello.Revs.Config == "" {
+	if hello.Revs.Dashboard == "" || hello.Revs.Ship == "" || hello.Revs.Cases == "" ||
+		hello.Revs.History == "" || hello.Revs.Worktrees == "" || hello.Revs.Config == "" {
 		t.Fatalf("hello revs incomplete: %+v", hello.Revs)
 	}
 }

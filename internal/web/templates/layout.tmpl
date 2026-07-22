@@ -309,6 +309,7 @@
     .nav-links a[data-icon="projects"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='7' height='7' rx='1.5'/%3E%3Crect x='14' y='3' width='7' height='7' rx='1.5'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1.5'/%3E%3Crect x='14' y='14' width='7' height='7' rx='1.5'/%3E%3C/svg%3E"); }
     .nav-links a[data-icon="overview"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E"); }
     .nav-links a[data-icon="ship"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 2 11 13'/%3E%3Cpath d='M22 2 15 22l-4-9-9-4z'/%3E%3C/svg%3E"); }
+    .nav-links a[data-icon="cases"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cline x1='4.93' y1='4.93' x2='9.17' y2='9.17'/%3E%3Cline x1='14.83' y1='14.83' x2='19.07' y2='19.07'/%3E%3Cline x1='14.83' y1='9.17' x2='19.07' y2='4.93'/%3E%3Cline x1='4.93' y1='19.07' x2='9.17' y2='14.83'/%3E%3C/svg%3E"); }
     .nav-links a[data-icon="issues"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='3' fill='black' stroke='none'/%3E%3C/svg%3E"); }
     .nav-links a[data-icon="linear"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2 2 7l10 5 10-5-10-5z'/%3E%3Cpath d='M2 17l10 5 10-5'/%3E%3Cpath d='M2 12l10 5 10-5'/%3E%3C/svg%3E"); }
     .nav-links a[data-icon="commits"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cline x1='1.5' y1='12' x2='8' y2='12'/%3E%3Cline x1='16' y1='12' x2='22.5' y2='12'/%3E%3C/svg%3E"); }
@@ -1458,6 +1459,202 @@
     .pr-ref a { color: var(--muted); }
     .pr-ref a:hover { color: var(--accent); }
 
+    /* ── Case board (support dispatch desk) ──────────────────────────── */
+    /* Phase pipeline: one connected rail of open lifecycle stages, each a
+       filter link; Closed sits apart as a dashed archive tile. */
+    .case-pipeline {
+      display: flex;
+      align-items: stretch;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.35rem;
+    }
+    .case-rail {
+      flex: 1 1 34rem;
+      min-width: 0;
+      display: flex;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-1);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .case-rail::-webkit-scrollbar { display: none; }
+    a.case-stage,
+    a.case-archive {
+      display: flex;
+      flex-direction: column;
+      gap: 0.05rem;
+      padding: 0.7rem 0.95rem 0.6rem;
+      color: var(--text);
+      text-decoration: none;
+    }
+    a.case-stage {
+      flex: 1 1 0;
+      min-width: 6.5rem;
+      position: relative;
+      border-left: 1px solid var(--border);
+      transition: background 0.12s ease;
+    }
+    a.case-stage:first-child { border-left: none; }
+    a.case-stage:hover { background: var(--surface-l1); color: var(--text); text-decoration: none; }
+    a.case-stage.active { background: var(--surface-l2); }
+    a.case-stage.active::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 2px;
+      background: var(--text);
+    }
+    /* Flow mark on each shared border: the rail reads as a pipeline. */
+    a.case-stage + a.case-stage::after {
+      content: "";
+      position: absolute;
+      left: -0.5rem;
+      top: 50%;
+      width: 1rem;
+      height: 1rem;
+      transform: translateY(-50%) rotate(-90deg);
+      background: var(--chev) center / contain no-repeat;
+      opacity: 0.55;
+      pointer-events: none;
+    }
+    .case-pipeline .stage-name {
+      font-size: 0.66rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted-soft);
+    }
+    .case-pipeline .stage-count {
+      font-size: 1.45rem;
+      font-weight: 650;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+    }
+    .case-pipeline .stage-plain {
+      font-size: 0.74rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    a.case-stage.is-zero .stage-count { color: var(--muted-soft); }
+    a.case-archive {
+      flex: 0 0 auto;
+      justify-content: center;
+      min-width: 7rem;
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius-lg);
+      background: var(--bg-secondary);
+      transition: border-color 0.12s ease, background 0.12s ease;
+    }
+    a.case-archive .stage-count { font-size: 1.15rem; color: var(--muted); }
+    a.case-archive:hover { border-color: var(--hover-border); text-decoration: none; color: var(--text); }
+    a.case-archive.active {
+      border-style: solid;
+      background: var(--surface-l2);
+      box-shadow: var(--shadow-1);
+    }
+
+    /* Triage lanes: filtered cases grouped by phase, each row a docket line
+       with a severity tick on the left edge. */
+    .case-lane { margin-bottom: 1.55rem; }
+    .case-lane-head {
+      display: flex;
+      align-items: baseline;
+      gap: 0.55rem;
+      margin: 0 0 0.55rem;
+    }
+    .case-lane-head h2 {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 620;
+      letter-spacing: -0.01em;
+      text-transform: capitalize;
+    }
+    .case-lane-head .lane-plain { color: var(--muted); font-size: 0.82rem; }
+    .case-lane-head .lane-count {
+      margin-left: auto;
+      color: var(--muted-soft);
+      font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .case-rows { display: flex; flex-direction: column; gap: 0.55rem; }
+    article.case-row {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem 0.9rem;
+      flex-wrap: wrap;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-1);
+      padding: 0.68rem 0.95rem 0.66rem 1.05rem;
+      overflow: hidden;
+      transition: border-color 0.12s ease;
+    }
+    article.case-row:hover { border-color: var(--hover-border); }
+    article.case-row::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: var(--border-strong);
+    }
+    article.case-row.sev-critical::before { background: var(--danger); }
+    article.case-row.sev-high::before { background: var(--warn); }
+    article.case-row.sev-medium::before { background: var(--muted-soft); }
+    .case-main { min-width: 0; flex: 1 1 24rem; }
+    a.case-title { color: var(--text); font-weight: 550; }
+    a.case-title:hover { color: var(--accent); }
+    .case-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.2rem 0.75rem;
+      margin-top: 0.18rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .case-meta .mono { font-size: 0.74rem; }
+    .case-meta .case-ref { color: var(--text); font-weight: 500; }
+    .case-sev {
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      font-size: 0.68rem;
+    }
+    .case-sev.sev-critical { color: var(--danger); }
+    .case-sev.sev-high { color: var(--warn); }
+    .case-update {
+      margin: 0.35rem 0 0;
+      font-size: 0.84rem;
+      line-height: 1.45;
+      color: var(--muted);
+      max-width: 46rem;
+    }
+    .case-update-tag {
+      text-transform: uppercase;
+      font-size: 0.64rem;
+      letter-spacing: 0.07em;
+      font-weight: 600;
+      color: var(--muted-soft);
+      margin-right: 0.35rem;
+    }
+    .case-side {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      justify-content: flex-end;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .case-side a.badge:hover { text-decoration: none; border-color: var(--hover-border); }
+
     /* ── Danger zone card (project settings) ─────────────────────────── */
     .card.danger-zone { border-color: hsl(var(--red-500) / 30%); }
     .card.danger-zone > h2 { color: var(--danger); }
@@ -1951,6 +2148,10 @@
       .toolbar .field { flex: 1 1 100%; }
       .toolbar .field-sm { flex: 0 0 auto; }
       .card .value { font-size: 1.6rem; }
+      /* Case pipeline keeps the rail metaphor on phones: swipe the stages. */
+      a.case-stage { min-width: 6rem; padding: 0.55rem 0.7rem 0.5rem; }
+      .case-pipeline .stage-count { font-size: 1.2rem; }
+      a.case-archive { flex: 1 1 100%; }
     }
   </style>
 </head>
@@ -2003,6 +2204,7 @@
         {{if .NavProject}}
         <a href="/projects/{{.NavProject}}" data-icon="overview" class="{{if .IsOverview}}active{{end}}">Overview</a>
         <a href="/projects/{{.NavProject}}/ship" data-icon="ship" class="{{if .IsShip}}active{{end}}">Ship</a>
+        <a href="/projects/{{.NavProject}}/cases" data-icon="cases" class="{{if .IsCases}}active{{end}}">Cases</a>
         <a href="/projects/{{.NavProject}}/reviews" data-icon="issues" class="{{if .IsReviews}}active{{end}}">Reviews</a>
         <a href="/projects/{{.NavProject}}/issues" data-icon="issues" class="{{if .IsIssues}}active{{end}}">Issues</a>
         {{if .NavLinearEnabled}}<a href="/projects/{{.NavProject}}/linear" data-icon="linear" class="{{if .IsLinear}}active{{end}}">Linear</a>{{end}}
@@ -2227,7 +2429,7 @@
     // (revs). First open stores them (page HTML is already current). Later hellos
     // (reconnect) re-fetch only live-regions whose rev changed while offline.
     var lastLiveRevs = null;
-    var liveDomains = ["dashboard", "ship", "history", "worktrees", "config"];
+    var liveDomains = ["dashboard", "ship", "cases", "history", "worktrees", "config"];
 
     function applyLiveRevs(revs) {
       if (!revs) return;

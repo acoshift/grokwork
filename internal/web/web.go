@@ -133,6 +133,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"partial.project.pulse":   "/partials/projects/pulse",
 		"partial.ship.stats":      "/partials/ship/stats",
 		"partial.ship.table":      "/partials/ship/table",
+		"partial.cases.pipeline":  "/partials/cases/pipeline",
+		"partial.cases.list":      "/partials/cases/list",
 		"partial.history.table":   "/partials/history/table",
 		"partial.history.turns":   "/partials/history/turns/",
 		"partial.session":         "/partials/sessions/",
@@ -159,6 +161,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("history_detail", "layout.tmpl", "history_detail.tmpl")
 	tp.ParseFiles("sessions", "layout.tmpl", "sessions.tmpl")
 	tp.ParseFiles("ship", "layout.tmpl", "ship.tmpl")
+	tp.ParseFiles("cases", "layout.tmpl", "cases.tmpl")
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
 	tp.ParseFiles("config", "layout.tmpl", "config.tmpl")
 	tp.ParseFiles("project_config", "layout.tmpl", "project_config.tmpl")
@@ -203,6 +206,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// Project workspace (project-first UX): overview + scoped list pages.
 	mux.Handle("GET /projects/{project}", s.requireAuth(hime.Handler(s.projectOverview)))
 	mux.Handle("GET /projects/{project}/ship", s.requireAuth(hime.Handler(s.shipScoped)))
+	mux.Handle("GET /projects/{project}/cases", s.requireAuth(hime.Handler(s.casesScoped)))
 	mux.Handle("GET /projects/{project}/sessions", s.requireAuth(hime.Handler(s.sessionsScoped)))
 	mux.Handle("GET /projects/{project}/worktrees", s.requireAuth(hime.Handler(s.worktreesScoped)))
 	// Retired feature-first hubs → launcher.
@@ -261,6 +265,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/projects/pulse", s.requireAuth(hime.Handler(s.partialProjectPulse)))
 	mux.Handle("GET /partials/ship/stats", s.requireAuth(hime.Handler(s.partialShipStats)))
 	mux.Handle("GET /partials/ship/table", s.requireAuth(hime.Handler(s.partialShipTable)))
+	mux.Handle("GET /partials/cases/pipeline", s.requireAuth(hime.Handler(s.partialCasesPipeline)))
+	mux.Handle("GET /partials/cases/list", s.requireAuth(hime.Handler(s.partialCasesList)))
 	mux.Handle("GET /partials/history/table", s.requireAuth(hime.Handler(s.partialHistoryTable)))
 	mux.Handle("GET /partials/history/turns/{threadID}", s.requireAuth(hime.Handler(s.partialHistoryTurns)))
 	mux.Handle("GET /partials/sessions/{threadID}", s.requireAuth(hime.Handler(s.partialSession)))
@@ -321,6 +327,7 @@ type pageData struct {
 	IsHistory   bool
 	IsSessions  bool
 	IsShip      bool
+	IsCases     bool
 	IsWorktrees bool
 	IsConfig    bool
 	IsLogin     bool
@@ -334,6 +341,7 @@ type pageData struct {
 	Threads     []history.Summary
 	Thread      history.Thread
 	Ship        bot.ShipBoard
+	Cases       bot.CaseBoard
 	Worktrees   []bot.WorktreeInfo
 	IdleTTLDays int
 	Config      config.Snapshot

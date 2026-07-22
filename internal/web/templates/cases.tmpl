@@ -1,0 +1,172 @@
+{{define "content"}}
+<h1 id="page-cases">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· cases</span></h1>
+<p class="sub">Support cases for this project, tracked by lifecycle phase (intake → investigate → answered → fixing → shipping). A case is a Grok session in case mode — rows open the session workspace.</p>
+
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
+<div class="live-region"
+     id="live-cases-pipeline"
+     hx-get="{{route "partial.cases.pipeline"}}?project={{urlquery .Project}}&amp;phase={{urlquery .Cases.PhaseFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}&amp;scope={{urlquery .Cases.Scope}}"
+     hx-trigger="sse:cases"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML"
+     hx-sync="this:queue last">
+  {{template "cases_pipeline" .}}
+</div>
+
+<form method="get" action="/projects/{{.Project}}/cases" class="toolbar" id="cases-filters">
+  <div class="field">
+    <label for="phase">Phase</label>
+    <select id="phase" name="phase" data-autosubmit>
+      <option value="" {{if eq .Cases.PhaseFilter ""}}selected{{end}}>All phases</option>
+      <option value="intake" {{if eq .Cases.PhaseFilter "intake"}}selected{{end}}>Intake — new case</option>
+      <option value="investigate" {{if eq .Cases.PhaseFilter "investigate"}}selected{{end}}>Investigate — looking into it</option>
+      <option value="answered" {{if eq .Cases.PhaseFilter "answered"}}selected{{end}}>Answered — answer ready</option>
+      <option value="fixing" {{if eq .Cases.PhaseFilter "fixing"}}selected{{end}}>Fixing — with engineering</option>
+      <option value="shipping" {{if eq .Cases.PhaseFilter "shipping"}}selected{{end}}>Shipping — fix in review</option>
+      <option value="closed" {{if eq .Cases.PhaseFilter "closed"}}selected{{end}}>Closed — resolved</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="severity">Severity</label>
+    <select id="severity" name="severity" data-autosubmit>
+      <option value="" {{if eq .Cases.SeverityFilter ""}}selected{{end}}>All severities</option>
+      <option value="critical" {{if eq .Cases.SeverityFilter "critical"}}selected{{end}}>Critical</option>
+      <option value="high" {{if eq .Cases.SeverityFilter "high"}}selected{{end}}>High</option>
+      <option value="medium" {{if eq .Cases.SeverityFilter "medium"}}selected{{end}}>Medium</option>
+      <option value="low" {{if eq .Cases.SeverityFilter "low"}}selected{{end}}>Low</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="scope">Show</label>
+    <select id="scope" name="scope" data-autosubmit>
+      <option value="open" {{if eq .Cases.Scope "open"}}selected{{end}}>Open cases (default)</option>
+      <option value="all" {{if eq .Cases.Scope "all"}}selected{{end}}>All incl. closed</option>
+    </select>
+  </div>
+  <button type="submit" class="btn-secondary">Apply</button>
+</form>
+
+<div class="live-region"
+     id="live-cases-list"
+     hx-get="{{route "partial.cases.list"}}?project={{urlquery .Project}}&amp;phase={{urlquery .Cases.PhaseFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}&amp;scope={{urlquery .Cases.Scope}}"
+     hx-trigger="sse:cases"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML"
+     hx-sync="this:queue last">
+  {{template "cases_list" .}}
+</div>
+{{end}}
+
+{{define "cases_pipeline"}}
+<div class="case-pipeline" id="case-pipeline">
+  <div class="case-rail">
+    <a class="case-stage{{if eq .Cases.PhaseFilter "intake"}} active{{end}}{{if eq .Cases.Intake 0}} is-zero{{end}}"
+       href="/projects/{{.Project}}/cases?phase=intake{{if .Cases.SeverityFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}{{end}}">
+      <span class="stage-name">intake</span>
+      <span class="stage-count">{{.Cases.Intake}}</span>
+      <span class="stage-plain">New case</span>
+    </a>
+    <a class="case-stage{{if eq .Cases.PhaseFilter "investigate"}} active{{end}}{{if eq .Cases.Investigate 0}} is-zero{{end}}"
+       href="/projects/{{.Project}}/cases?phase=investigate{{if .Cases.SeverityFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}{{end}}">
+      <span class="stage-name">investigate</span>
+      <span class="stage-count">{{.Cases.Investigate}}</span>
+      <span class="stage-plain">Looking into it</span>
+    </a>
+    <a class="case-stage{{if eq .Cases.PhaseFilter "answered"}} active{{end}}{{if eq .Cases.Answered 0}} is-zero{{end}}"
+       href="/projects/{{.Project}}/cases?phase=answered{{if .Cases.SeverityFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}{{end}}">
+      <span class="stage-name">answered</span>
+      <span class="stage-count">{{.Cases.Answered}}</span>
+      <span class="stage-plain">Answer ready</span>
+    </a>
+    <a class="case-stage{{if eq .Cases.PhaseFilter "fixing"}} active{{end}}{{if eq .Cases.Fixing 0}} is-zero{{end}}"
+       href="/projects/{{.Project}}/cases?phase=fixing{{if .Cases.SeverityFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}{{end}}">
+      <span class="stage-name">fixing</span>
+      <span class="stage-count">{{.Cases.Fixing}}</span>
+      <span class="stage-plain">With engineering</span>
+    </a>
+    <a class="case-stage{{if eq .Cases.PhaseFilter "shipping"}} active{{end}}{{if eq .Cases.Shipping 0}} is-zero{{end}}"
+       href="/projects/{{.Project}}/cases?phase=shipping{{if .Cases.SeverityFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}{{end}}">
+      <span class="stage-name">shipping</span>
+      <span class="stage-count">{{.Cases.Shipping}}</span>
+      <span class="stage-plain">Fix in review</span>
+    </a>
+  </div>
+  <a class="case-archive{{if eq .Cases.PhaseFilter "closed"}} active{{end}}"
+     href="/projects/{{.Project}}/cases?phase=closed{{if .Cases.SeverityFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}{{end}}">
+    <span class="stage-name">closed</span>
+    <span class="stage-count">{{.Cases.Closed}}</span>
+    <span class="stage-plain">Resolved</span>
+  </a>
+</div>
+{{end}}
+
+{{define "cases_list"}}
+<div class="section" id="cases-list">
+  {{if .Cases.Groups}}
+  {{range .Cases.Groups}}
+  <section class="case-lane" id="lane-{{.Phase}}">
+    <header class="case-lane-head">
+      <h2>{{.Phase}}</h2>
+      <span class="lane-plain">{{.Plain}}</span>
+      <span class="lane-count mono">{{len .Rows}}</span>
+    </header>
+    <div class="case-rows">
+      {{range .Rows}}
+      <article class="case-row{{if .Severity}} sev-{{.Severity}}{{end}}">
+        <div class="case-main">
+          <a class="case-title" href="/sessions/{{.ThreadID}}?project={{urlquery .Project}}">{{.Title}}</a>
+          <div class="case-meta">
+            {{if .CustomerRef}}<span class="mono case-ref">{{.CustomerRef}}</span>{{end}}
+            {{if .Severity}}<span class="case-sev sev-{{.Severity}}">{{.Severity}}</span>{{end}}
+            <span class="mono muted">{{.ThreadID}}</span>
+            {{if .OwnerName}}<span>owner {{.OwnerName}}</span>{{end}}
+            {{if .ReporterName}}<span>reporter {{.ReporterName}}</span>{{end}}
+            {{if .Origin}}<span class="muted">via {{.Origin}}</span>{{end}}
+            <span class="muted">{{shortTime .UpdatedAt}}</span>
+            {{if .DiscordURL}}<a href="{{.DiscordURL}}" target="_blank" rel="noopener">Discord ↗</a>{{end}}
+          </div>
+          {{if .CustomerUpdate}}
+          <p class="case-update clamp"><span class="case-update-tag">customer update</span>{{.CustomerUpdate}}</p>
+          {{else if .DossierSummary}}
+          <p class="case-update clamp"><span class="case-update-tag">dossier</span>{{.DossierSummary}}</p>
+          {{end}}
+        </div>
+        <div class="case-side">
+          {{if .Running}}<span class="badge live">running</span>{{end}}
+          {{if gt .Queue 0}}<span class="badge">queue {{.Queue}}</span>{{end}}
+          {{if .Resolution}}
+            {{if or (eq .Resolution "answered") (eq .Resolution "fixed")}}
+            <span class="badge status-done">{{.Resolution}}</span>
+            {{else if eq .Resolution "escalated_external"}}
+            <span class="badge status-warn">escalated</span>
+            {{else}}
+            <span class="badge status-cancelled">{{.Resolution}}</span>
+            {{end}}
+          {{end}}
+          {{if .PRNumber}}
+            {{if and .GHOwner .GHRepo}}
+            <a class="badge{{if .PRChecksFailing}} status-error{{else if eq .PRState "MERGED"}} status-merged{{else if eq .PRState "CLOSED"}} status-cancelled{{else}} live{{end}}"
+               href="/prs/{{.GHOwner}}/{{.GHRepo}}/{{.PRNumber}}?project={{urlquery .Project}}">PR #{{.PRNumber}} · {{if .PRChecksFailing}}CI failing{{else}}{{.PRState}}{{end}}</a>
+            {{else}}
+            <span class="badge">PR #{{.PRNumber}} · {{.PRState}}</span>
+            {{end}}
+          {{end}}
+        </div>
+      </article>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+  {{else}}
+  <div class="empty" id="cases-empty">
+    {{if eq .Cases.Total 0}}
+    No support cases in <span class="mono">{{.Project}}</span> yet. Cases open from Discord via <span class="mono">@Grok /case &lt;title&gt;</span> in a mapped channel.
+    {{else}}
+    No cases match this filter ({{.Cases.Total}} tracked, {{.Cases.OpenTotal}} open).
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}

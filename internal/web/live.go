@@ -17,6 +17,7 @@ import (
 const (
 	sseEventDashboard = "dashboard"
 	sseEventShip      = "ship"
+	sseEventCases     = "cases"
 	sseEventHistory   = "history"
 	sseEventWorktrees = "worktrees"
 	sseEventConfig    = "config"
@@ -27,6 +28,7 @@ const (
 type liveRevs struct {
 	Dashboard string `json:"dashboard"`
 	Ship      string `json:"ship"`
+	Cases     string `json:"cases"`
 	History   string `json:"history"`
 	Worktrees string `json:"worktrees"`
 	Config    string `json:"config"`
@@ -61,6 +63,7 @@ func (s *Server) computeLiveRevs() liveRevs {
 	return liveRevs{
 		Dashboard: s.fpDashboard(),
 		Ship:      s.fpShip(),
+		Cases:     s.fpCases(),
 		History:   s.fpHistory(),
 		Worktrees: s.fpWorktrees(),
 		Config:    s.fpConfig(),
@@ -96,6 +99,22 @@ func (s *Server) fpShip() string {
 		fmt.Fprintf(&b, "%s|%d|%s|%s|%s|%s|%v|%v|%d|%s\n",
 			r.ThreadID, r.Number, r.State, r.Checks, r.Review, r.Label,
 			r.Running, r.ChecksFailing, r.Queue, r.UpdatedAt)
+	}
+	return hashFingerprint(b.String())
+}
+
+func (s *Server) fpCases() string {
+	// Unfiltered board fingerprint: any case change notifies cases listeners.
+	// Partials re-apply the client's project/phase/severity filters on fetch.
+	board := s.bot.ListCaseBoard("", "", "", "all")
+	var b strings.Builder
+	fmt.Fprintf(&b, "total=%d open=%d closed=%d\n", board.Total, board.OpenTotal, board.Closed)
+	for _, g := range board.Groups {
+		for _, r := range g.Rows {
+			fmt.Fprintf(&b, "%s|%s|%s|%s|%s|%v|%d|%s|%s|%s|%v\n",
+				r.ThreadID, r.Project, r.Phase, r.Severity, r.Title,
+				r.Running, r.Queue, r.UpdatedAt, r.PRState, r.Resolution, r.PRChecksFailing)
+		}
 	}
 	return hashFingerprint(b.String())
 }
@@ -227,6 +246,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 			for _, p := range []pair{
 				{sseEventDashboard, curr.Dashboard, prev.Dashboard},
 				{sseEventShip, curr.Ship, prev.Ship},
+				{sseEventCases, curr.Cases, prev.Cases},
 				{sseEventHistory, curr.History, prev.History},
 				{sseEventWorktrees, curr.Worktrees, prev.Worktrees},
 				{sseEventConfig, curr.Config, prev.Config},
