@@ -224,7 +224,7 @@
   <table id="issues-table">
     <thead><tr>
       {{if $.CanStartSession}}<th class="col-fix-select" hidden aria-label="Select"></th>{{end}}
-      <th>#</th><th>Title</th><th>State</th><th>Author</th><th title="Pull requests that reference this issue">PRs</th>
+      <th>#</th><th>Title</th><th>State</th><th>Author</th><th title="Pull requests that reference this issue">PRs</th><th>Date</th>
     </tr></thead>
     <tbody>
     {{range .Issues}}
@@ -249,6 +249,7 @@
         </td>
         <td class="mono muted">{{.Author}}</td>
         <td class="mono">{{if .LinkedPRs}}{{len .LinkedPRs}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="mono">{{if not .UpdatedAt.IsZero}}{{.UpdatedAt.Format "2006-01-02 15:04"}}{{else if not .CreatedAt.IsZero}}{{.CreatedAt.Format "2006-01-02 15:04"}}{{end}}</td>
       </tr>
     {{end}}
     </tbody>

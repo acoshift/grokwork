@@ -20,10 +20,15 @@ func TestListIssuesWithMock(t *testing.T) {
 			t.Fatalf("list missing linked PR field: %v", args)
 		}
 		// Slim list fields (no body/labels) — matches production --json.
+		if !strings.Contains(joined, "createdAt") || !strings.Contains(joined, "updatedAt") {
+			t.Fatalf("list missing date fields: %v", args)
+		}
 		return []byte(`[
 			{"number":1,"url":"https://github.com/acme/app/issues/1","title":"Bug","state":"OPEN","author":{"login":"alice"},
+			 "createdAt":"2026-07-01T10:00:00Z","updatedAt":"2026-07-20T15:30:00Z",
 			 "closedByPullRequestsReferences":[{"number":9,"url":"https://github.com/acme/app/pull/9","repository":{"name":"app","owner":{"login":"acme"}}}]},
 			{"number":2,"url":"https://github.com/acme/app/issues/2","title":"Feat","state":"CLOSED","author":{"login":"bob"},
+			 "createdAt":"2026-06-15T08:00:00Z","updatedAt":"2026-06-16T09:00:00Z",
 			 "closedByPullRequestsReferences":[]}
 		]`), nil
 	}
@@ -39,6 +44,12 @@ func TestListIssuesWithMock(t *testing.T) {
 	}
 	if list[0].State != "OPEN" {
 		t.Fatalf("first state=%+v", list[0])
+	}
+	if list[0].UpdatedAt.IsZero() || list[0].UpdatedAt.UTC().Format("2006-01-02 15:04") != "2026-07-20 15:30" {
+		t.Fatalf("first updatedAt=%v", list[0].UpdatedAt)
+	}
+	if list[0].CreatedAt.IsZero() || list[0].CreatedAt.UTC().Format("2006-01-02 15:04") != "2026-07-01 10:00" {
+		t.Fatalf("first createdAt=%v", list[0].CreatedAt)
 	}
 	if len(list[0].LinkedPRs) != 1 || list[0].LinkedPRs[0].Number != 9 {
 		t.Fatalf("first linked=%+v", list[0].LinkedPRs)

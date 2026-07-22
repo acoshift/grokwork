@@ -137,6 +137,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 
 	app.TemplateFunc("add", func(a, b int) int { return a + b })
 	app.TemplateFunc("markdown", markdown.Render)
+	// shortTime formats a time.Time or RFC3339 string as "2006-01-02 15:04"
+	// (same layout as the commits list Date column).
+	app.TemplateFunc("shortTime", shortTime)
 
 	// One template set per page: layout root for full documents; named {{define}}s
 	// for SSE fragments (ctx.View("dashboard#dashboard_stats", …)).

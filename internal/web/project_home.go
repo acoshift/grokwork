@@ -142,6 +142,38 @@ func relativeAge(rfc3339 string) string {
 	}
 }
 
+// shortTime formats a time.Time or RFC3339 string for table Date columns
+// (same layout as commits: "2006-01-02 15:04").
+func shortTime(v any) string {
+	const layout = "2006-01-02 15:04"
+	switch x := v.(type) {
+	case time.Time:
+		if x.IsZero() {
+			return ""
+		}
+		return x.Format(layout)
+	case *time.Time:
+		if x == nil || x.IsZero() {
+			return ""
+		}
+		return x.Format(layout)
+	case string:
+		s := strings.TrimSpace(x)
+		if s == "" {
+			return ""
+		}
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			return t.Format(layout)
+		}
+		if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+			return t.Format(layout)
+		}
+		return s
+	default:
+		return ""
+	}
+}
+
 // home is the project launcher: pick a project first, then work scoped.
 func (s *Server) home(ctx *hime.Context) error {
 	d := s.basePage(ctx)

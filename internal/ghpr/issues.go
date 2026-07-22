@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DefaultIssueBodyCap is the max body/comment size kept for prompts/UI.
@@ -56,6 +57,8 @@ type IssueInfo struct {
 	LinkedPRs []IssueLinkedPR
 	Owner     string
 	Repo      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 	Truncated bool // body or comments hit size caps
 	// WorkState is set by the web layer (not gh): "FIXING" when a non-terminal
 	// Grok session binds this issue with Fixes. Empty when none.
@@ -84,7 +87,7 @@ func ListIssuesWith(ctx context.Context, run Runner, repoDir string, opts IssueL
 	args := []string{"issue", "list",
 		"--state", state,
 		"--limit", strconv.Itoa(limit),
-		"--json", "number,url,title,state,author,closedByPullRequestsReferences",
+		"--json", "number,url,title,state,author,createdAt,updatedAt,closedByPullRequestsReferences",
 	}
 	if o, r := strings.TrimSpace(opts.Owner), strings.TrimSpace(opts.Repo); o != "" && r != "" {
 		args = append(args, "--repo", o+"/"+r)
@@ -117,7 +120,7 @@ func ViewIssueWith(ctx context.Context, run Runner, repoDir string, number int, 
 		return IssueInfo{}, fmt.Errorf("invalid issue number")
 	}
 	args := []string{"issue", "view", strconv.Itoa(number),
-		"--json", "number,url,title,state,author,labels,body,comments,closedByPullRequestsReferences",
+		"--json", "number,url,title,state,author,labels,body,comments,createdAt,updatedAt,closedByPullRequestsReferences",
 	}
 	if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
 		args = append(args, "--repo", o+"/"+r)
@@ -154,14 +157,16 @@ type issueLinkedPRJSON struct {
 }
 
 type issueJSON struct {
-	Number  int    `json:"number"`
-	URL     string `json:"url"`
-	Title   string `json:"title"`
-	State   string `json:"state"`
-	Body    string `json:"body"`
-	Author  any    `json:"author"` // {login} or string
-	Labels  []any  `json:"labels"`
-	Comments []struct {
+	Number    int    `json:"number"`
+	URL       string `json:"url"`
+	Title     string `json:"title"`
+	State     string `json:"state"`
+	Body      string `json:"body"`
+	Author    any    `json:"author"` // {login} or string
+	Labels    []any  `json:"labels"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+	Comments  []struct {
 		Author any    `json:"author"`
 		Body   string `json:"body"`
 		URL    string `json:"url"`
@@ -192,13 +197,15 @@ func parseIssueViewJSON(raw []byte, owner, repo string, bodyCap int) (IssueInfo,
 
 func (r issueJSON) toInfo(owner, repo string, bodyCap int) (IssueInfo, error) {
 	info := IssueInfo{
-		Number: r.Number,
-		URL:    r.URL,
-		Title:  r.Title,
-		State:  strings.ToUpper(strings.TrimSpace(r.State)),
-		Author: authorLogin(r.Author),
-		Owner:  strings.TrimSpace(owner),
-		Repo:   strings.TrimSpace(repo),
+		Number:    r.Number,
+		URL:       r.URL,
+		Title:     r.Title,
+		State:     strings.ToUpper(strings.TrimSpace(r.State)),
+		Author:    authorLogin(r.Author),
+		Owner:     strings.TrimSpace(owner),
+		Repo:      strings.TrimSpace(repo),
+		CreatedAt: parseGHTime(r.CreatedAt),
+		UpdatedAt: parseGHTime(r.UpdatedAt),
 	}
 	body, trunc := truncateBytes(r.Body, bodyCap)
 	info.Body = body
@@ -392,6 +399,21 @@ func authorLogin(v any) string {
 		}
 	}
 	return ""
+}
+
+// parseGHTime parses GitHub JSON timestamps (RFC3339 / RFC3339Nano).
+func parseGHTime(s string) time.Time {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t
+	}
+	return time.Time{}
 }
 
 func labelName(v any) string {

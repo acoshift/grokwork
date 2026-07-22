@@ -96,6 +96,7 @@
         {{if not $.Project}}<th>Project</th>{{end}}
         <th>Owner</th>
         <th>Label</th>
+        <th>Date</th>
         <th>Thread</th>
       </tr>
     </thead>
@@ -171,6 +172,7 @@
           <span class="badge">{{.Label}}</span>
           {{if .LabelManual}} <span class="muted" style="font-size:0.75rem;">manual</span>{{end}}
         </td>
+        <td class="mono">{{shortTime .UpdatedAt}}</td>
         <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}">{{.ThreadID}}</a></td>
       </tr>
       {{end}}
