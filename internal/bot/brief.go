@@ -392,7 +392,7 @@ func (b *Bot) collectBriefInput(threadID string, e sessionstore.Entry, cwd strin
 	in.IssueLines = sessionstore.FormatIssueStatusLines(e.Issues)
 
 	e.NormalizePRs()
-	in.PRLines = ghpr.FormatMultiStatusLines(entryPRInfos(e))
+	in.PRLines = ghpr.FormatMultiStatusLines(b.discordPRInfos(e))
 
 	var lastResponse string
 	if b.history != nil && threadID != "" {

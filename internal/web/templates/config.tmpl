@@ -10,6 +10,7 @@
     <a href="#resume-active-runs">Resume</a>
     <a href="#team-board">Board</a>
     <a href="#ci-triage">CI triage</a>
+    <a href="#discord-pr-links">PR links</a>
     <a href="#risky-paths">Risk paths</a>
     <a href="#projects">Projects</a>
     <a href="#default-guild">Default guild</a>
@@ -153,6 +154,35 @@
     <button type="submit">Save</button>
   </form>
   <p class="sub" style="margin:0.5rem 0 0">Max is per Discord thread session (default 2). Manual <span class="mono">/fix-ci</span> is always available.</p>
+</div>
+
+<div class="section card" id="discord-pr-links">
+  <h2>Discord PR links</h2>
+  <p class="sub" style="margin-top:0">
+    When the bot posts a pull request link in Discord (status cards, brief, completion, timeline, review pings),
+    choose whether to open GitHub or this web UI. Stored session data always keeps the GitHub URL for <span class="mono">gh</span>.
+  </p>
+  <form class="inline" method="post" action="{{route "config.settings"}}" style="grid-template-columns: 1fr auto;">
+    {{template "csrf" $}}
+    <input type="hidden" name="section" value="discordPRLink">
+    <div>
+      <label for="discord-pr-link">Link target</label>
+      <select id="discord-pr-link" name="discordPRLink">
+        <option value="github" {{if ne .Config.DiscordPRLink "web"}}selected{{end}}>GitHub (github.com/…/pull/N)</option>
+        <option value="web" {{if eq .Config.DiscordPRLink "web"}}selected{{end}}>Web UI (/prs/owner/repo/N)</option>
+      </select>
+    </div>
+    <button type="submit">Save</button>
+  </form>
+  {{if eq .Config.DiscordPRLink "web"}}
+    {{if .Config.WebPublicBaseURL}}
+  <p class="sub" style="margin:0.5rem 0 0">Base: <span class="mono">{{.Config.WebPublicBaseURL}}</span> — example: <span class="mono">{{.Config.WebPublicBaseURL}}/prs/owner/repo/42</span></p>
+    {{else}}
+  <div class="flash err" style="margin:0.65rem 0 0">Web mode is on, but <span class="mono">webPublicBaseURL</span> is empty — Discord will fall back to GitHub until you set a public origin (config or <span class="mono">GROK_WORK_PUBLIC_BASE_URL</span>).</div>
+    {{end}}
+  {{else}}
+  <p class="sub" style="margin:0.5rem 0 0">Default is GitHub. Web mode needs <span class="mono">webPublicBaseURL</span> so links are absolute and clickable.</p>
+  {{end}}
 </div>
 
 <div class="section card" id="risky-paths">

@@ -450,6 +450,72 @@ func TestBoardSettings(t *testing.T) {
 	}
 }
 
+func TestDiscordPRLinkAndDisplayURL(t *testing.T) {
+	t.Setenv("GROK_WORK_PUBLIC_BASE_URL", "")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	cfg := &Config{
+		Projects:         ProjectsMap{},
+		Channels:         map[string]string{},
+		ConfigPath:       cfgPath,
+		WebPublicBaseURL: "https://grokwork.example",
+	}
+	if cfg.DiscordPRLinkValue() != DiscordPRLinkGitHub {
+		t.Fatalf("default mode=%q", cfg.DiscordPRLinkValue())
+	}
+	gh := "https://github.com/acme/app/pull/42"
+	if got := cfg.DiscordPRDisplayURL("acme", "app", 42, gh); got != gh {
+		t.Fatalf("github mode: got %q", got)
+	}
+	if err := cfg.SetDiscordPRLink(DiscordPRLinkWeb); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DiscordPRLinkValue() != DiscordPRLinkWeb {
+		t.Fatalf("mode=%q", cfg.DiscordPRLinkValue())
+	}
+	want := "https://grokwork.example/prs/acme/app/42"
+	if got := cfg.DiscordPRDisplayURL("acme", "app", 42, gh); got != want {
+		t.Fatalf("web mode: got %q want %q", got, want)
+	}
+	// Parse owner/repo/number from github URL when fields empty.
+	if got := cfg.DiscordPRDisplayURL("", "", 0, gh); got != want {
+		t.Fatalf("from github URL: got %q", got)
+	}
+	// No public base → fall back to GitHub even in web mode.
+	cfg.WebPublicBaseURL = ""
+	if got := cfg.DiscordPRDisplayURL("acme", "app", 42, gh); got != gh {
+		t.Fatalf("empty base fallback: got %q", got)
+	}
+	// Persist + snapshot.
+	if err := cfg.SetDiscordPRLink("web"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"discordPRLink": "web"`) {
+		t.Fatalf("not persisted: %s", raw)
+	}
+	if snap := cfg.Snapshot(); snap.DiscordPRLink != DiscordPRLinkWeb {
+		t.Fatalf("snapshot mode=%q", snap.DiscordPRLink)
+	}
+	if err := cfg.SetDiscordPRLink("nope"); err == nil {
+		t.Fatal("expected invalid mode error")
+	}
+	// github default omits field from disk after save.
+	if err := cfg.SetDiscordPRLink(DiscordPRLinkGitHub); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "discordPRLink") {
+		t.Fatalf("default should omit field: %s", raw)
+	}
+}
+
 func TestResumeActiveRuns(t *testing.T) {
 	cfg := &Config{
 		Projects:   ProjectsMap{},

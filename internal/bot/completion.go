@@ -635,7 +635,7 @@ func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd
 			branch = e.WorktreeBranch
 		}
 		if p, ok := e.PrimaryPR(); ok {
-			prURL = p.URL
+			prURL = b.discordPRURL(p.Owner, p.Repo, p.Number, p.URL)
 			prNum = p.Number
 		}
 		if len(e.PRs) > 1 {
@@ -644,8 +644,8 @@ func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd
 				if p.Owner != "" && p.Repo != "" {
 					label = fmt.Sprintf("%s/%s#%d", p.Owner, p.Repo, p.Number)
 				}
-				if p.URL != "" {
-					extraPRs = append(extraPRs, label+" · "+p.URL)
+				if u := b.discordPRURL(p.Owner, p.Repo, p.Number, p.URL); u != "" {
+					extraPRs = append(extraPRs, label+" · "+u)
 				} else {
 					extraPRs = append(extraPRs, label)
 				}

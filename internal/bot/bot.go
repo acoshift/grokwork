@@ -634,7 +634,7 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 			lines = append(lines, "**issue:** (none linked)")
 		}
 		e.NormalizePRs()
-		if prLines := ghpr.FormatMultiStatusLines(entryPRInfos(e)); len(prLines) > 0 {
+		if prLines := ghpr.FormatMultiStatusLines(b.discordPRInfos(e)); len(prLines) > 0 {
 			lines = append(lines, prLines...)
 		} else {
 			lines = append(lines, "**pr:** (none yet)")

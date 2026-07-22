@@ -976,6 +976,8 @@ func (s *Server) updateSettings(ctx *hime.Context) error {
 		err = s.updateBoardSettingsErr(ctx)
 	case "resume":
 		err = s.updateResumeSettingsErr(ctx)
+	case "discordPRLink":
+		err = s.updateDiscordPRLinkSettingsErr(ctx)
 	default:
 		err = fmt.Errorf("unknown settings section %q", section)
 	}
@@ -1045,9 +1047,23 @@ func (s *Server) updateSettings(ctx *hime.Context) error {
 			msg = "Crash-safe resume enabled"
 		}
 		return s.configRedirect(ctx, msg, nil)
+	case "discordPRLink":
+		mode := strings.TrimSpace(ctx.PostFormValue("discordPRLink"))
+		msg := "Discord PR links: GitHub"
+		if mode == config.DiscordPRLinkWeb {
+			msg = "Discord PR links: web UI"
+			if s.cfg.WebPublicBaseURLValue() == "" {
+				msg += " (set webPublicBaseURL so links resolve)"
+			}
+		}
+		return s.configRedirect(ctx, msg, nil)
 	default:
 		return s.configRedirect(ctx, "Settings saved", nil)
 	}
+}
+
+func (s *Server) updateDiscordPRLinkSettingsErr(ctx *hime.Context) error {
+	return s.cfg.SetDiscordPRLink(ctx.PostFormValue("discordPRLink"))
 }
 
 func (s *Server) updateResumeSettingsErr(ctx *hime.Context) error {

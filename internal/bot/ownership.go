@@ -262,7 +262,7 @@ func (b *Bot) formatHandOffCard(threadID string, e sessionstore.Entry, from, to 
 		lines = append(lines, issLines...)
 	}
 	e.NormalizePRs()
-	if prLines := ghpr.FormatMultiStatusLines(entryPRInfos(e)); len(prLines) > 0 {
+	if prLines := ghpr.FormatMultiStatusLines(b.discordPRInfos(e)); len(prLines) > 0 {
 		lines = append(lines, prLines...)
 	} else {
 		lines = append(lines, "**pr:** (none yet)")

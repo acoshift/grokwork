@@ -313,7 +313,7 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 		pr.CIAutoFixSHA = existing.CIAutoFixSHA
 	}
 
-	card := ghpr.FormatCard(info)
+	card := ghpr.FormatCard(b.withDiscordPRURL(info))
 	msgID, err := b.upsertPRStatusMessage(s, threadID, pr.StatusMsgID, card)
 	if err != nil {
 		log.Printf("pr-status: card thread=%s: %v", threadID, err)
@@ -381,7 +381,8 @@ func (b *Bot) announcePRTimeline(s *discordgo.Session, threadID string, prev ghp
 	if len(events) == 0 {
 		return
 	}
-	emb, ok := ghpr.FormatTimelineEmbed(info, events)
+	// Display URL only (GitHub for gh/session stays on info).
+	emb, ok := ghpr.FormatTimelineEmbed(b.withDiscordPRURL(info), events)
 	if !ok {
 		return
 	}

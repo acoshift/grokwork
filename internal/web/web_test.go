@@ -915,7 +915,8 @@ func TestConfigAddsPersist(t *testing.T) {
 	for _, want := range []string{
 		"added", newProj, "ch-added", "Remove", "Add channel map",
 		"Grok run limits", "maxTurns", "timeoutMs",
-		"Worktree idle cleanup", "worktreeIdleTTLDays", "Crash-safe active runs", "resumeActiveRuns", "CI triage", "autoFixCI", "Completion risk paths",
+		"Worktree idle cleanup", "worktreeIdleTTLDays", "Crash-safe active runs", "resumeActiveRuns", "CI triage", "autoFixCI",
+		"Discord PR links", "discordPRLink", "Completion risk paths",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("config page missing %q", want)
@@ -1008,6 +1009,21 @@ func TestConfigAddsPersist(t *testing.T) {
 	}
 	if cfg.BoardStaleDaysValue() != 7 || cfg.BoardDigestChannelValue() != "999888777" {
 		t.Fatalf("board stale=%d channel=%q", cfg.BoardStaleDaysValue(), cfg.BoardDigestChannelValue())
+	}
+
+	// Settings: Discord PR link mode
+	reqPRLink := httptest.NewRequest(http.MethodPost, "/config/settings", strings.NewReader(url.Values{
+		"section":       {"discordPRLink"},
+		"discordPRLink": {"web"},
+	}.Encode()))
+	reqPRLink.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wPRLink := httptest.NewRecorder()
+	h.ServeHTTP(wPRLink, reqPRLink)
+	if wPRLink.Code != http.StatusSeeOther && wPRLink.Code != http.StatusFound {
+		t.Fatalf("discordPRLink settings status=%d body=%s", wPRLink.Code, wPRLink.Body.String())
+	}
+	if cfg.DiscordPRLinkValue() != config.DiscordPRLinkWeb {
+		t.Fatalf("discordPRLink=%q", cfg.DiscordPRLinkValue())
 	}
 
 	// Removes

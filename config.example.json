@@ -49,6 +49,7 @@
   "httpListen": ":8787",
   "webPublicBaseURL": "",
   "webMergeMethod": "squash",
+  "discordPRLink": "github",
   "webAuth": {
     "enabled": false,
     "sessionSecret": "",

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -84,6 +86,10 @@ type Config struct {
 	DiscordGuildID string `json:"discordGuildId,omitempty"`
 	// WebMergeMethod is the default gh pr merge strategy: squash (default), merge, rebase.
 	WebMergeMethod string `json:"webMergeMethod,omitempty"`
+	// DiscordPRLink chooses which URL is posted in Discord PR cards/status/events:
+	// "github" (default) → https://github.com/owner/repo/pull/N
+	// "web" → {webPublicBaseURL}/prs/owner/repo/N (falls back to GitHub when base URL unset).
+	DiscordPRLink string `json:"discordPRLink,omitempty"`
 	// WebAuth enables Discord OAuth for the private web UI. Nil/disabled = open LAN mode.
 	WebAuth *WebAuthConfig `json:"webAuth,omitempty"`
 	// RiskyPathGlobs flags completion-card paths for review (**, * globs).
@@ -174,6 +180,10 @@ type Snapshot struct {
 	WebAuthRole    string // empty in snapshot; filled by web layer per-request
 	DiscordGuildID string
 	WebMergeMethod string // effective default (squash)
+	// DiscordPRLink is "github" or "web" (how PR URLs appear in Discord messages).
+	DiscordPRLink string
+	// WebPublicBaseURL is the public origin used when DiscordPRLink is "web" (may be empty).
+	WebPublicBaseURL string
 	// Feature flags for UI (true only when webAuth enabled + feature bit).
 	FeatureGitHubWrites bool
 	FeatureMerge        bool
@@ -470,6 +480,7 @@ func (c *Config) saveLocked() error {
 		WebPublicBaseURL     string            `json:"webPublicBaseURL,omitempty"`
 		DiscordGuildID       string            `json:"discordGuildId,omitempty"`
 		WebMergeMethod       string            `json:"webMergeMethod,omitempty"`
+		DiscordPRLink        string            `json:"discordPRLink,omitempty"`
 		WebAuth              *WebAuthConfig    `json:"webAuth,omitempty"`
 		RiskyPathGlobs       []string          `json:"riskyPathGlobs,omitempty"`
 		AutoFixCI            *bool             `json:"autoFixCI,omitempty"`
@@ -501,6 +512,7 @@ func (c *Config) saveLocked() error {
 		WebPublicBaseURL:      c.WebPublicBaseURL,
 		DiscordGuildID:        c.DiscordGuildID,
 		WebMergeMethod:        c.WebMergeMethod,
+		DiscordPRLink:         c.DiscordPRLink,
 		WebAuth:               cloneWebAuth(c.WebAuth),
 		RiskyPathGlobs:        slices.Clone(c.RiskyPathGlobs),
 		AutoFixCI:             c.AutoFixCI,
@@ -593,6 +605,105 @@ func (c *Config) SetAutoFixCI(enabled bool, maxAttempts int) error {
 	c.AutoFixCIMax = maxAttempts
 	return c.saveLocked()
 }
+
+// Discord PR link targets for Discord messages (cards, status, timeline, completion).
+const (
+	DiscordPRLinkGitHub = "github"
+	DiscordPRLinkWeb    = "web"
+)
+
+// DiscordPRLinkValue returns github|web (default github).
+func (c *Config) DiscordPRLinkValue() string {
+	if c == nil {
+		return DiscordPRLinkGitHub
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.discordPRLinkLocked()
+}
+
+func (c *Config) discordPRLinkLocked() string {
+	switch strings.ToLower(strings.TrimSpace(c.DiscordPRLink)) {
+	case DiscordPRLinkWeb:
+		return DiscordPRLinkWeb
+	default:
+		return DiscordPRLinkGitHub
+	}
+}
+
+// SetDiscordPRLink sets which URL is shown for PRs in Discord (github|web) and persists.
+func (c *Config) SetDiscordPRLink(mode string) error {
+	if c == nil {
+		return fmt.Errorf("nil config")
+	}
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case DiscordPRLinkGitHub, "":
+		mode = DiscordPRLinkGitHub
+	case DiscordPRLinkWeb:
+		mode = DiscordPRLinkWeb
+	default:
+		return fmt.Errorf("discordPRLink must be %q or %q", DiscordPRLinkGitHub, DiscordPRLinkWeb)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if mode == DiscordPRLinkGitHub {
+		c.DiscordPRLink = "" // omit default from disk
+	} else {
+		c.DiscordPRLink = mode
+	}
+	return c.saveLocked()
+}
+
+// DiscordPRDisplayURL returns the URL to show in Discord for a PR.
+// Stored/session URLs stay GitHub; this only rewrites for display when mode is web
+// and webPublicBaseURL (or GROK_WORK_PUBLIC_BASE_URL) is set. Falls back to githubURL
+// (or a constructed github.com URL) otherwise.
+func (c *Config) DiscordPRDisplayURL(owner, repo string, number int, githubURL string) string {
+	githubURL = strings.TrimSpace(githubURL)
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if owner == "" || repo == "" || number <= 0 {
+		if m := githubPRURLRE.FindStringSubmatch(githubURL); len(m) >= 4 {
+			owner, repo = m[1], m[2]
+			if n, err := strconv.Atoi(m[3]); err == nil {
+				number = n
+			}
+		}
+	}
+	if githubURL == "" && owner != "" && repo != "" && number > 0 {
+		githubURL = fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, number)
+	}
+	if c == nil || c.DiscordPRLinkValue() != DiscordPRLinkWeb {
+		return githubURL
+	}
+	if owner == "" || repo == "" || number <= 0 {
+		return githubURL
+	}
+	base := c.WebPublicBaseURLValue()
+	if base == "" {
+		return githubURL
+	}
+	return fmt.Sprintf("%s/prs/%s/%s/%d", base, pathEscapeSegment(owner), pathEscapeSegment(repo), number)
+}
+
+// pathEscapeSegment escapes a path segment for use in /prs/{owner}/{repo}/{n}.
+// Keep alphanumerics, hyphen, underscore, and dot unescaped (GitHub slug chars).
+func pathEscapeSegment(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' {
+			b.WriteByte(c)
+			continue
+		}
+		fmt.Fprintf(&b, "%%%02X", c)
+	}
+	return b.String()
+}
+
+// githubPRURLRE matches https://github.com/owner/repo/pull/N for display URL resolution.
+var githubPRURLRE = regexp.MustCompile(`(?i)https?://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/pull/(\d+)`)
 
 // SetRiskyPathGlobsFromText parses newline-separated globs.
 // useDefault true clears the override (built-in defaults).
@@ -837,6 +948,19 @@ func (c *Config) Snapshot() Snapshot {
 		WebAuthEnabled:    c.WebAuth != nil && c.WebAuth.Enabled,
 		DiscordGuildID:    strings.TrimSpace(c.DiscordGuildID),
 		WebMergeMethod:    c.webMergeMethodLocked(),
+		DiscordPRLink:     c.discordPRLinkLocked(),
+		// Snapshot holds RLock — resolve base URL without re-locking via local fields.
+		WebPublicBaseURL: func() string {
+			base := strings.TrimSpace(c.WebPublicBaseURL)
+			if base != "" {
+				return strings.TrimRight(base, "/")
+			}
+			// Env is process-wide; safe under RLock for a read-only Snapshot field.
+			if v := EnvWork("PUBLIC_BASE_URL"); v != "" {
+				return strings.TrimRight(v, "/")
+			}
+			return ""
+		}(),
 	}
 	// Features need WebAuthEnabled without re-locking — compute inline.
 	if c.WebAuth != nil && c.WebAuth.Enabled {

@@ -112,10 +112,8 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 	if note != "" {
 		msg += "\n> " + note
 	}
-	if pr.URL != "" {
-		msg += "\n" + pr.URL
-	} else {
-		msg += fmt.Sprintf("\nhttps://github.com/%s/%s/pull/%d", pr.Owner, pr.Repo, pr.Number)
+	if u := b.discordPRURL(pr.Owner, pr.Repo, pr.Number, pr.URL); u != "" {
+		msg += "\n" + u
 	}
 	if req.ID != "" {
 		msg += "\n_Team review request — appears on web **My reviews** (not a GitHub formal review)._"

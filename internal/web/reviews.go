@@ -258,7 +258,7 @@ func (s *Server) postPRReviewRequest(ctx *hime.Context) error {
 		if note != "" {
 			msg += "\n> " + note
 		}
-		msg += fmt.Sprintf("\nhttps://github.com/%s/%s/pull/%d", owner, repo, n)
+		msg += "\n" + s.cfg.DiscordPRDisplayURL(owner, repo, n, "")
 		s.bot.NotifyThread(threadID, msg)
 	}
 
