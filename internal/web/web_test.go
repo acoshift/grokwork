@@ -377,10 +377,12 @@ func TestPagesRender(t *testing.T) {
 	detail := w.Body.String()
 	for _, want := range []string{
 		`id="page-history-detail"`,
-		"please fix the flaky test",
-		"I fixed it by waiting for the race.",
+		`class="bubble-body md"`,
+		"<p>please fix the flaky test</p>",
+		"<p>I fixed it by waiting for the race.</p>",
 		"ship a PR",
-		"Opened https://example.com/pr/1",
+		"Opened",
+		`href="https://example.com/pr/1"`,
 		"do a huge refactor",
 		"Reached max turns before a final reply",
 		`class="turn-error"`,
@@ -465,7 +467,8 @@ func TestSessionsHub(t *testing.T) {
 		"thread-99",
 		"Grok Work",
 		`href="/projects/proj/sessions">← Sessions</a>`,
-		"please fix the flaky test",
+		`class="bubble-body md"`,
+		"<p>please fix the flaky test</p>",
 	} {
 		if !strings.Contains(detail, want) {
 			t.Fatalf("session detail missing %q", want)

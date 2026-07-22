@@ -85,14 +85,14 @@
       </header>
       <div class="bubble user">
         <div class="bubble-label">User</div>
-        <pre class="bubble-body">{{$t.Prompt}}</pre>
+        <div class="bubble-body md">{{markdown $t.Prompt}}</div>
       </div>
       <div class="bubble assistant">
         <div class="bubble-label">Grok</div>
         {{if $t.Response}}
-        <pre class="bubble-body">{{$t.Response}}</pre>
+        <div class="bubble-body md">{{markdown $t.Response}}</div>
         {{else}}
-        <pre class="bubble-body muted">(no response text yet)</pre>
+        <div class="bubble-body muted">(no response text yet)</div>
         {{end}}
       </div>
     </article>
@@ -107,15 +107,15 @@
       {{if .RunPrompt}}
       <div class="bubble user">
         <div class="bubble-label">User</div>
-        <pre class="bubble-body">{{.RunPrompt}}</pre>
+        <div class="bubble-body md">{{markdown .RunPrompt}}</div>
       </div>
       {{end}}
       <div class="bubble assistant">
         <div class="bubble-label">Grok <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">(live)</span></div>
         {{if .RunLiveText}}
-        <pre class="bubble-body bubble-stream" id="live-stream-body">{{.RunLiveText}}</pre>
+        <div class="bubble-body md bubble-stream" id="live-stream-body">{{markdown .RunLiveText}}</div>
         {{else}}
-        <pre class="bubble-body muted bubble-stream" id="live-stream-body">_(streaming…)_</pre>
+        <div class="bubble-body muted bubble-stream" id="live-stream-body">streaming…</div>
         {{end}}
       </div>
     </article>

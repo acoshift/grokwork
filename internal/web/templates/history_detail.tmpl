@@ -49,14 +49,14 @@
     {{end}}
     <div class="bubble user">
       <div class="bubble-label">User</div>
-      <pre class="bubble-body">{{$t.Prompt}}</pre>
+      <div class="bubble-body md">{{markdown $t.Prompt}}</div>
     </div>
     <div class="bubble assistant">
       <div class="bubble-label">Grok</div>
       {{if $t.Response}}
-      <pre class="bubble-body">{{$t.Response}}</pre>
+      <div class="bubble-body md">{{markdown $t.Response}}</div>
       {{else}}
-      <pre class="bubble-body muted">(no response text)</pre>
+      <div class="bubble-body muted">(no response text)</div>
       {{end}}
     </div>
   </article>
