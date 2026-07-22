@@ -1014,6 +1014,14 @@
       align-items: center;
       margin-top: 0.75rem;
     }
+    /* Multi-field card forms: vertical rhythm between .field blocks. Rail forms
+       get this from .action-body form; toolbar fields space via the toolbar. */
+    form.stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+    form.stack .form-actions { margin-top: 0; }
     button.btn-compact,
     .btn-compact {
       height: 1.85rem;

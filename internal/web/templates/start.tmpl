@@ -10,7 +10,7 @@
 {{if .CanStartSession}}
 {{/* Form stays out of any live region — this page has none — so nothing wipes typed text. */}}
 <div class="section card" id="start-form">
-  <form method="post" action="/projects/{{.Project}}/start">
+  <form class="stack" method="post" action="/projects/{{.Project}}/start">
     {{template "csrf" $}}
     <div class="field">
       <label for="start-title">Title <span class="muted">(optional)</span></label>

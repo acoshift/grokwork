@@ -192,7 +192,7 @@ func TestStartPageShowsFormForMember(t *testing.T) {
 	for _, want := range []string{
 		`id="page-start"`,
 		`id="btn-start"`,
-		`action="/projects/proj/start"`,
+		`<form class="stack" method="post" action="/projects/proj/start">`,
 		`name="prompt"`,
 		`name="title"`,
 		`name="mode"`,
