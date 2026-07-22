@@ -75,15 +75,23 @@
   {{if or .CommitHasPrev .CommitHasNext}}
   <nav class="pager" aria-label="Commits pagination">
     {{if .CommitHasPrev}}
-    <a class="btn-secondary" href="/projects/{{.Project}}/commits?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;ref={{urlquery .CommitRef}}&amp;page={{add .CommitPage -1}}">← Previous</a>
+    <a class="pager-link" href="/projects/{{.Project}}/commits?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;ref={{urlquery .CommitRef}}&amp;page={{add .CommitPage -1}}" aria-label="Previous page">
+      <span class="pager-chevron" aria-hidden="true">‹</span> Previous
+    </a>
     {{else}}
-    <span class="btn-secondary disabled" aria-disabled="true">← Previous</span>
+    <span class="pager-link is-disabled" aria-disabled="true">
+      <span class="pager-chevron" aria-hidden="true">‹</span> Previous
+    </span>
     {{end}}
     <span class="pager-status mono">Page {{.CommitPage}}</span>
     {{if .CommitHasNext}}
-    <a class="btn-secondary" href="/projects/{{.Project}}/commits?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;ref={{urlquery .CommitRef}}&amp;page={{add .CommitPage 1}}">Next →</a>
+    <a class="pager-link" href="/projects/{{.Project}}/commits?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;ref={{urlquery .CommitRef}}&amp;page={{add .CommitPage 1}}" aria-label="Next page">
+      Next <span class="pager-chevron" aria-hidden="true">›</span>
+    </a>
     {{else}}
-    <span class="btn-secondary disabled" aria-disabled="true">Next →</span>
+    <span class="pager-link is-disabled" aria-disabled="true">
+      Next <span class="pager-chevron" aria-hidden="true">›</span>
+    </span>
     {{end}}
   </nav>
   {{end}}

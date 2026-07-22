@@ -1539,15 +1539,53 @@
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 0.65rem 0.85rem;
-      margin-top: 1rem;
+      justify-content: space-between;
+      gap: 0.5rem 1rem;
+      margin-top: 0.9rem;
+      padding: 0.55rem 0.15rem 0.1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.88rem;
     }
-    .pager-status { color: var(--muted); font-size: 0.9rem; }
-    .pager .btn-secondary.disabled,
-    a.btn-secondary.disabled {
-      opacity: 0.45;
+    .pager-status {
+      color: var(--muted);
+      font-size: 0.84rem;
+      letter-spacing: 0.01em;
+      flex: 1 1 auto;
+      text-align: center;
+      min-width: 4.5rem;
+    }
+    .pager-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.28rem;
+      color: var(--text);
+      font-weight: 550;
+      text-decoration: none;
+      padding: 0.35rem 0.55rem;
+      border-radius: 999px;
+      min-height: 1.85rem;
+      transition: background 0.12s ease, color 0.12s ease;
+    }
+    .pager-link:hover {
+      background: var(--surface-l2);
+      color: var(--text);
+      text-decoration: none;
+    }
+    .pager-link:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--ring-strong);
+    }
+    .pager-link.is-disabled {
+      color: var(--muted-soft);
       pointer-events: none;
       cursor: default;
+      opacity: 0.7;
+    }
+    .pager-chevron {
+      font-size: 1.15em;
+      line-height: 1;
+      font-weight: 500;
+      translate: 0 -0.02em;
     }
 
     /* ── Conversation turns ──────────────────────────────────────────── */

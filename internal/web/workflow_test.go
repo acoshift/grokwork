@@ -1212,7 +1212,7 @@ func TestCommitsListPagination(t *testing.T) {
 	if !strings.Contains(body, "Page 1") {
 		t.Fatalf("missing page status: %s", body)
 	}
-	if !strings.Contains(body, `page=2`) || !strings.Contains(body, "Next →") {
+	if !strings.Contains(body, `page=2`) || !strings.Contains(body, `aria-label="Next page"`) {
 		t.Fatalf("missing next link: %s", body)
 	}
 	if strings.Contains(body, "Commit 50") { // 0-based index 50 is page 2
