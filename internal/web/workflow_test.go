@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -994,6 +995,14 @@ func TestCommitsListAndDetail(t *testing.T) {
 			t.Fatalf("list missing %q in %s", want, body)
 		}
 	}
+	// Limit filter removed; fixed page size + pagination instead.
+	if strings.Contains(body, `name="n"`) || strings.Contains(body, `for="n"`) {
+		t.Fatal("limit filter must be gone from commits list")
+	}
+	// Single fixture commit → no pager (page 1 only, no next).
+	if strings.Contains(body, `aria-label="Commits pagination"`) {
+		t.Fatal("pager should not show when only one page of commits")
+	}
 
 	req = httptest.NewRequest(http.MethodGet, "/projects/proj/commits/abcdef0?owner=acme&repo=app", nil)
 	w = httptest.NewRecorder()
@@ -1142,6 +1151,96 @@ func TestCommitDetailReviewButton(t *testing.T) {
 	}
 	if strings.Contains(body, "Requires member role") {
 		t.Fatal("should show review button when startSessions on")
+	}
+}
+
+func TestCommitsListPagination(t *testing.T) {
+	srv := workflowServer(t)
+	orig := srv.ghRunner
+	// Page size is 50; return 51 lines so page 1 shows Next.
+	makeLog := func(start, n int) []byte {
+		var b strings.Builder
+		for i := 0; i < n; i++ {
+			sha := fmt.Sprintf("%040x", start+i)
+			fmt.Fprintf(&b, "%s\x1fCommit %d\x1fAlice\x1fa@ex.com\x1f2026-07-20T12:00:00Z\n", sha, start+i)
+		}
+		return []byte(b.String())
+	}
+	var lastSkip, lastN string
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if name == "git" && len(args) > 0 && args[0] == "log" {
+			lastSkip, lastN = "0", ""
+			for i, a := range args {
+				if a == "-n" && i+1 < len(args) {
+					lastN = args[i+1]
+				}
+				if a == "--skip" && i+1 < len(args) {
+					lastSkip = args[i+1]
+				}
+			}
+			// Simulate enough history for two pages: total 60 commits.
+			limit, _ := strconv.Atoi(lastN)
+			skip, _ := strconv.Atoi(lastSkip)
+			remain := 60 - skip
+			if remain < 0 {
+				remain = 0
+			}
+			if limit > remain {
+				limit = remain
+			}
+			return makeLog(skip, limit), nil
+		}
+		return orig(ctx, dir, name, args...)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/commits?owner=acme&repo=app", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if lastN != "51" { // pageSize+1 for has-next probe
+		t.Fatalf("want -n 51 got %q", lastN)
+	}
+	if lastSkip != "0" {
+		t.Fatalf("want skip 0 got %q", lastSkip)
+	}
+	if !strings.Contains(body, `aria-label="Commits pagination"`) {
+		t.Fatal("expected pager on multi-page list")
+	}
+	if !strings.Contains(body, "Page 1") {
+		t.Fatalf("missing page status: %s", body)
+	}
+	if !strings.Contains(body, `page=2`) || !strings.Contains(body, "Next →") {
+		t.Fatalf("missing next link: %s", body)
+	}
+	if strings.Contains(body, "Commit 50") { // 0-based index 50 is page 2
+		t.Fatal("page 1 must not include commit 50")
+	}
+	if !strings.Contains(body, "Commit 0") || !strings.Contains(body, "Commit 49") {
+		t.Fatalf("page 1 should include commits 0..49: %s", body)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/commits?owner=acme&repo=app&page=2", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("page2 status=%d", w.Code)
+	}
+	body = w.Body.String()
+	if lastSkip != "50" {
+		t.Fatalf("page 2 want skip 50 got %q", lastSkip)
+	}
+	if !strings.Contains(body, "Page 2") || !strings.Contains(body, `page=1`) {
+		t.Fatalf("page 2 missing status/prev: %s", body)
+	}
+	if !strings.Contains(body, "Commit 50") {
+		t.Fatalf("page 2 missing later commits: %s", body)
+	}
+	// 60 total → page 2 has 10 rows, no third page.
+	if strings.Contains(body, `page=3`) {
+		t.Fatal("should not offer page 3 when history ends")
 	}
 }
 

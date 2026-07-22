@@ -24,10 +24,6 @@
     <label for="ref">Ref</label>
     <input id="ref" type="text" name="ref" value="{{.CommitRef}}" placeholder="HEAD" class="mono">
   </div>
-  <div class="field field-sm">
-    <label for="n">Limit</label>
-    <input id="n" name="n" type="number" min="1" max="2000" value="{{if .CommitLimit}}{{.CommitLimit}}{{else}}50{{end}}">
-  </div>
   <button type="submit" class="btn-secondary">Apply</button>
 </form>
 <form method="post" action="/projects/{{.Project}}/commits/fetch" id="commits-fetch" hx-boost="false" style="display:contents">
@@ -35,7 +31,6 @@
   <input type="hidden" name="owner" value="{{.ActiveOwner}}">
   <input type="hidden" name="repo" value="{{.ActiveRepo}}">
   <input type="hidden" name="ref" value="{{.CommitRef}}">
-  <input type="hidden" name="n" value="{{if .CommitLimit}}{{.CommitLimit}}{{else}}50{{end}}">
   <button type="submit" class="btn-secondary" title="git fetch --all --prune; unshallow if needed">Fetch</button>
 </form>
 </div>
@@ -77,6 +72,21 @@
   </div>
   {{else if not .Error}}
   <div class="empty">No commits for this ref.</div>
+  {{end}}
+  {{if or .CommitHasPrev .CommitHasNext}}
+  <nav class="pager" aria-label="Commits pagination">
+    {{if .CommitHasPrev}}
+    <a class="btn-secondary" href="/projects/{{.Project}}/commits?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;ref={{urlquery .CommitRef}}&amp;page={{add .CommitPage -1}}">← Previous</a>
+    {{else}}
+    <span class="btn-secondary disabled" aria-disabled="true">← Previous</span>
+    {{end}}
+    <span class="pager-status mono">Page {{.CommitPage}}</span>
+    {{if .CommitHasNext}}
+    <a class="btn-secondary" href="/projects/{{.Project}}/commits?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;ref={{urlquery .CommitRef}}&amp;page={{add .CommitPage 1}}">Next →</a>
+    {{else}}
+    <span class="btn-secondary disabled" aria-disabled="true">Next →</span>
+    {{end}}
+  </nav>
   {{end}}
 </div>
 {{end}}

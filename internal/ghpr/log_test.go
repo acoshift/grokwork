@@ -135,6 +135,31 @@ func TestListCommitsDefaultRefAndCap(t *testing.T) {
 	}
 }
 
+func TestListCommitsSkip(t *testing.T) {
+	var saw []string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		saw = append([]string{name}, args...)
+		return []byte("aa11bb22cc33\x1fHello\x1fX\x1fx@y.z\x1f2026-01-01T00:00:00Z\n"), nil
+	}
+	_, err := ListCommitsWith(context.Background(), run, "/repo", CommitListOpts{Ref: "main", Limit: 50, Skip: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(saw, " ")
+	if !strings.Contains(joined, "--skip 100") || !strings.Contains(joined, "-n 50") || !strings.Contains(joined, "main") {
+		t.Fatalf("args %v", saw)
+	}
+	// Skip 0 must not emit --skip.
+	saw = nil
+	_, err = ListCommitsWith(context.Background(), run, "/repo", CommitListOpts{Limit: 10, Skip: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(saw, " "), "--skip") {
+		t.Fatalf("unexpected --skip: %v", saw)
+	}
+}
+
 func TestShowCommitWith(t *testing.T) {
 	full := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	hasArg := func(args []string, want string) bool {

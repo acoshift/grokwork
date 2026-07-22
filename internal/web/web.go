@@ -372,7 +372,9 @@ type pageData struct {
 	Commits         []ghpr.CommitSummary
 	Commit          ghpr.CommitDetail
 	CommitRef       string
-	CommitLimit     int
+	CommitPage      int
+	CommitHasPrev   bool
+	CommitHasNext   bool
 	CanReviewCommit bool
 	// Write UI flags (from config snapshot + session)
 	CanGitHubWrite  bool

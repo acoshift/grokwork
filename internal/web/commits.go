@@ -51,13 +51,12 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	if ref == "" {
 		ref = "HEAD"
 	}
-	limit := ghpr.DefaultCommitListLimit
-	if n, err := strconv.Atoi(strings.TrimSpace(ctx.FormValue("n"))); err == nil && n > 0 {
-		limit = n
+	pageSize := ghpr.DefaultCommitListLimit
+	page := 1
+	if p, err := strconv.Atoi(strings.TrimSpace(ctx.FormValue("page"))); err == nil && p > 0 {
+		page = p
 	}
-	if limit > ghpr.MaxCommitListLimit {
-		limit = ghpr.MaxCommitListLimit
-	}
+	skip := (page - 1) * pageSize
 	d := s.basePage(ctx)
 	d.Title = "Commits · " + project
 	d.IsCommits = true
@@ -66,7 +65,8 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	d.ActiveOwner = active.Owner
 	d.ActiveRepo = active.Repo
 	d.CommitRef = ref
-	d.CommitLimit = limit
+	d.CommitPage = page
+	d.CommitHasPrev = page > 1
 	d.CanReviewCommit = d.CanStartSession
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
@@ -79,10 +79,16 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 		}
 		return s.viewPage(ctx, "commits", d)
 	}
+	// Fetch one extra row so we know whether a next page exists.
 	list, listErr := ghpr.ListCommitsWith(ctx.Context(), s.ghRun(), repoPath, ghpr.CommitListOpts{
 		Ref:   ref,
-		Limit: limit,
+		Limit: pageSize + 1,
+		Skip:  skip,
 	})
+	if len(list) > pageSize {
+		d.CommitHasNext = true
+		list = list[:pageSize]
+	}
 	d.Commits = list
 	if d.Error == "" && listErr != nil {
 		d.Error = listErr.Error()
@@ -101,32 +107,31 @@ func (s *Server) postCommitsFetch(ctx *hime.Context) error {
 	owner := strings.TrimSpace(ctx.PostFormValue("owner"))
 	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
 	ref := strings.TrimSpace(ctx.PostFormValue("ref"))
-	n := strings.TrimSpace(ctx.PostFormValue("n"))
 	root, err := s.projectPath(project)
 	if err != nil {
-		return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "", err)
+		return s.commitsListRedirect(ctx, project, owner, repo, ref, "", err)
 	}
 	catalog, _ := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
 	active, pickErr := config.ResolveRepoPicker(catalog, owner, repo)
 	if pickErr != nil {
-		return s.commitsListRedirect(ctx, project, owner, repo, ref, n, "", pickErr)
+		return s.commitsListRedirect(ctx, project, owner, repo, ref, "", pickErr)
 	}
 	path, err := gitworktree.ResolveLocalRepo(ctx.Context(), root, active.Owner, active.Repo)
 	if err != nil {
-		return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, n, "", err)
+		return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, "", err)
 	}
 	err = ghpr.FetchWith(ctx.Context(), s.ghRun(), path)
 	s.auditAction(ctx, audit.ActionGitFetch, err, map[string]any{
 		"project": project, "owner": active.Owner, "repo": active.Repo,
 	})
 	if err != nil {
-		return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, n, "", err)
+		return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, "", err)
 	}
 	gitworktree.NoteFetched(path)
-	return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, n, "Fetched remotes (full history)", nil)
+	return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, "Fetched remotes (full history)", nil)
 }
 
-func (s *Server) commitsListRedirect(ctx *hime.Context, project, owner, repo, ref, n, okMsg string, err error) error {
+func (s *Server) commitsListRedirect(ctx *hime.Context, project, owner, repo, ref, okMsg string, err error) error {
 	q := url.Values{}
 	if owner != "" {
 		q.Set("owner", owner)
@@ -136,9 +141,6 @@ func (s *Server) commitsListRedirect(ctx *hime.Context, project, owner, repo, re
 	}
 	if ref != "" {
 		q.Set("ref", ref)
-	}
-	if n != "" {
-		q.Set("n", n)
 	}
 	if err != nil {
 		q.Set("err", err.Error())

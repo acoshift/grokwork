@@ -10,9 +10,9 @@ import (
 
 // Commit list defaults.
 const (
+	// DefaultCommitListLimit is the commits browser page size.
 	DefaultCommitListLimit = 50
-	// MaxCommitListLimit caps the commits browser table size. Full history is
-	// available after Fetch (which unshallows); the UI limit is only the list.
+	// MaxCommitListLimit caps a single git log page size (safety bound).
 	MaxCommitListLimit = 2000
 )
 
@@ -40,6 +40,8 @@ type CommitListOpts struct {
 	Ref string
 	// Limit is max commits (default DefaultCommitListLimit, max MaxCommitListLimit).
 	Limit int
+	// Skip is how many commits to skip from the start of the log (pagination).
+	Skip int
 }
 
 // Fetch updates remote-tracking branches in cwd (git fetch --all --prune).
@@ -101,9 +103,18 @@ func ListCommitsWith(ctx context.Context, run Runner, cwd string, opts CommitLis
 	if limit > MaxCommitListLimit {
 		limit = MaxCommitListLimit
 	}
+	skip := opts.Skip
+	if skip < 0 {
+		skip = 0
+	}
 	// Fields separated by unit separator (0x1f); subject is single-line (%s).
 	const format = "%H%x1f%s%x1f%an%x1f%ae%x1f%aI"
-	raw, err := run(ctx, cwd, "git", "log", "--format="+format, "-n", strconv.Itoa(limit), ref)
+	args := []string{"log", "--format=" + format, "-n", strconv.Itoa(limit)}
+	if skip > 0 {
+		args = append(args, "--skip", strconv.Itoa(skip))
+	}
+	args = append(args, ref)
+	raw, err := run(ctx, cwd, "git", args...)
 	if err != nil {
 		return nil, err
 	}

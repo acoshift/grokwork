@@ -1534,6 +1534,22 @@
     .toolbar .field-sm input[type=number] { width: 5.5rem; }
     .toolbar button, .toolbar .btn { height: 2.5rem; flex: 0 0 auto; }
 
+    /* ── Pager (commits list, etc.) ──────────────────────────────────── */
+    .pager {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.65rem 0.85rem;
+      margin-top: 1rem;
+    }
+    .pager-status { color: var(--muted); font-size: 0.9rem; }
+    .pager .btn-secondary.disabled,
+    a.btn-secondary.disabled {
+      opacity: 0.45;
+      pointer-events: none;
+      cursor: default;
+    }
+
     /* ── Conversation turns ──────────────────────────────────────────── */
     .turns { display: flex; flex-direction: column; gap: 1.1rem; }
     .turn {
