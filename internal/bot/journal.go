@@ -199,7 +199,7 @@ func taskRecordFromItem(item taskItem, status runjournal.Status) runjournal.Task
 		AuthorName:       authorName,
 		IntentPreview:    item.intentPreview,
 		SnapMode:         item.snapMode,
-		SnapPhase:        item.snapPhase,
+		SnapPhase:        item.snapPhase, // Wave 3 case phase
 		SnapRunKind:      item.snapRunKind,
 		SnapAllowPR:      item.snapAllowPR,
 		SnapAllowDirect:  item.snapAllowDirect,

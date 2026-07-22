@@ -668,12 +668,67 @@ func preserveShipFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	}
 }
 
-// preserveModeFields copies Wave-1 session Mode across executeTask Set rebuilds.
+// preserveModeFields copies Wave-1 session Mode and Wave-3 case fields across Set rebuilds.
 func preserveModeFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	if next == nil {
 		return
 	}
 	if next.Mode == "" {
 		next.Mode = prev.Mode
+	}
+	if next.Phase == "" {
+		next.Phase = prev.Phase
+	}
+	if next.Severity == "" {
+		next.Severity = prev.Severity
+	}
+	if next.CustomerTitle == "" {
+		next.CustomerTitle = prev.CustomerTitle
+	}
+	if next.CustomerRef == "" {
+		next.CustomerRef = prev.CustomerRef
+	}
+	if next.ReporterID == "" {
+		next.ReporterID = prev.ReporterID
+	}
+	if next.ReporterName == "" {
+		next.ReporterName = prev.ReporterName
+	}
+	if next.IntakeSource == "" {
+		next.IntakeSource = prev.IntakeSource
+	}
+	if next.CaseMsgID == "" {
+		next.CaseMsgID = prev.CaseMsgID
+	}
+	if next.DossierMsgID == "" {
+		next.DossierMsgID = prev.DossierMsgID
+	}
+	if next.CustomerUpdateMsgID == "" {
+		next.CustomerUpdateMsgID = prev.CustomerUpdateMsgID
+	}
+	if next.Dossier == nil && prev.Dossier != nil {
+		cp := *prev.Dossier
+		next.Dossier = &cp
+	}
+	if next.CustomerUpdate == "" {
+		next.CustomerUpdate = prev.CustomerUpdate
+	}
+	if next.Resolution == "" {
+		next.Resolution = prev.Resolution
+	}
+	if next.ResolutionNote == "" {
+		next.ResolutionNote = prev.ResolutionNote
+	}
+	if next.ResolvedAt == "" {
+		next.ResolvedAt = prev.ResolvedAt
+	}
+	if next.ResolvedBy == "" {
+		next.ResolvedBy = prev.ResolvedBy
+	}
+	if next.EscalatedAt == "" {
+		next.EscalatedAt = prev.EscalatedAt
+	}
+	if next.EscalatedBy == "" {
+		next.EscalatedBy = prev.EscalatedBy
 	}
 }

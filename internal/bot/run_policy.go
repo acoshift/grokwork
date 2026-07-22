@@ -79,19 +79,22 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 		mode = ModeInvestigate
 	}
 
-	// D2: StartSessions without GithubWrites → coerce to investigate (never half-fix).
+	// D2: without GithubWrites cannot ship (never half-fix).
+	// Keep Mode=case when already a case (K17); only drop to ModeInvestigate for non-case.
 	coerced := false
-	if !in.ForceInvestigate && mode != ModeInvestigate && mode != ModeExplain {
-		// Wanted fix/ship path but missing write caps
+	if !in.ForceInvestigate && mode != ModeInvestigate && mode != ModeExplain && !in.Caps.GithubWrites {
 		wantShip := mode == "" || mode == ModeFix || mode == ModeCase
-		if wantShip && in.Caps.StartSessions && !in.Caps.GithubWrites {
-			mode = ModeInvestigate
-			coerced = true
-		}
-		// No start sessions at all → investigate if they have Investigate, else still investigate fail-closed
-		if wantShip && !in.Caps.StartSessions && !in.Caps.GithubWrites {
-			mode = ModeInvestigate
-			coerced = true
+		if wantShip {
+			if mode == ModeCase {
+				// Stay case; force non-ship phase for this policy decision.
+				if !isCaseNonShipPhase(strings.TrimSpace(strings.ToLower(in.SessionPhase))) {
+					in.SessionPhase = sessionstore.PhaseInvestigate
+				}
+				coerced = true
+			} else {
+				mode = ModeInvestigate
+				coerced = true
+			}
 		}
 	}
 
@@ -107,8 +110,26 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 		}
 	}
 
-	// Investigate / explain: non-shipping (K27).
-	if mode == ModeInvestigate || mode == ModeExplain || mode == ModeCase && isCaseNonShipPhase(in.SessionPhase) {
+	phase := strings.TrimSpace(strings.ToLower(in.SessionPhase))
+
+	// Case closed: reject runs (PrefixKind none) — handler should not enqueue.
+	if mode == ModeCase && phase == sessionstore.PhaseClosed {
+		return RunPolicy{
+			Mode: ModeCase, Phase: phase, RunKind: rk,
+			PrefixKind: "none", PostCompletion: "none",
+			Coerced: coerced,
+		}
+	}
+
+	// Case non-ship phases + investigate/explain: non-shipping (K27).
+	caseNonShip := mode == ModeCase && isCaseNonShipPhase(phase)
+	if mode == ModeInvestigate || mode == ModeExplain || caseNonShip {
+		if mode == ModeCase {
+			// Keep Mode=case; phase stays; run kind investigate unless explicit
+			if rk == RunKindFix {
+				rk = RunKindInvestigate
+			}
+		}
 		tools := in.InvestigateTools
 		if tools == "" {
 			tools = DefaultInvestigateTools
@@ -116,7 +137,7 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 		toolsCopy := tools
 		pol := RunPolicy{
 			Mode:                 mode,
-			Phase:                in.SessionPhase,
+			Phase:                phase,
 			RunKind:              rk,
 			AllowPR:              false,
 			AllowDirectShip:      false,
@@ -134,7 +155,7 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 			DirtyTreeWarn:        true,
 			Coerced:              coerced,
 		}
-		if mode == ModeExplain {
+		if mode == ModeExplain || phase == sessionstore.PhaseAnswered {
 			pol.PrefixKind = "explain"
 			pol.PostCompletion = "none"
 			empty := ""
@@ -143,7 +164,7 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 		return pol
 	}
 
-	// Fix / empty mode: ship-capable when GithubWrites (and StartSessions for freeform).
+	// Fix / empty mode / case fixing|shipping: ship-capable when GithubWrites.
 	canWrite := in.Caps.GithubWrites
 	// When SafeTeamMode off, ResolveCapabilities returns builder — CanShip true.
 	// Explicit zero caps (denied) → treat as investigate fail-closed.
@@ -158,11 +179,12 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 		})
 	}
 
+	// Case ship phases: Mode stays case (K17).
 	shipMode := strings.TrimSpace(in.ShipMode)
 	direct := shipMode == sessionstore.ShipModeDirect
 	pol := RunPolicy{
 		Mode:                 mode,
-		Phase:                in.SessionPhase,
+		Phase:                phase,
 		RunKind:              rk,
 		AllowPR:              canWrite && !direct,
 		AllowDirectShip:      canWrite && direct,
@@ -200,11 +222,55 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 
 func isCaseNonShipPhase(phase string) bool {
 	switch strings.TrimSpace(strings.ToLower(phase)) {
-	case "", "intake", "investigate", "answered", "closed":
+	case "", sessionstore.PhaseIntake, sessionstore.PhaseInvestigate, sessionstore.PhaseAnswered, sessionstore.PhaseClosed:
 		return true
 	default:
 		return false
 	}
+}
+
+// EscalationPackage builds the fix-run preamble for escalated cases.
+func EscalationPackage(e sessionstore.Entry) string {
+	var b strings.Builder
+	b.WriteString("ESCALATION PACKAGE (case → eng fix on the same branch/worktree):\n")
+	if e.CustomerTitle != "" {
+		b.WriteString("- Customer title: ")
+		b.WriteString(e.CustomerTitle)
+		b.WriteString("\n")
+	}
+	if e.Severity != "" {
+		b.WriteString("- Severity: ")
+		b.WriteString(e.Severity)
+		b.WriteString("\n")
+	}
+	if e.CustomerRef != "" {
+		b.WriteString("- Customer ref: ")
+		b.WriteString(e.CustomerRef)
+		b.WriteString("\n")
+	}
+	if e.Dossier != nil && e.Dossier.Summary != "" {
+		b.WriteString("- Investigation summary: ")
+		b.WriteString(e.Dossier.Summary)
+		b.WriteString("\n")
+	}
+	if e.Dossier != nil && len(e.Dossier.NextActions) > 0 {
+		b.WriteString("- Suggested next actions: ")
+		b.WriteString(strings.Join(e.Dossier.NextActions, "; "))
+		b.WriteString("\n")
+	}
+	if e.ReporterName != "" {
+		b.WriteString("- Reporter: ")
+		b.WriteString(e.ReporterName)
+		b.WriteString("\n")
+	}
+	if e.DiscordURL != "" {
+		b.WriteString("- Discord: ")
+		b.WriteString(e.DiscordURL)
+		b.WriteString("\n")
+	}
+	b.WriteString("- Convert this case to a code fix on the SAME branch/worktree; do not create a parallel investigation.\n")
+	b.WriteString("- Mode stays case; do not abandon support context.\n\n")
+	return b.String()
 }
 
 // investigatePromptPrefix is the non-shipping contract (no PR, no direct ship).

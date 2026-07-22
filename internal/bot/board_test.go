@@ -9,49 +9,54 @@ import (
 )
 
 func TestParseBoardArgs(t *testing.T) {
-	lab, act, all, errMsg := parseBoardArgs("/board")
-	if lab != "" || act != "" || all || errMsg != "" {
-		t.Fatalf("empty: %q %q %v %q", lab, act, all, errMsg)
+	lab, act, all, cases, errMsg := parseBoardArgs("/board")
+	if lab != "" || act != "" || all || cases || errMsg != "" {
+		t.Fatalf("empty: %q %q %v %v %q", lab, act, all, cases, errMsg)
 	}
 
-	lab, act, all, errMsg = parseBoardArgs("/board needs_review")
-	if lab != sessionstore.LabelNeedsReview || act != "" || all || errMsg != "" {
-		t.Fatalf("label: %q %q %v %q", lab, act, all, errMsg)
+	lab, act, all, cases, errMsg = parseBoardArgs("/board needs_review")
+	if lab != sessionstore.LabelNeedsReview || act != "" || all || cases || errMsg != "" {
+		t.Fatalf("label: %q %q %v %v %q", lab, act, all, cases, errMsg)
 	}
 
-	lab, act, all, errMsg = parseBoardArgs("/board blocked")
-	if lab != sessionstore.LabelBlocked || act != "" || all || errMsg != "" {
-		t.Fatalf("label blocked: %q %q %v %q", lab, act, all, errMsg)
+	lab, act, all, cases, errMsg = parseBoardArgs("/board blocked")
+	if lab != sessionstore.LabelBlocked || act != "" || all || cases || errMsg != "" {
+		t.Fatalf("label blocked: %q %q %v %v %q", lab, act, all, cases, errMsg)
 	}
 
-	lab, act, all, errMsg = parseBoardArgs("/board all")
-	if !all || errMsg != "" || act != "" {
-		t.Fatalf("all: %v %q %q", all, act, errMsg)
+	lab, act, all, cases, errMsg = parseBoardArgs("/board all")
+	if !all || errMsg != "" || act != "" || cases {
+		t.Fatalf("all: %v %q %q %v", all, act, errMsg, cases)
 	}
 
-	lab, act, all, errMsg = parseBoardArgs("/board done")
+	lab, act, all, cases, errMsg = parseBoardArgs("/board done")
 	// "done" is an activity filter (and implies terminal).
-	if lab != "" || act != activityDone || !all || errMsg != "" {
-		t.Fatalf("done activity: lab=%q act=%q all=%v err=%q", lab, act, all, errMsg)
+	if lab != "" || act != activityDone || !all || cases || errMsg != "" {
+		t.Fatalf("done activity: lab=%q act=%q all=%v cases=%v err=%q", lab, act, all, cases, errMsg)
 	}
 
-	lab, act, all, errMsg = parseBoardArgs("/board waiting")
-	if act != activityWaiting || lab != "" || all || errMsg != "" {
-		t.Fatalf("waiting: act=%q lab=%q all=%v err=%q", act, lab, all, errMsg)
+	lab, act, all, cases, errMsg = parseBoardArgs("/board waiting")
+	if act != activityWaiting || lab != "" || all || cases || errMsg != "" {
+		t.Fatalf("waiting: act=%q lab=%q all=%v cases=%v err=%q", act, lab, all, cases, errMsg)
 	}
 
-	lab, act, all, errMsg = parseBoardArgs("/board stale")
-	if act != activityStale || lab != "" || errMsg != "" {
-		t.Fatalf("stale: act=%q lab=%q err=%q", act, lab, errMsg)
+	lab, act, all, cases, errMsg = parseBoardArgs("/board stale")
+	if act != activityStale || lab != "" || cases || errMsg != "" {
+		t.Fatalf("stale: act=%q lab=%q cases=%v err=%q", act, lab, cases, errMsg)
+	}
+
+	_, _, _, cases, errMsg = parseBoardArgs("/board cases")
+	if !cases || errMsg != "" {
+		t.Fatalf("cases: cases=%v err=%q", cases, errMsg)
 	}
 
 	// Project names are not board filters; scope comes from the channel mapping.
-	_, _, _, errMsg = parseBoardArgs("/board homeconnect")
+	_, _, _, _, errMsg = parseBoardArgs("/board homeconnect")
 	if errMsg == "" {
 		t.Fatal("expected error for project name filter")
 	}
 
-	_, _, _, errMsg = parseBoardArgs("/board nope")
+	_, _, _, _, errMsg = parseBoardArgs("/board nope")
 	if errMsg == "" {
 		t.Fatal("expected error for unknown filter")
 	}

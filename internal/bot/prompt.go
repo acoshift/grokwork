@@ -32,6 +32,11 @@ const (
 	KindStartInvestigate
 	KindStartFix
 	KindStartExplain
+	KindCase
+	KindEscalate
+	KindCloseCase
+	KindCustomerUpdate
+	KindAnswer
 	KindTask
 )
 
@@ -85,13 +90,41 @@ func ParseMessage(content, botUserID string) Parsed {
 		return Parsed{Kind: KindQueue, Prompt: text}
 	case "/cancel-mine", "cancel-mine", "/cancelmine", "cancelmine":
 		return Parsed{Kind: KindCancelMine, Prompt: text}
+	case "/case", "case":
+		// bare "case" alone is rare as freeform; require /case for command without args handled below
+		if lower == "/case" || lower == "case" {
+			return Parsed{Kind: KindCase, Prompt: text}
+		}
+	case "/escalate", "escalate":
+		return Parsed{Kind: KindEscalate, Prompt: text}
+	case "/answer", "answer":
+		return Parsed{Kind: KindAnswer, Prompt: text}
 	}
 
 	if isStartCommand(lower, text) {
 		return parseStartCommand(text)
 	}
+	if isCaseCommand(lower) {
+		return Parsed{Kind: KindCase, Prompt: text}
+	}
+	if isEscalateCommand(lower) {
+		return Parsed{Kind: KindEscalate, Prompt: text}
+	}
+	if isCloseCaseCommand(lower) {
+		return Parsed{Kind: KindCloseCase, Prompt: text}
+	}
+	if isCustomerUpdateCommand(lower) {
+		return Parsed{Kind: KindCustomerUpdate, Prompt: text}
+	}
+	if isAnswerCommand(lower) {
+		return Parsed{Kind: KindAnswer, Prompt: text}
+	}
 	if isDequeueCommand(lower) {
-		return Parsed{Kind: KindDequeue, Prompt: text, Arg: strings.TrimSpace(text[len("/dequeue"):])}
+		arg := text
+		if i := strings.Index(lower, "dequeue"); i >= 0 {
+			arg = strings.TrimSpace(text[i+len("dequeue"):])
+		}
+		return Parsed{Kind: KindDequeue, Prompt: text, Arg: arg}
 	}
 	if isHandOffCommand(lower) {
 		return Parsed{Kind: KindHandOff, Prompt: text}
@@ -160,6 +193,27 @@ func isDequeueCommand(lower string) bool {
 func isStartCommand(lower, text string) bool {
 	return strings.HasPrefix(lower, "/start ") || lower == "/start" ||
 		strings.HasPrefix(lower, "/investigate ") || lower == "/investigate"
+}
+
+func isCaseCommand(lower string) bool {
+	return strings.HasPrefix(lower, "/case ")
+}
+
+func isEscalateCommand(lower string) bool {
+	return strings.HasPrefix(lower, "/escalate ") || lower == "/escalate"
+}
+
+func isCloseCaseCommand(lower string) bool {
+	// Only slash form so freeform "close the ticket" stays a task.
+	return strings.HasPrefix(lower, "/close ") || lower == "/close"
+}
+
+func isCustomerUpdateCommand(lower string) bool {
+	return strings.HasPrefix(lower, "/customer-update") || strings.HasPrefix(lower, "/customer_update")
+}
+
+func isAnswerCommand(lower string) bool {
+	return strings.HasPrefix(lower, "/answer ") || lower == "/answer"
 }
 
 func parseStartCommand(text string) Parsed {
@@ -289,6 +343,12 @@ func HelpText() string {
 		"• `/cancel-mine` — remove your queued items",
 		"• `/start investigate|fix|explain <task>` — set session mode and run",
 		"• `/investigate <task>` — read-only investigate (no PR / no direct ship)",
+		"• `/case [severity] [ref:ID] <title>` — open a support case (Mode=case, phase intake)",
+		"• `/escalate [note]` — case → phase fixing (Mode stays case); next run gets escalation package",
+		"• `/answer [note]` — case → answered (knowledge path)",
+		"• `/customer-update <text>` — set sanitized customer-facing text",
+		"• `/close [answered|fixed|…]` — close case (auto-label freeze; no LabelManual)",
+		"• `/board cases` — list Mode=case sessions by phase",
 		"• `/help` — this message",
 		"",
 		"**Run action bar** — buttons on the live status / done message and `/status`:",

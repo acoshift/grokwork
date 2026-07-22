@@ -75,6 +75,81 @@ type Entry struct {
 	// Mode is the session run mode: "" (legacy fix), "investigate", "explain", "fix", "case".
 	// Orthogonal to ShipMode (K27). Empty = eng fix default for capable actors.
 	Mode string `json:"mode,omitempty"`
+
+	// Wave 3 case lifecycle (Mode=case). Phase drives RunPolicy ship gates.
+	// intake | investigate | answered | fixing | shipping | closed
+	Phase string `json:"phase,omitempty"`
+
+	Severity      string `json:"severity,omitempty"`      // low|medium|high|critical
+	CustomerTitle string `json:"customerTitle,omitempty"` // short external-safe title
+	CustomerRef   string `json:"customerRef,omitempty"`   // opaque external id
+	ReporterID    string `json:"reporterId,omitempty"`
+	ReporterName  string `json:"reporterName,omitempty"`
+	IntakeSource  string `json:"intakeSource,omitempty"` // discord|web
+
+	CaseMsgID           string `json:"caseMsgId,omitempty"`
+	DossierMsgID        string `json:"dossierMsgId,omitempty"`
+	CustomerUpdateMsgID string `json:"customerUpdateMsgId,omitempty"`
+
+	Dossier        *Dossier `json:"dossier,omitempty"`
+	CustomerUpdate string   `json:"customerUpdate,omitempty"`
+
+	Resolution     string `json:"resolution,omitempty"` // answered|fixed|duplicate|wontfix|escalated_external
+	ResolutionNote string `json:"resolutionNote,omitempty"`
+	ResolvedAt     string `json:"resolvedAt,omitempty"`
+	ResolvedBy     string `json:"resolvedBy,omitempty"`
+	EscalatedAt    string `json:"escalatedAt,omitempty"`
+	EscalatedBy    string `json:"escalatedBy,omitempty"`
+}
+
+// Case phase constants.
+const (
+	PhaseIntake      = "intake"
+	PhaseInvestigate = "investigate"
+	PhaseAnswered    = "answered"
+	PhaseFixing      = "fixing"
+	PhaseShipping    = "shipping"
+	PhaseClosed      = "closed"
+)
+
+// Dossier is the internal investigation artifact (support + eng).
+type Dossier struct {
+	Summary      string   `json:"summary,omitempty"`
+	ReproSteps   []string `json:"reproSteps,omitempty"`
+	Environment  string   `json:"environment,omitempty"`
+	Evidence     []string `json:"evidence,omitempty"`
+	Hypotheses   []string `json:"hypotheses,omitempty"`
+	KnownBugHits []string `json:"knownBugHits,omitempty"`
+	NextActions  []string `json:"nextActions,omitempty"`
+	UpdatedAt    string   `json:"updatedAt,omitempty"`
+}
+
+// IsCase reports Mode=case.
+func (e Entry) IsCase() bool {
+	return strings.EqualFold(strings.TrimSpace(e.Mode), "case")
+}
+
+// CasePhase returns normalized phase or empty.
+func (e Entry) CasePhase() string {
+	return strings.ToLower(strings.TrimSpace(e.Phase))
+}
+
+// IsCaseClosed is true when Mode=case and Phase=closed.
+func (e Entry) IsCaseClosed() bool {
+	return e.IsCase() && e.CasePhase() == PhaseClosed
+}
+
+// IsCaseShipPhase is true when case may open PRs / direct-ship (fixing|shipping).
+func (e Entry) IsCaseShipPhase() bool {
+	if !e.IsCase() {
+		return false
+	}
+	switch e.CasePhase() {
+	case PhaseFixing, PhaseShipping:
+		return true
+	default:
+		return false
+	}
 }
 
 // Ship mode values for Entry.ShipMode.

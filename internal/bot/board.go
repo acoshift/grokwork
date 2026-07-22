@@ -51,7 +51,7 @@ func (b *Bot) handleBoard(s *discordgo.Session, m *discordgo.MessageCreate, pars
 		return
 	}
 
-	labelFilter, activityFilter, includeTerminal, errMsg := parseBoardArgs(parsed.Prompt)
+	labelFilter, activityFilter, includeTerminal, casesOnly, errMsg := parseBoardArgs(parsed.Prompt)
 	if errMsg != "" {
 		if _, err := s.ChannelMessageSendReply(m.ChannelID, errMsg, ref(m)); err != nil {
 			log.Printf("error: reply board-usage: %v", err)
@@ -61,6 +61,13 @@ func (b *Bot) handleBoard(s *discordgo.Session, m *discordgo.MessageCreate, pars
 
 	projectFilter := proj.Name
 	staleDays := b.boardStaleDays()
+	if casesOnly {
+		body := b.formatCasesBoard(projectFilter)
+		if _, err := s.ChannelMessageSendReply(m.ChannelID, body, ref(m)); err != nil {
+			log.Printf("error: reply board-cases: %v", err)
+		}
+		return
+	}
 	rows := b.collectBoardRows(projectFilter, labelFilter, activityFilter, includeTerminal, staleDays, time.Now())
 	body := formatBoardCard(rows, projectFilter, labelFilter, activityFilter, includeTerminal, staleDays)
 	if _, err := s.ChannelMessageSendReply(m.ChannelID, body, ref(m)); err != nil {
@@ -75,15 +82,16 @@ func (b *Bot) boardStaleDays() int {
 	return b.cfg.BoardStaleDaysValue()
 }
 
-// parseBoardArgs: /board [label|activity|all]
+// parseBoardArgs: /board [label|activity|all|cases]
 // label uses ParseLabel; activity is running|queued|waiting|stale|active;
-// "all" includes terminal labels. Project scope comes from the channel mapping.
-func parseBoardArgs(prompt string) (label, activity string, includeTerminal bool, errMsg string) {
+// "all" includes terminal labels; "cases" lists Mode=case by phase.
+// Project scope comes from the channel mapping.
+func parseBoardArgs(prompt string) (label, activity string, includeTerminal, casesOnly bool, errMsg string) {
 	text := strings.TrimSpace(prompt)
 	lower := strings.ToLower(text)
 	for _, prefix := range []string{"/board", "board"} {
 		if lower == prefix {
-			return "", "", false, ""
+			return "", "", false, false, ""
 		}
 		if strings.HasPrefix(lower, prefix+" ") {
 			text = strings.TrimSpace(text[len(prefix):])
@@ -92,10 +100,14 @@ func parseBoardArgs(prompt string) (label, activity string, includeTerminal bool
 		}
 	}
 	if text == "" {
-		return "", "", false, ""
+		return "", "", false, false, ""
 	}
 	fields := strings.Fields(lower)
 	for _, f := range fields {
+		if f == "cases" || f == "case" {
+			casesOnly = true
+			continue
+		}
 		if f == "all" {
 			includeTerminal = true
 			continue
@@ -114,13 +126,78 @@ func parseBoardArgs(prompt string) (label, activity string, includeTerminal bool
 			}
 			continue
 		}
-		return "", "", false, fmt.Sprintf(
-			"Unknown board filter `%s`. Use `@Grok /board [running|queued|waiting|stale|active|label|all]`.\n"+
-				"Scoped to this channel's project. Activity: running, queued, waiting (on human), stale, active · Labels: open, in_progress, blocked, needs_review, done, abandoned.",
+		return "", "", false, false, fmt.Sprintf(
+			"Unknown board filter `%s`. Use `@Grok /board [running|queued|waiting|stale|active|label|all|cases]`.\n"+
+				"Scoped to this channel's project. Activity: running, queued, waiting (on human), stale, active · Labels: open, in_progress, blocked, needs_review, done, abandoned · **cases** = Mode=case by phase.",
 			f,
 		)
 	}
-	return label, activity, includeTerminal, ""
+	return label, activity, includeTerminal, casesOnly, ""
+}
+
+func (b *Bot) formatCasesBoard(projectFilter string) string {
+	if b == nil || b.sessions == nil {
+		return "No sessions."
+	}
+	list := b.sessions.List()
+	byPhase := map[string][]string{}
+	order := []string{
+		sessionstore.PhaseIntake,
+		sessionstore.PhaseInvestigate,
+		sessionstore.PhaseAnswered,
+		sessionstore.PhaseFixing,
+		sessionstore.PhaseShipping,
+		sessionstore.PhaseClosed,
+	}
+	n := 0
+	for _, listed := range list {
+		e := listed.Entry
+		if projectFilter != "" && e.Project != projectFilter {
+			continue
+		}
+		if !e.IsCase() {
+			continue
+		}
+		phase := e.CasePhase()
+		if phase == "" {
+			phase = sessionstore.PhaseIntake
+		}
+		title := e.CustomerTitle
+		if title == "" {
+			title = e.Goal
+		}
+		if title == "" {
+			title = "(no title)"
+		}
+		line := fmt.Sprintf("• `%s` · %s", listed.ThreadID, title)
+		if e.Severity != "" {
+			line += " · " + e.Severity
+		}
+		byPhase[phase] = append(byPhase[phase], line)
+		n++
+	}
+	if n == 0 {
+		return fmt.Sprintf("**Cases** · project **%s** · none open", projectFilter)
+	}
+	var bld strings.Builder
+	bld.WriteString(fmt.Sprintf("**Cases** · project **%s** · %d\n", projectFilter, n))
+	for _, ph := range order {
+		rows := byPhase[ph]
+		if len(rows) == 0 {
+			continue
+		}
+		bld.WriteString(fmt.Sprintf("\n**%s** (%d)\n", ph, len(rows)))
+		for _, row := range rows {
+			bld.WriteString(row)
+			bld.WriteString("\n")
+		}
+	}
+	out := bld.String()
+	if len([]rune(out)) > maxBoardMsgRunes {
+		r := []rune(out)
+		out = string(r[:maxBoardMsgRunes-1]) + "…"
+	}
+	return out
 }
 
 func parseActivityFilter(s string) (string, bool) {

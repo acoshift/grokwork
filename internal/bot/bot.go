@@ -675,6 +675,16 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleDequeue(s, m, parsed)
 	case KindCancelMine:
 		b.handleCancelMine(s, m)
+	case KindCase:
+		b.handleCase(s, m, parsed)
+	case KindEscalate:
+		b.handleEscalate(s, m, parsed)
+	case KindCloseCase:
+		b.handleCloseCase(s, m, parsed)
+	case KindCustomerUpdate:
+		b.handleCustomerUpdate(s, m, parsed)
+	case KindAnswer:
+		b.handleAnswer(s, m, parsed)
 	case KindStartInvestigate, KindStartFix, KindStartExplain, KindTask:
 		log.Printf("task: starting async for msg=%s kind=%d", m.ID, parsed.Kind)
 		// Immediate typing indicator while we open the thread / claim the queue.
@@ -1117,6 +1127,16 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			}
 		}
 	}
+	// Closed case: reject freeform runs
+	if e, ok := b.sessions.Get(threadID); ok && e.IsCaseClosed() {
+		b.postOrEditThreadStatus(s, threadID, statusMsgID,
+			"This case is **closed**. Open a new case or ask eng to continue outside case mode.",
+			actionBarDone(threadID))
+		if b.runs != nil {
+			b.runs.RemoveTaskFiles(threadID, taskID)
+		}
+		return
+	}
 	item := taskItem{
 		s: s, m: m, parsed: parsed, proj: proj, threadID: threadID,
 		actor:            ActorFromUser(m.Author),
@@ -1496,7 +1516,13 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	case "explain":
 		prefix = explainPromptPrefix()
 	case "remote":
-		prefix = remoteWorkPromptPrefixMode(wtBranch, promptDirect)
+		// Escalation package for case fixing (K4)
+		if pol.Mode == ModeCase {
+			if e, ok := b.sessions.Get(threadID); ok && e.IsCase() {
+				prefix = EscalationPackage(e)
+			}
+		}
+		prefix += remoteWorkPromptPrefixMode(wtBranch, promptDirect)
 		if pol.AllowPR || pol.AllowDirectShip {
 			prefix += attributionFooter(actor.String(), actor.ID, item.discordURL)
 		}
@@ -1704,6 +1730,21 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		if replyText == "" {
 			replyText = streamer.Text()
 		}
+		// Merge dossier from investigate-style replies
+		if pol.PostCompletion == "dossier" || pol.Mode == ModeCase && !pol.AllowPR {
+			if d := ParseDossierFromReply(replyText); d != nil {
+				_, _, _ = b.sessions.Patch(threadID, func(e *sessionstore.Entry) {
+					e.Dossier = MergeDossier(e.Dossier, d)
+					_ = sessionstore.ClampCaseFields(e)
+				})
+			}
+		}
+		// Case shipping: first open PR → phase shipping
+		if pol.Mode == ModeCase && pol.AllowPR {
+			if e, ok := b.sessions.Get(threadID); ok && e.CasePhase() == sessionstore.PhaseFixing {
+				// may update after refreshPR — deferred below
+			}
+		}
 		repoDir := runCwd
 		if repoDir == "" {
 			repoDir = proj.Cwd
@@ -1715,6 +1756,15 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		} else if pol.RefreshPR {
 			// Bind/discover PRs even when Discord is absent (web-native / soft-degrade).
 			b.refreshPRAfterTask(s, threadID, repoDir, wtBranch, replyText)
+			if pol.Mode == ModeCase {
+				if e, ok := b.sessions.Get(threadID); ok && e.IsCase() && e.HasOpenPR() {
+					_, _, _ = b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+						if ent.Phase == sessionstore.PhaseFixing {
+							ent.Phase = sessionstore.PhaseShipping
+						}
+					})
+				}
+			}
 		} else if pol.RefreshPRWarnOnly && present {
 			// Unexpected PR in investigate reply — warn only, do not bind.
 			if strings.Contains(replyText, "github.com/") && strings.Contains(replyText, "/pull/") {
@@ -1821,9 +1871,13 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 // resolveRunPolicy builds RunPolicy from snapshot and/or live session + capabilities.
 func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode string, actor Actor) RunPolicy {
 	sessionMode := ""
+	sessionPhase := item.snapPhase
 	if b != nil && b.sessions != nil {
 		if e, ok := b.sessions.Get(threadID); ok {
 			sessionMode = e.Mode
+			if sessionPhase == "" {
+				sessionPhase = e.Phase
+			}
 			if shipMode == "" {
 				shipMode = e.ShipMode
 			}
@@ -1856,8 +1910,19 @@ func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode
 	if b.cfg != nil {
 		tools = b.cfg.ProjectInvestigateTools(project)
 	}
+	// Case + start investigate → keep Mode=case, request investigate run under case.
+	if sessionMode == ModeCase || reqMode == ModeCase {
+		reqMode = ModeCase
+		if forceInv || item.parsed.Kind == KindStartInvestigate {
+			if sessionPhase == "" || sessionPhase == sessionstore.PhaseIntake || sessionPhase == sessionstore.PhaseAnswered {
+				sessionPhase = sessionstore.PhaseInvestigate
+			}
+			forceInv = false // don't wipe case mode
+		}
+	}
 	in := PolicyInput{
 		SessionMode:      sessionMode,
+		SessionPhase:     sessionPhase,
 		ShipMode:         shipMode,
 		Caps:             caps,
 		ConfigYolo:       b.cfg != nil && b.cfg.YoloEnabled(),
@@ -1910,10 +1975,12 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string, roleIDs []s
 	}
 	shipMode := ""
 	sessionMode := ""
+	sessionPhase := ""
 	if b.sessions != nil {
 		if e, ok := b.sessions.Get(item.threadID); ok {
 			shipMode = e.ShipMode
 			sessionMode = e.Mode
+			sessionPhase = e.Phase
 		}
 	}
 	if shipMode == "" && b.cfg != nil && b.cfg.ProjectDirectToPrimary(project) {
@@ -1929,13 +1996,38 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string, roleIDs []s
 	forceInv := false
 	switch item.parsed.Kind {
 	case KindStartInvestigate:
-		reqMode = ModeInvestigate
-		forceInv = true
+		if sessionMode == ModeCase {
+			// Keep case; promote phase
+			reqMode = ModeCase
+			if sessionPhase == "" || sessionPhase == sessionstore.PhaseIntake || sessionPhase == sessionstore.PhaseAnswered {
+				b.promoteCasePhaseBeforeRun(item.threadID, sessionstore.PhaseInvestigate)
+				sessionPhase = sessionstore.PhaseInvestigate
+			}
+		} else {
+			reqMode = ModeInvestigate
+			forceInv = true
+		}
 	case KindStartExplain:
 		reqMode = ModeExplain
 		forceInv = false
 	case KindStartFix:
-		reqMode = ModeFix
+		if sessionMode == ModeCase {
+			// Escalate semantics (K17)
+			reqMode = ModeCase
+			b.promoteCasePhaseBeforeRun(item.threadID, sessionstore.PhaseFixing)
+			sessionPhase = sessionstore.PhaseFixing
+		} else {
+			reqMode = ModeFix
+		}
+	default:
+		// Freeform on case: promote intake/answered → investigate before snapshot
+		if sessionMode == ModeCase {
+			reqMode = ModeCase
+			if sessionPhase == sessionstore.PhaseIntake || sessionPhase == sessionstore.PhaseAnswered || sessionPhase == "" {
+				b.promoteCasePhaseBeforeRun(item.threadID, sessionstore.PhaseInvestigate)
+				sessionPhase = sessionstore.PhaseInvestigate
+			}
+		}
 	}
 	// defaultMode for new sessions
 	if reqMode == "" && b.cfg != nil {
@@ -1947,6 +2039,7 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string, roleIDs []s
 	}
 	pol := BuildRunPolicy(PolicyInput{
 		SessionMode:      sessionMode,
+		SessionPhase:     sessionPhase,
 		ShipMode:         shipMode,
 		Caps:             caps,
 		ConfigYolo:       b.cfg != nil && b.cfg.YoloEnabled(),
@@ -1955,6 +2048,7 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string, roleIDs []s
 		InvestigateTools: invTools,
 	})
 	item.snapMode = pol.Mode
+	item.snapPhase = pol.Phase
 	item.snapRunKind = pol.RunKind
 	item.snapAllowPR = pol.AllowPR
 	item.snapAllowDirect = pol.AllowDirectShip
