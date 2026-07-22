@@ -107,6 +107,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.setProjectChannel": "/config/projects/channel",
 		"config.setProjectFetch":  "/config/projects/fetch",
 		"config.setProjectShip":   "/config/projects/ship",
+		"config.setProjectSafeTeam": "/config/projects/safe-team",
+		"config.setProjectCapabilityUser": "/config/projects/capabilities/users",
+		"config.removeProjectCapabilityUser": "/config/projects/capabilities/users/remove",
+		"config.setProjectCapabilityRole": "/config/projects/capabilities/roles",
+		"config.removeProjectCapabilityRole": "/config/projects/capabilities/roles/remove",
 		"config.setGuild":         "/config/guild",
 		"config.addProjectUser":   "/config/projects/users",
 		"config.removeProjectUser": "/config/projects/users/remove",
@@ -272,6 +277,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/channel", s.requireAdmin(hime.Handler(s.setProjectChannel)))
 	mux.Handle("POST /config/projects/fetch", s.requireAdmin(hime.Handler(s.setProjectFetch)))
 	mux.Handle("POST /config/projects/ship", s.requireAdmin(hime.Handler(s.setProjectShip)))
+	mux.Handle("POST /config/projects/safe-team", s.requireAdmin(hime.Handler(s.setProjectSafeTeam)))
+	mux.Handle("POST /config/projects/capabilities/users", s.requireAdmin(hime.Handler(s.setProjectCapabilityUser)))
+	mux.Handle("POST /config/projects/capabilities/users/remove", s.requireAdmin(hime.Handler(s.removeProjectCapabilityUser)))
+	mux.Handle("POST /config/projects/capabilities/roles", s.requireAdmin(hime.Handler(s.setProjectCapabilityRole)))
+	mux.Handle("POST /config/projects/capabilities/roles/remove", s.requireAdmin(hime.Handler(s.removeProjectCapabilityRole)))
 	mux.Handle("POST /config/guild", s.requireAdmin(hime.Handler(s.setGuild)))
 	mux.Handle("POST /config/projects/users", s.requireAdmin(hime.Handler(s.addProjectUser)))
 	mux.Handle("POST /config/projects/users/remove", s.requireAdmin(hime.Handler(s.removeProjectUser)))
@@ -574,7 +584,11 @@ func (s *Server) projectConfigPage(ctx *hime.Context) error {
 	d.Config = snap
 	d.Project = item.Name
 	d.ProjectItem = *item
-	d.DiscordUserNames = s.resolveDiscordUserNames(item.AllowedUserIDs)
+	nameIDs := append([]string{}, item.AllowedUserIDs...)
+	for _, m := range item.CapabilityByUser {
+		nameIDs = append(nameIDs, m.ID)
+	}
+	d.DiscordUserNames = s.resolveDiscordUserNames(nameIDs)
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
 	return s.viewPage(ctx, "project_config", d)
@@ -887,6 +901,65 @@ func (s *Server) setProjectShip(ctx *hime.Context) error {
 		msg = fmt.Sprintf("Updated ship workflow for project %q (direct to primary)", name)
 	}
 	return s.projectConfigRedirect(ctx, name, msg, err)
+}
+
+func (s *Server) setProjectSafeTeam(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	enabled := ctx.PostFormValue("safeTeamMode") == "1"
+	defaultTpl := ctx.PostFormValue("safeTeamDefaultTemplate")
+	defaultMode := ctx.PostFormValue("defaultMode")
+	err := s.cfg.SetProjectSafeTeam(name, enabled, defaultTpl, defaultMode)
+	s.auditAction(ctx, "config.set_project_safe_team", err, map[string]any{
+		"name": name, "safeTeamMode": enabled,
+		"safeTeamDefaultTemplate": defaultTpl, "defaultMode": defaultMode,
+	})
+	msg := fmt.Sprintf("Updated safe team settings for project %q", name)
+	if enabled {
+		msg = fmt.Sprintf("Safe team mode ON for project %q — unmapped members use the default template", name)
+	}
+	return s.projectConfigRedirect(ctx, name, msg, err)
+}
+
+func (s *Server) setProjectCapabilityUser(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	id := ctx.PostFormValue("id")
+	tpl := ctx.PostFormValue("template")
+	err := s.cfg.SetProjectCapabilityByUser(name, id, tpl)
+	s.auditAction(ctx, "config.set_project_capability_user", err, map[string]any{
+		"name": name, "id": id, "template": tpl,
+	})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Mapped user %s → %s", id, tpl), err)
+}
+
+func (s *Server) removeProjectCapabilityUser(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	id := ctx.PostFormValue("id")
+	err := s.cfg.RemoveProjectCapabilityByUser(name, id)
+	s.auditAction(ctx, "config.remove_project_capability_user", err, map[string]any{
+		"name": name, "id": id,
+	})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Removed capability map for user %s", id), err)
+}
+
+func (s *Server) setProjectCapabilityRole(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	id := ctx.PostFormValue("id")
+	tpl := ctx.PostFormValue("template")
+	err := s.cfg.SetProjectCapabilityByRole(name, id, tpl)
+	s.auditAction(ctx, "config.set_project_capability_role", err, map[string]any{
+		"name": name, "id": id, "template": tpl,
+	})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Mapped role %s → %s", id, tpl), err)
+}
+
+func (s *Server) removeProjectCapabilityRole(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	id := ctx.PostFormValue("id")
+	err := s.cfg.RemoveProjectCapabilityByRole(name, id)
+	s.auditAction(ctx, "config.remove_project_capability_role", err, map[string]any{
+		"name": name, "id": id,
+	})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Removed capability map for role %s", id), err)
 }
 
 func (s *Server) setGuild(ctx *hime.Context) error {

@@ -335,6 +335,126 @@ func (c *Config) SetProjectDirectToPrimary(name string, enabled bool) error {
 	return c.saveLocked()
 }
 
+// ValidDefaultModes are accepted projects.*.defaultMode values (empty = legacy fix).
+var ValidDefaultModes = map[string]bool{
+	"":            true,
+	"investigate": true,
+	"fix":         true,
+	"explain":     true,
+	"case":        true,
+}
+
+// SetProjectSafeTeam sets SafeTeamMode, default template, and defaultMode and persists.
+// enabled=false clears SafeTeamMode (legacy builder default for unmapped).
+// defaultTemplate empty → "investigator". defaultMode must be empty or a known mode.
+func (c *Config) SetProjectSafeTeam(name string, enabled bool, defaultTemplate, defaultMode string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	defaultTemplate = strings.TrimSpace(strings.ToLower(defaultTemplate))
+	if defaultTemplate == "" {
+		defaultTemplate = "investigator"
+	}
+	defaultMode = strings.TrimSpace(strings.ToLower(defaultMode))
+	if !ValidDefaultModes[defaultMode] {
+		return fmt.Errorf("defaultMode must be empty, investigate, fix, explain, or case")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	// Reject unknown templates (builtin or project overlay).
+	if _, ok := lookupTemplate(defaultTemplate, pc.CapabilityTemplates); !ok {
+		return fmt.Errorf("unknown capability template %q", defaultTemplate)
+	}
+	if enabled {
+		v := true
+		pc.SafeTeamMode = &v
+	} else {
+		pc.SafeTeamMode = nil
+	}
+	if defaultTemplate == "investigator" {
+		pc.SafeTeamDefaultTemplate = ""
+	} else {
+		pc.SafeTeamDefaultTemplate = defaultTemplate
+	}
+	pc.DefaultMode = defaultMode
+	c.Projects[name] = pc
+	return c.saveLocked()
+}
+
+// SetProjectCapabilityByUser sets or clears a user → template map entry.
+// template empty removes the mapping.
+func (c *Config) SetProjectCapabilityByUser(name, userID, template string) error {
+	return c.setProjectCapabilityMap(name, true, userID, template)
+}
+
+// SetProjectCapabilityByRole sets or clears a role → template map entry.
+// template empty removes the mapping.
+func (c *Config) SetProjectCapabilityByRole(name, roleID, template string) error {
+	return c.setProjectCapabilityMap(name, false, roleID, template)
+}
+
+// RemoveProjectCapabilityByUser removes a user capability map entry.
+func (c *Config) RemoveProjectCapabilityByUser(name, userID string) error {
+	return c.setProjectCapabilityMap(name, true, userID, "")
+}
+
+// RemoveProjectCapabilityByRole removes a role capability map entry.
+func (c *Config) RemoveProjectCapabilityByRole(name, roleID string) error {
+	return c.setProjectCapabilityMap(name, false, roleID, "")
+}
+
+func (c *Config) setProjectCapabilityMap(name string, byUser bool, id, template string) error {
+	name = strings.TrimSpace(name)
+	id = strings.TrimSpace(id)
+	template = strings.TrimSpace(strings.ToLower(template))
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	if id == "" {
+		if byUser {
+			return fmt.Errorf("user id is required")
+		}
+		return fmt.Errorf("role id is required")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	if template != "" {
+		if _, ok := lookupTemplate(template, pc.CapabilityTemplates); !ok {
+			return fmt.Errorf("unknown capability template %q", template)
+		}
+	}
+	var m map[string]string
+	if byUser {
+		m = cloneStringMap(pc.CapabilityByUser)
+	} else {
+		m = cloneStringMap(pc.CapabilityByRole)
+	}
+	if template == "" {
+		delete(m, id)
+	} else {
+		m[id] = template
+	}
+	if len(m) == 0 {
+		m = nil
+	}
+	if byUser {
+		pc.CapabilityByUser = m
+	} else {
+		pc.CapabilityByRole = m
+	}
+	c.Projects[name] = pc
+	return c.saveLocked()
+}
+
 // ProjectEnvKeySuffix maps a project name to the env suffix for LINEAR_API_KEY_<SUFFIX>.
 // Example: "homeconnect" → "HOMECONNECT", "hah-platform" → "HAH_PLATFORM".
 func ProjectEnvKeySuffix(project string) string {

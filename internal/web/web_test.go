@@ -120,6 +120,9 @@ func TestPagesRender(t *testing.T) {
 		{"/config/projects/proj", "name=\"guildId\""},
 		{"/config/projects/proj", "GitHub repositories"},
 		{"/config/projects/proj", "LINEAR_API_KEY_PROJ"},
+		{"/config/projects/proj", "Safe team mode"},
+		{"/config/projects/proj", `id="project-safe-team"`},
+		{"/config/projects/proj", "name=\"safeTeamMode\""},
 		{"/config/projects/proj", "Danger zone"},
 	}
 	for _, tc := range cases {
@@ -1207,6 +1210,41 @@ func TestProjectConfigPage(t *testing.T) {
 		t.Fatalf("fetch interval=%d", cfg.ProjectRepoFetchIntervalMinutes("proj"))
 	}
 
+	// Safe team mode + defaultMode.
+	form = url.Values{
+		"name":                     {"proj"},
+		"safeTeamMode":             {"1"},
+		"safeTeamDefaultTemplate":  {"investigator"},
+		"defaultMode":              {"case"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/config/projects/safe-team", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("set safe-team status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !cfg.SafeTeamMode("proj") {
+		t.Fatal("SafeTeamMode not set")
+	}
+	if cfg.ProjectDefaultMode("proj") != "case" {
+		t.Fatalf("defaultMode=%q", cfg.ProjectDefaultMode("proj"))
+	}
+
+	// Capability map user.
+	form = url.Values{"name": {"proj"}, "id": {"u-builder"}, "template": {"builder"}}
+	req = httptest.NewRequest(http.MethodPost, "/config/projects/capabilities/users", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("map user status=%d", w.Code)
+	}
+	caps := cfg.ResolveCapabilities("proj", "u-builder", nil)
+	if !caps.CanShip() {
+		t.Fatalf("mapped builder cannot ship: %+v", caps)
+	}
+
 	// Project page renders the saved state.
 	req = httptest.NewRequest(http.MethodGet, "/config/projects/proj", nil)
 	w = httptest.NewRecorder()
@@ -1223,6 +1261,11 @@ func TestProjectConfigPage(t *testing.T) {
 		"Remove project",
 		`name="repoFetchIntervalMinutes"`,
 		`value="15"`,
+		`id="project-safe-team"`,
+		`name="safeTeamMode"`,
+		"checked",
+		"u-builder",
+		"builder",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("project page missing %q", want)

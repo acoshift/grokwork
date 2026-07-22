@@ -8,6 +8,90 @@ import (
 	"time"
 )
 
+func TestProjectSafeTeam(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{
+		Projects: ProjectsMap{
+			"support": {
+				Path:           filepath.Join(dir, "support"),
+				AllowedUserIDs: []string{"u1", "u2"},
+				AllowedRoleIDs: []string{"r-eng"},
+			},
+		},
+		ConfigPath: filepath.Join(dir, "config.json"),
+	}
+	if cfg.SafeTeamMode("support") {
+		t.Fatal("default SafeTeamMode off")
+	}
+	if err := cfg.SetProjectSafeTeam("support", true, "investigator", "case"); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SafeTeamMode("support") {
+		t.Fatal("want SafeTeamMode on")
+	}
+	if cfg.ProjectDefaultMode("support") != "case" {
+		t.Fatalf("defaultMode=%q", cfg.ProjectDefaultMode("support"))
+	}
+	if cfg.SafeTeamDefaultTemplate("support") != "investigator" {
+		t.Fatalf("default tpl=%q", cfg.SafeTeamDefaultTemplate("support"))
+	}
+	// Unmapped under safe → investigator, cannot ship.
+	if cfg.ResolveCapabilities("support", "u1", nil).CanShip() {
+		t.Fatal("unmapped must not ship under SafeTeamMode")
+	}
+	if err := cfg.SetProjectCapabilityByRole("support", "r-eng", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ResolveCapabilities("support", "anyone", []string{"r-eng"}).CanShip() {
+		t.Fatal("mapped eng role should ship")
+	}
+	if err := cfg.SetProjectCapabilityByUser("support", "u2", "approver"); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ResolveCapabilities("support", "u2", nil).Approve {
+		t.Fatal("user map approver")
+	}
+	snap := cfg.Snapshot()
+	var item *ProjectItem
+	for i := range snap.Projects {
+		if snap.Projects[i].Name == "support" {
+			item = &snap.Projects[i]
+			break
+		}
+	}
+	if item == nil || !item.SafeTeamMode || item.DefaultMode != "case" {
+		t.Fatalf("snapshot: %+v", item)
+	}
+	if len(item.UnmappedUserIDs) != 1 || item.UnmappedUserIDs[0] != "u1" {
+		t.Fatalf("unmapped users: %v", item.UnmappedUserIDs)
+	}
+	if len(item.UnmappedRoleIDs) != 0 {
+		t.Fatalf("unmapped roles: %v", item.UnmappedRoleIDs)
+	}
+	if len(item.CapabilityByRole) != 1 || item.CapabilityByRole[0].Template != "builder" {
+		t.Fatalf("cap by role: %+v", item.CapabilityByRole)
+	}
+	if err := cfg.SetProjectSafeTeam("support", false, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SafeTeamMode("support") {
+		t.Fatal("want off after clear")
+	}
+	// Invalid mode / template.
+	if err := cfg.SetProjectSafeTeam("support", true, "investigator", "nope"); err == nil {
+		t.Fatal("want error for bad defaultMode")
+	}
+	if err := cfg.SetProjectSafeTeam("support", true, "not-a-tpl", "case"); err == nil {
+		t.Fatal("want error for bad template")
+	}
+	if err := cfg.RemoveProjectCapabilityByUser("support", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.RemoveProjectCapabilityByRole("support", "r-eng"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProjectDirectToPrimary(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &Config{

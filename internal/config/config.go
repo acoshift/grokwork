@@ -126,6 +126,12 @@ type Config struct {
 	catalogCache map[string]catalogCacheEntry
 }
 
+// CapabilityMapItem is a user/role → template row for the project config UI.
+type CapabilityMapItem struct {
+	ID       string
+	Template string
+}
+
 // ProjectItem is a project row for the config UI.
 type ProjectItem struct {
 	Name                     string
@@ -142,6 +148,15 @@ type ProjectItem struct {
 	AllowedRoleIDs           []string
 	RepoFetchIntervalMinutes int  // effective minutes (default when unset; 0 = disabled)
 	DirectToPrimary          bool // true when project ships without PRs
+	// Safe team / capabilities (K16)
+	SafeTeamMode            bool
+	SafeTeamDefaultTemplate string // effective (default "investigator")
+	DefaultMode             string // empty = legacy fix
+	CapabilityByUser        []CapabilityMapItem
+	CapabilityByRole        []CapabilityMapItem
+	UnmappedUserIDs         []string // allowlisted users with no capabilityByUser entry
+	UnmappedRoleIDs         []string // allowlisted roles with no capabilityByRole entry
+	CapabilityTemplateNames []string // builtin + project overlay names for selects
 }
 
 // ChannelItem is a channel→project mapping row for the config UI.
@@ -846,6 +861,10 @@ func (c *Config) Snapshot() Snapshot {
 				fetchMins = *pc.RepoFetchIntervalMinutes
 			}
 		}
+		defaultTpl := strings.TrimSpace(pc.SafeTeamDefaultTemplate)
+		if defaultTpl == "" {
+			defaultTpl = "investigator"
+		}
 		item := ProjectItem{
 			Name:                     n,
 			Path:                     pc.Path,
@@ -856,6 +875,14 @@ func (c *Config) Snapshot() Snapshot {
 			AllowedRoleIDs:           slices.Clone(pc.AllowedRoleIDs),
 			RepoFetchIntervalMinutes: fetchMins,
 			DirectToPrimary:          pc.DirectToPrimary != nil && *pc.DirectToPrimary,
+			SafeTeamMode:             pc.SafeTeamMode != nil && *pc.SafeTeamMode,
+			SafeTeamDefaultTemplate:  defaultTpl,
+			DefaultMode:              strings.TrimSpace(strings.ToLower(pc.DefaultMode)),
+			CapabilityByUser:         capabilityMapItems(pc.CapabilityByUser),
+			CapabilityByRole:         capabilityMapItems(pc.CapabilityByRole),
+			UnmappedUserIDs:          unmappedIDs(pc.AllowedUserIDs, pc.CapabilityByUser),
+			UnmappedRoleIDs:          unmappedIDs(pc.AllowedRoleIDs, pc.CapabilityByRole),
+			CapabilityTemplateNames:  capabilityTemplateNames(pc.CapabilityTemplates),
 		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled
@@ -1055,6 +1082,68 @@ func cloneStringMap(m map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func capabilityMapItems(m map[string]string) []CapabilityMapItem {
+	if len(m) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(m))
+	for id := range m {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	out := make([]CapabilityMapItem, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, CapabilityMapItem{ID: id, Template: m[id]})
+	}
+	return out
+}
+
+func unmappedIDs(allowed []string, mapped map[string]string) []string {
+	if len(allowed) == 0 {
+		return nil
+	}
+	var out []string
+	for _, id := range allowed {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if mapped == nil {
+			out = append(out, id)
+			continue
+		}
+		if _, ok := mapped[id]; !ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func capabilityTemplateNames(overlays map[string]Capabilities) []string {
+	seen := make(map[string]struct{})
+	var names []string
+	for name := range BuiltinCapabilityTemplates {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	for name := range overlays {
+		name = strings.TrimSpace(strings.ToLower(name))
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }
 
 func cloneIntPtr(p *int) *int {

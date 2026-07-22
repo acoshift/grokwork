@@ -42,6 +42,173 @@
   </form>
 </div>
 
+<div class="section card" id="project-safe-team">
+  <h2>Safe team mode</h2>
+  <p class="sub" style="margin-top:0">
+    When <strong>Safe team mode</strong> is on, Discord members get capabilities from templates
+    (<span class="mono">investigator</span>, <span class="mono">builder</span>, …) instead of
+    everyone acting as a full builder. Unmapped allowlisted users/roles fall back to the
+    <strong>default template</strong> (normally investigator — no PRs / no ship).
+    <strong>Map eng roles to <span class="mono">builder</span> before enabling</strong>, or
+    engineers will be demoted immediately (including already-queued tasks).
+  </p>
+  <form method="post" action="{{route "config.setProjectSafeTeam"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <label class="check" style="margin-bottom:0.75rem;">
+      <input type="checkbox" name="safeTeamMode" value="1" {{if .ProjectItem.SafeTeamMode}}checked{{end}}>
+      Enable safe team mode (capability templates)
+    </label>
+    <div class="inline" style="grid-template-columns: 1fr 1fr; margin-bottom:0.65rem;">
+      <div>
+        <label for="safe-team-default-tpl">Default template (unmapped)</label>
+        <select id="safe-team-default-tpl" name="safeTeamDefaultTemplate">
+          {{$curTpl := .ProjectItem.SafeTeamDefaultTemplate}}
+          {{range .ProjectItem.CapabilityTemplateNames}}
+          <option value="{{.}}" {{if eq . $curTpl}}selected{{end}}>{{.}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div>
+        <label for="project-default-mode">Default mode (new sessions)</label>
+        <select id="project-default-mode" name="defaultMode">
+          {{$curMode := .ProjectItem.DefaultMode}}
+          <option value="" {{if eq $curMode ""}}selected{{end}}>(legacy fix)</option>
+          <option value="case" {{if eq $curMode "case"}}selected{{end}}>case (support)</option>
+          <option value="investigate" {{if eq $curMode "investigate"}}selected{{end}}>investigate</option>
+          <option value="fix" {{if eq $curMode "fix"}}selected{{end}}>fix</option>
+          <option value="explain" {{if eq $curMode "explain"}}selected{{end}}>explain</option>
+        </select>
+      </div>
+    </div>
+    <p class="sub" style="margin:0 0 0.65rem">
+      Support channels usually want <span class="mono">defaultMode=case</span> so freeform
+      messages stay on the case lifecycle. Eng channels leave it empty (fix).
+    </p>
+    <div class="form-actions"><button type="submit">Save safe team</button></div>
+  </form>
+
+  {{if .ProjectItem.SafeTeamMode}}
+  {{if or .ProjectItem.UnmappedUserIDs .ProjectItem.UnmappedRoleIDs}}
+  <div class="flash err" style="margin-top:1rem;margin-bottom:0;">
+    <strong>Unmapped members</strong> fall back to
+    <span class="mono">{{.ProjectItem.SafeTeamDefaultTemplate}}</span>.
+    Map eng users/roles to <span class="mono">builder</span> (or higher) so they can ship.
+    {{if .ProjectItem.UnmappedUserIDs}}
+    <div style="margin-top:0.4rem">Users:
+      {{range $i, $id := .ProjectItem.UnmappedUserIDs}}{{if $i}}, {{end}}<span class="mono">{{$id}}</span>{{end}}
+    </div>
+    {{end}}
+    {{if .ProjectItem.UnmappedRoleIDs}}
+    <div style="margin-top:0.25rem">Roles:
+      {{range $i, $id := .ProjectItem.UnmappedRoleIDs}}{{if $i}}, {{end}}<span class="mono">{{$id}}</span>{{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+  {{end}}
+
+  <div style="border-top:1px solid var(--border); margin-top:1.1rem; padding-top:1rem;">
+    <h2>Capability maps</h2>
+    <p class="sub" style="margin-top:0">
+      Map Discord user/role IDs to templates. Built-ins:
+      <span class="mono">investigator</span> (read-only + case),
+      <span class="mono">operator</span> (investigate + customer draft),
+      <span class="mono">builder</span> (fix + PR),
+      <span class="mono">approver</span>,
+      <span class="mono">admin</span>.
+    </p>
+
+    <form class="inline" method="post" action="{{route "config.setProjectCapabilityUser"}}" style="grid-template-columns: 1fr 10rem auto; margin-bottom:0.65rem;">
+      {{template "csrf" $}}
+      <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+      <div>
+        <label for="cap-user-id">User ID → template</label>
+        <input id="cap-user-id" type="text" name="id" placeholder="Discord user snowflake" required autocomplete="off">
+      </div>
+      <div>
+        <label for="cap-user-tpl">Template</label>
+        <select id="cap-user-tpl" name="template" required>
+          {{range .ProjectItem.CapabilityTemplateNames}}
+          <option value="{{.}}">{{.}}</option>
+          {{end}}
+        </select>
+      </div>
+      <button type="submit">Map user</button>
+    </form>
+    {{if .ProjectItem.CapabilityByUser}}
+    <div class="table-scroll" style="margin-bottom:1rem;">
+    <table>
+      <thead><tr><th>User</th><th>Template</th><th></th></tr></thead>
+      <tbody>
+        {{range .ProjectItem.CapabilityByUser}}
+        <tr>
+          <td>
+            <span class="mono">{{.ID}}</span>{{with index $.DiscordUserNames .ID}} <span class="muted">{{.}}</span>{{end}}
+          </td>
+          <td class="mono">{{.Template}}</td>
+          <td class="row-actions">
+            <form method="post" action="{{route "config.removeProjectCapabilityUser"}}" onsubmit="return confirm('Remove capability map for user {{.ID}}?');">
+              {{template "csrf" $}}
+              <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+              <input type="hidden" name="id" value="{{.ID}}">
+              <button type="submit" class="btn-danger">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{else}}
+    <div class="empty" style="margin-bottom:1rem;">No user capability maps.</div>
+    {{end}}
+
+    <form class="inline" method="post" action="{{route "config.setProjectCapabilityRole"}}" style="grid-template-columns: 1fr 10rem auto; margin-bottom:0.65rem;">
+      {{template "csrf" $}}
+      <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+      <div>
+        <label for="cap-role-id">Role ID → template</label>
+        <input id="cap-role-id" type="text" name="id" placeholder="Discord role snowflake" required autocomplete="off">
+      </div>
+      <div>
+        <label for="cap-role-tpl">Template</label>
+        <select id="cap-role-tpl" name="template" required>
+          {{range .ProjectItem.CapabilityTemplateNames}}
+          <option value="{{.}}">{{.}}</option>
+          {{end}}
+        </select>
+      </div>
+      <button type="submit">Map role</button>
+    </form>
+    {{if .ProjectItem.CapabilityByRole}}
+    <div class="table-scroll">
+    <table>
+      <thead><tr><th>Role ID</th><th>Template</th><th></th></tr></thead>
+      <tbody>
+        {{range .ProjectItem.CapabilityByRole}}
+        <tr>
+          <td class="mono">{{.ID}}</td>
+          <td class="mono">{{.Template}}</td>
+          <td class="row-actions">
+            <form method="post" action="{{route "config.removeProjectCapabilityRole"}}" onsubmit="return confirm('Remove capability map for role {{.ID}}?');">
+              {{template "csrf" $}}
+              <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+              <input type="hidden" name="id" value="{{.ID}}">
+              <button type="submit" class="btn-danger">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{else}}
+    <div class="empty">No role capability maps.</div>
+    {{end}}
+  </div>
+</div>
+
 <div class="section card" id="project-repo-fetch">
   <h2>Idle repo fetch</h2>
   <p class="sub" style="margin-top:0">
