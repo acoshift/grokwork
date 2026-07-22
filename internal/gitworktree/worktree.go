@@ -23,21 +23,34 @@ type Tree struct {
 
 // Managed branch prefixes. Only branches under these prefixes may be deleted by the bot.
 const (
+	// BranchPrefix is the default for new Discord-thread (non-web) units.
+	BranchPrefix = "grokwork/"
+
+	// WebBranchPrefix is for web-native unit ids (w_*).
+	WebBranchPrefix = "grok/web/"
+
+	// DiscordBranchPrefix is the legacy Discord prefix. Still recognized by
+	// IsManagedBranch / PrefixFromBranch so in-flight sessions, worktrees, and
+	// PRs on grok/discord/* keep working until they finish.
 	DiscordBranchPrefix = "grok/discord/"
-	WebBranchPrefix     = "grok/web/"
-	// BranchPrefix is the Discord default; kept for call-site compatibility.
-	BranchPrefix = DiscordBranchPrefix
 )
 
+// ManagedPrefixes lists every prefix the bot may create or delete (newest first).
+var ManagedPrefixes = []string{
+	BranchPrefix,
+	WebBranchPrefix,
+	DiscordBranchPrefix,
+}
+
 // EnsureOpts selects which managed branch prefix Ensure/Cleanup use.
-// Empty BranchPrefix means DiscordBranchPrefix.
+// Empty BranchPrefix means PrefixForUnitID (BranchPrefix for Discord units).
 type EnsureOpts struct {
 	BranchPrefix string
 }
 
-// BranchName returns the Discord-managed branch for a unit id (thread snowflake).
+// BranchName returns the default managed branch for a Discord unit id (thread snowflake).
 func BranchName(unitID string) string {
-	return DiscordBranchPrefix + unitID
+	return BranchPrefix + unitID
 }
 
 // BranchNameWithPrefix returns prefix+unitID after normalizing the prefix.
@@ -45,35 +58,45 @@ func BranchNameWithPrefix(prefix, unitID string) string {
 	return NormalizePrefix(prefix) + unitID
 }
 
-// NormalizePrefix returns a known managed prefix; empty or unknown → Discord.
+// NormalizePrefix returns a known managed prefix; empty or unknown → BranchPrefix.
+// Legacy Discord and web prefixes are preserved when explicitly requested so
+// existing sessions keep their branch name across Ensure/Cleanup.
 func NormalizePrefix(prefix string) string {
 	prefix = strings.TrimSpace(prefix)
 	switch prefix {
+	case BranchPrefix, strings.TrimSuffix(BranchPrefix, "/"), "":
+		return BranchPrefix
 	case WebBranchPrefix, strings.TrimSuffix(WebBranchPrefix, "/"):
 		return WebBranchPrefix
-	case DiscordBranchPrefix, strings.TrimSuffix(DiscordBranchPrefix, "/"), "":
+	case DiscordBranchPrefix, strings.TrimSuffix(DiscordBranchPrefix, "/"):
 		return DiscordBranchPrefix
 	default:
-		// Allow exact known values only; anything else falls back to Discord.
 		if strings.HasPrefix(prefix, "grok/web") {
 			return WebBranchPrefix
 		}
-		return DiscordBranchPrefix
+		if strings.HasPrefix(prefix, "grok/discord") {
+			return DiscordBranchPrefix
+		}
+		if strings.HasPrefix(prefix, "grokwork") {
+			return BranchPrefix
+		}
+		return BranchPrefix
 	}
 }
 
-// PrefixForUnitID chooses branch prefix from unit id form (w_* → web).
+// PrefixForUnitID chooses branch prefix from unit id form (w_* → web; else BranchPrefix).
 func PrefixForUnitID(unitID string) string {
 	if IsWebUnitID(unitID) {
 		return WebBranchPrefix
 	}
-	return DiscordBranchPrefix
+	return BranchPrefix
 }
 
 // PrefixFromBranch returns the managed prefix for a branch, or empty if unmanaged.
+// Recognizes the current default plus legacy Discord/web prefixes.
 func PrefixFromBranch(branch string) string {
 	branch = strings.TrimSpace(branch)
-	for _, p := range []string{WebBranchPrefix, DiscordBranchPrefix} {
+	for _, p := range ManagedPrefixes {
 		if strings.HasPrefix(branch, p) {
 			rest := branch[len(p):]
 			if rest != "" && rest != "." && rest != ".." && !strings.Contains(rest, "..") && !strings.HasPrefix(rest, "/") {
@@ -82,6 +105,11 @@ func PrefixFromBranch(branch string) string {
 		}
 	}
 	return ""
+}
+
+// managedPrefixHint is for refuse-to-delete error messages.
+func managedPrefixHint() string {
+	return strings.Join(ManagedPrefixes, " or ")
 }
 
 // IsWebUnitID reports design form w_<suffix> work unit ids (not Discord snowflakes).
@@ -185,15 +213,17 @@ func IsRepo(dir string) bool {
 }
 
 // CleanupIfPRDone removes the worktree/branch when the PR is merged or closed.
-// Uses Discord branch naming for unitID (backward compatible).
+// Uses default branch naming for unitID (BranchPrefix / web).
 // Missing gh → cleaned=false with err set.
 func CleanupIfPRDone(ctx context.Context, repo, dataDir, project, unitID string) (cleaned bool, state string, err error) {
 	return CleanupIfPRDoneWith(ctx, repo, dataDir, project, unitID, EnsureOpts{})
 }
 
-// CleanupIfPRDoneWith is like CleanupIfPRDone but honors BranchPrefix (or empty → Discord).
+// CleanupIfPRDoneWith is like CleanupIfPRDone but honors BranchPrefix (or empty → PrefixForUnitID).
 // If branch is already known, pass EnsureOpts{BranchPrefix: PrefixFromBranch(branch)} or use
 // the unit id form so PrefixForUnitID applies when BranchPrefix is empty and unit is w_*.
+// When the preferred branch is absent, also tries other managed prefixes for unitID so
+// legacy grok/discord/* trees are cleaned after the default prefix change.
 func CleanupIfPRDoneWith(ctx context.Context, repo, dataDir, project, unitID string, opts EnsureOpts) (cleaned bool, state string, err error) {
 	if repo == "" || unitID == "" {
 		return false, "", nil
@@ -208,16 +238,20 @@ func CleanupIfPRDoneWith(ctx context.Context, repo, dataDir, project, unitID str
 	} else {
 		prefix = NormalizePrefix(prefix)
 	}
-	branch := prefix + unitID
+	branch := resolveExistingManagedBranch(ctx, repo, dataDir, project, unitID, prefix)
 	path := WorktreePath(dataDir, project, unitID)
 
 	hasPath := false
 	if st, statErr := os.Stat(path); statErr == nil && st.IsDir() {
 		hasPath = true
 	}
-	hasBranch := branchExists(ctx, repo, branch)
+	hasBranch := branch != "" && branchExists(ctx, repo, branch)
 	if !hasPath && !hasBranch {
 		return false, "", nil
+	}
+	if branch == "" {
+		// Path exists but no managed branch found — still try preferred name for PR check.
+		branch = prefix + unitID
 	}
 
 	done, state, err := branchPRTerminal(ctx, repo, branch)
@@ -296,12 +330,14 @@ func AddDetached(ctx context.Context, repo, path, sha string) error {
 	return nil
 }
 
-// Ensure creates or reuses a Discord-prefix worktree for unitID.
+// Ensure creates or reuses a default-prefix worktree for unitID.
 func Ensure(ctx context.Context, repo, dataDir, project, unitID string) (Tree, error) {
 	return EnsureWith(ctx, repo, dataDir, project, unitID, EnsureOpts{})
 }
 
 // EnsureWith creates or reuses a worktree; BranchPrefix empty uses PrefixForUnitID(unitID).
+// When reusing an on-disk worktree, HEAD is preferred if it is a managed branch so
+// legacy grok/discord/* trees are not renamed to the new default by accident.
 func EnsureWith(ctx context.Context, repo, dataDir, project, unitID string, opts EnsureOpts) (Tree, error) {
 	if repo == "" || unitID == "" {
 		return Tree{}, fmt.Errorf("repo and unitID are required")
@@ -316,7 +352,9 @@ func EnsureWith(ctx context.Context, repo, dataDir, project, unitID string, opts
 	} else {
 		prefix = NormalizePrefix(prefix)
 	}
-	branch := prefix + unitID
+	// Prefer an already-existing managed branch for this unit (legacy grok/discord/*
+	// after the prefix rename) over creating a parallel BranchPrefix branch.
+	branch := resolveExistingManagedBranch(ctx, repo, dataDir, project, unitID, prefix)
 	if !IsManagedBranch(branch) {
 		return Tree{}, fmt.Errorf("refuse to ensure unmanaged branch %q", branch)
 	}
@@ -326,6 +364,11 @@ func EnsureWith(ctx context.Context, repo, dataDir, project, unitID string, opts
 	if ok, err := isUsableWorktree(ctx, repo, path); err != nil {
 		return Tree{}, err
 	} else if ok {
+		if cur := headBranch(ctx, path); IsManagedBranch(cur) {
+			// Keep the worktree's real branch (e.g. legacy grok/discord/<id>).
+			branch = cur
+			t.Branch = cur
+		}
 		log.Printf("gitworktree: reuse path=%s branch=%s", path, branch)
 		return t, nil
 	}
@@ -393,7 +436,7 @@ func Remove(ctx context.Context, repo, path, branch string) error {
 
 	if branch != "" && repo != "" {
 		if !IsManagedBranch(branch) {
-			errs = append(errs, fmt.Sprintf("refuse to delete unprotected branch %q (want prefix %s or %s)", branch, DiscordBranchPrefix, WebBranchPrefix))
+			errs = append(errs, fmt.Sprintf("refuse to delete unprotected branch %q (want prefix %s)", branch, managedPrefixHint()))
 		} else if branchExists(ctx, repo, branch) {
 			if err := runGit(ctx, repo, "branch", "-D", branch); err != nil {
 				// Last chance: registration may have been mid-prune.
@@ -660,9 +703,45 @@ func terminalPRState(states []string) (done bool, state string) {
 	return true, terminal
 }
 
+// headBranch returns the current branch name for a worktree, or empty.
+func headBranch(ctx context.Context, path string) string {
+	if path == "" {
+		return ""
+	}
+	out, err := gitOutput(ctx, path, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// resolveExistingManagedBranch picks the branch for unitID that already exists
+// (preferred prefix first, then other managed prefixes, then worktree HEAD).
+// Returns preferred+unitID when nothing exists yet (caller creates it).
+func resolveExistingManagedBranch(ctx context.Context, repo, dataDir, project, unitID, preferredPrefix string) string {
+	preferred := preferredPrefix + unitID
+	if branchExists(ctx, repo, preferred) {
+		return preferred
+	}
+	path := WorktreePath(dataDir, project, unitID)
+	if cur := headBranch(ctx, path); IsManagedBranch(cur) && strings.HasSuffix(cur, "/"+unitID) {
+		return cur
+	}
+	for _, p := range ManagedPrefixes {
+		if p == preferredPrefix {
+			continue
+		}
+		cand := p + unitID
+		if branchExists(ctx, repo, cand) {
+			return cand
+		}
+	}
+	return preferred
+}
+
 func deleteRemoteBranch(ctx context.Context, repo, branch string) error {
 	if !IsManagedBranch(branch) {
-		return fmt.Errorf("refuse to delete unprotected remote branch %q (want prefix %s or %s)", branch, DiscordBranchPrefix, WebBranchPrefix)
+		return fmt.Errorf("refuse to delete unprotected remote branch %q (want prefix %s)", branch, managedPrefixHint())
 	}
 	out, err := gitOutput(ctx, repo, "ls-remote", "--heads", "origin", branch)
 	if err != nil {

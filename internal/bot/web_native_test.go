@@ -72,12 +72,12 @@ func TestResolveRunCwdWebVsDiscordPrefix(t *testing.T) {
 	ctx := context.Background()
 	pref := projectRef{Name: "app", Cwd: proj}
 
-	// Discord snowflake → grok/discord/
+	// Discord snowflake → grokwork/
 	cwd, branch, err := b.resolveRunCwd(ctx, pref, "1524726013211316294")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if branch != "grok/discord/1524726013211316294" {
+	if branch != "grokwork/1524726013211316294" {
 		t.Fatalf("discord branch=%q cwd=%q", branch, cwd)
 	}
 	if !strings.Contains(cwd, "1524726013211316294") {

@@ -8,7 +8,7 @@ import (
 var (
 	reAbsUnixPath = regexp.MustCompile(`(?i)(^|[\s\x60"'=(])/(?:Users|home|var|tmp|private|opt|usr)/[^\s\x60"')]+`)
 	reAbsWinPath  = regexp.MustCompile(`(?i)[A-Za-z]:\\[^\s\x60"')]+`)
-	reWorktree    = regexp.MustCompile(`(?i)data/worktrees|grok/discord/|grok/web/`)
+	reWorktree    = regexp.MustCompile(`(?i)data/worktrees|grokwork/|grok/discord/|grok/web/`)
 	reTokenish    = regexp.MustCompile(`(?i)\b(GH_TOKEN|GITHUB_TOKEN|sk-[A-Za-z0-9_-]{10,}|xox[baprs]-[A-Za-z0-9-]{10,}|Bearer\s+[A-Za-z0-9._\-]{12,})\b`)
 )
 

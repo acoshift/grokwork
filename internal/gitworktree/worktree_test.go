@@ -191,7 +191,7 @@ func TestEnsureReuseAndRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tr.Branch != "grok/discord/111" {
+	if tr.Branch != "grokwork/111" {
 		t.Fatalf("branch=%q", tr.Branch)
 	}
 	if !IsRepo(tr.Path) {
@@ -295,7 +295,9 @@ func TestIsManagedBranch(t *testing.T) {
 		branch string
 		ok     bool
 	}{
-		{"grok/discord/123", true},
+		{"grokwork/123", true},
+		{"grokwork/1524726013211316294", true},
+		{"grok/discord/123", true}, // legacy still managed
 		{"grok/discord/1524726013211316294", true},
 		{"grok/web/w_abc123", true},
 		{"grok/web/unit-1", true},
@@ -303,6 +305,10 @@ func TestIsManagedBranch(t *testing.T) {
 		{"master", false},
 		{"develop", false},
 		{"feature/foo", false},
+		{"grokwork/", false},
+		{"grokwork", false},
+		{"grokwork/..", false},
+		{"grokwork/../main", false},
 		{"grok/discord/", false},
 		{"grok/discord", false},
 		{"grok/discord/..", false},
@@ -360,14 +366,70 @@ func TestEnsureWebPrefix(t *testing.T) {
 	}
 }
 
-func TestEnsureDiscordStillDefault(t *testing.T) {
+func TestEnsureDefaultPrefix(t *testing.T) {
 	repo := initTestRepo(t)
 	tr, err := Ensure(context.Background(), repo, t.TempDir(), "app", "1524726013211316294")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tr.Branch != "grok/discord/1524726013211316294" {
+	if tr.Branch != "grokwork/1524726013211316294" {
 		t.Fatalf("branch=%q", tr.Branch)
+	}
+}
+
+func TestEnsureReusesLegacyDiscordBranch(t *testing.T) {
+	// Existing grok/discord/* branches must keep working after the prefix rename.
+	repo := initTestRepo(t)
+	data := t.TempDir()
+	ctx := context.Background()
+	unitID := "legacy-unit-1"
+
+	tr, err := EnsureWith(ctx, repo, data, "app", unitID, EnsureOpts{BranchPrefix: DiscordBranchPrefix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := DiscordBranchPrefix + unitID
+	if tr.Branch != legacy {
+		t.Fatalf("seed branch=%q want %q", tr.Branch, legacy)
+	}
+	// Detach path so Ensure re-resolves by branch name (session-less).
+	if err := Remove(ctx, repo, tr.Path, ""); err != nil {
+		t.Fatal(err)
+	}
+	// Default Ensure (new prefix) must reattach to the legacy branch, not create grokwork/*.
+	tr2, err := Ensure(ctx, repo, data, "app", unitID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr2.Branch != legacy {
+		t.Fatalf("reattach branch=%q want legacy %q", tr2.Branch, legacy)
+	}
+	if branchExists(ctx, repo, BranchPrefix+unitID) {
+		t.Fatal("should not create parallel grokwork/ branch while legacy exists")
+	}
+	if err := Remove(ctx, repo, tr2.Path, tr2.Branch); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsureReusesLegacyOnDiskHead(t *testing.T) {
+	repo := initTestRepo(t)
+	data := t.TempDir()
+	ctx := context.Background()
+	unitID := "legacy-ondisk"
+
+	tr, err := EnsureWith(ctx, repo, data, "app", unitID, EnsureOpts{BranchPrefix: DiscordBranchPrefix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Usable path still present; Ensure with default prefix must report legacy HEAD.
+	tr2, err := Ensure(ctx, repo, data, "app", unitID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := DiscordBranchPrefix + unitID
+	if tr2.Branch != want || tr2.Path != tr.Path {
+		t.Fatalf("reuse on-disk: %+v want branch %q path %q", tr2, want, tr.Path)
 	}
 }
 
@@ -382,20 +444,29 @@ func TestNewWebUnitIDAndHelpers(t *testing.T) {
 	if BranchNameForUnit(id) != WebBranchPrefix+id {
 		t.Fatalf("branch=%q", BranchNameForUnit(id))
 	}
-	if BranchName("123") != DiscordBranchPrefix+"123" {
-		t.Fatal("discord BranchName regression")
+	if BranchName("123") != BranchPrefix+"123" {
+		t.Fatal("default BranchName regression")
+	}
+	if PrefixForUnitID("123") != BranchPrefix {
+		t.Fatal("default PrefixForUnitID")
 	}
 	if IsWebUnitID("1234567890") || IsWebUnitID("w_") || IsWebUnitID("") {
 		t.Fatal("false positive web unit id")
+	}
+	if PrefixFromBranch("grokwork/1") != BranchPrefix {
+		t.Fatal("PrefixFromBranch default")
 	}
 	if PrefixFromBranch("grok/web/w_x") != WebBranchPrefix {
 		t.Fatal("PrefixFromBranch web")
 	}
 	if PrefixFromBranch("grok/discord/1") != DiscordBranchPrefix {
-		t.Fatal("PrefixFromBranch discord")
+		t.Fatal("PrefixFromBranch legacy discord")
 	}
 	if PrefixFromBranch("main") != "" {
 		t.Fatal("unmanaged")
+	}
+	if NormalizePrefix("") != BranchPrefix || NormalizePrefix(DiscordBranchPrefix) != DiscordBranchPrefix {
+		t.Fatal("NormalizePrefix")
 	}
 }
 

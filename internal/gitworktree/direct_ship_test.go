@@ -163,7 +163,7 @@ func setupDirectShipFixture(t *testing.T) (remote, main, worktree, branch string
 	}
 	runGitTest(t, main, "checkout", "main")
 
-	// Managed worktree on grok/discord/tid.
+	// Managed worktree on grokwork/tid (default managed prefix).
 	data := t.TempDir()
 	tr, err := Ensure(ctx, main, data, "proj", "tid-ship")
 	if err != nil {

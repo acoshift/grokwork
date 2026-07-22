@@ -44,7 +44,7 @@ Wiring lives in `main.go`: `config.Load()` → `sessionstore.New` → `history.N
 
 ### Core invariant (see TODO.md "Design principles")
 
-**One Discord thread = one git worktree = one branch (`grok/discord/<threadId>`) = one Grok session.** All collaboration metadata (ownership, brief card, PR cards, queue) wraps that unit. The bot owns deterministic git/gh operations; Grok owns judgment. The bot never merges **GitHub PRs**. When a project has `directToPrimary` enabled, sessions stamp sticky `ShipMode=direct` and the bot may fast-forward a managed session branch onto the project primary and push (No-PR mode) — not `gh pr merge`.
+**One Discord thread = one git worktree = one branch (`grokwork/<threadId>`, legacy `grok/discord/<threadId>` still managed) = one Grok session.** All collaboration metadata (ownership, brief card, PR cards, queue) wraps that unit. The bot owns deterministic git/gh operations; Grok owns judgment. The bot never merges **GitHub PRs**. When a project has `directToPrimary` enabled, sessions stamp sticky `ShipMode=direct` and the bot may fast-forward a managed session branch onto the project primary and push (No-PR mode) — not `gh pr merge`.
 
 ### Message pipeline (`internal/bot`, the bulk of the code)
 
@@ -63,7 +63,7 @@ A task then flows through `handleTask` (async):
 
 - `internal/grokrun` — execs `grok -p`; prompt passed via temp file + `--verbatim` (never inline, to survive `#`/`?`/`&`); `json` vs `streaming-json` output chosen by whether streaming callbacks are set.
 - `internal/sessionstore` — `data/sessions.json`; `Entry` per thread (session ID, cwd, branch, owner/co-owners, goal, tracked PRs). Multi-PR list `PRs` is the source of truth; legacy single-PR fields are mirrored for old data — call `NormalizePRs()` before reading PR state. Mutate via `Patch` (load-apply-save under one lock).
-- `internal/gitworktree` — only branches matching `grok/discord/` prefix may ever be deleted (`IsManagedBranch`); cleanup triggers are PR merged/closed (all tracked PRs terminal) and idle TTL (daily sweep, skips running/queued threads).
+- `internal/gitworktree` — only managed branch prefixes may ever be deleted (`IsManagedBranch`: `grokwork/`, legacy `grok/discord/`, `grok/web/`); cleanup triggers are PR merged/closed (all tracked PRs terminal) and idle TTL (daily sweep, skips running/queued threads).
 - `internal/ghpr` — `gh` CLI wrapper (PR state/checks/reviews, issue read/create) plus `git log`/`show` parsing for the commits browser and diff rendering.
 - Commit review (web) — `bot.StartCommitReview` opens a new Discord thread (or web-native unit) and runs a normal Grok session; the model agentically inspects the commit and files GitHub issues via `gh` (labels, commit links). No separate `commitreview` job store.
 - `internal/config` — mutable at runtime: the web config pages edit and persist `config.json` while the bot runs, hence the RWMutex + `Snapshot()` accessors. Tri-state fields use pointers (`*bool`, `*int`) to distinguish "unset → default" from explicit false/0 (e.g. `Yolo` nil means true, `WorktreeIdleTTLDays` nil means 30 but 0 disables) — preserve this pattern when adding config.
