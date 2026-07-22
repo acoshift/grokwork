@@ -1,5 +1,12 @@
 {{define "content"}}
-<h1 id="page-cases">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· cases</span></h1>
+<div class="pr-title-row">
+  <h1 id="page-cases">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· cases</span></h1>
+  {{if .CanOpenCase}}
+  <div class="pr-head-links">
+    <a class="btn btn-compact" href="/projects/{{.Project}}/cases/new">New case</a>
+  </div>
+  {{end}}
+</div>
 <p class="sub">Support cases for this project, tracked by lifecycle phase (intake → investigate → answered → fixing → shipping). A case is a Grok session in case mode — rows open the session workspace.</p>
 
 {{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
@@ -162,7 +169,8 @@
   {{else}}
   <div class="empty" id="cases-empty">
     {{if eq .Cases.Total 0}}
-    No support cases in <span class="mono">{{.Project}}</span> yet. Cases open from Discord via <span class="mono">@Grok /case &lt;title&gt;</span> in a mapped channel.
+    <p style="margin:0">No support cases in <span class="mono">{{.Project}}</span> yet. Open one here on the web, or from Discord via <span class="mono">@Grok /case &lt;title&gt;</span> in a mapped channel.</p>
+    {{if .CanOpenCase}}<p style="margin:0.65rem 0 0"><a class="btn btn-compact" href="/projects/{{.Project}}/cases/new">New case</a></p>{{end}}
     {{else}}
     No cases match this filter ({{.Cases.Total}} tracked, {{.Cases.OpenTotal}} open).
     {{end}}

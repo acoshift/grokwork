@@ -1,0 +1,59 @@
+{{define "content"}}
+<p class="pr-crumb">
+  <a href="/projects/{{.Project}}/cases">← {{.Project}} cases</a>
+</p>
+<h1 id="page-case-new">New case <span class="muted" style="font-weight:500;font-size:1.05rem">· {{.Project}}</span></h1>
+<p class="sub">The intake counter of the dispatch desk — the web equivalent of <span class="mono">@Grok /case</span> in a mapped channel. A case opens in phase <span class="mono">intake</span>; Grok does not run until someone investigates.</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if .CanOpenCase}}
+{{/* Form stays out of any live region — this page has none — so nothing wipes typed text. */}}
+<div class="section card" id="case-new-form">
+  <form class="stack" method="post" action="/projects/{{.Project}}/cases/new">
+    {{template "csrf" $}}
+    <div class="field">
+      <label for="case-title">Customer-facing title</label>
+      <input type="text" id="case-title" name="title" required placeholder="What the customer reports — e.g. Checkout 500s for EU Visa cards">
+    </div>
+    <div class="field">
+      <label id="case-sev-label">Severity</label>
+      <div class="sev-picker" role="radiogroup" aria-labelledby="case-sev-label">
+        <label class="sev-opt sev-low"><input type="radio" name="severity" value="low"><span>low</span></label>
+        <label class="sev-opt sev-medium"><input type="radio" name="severity" value="medium" checked><span>medium</span></label>
+        <label class="sev-opt sev-high"><input type="radio" name="severity" value="high"><span>high</span></label>
+        <label class="sev-opt sev-critical"><input type="radio" name="severity" value="critical"><span>critical</span></label>
+      </div>
+    </div>
+    <div class="field">
+      <label for="case-ref">External ref <span class="muted">(optional)</span></label>
+      <input type="text" id="case-ref" name="ref" placeholder="ZD-4821, ACME-231, …">
+    </div>
+    <div class="field">
+      <label for="case-notes">Intake notes <span class="muted">(optional)</span></label>
+      <textarea id="case-notes" name="notes" rows="6" placeholder="Repro steps, affected accounts, error text… Leave empty to log the case for later triage."></textarea>
+      <p class="rail-note" style="margin-top:0.4rem">With notes, an investigate run starts right away — investigate never opens PRs or ships. Empty notes log the case intake-only, like Discord <span class="mono">/case</span>.</p>
+    </div>
+    <div class="form-actions"><button type="submit" id="btn-case-new">Open case</button></div>
+  </form>
+</div>
+{{else}}
+<div class="section card">
+  <p class="rail-note">Read-only access — opening a case needs a member role plus an investigator-class project capability (<span class="mono">investigate</span>, <span class="mono">fileEscalation</span>, or <span class="mono">startSessions</span>).</p>
+</div>
+{{end}}
+
+<div class="section card" id="case-new-context">
+  <h2>What happens</h2>
+  <p class="sub" style="margin-top:0">
+    The case lands on the <a href="/projects/{{.Project}}/cases">board</a> in phase <span class="mono">intake</span> as a Grok session in case mode. Severity and ref ride the row; the title is what support and the customer see.
+  </p>
+  <p class="sub" style="margin-top:0.35rem">
+    Escalating to engineering (<span class="mono">/escalate</span>, phase <span class="mono">fixing</span>) is a separate, capability-gated step — intake and investigation never ship code.
+  </p>
+  <p class="sub" style="margin-top:0.35rem">
+    Destination:
+    {{if .StartDiscordDest}}opens a Discord thread in this project's mapped channel.{{else}}<span class="mono">web-native</span> — no Discord thread; the case lives here only.{{end}}
+  </p>
+</div>
+{{end}}

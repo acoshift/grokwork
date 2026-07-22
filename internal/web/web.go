@@ -162,6 +162,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("sessions", "layout.tmpl", "sessions.tmpl")
 	tp.ParseFiles("ship", "layout.tmpl", "ship.tmpl")
 	tp.ParseFiles("cases", "layout.tmpl", "cases.tmpl")
+	tp.ParseFiles("case_new", "layout.tmpl", "case_new.tmpl")
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
 	tp.ParseFiles("config", "layout.tmpl", "config.tmpl")
 	tp.ParseFiles("project_config", "layout.tmpl", "project_config.tmpl")
@@ -209,6 +210,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /projects/{project}/start", s.requireAuth(hime.Handler(s.startComposer)))
 	mux.Handle("GET /projects/{project}/ship", s.requireAuth(hime.Handler(s.shipScoped)))
 	mux.Handle("GET /projects/{project}/cases", s.requireAuth(hime.Handler(s.casesScoped)))
+	mux.Handle("GET /projects/{project}/cases/new", s.requireAuth(hime.Handler(s.caseNewPage)))
 	mux.Handle("GET /projects/{project}/sessions", s.requireAuth(hime.Handler(s.sessionsScoped)))
 	mux.Handle("GET /projects/{project}/worktrees", s.requireAuth(hime.Handler(s.worktreesScoped)))
 	// Retired feature-first hubs → launcher.
@@ -247,6 +249,10 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// Start a freeform task from the web (project workspace composer).
 	mux.Handle("POST /projects/{project}/start",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postStart))))
+	// Web case intake (Discord "/case" parity): case shell only; investigate run
+	// queues only when intake notes are given.
+	mux.Handle("POST /projects/{project}/cases/new",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseNew))))
 	// Fix with Grok (PR11a)
 	mux.Handle("POST /projects/{project}/issues/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssuesBulkFix))))
@@ -460,6 +466,9 @@ type pageData struct {
 	StartDirectShip  bool   // ship mode badge: true → Direct to primary, false → PR mode
 	StartDiscordDest bool   // a start would open a Discord thread (gateway up + mapped channel)
 	StartDefaultMode string // project default mode (empty normalized to "fix")
+	// Case intake (/projects/{project}/cases/new + board CTAs): Discord /case
+	// parity — startSessions feature+role AND investigator-class capability.
+	CanOpenCase bool
 }
 
 func (s *Server) basePage(ctx *hime.Context) pageData {

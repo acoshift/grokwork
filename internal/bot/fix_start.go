@@ -254,10 +254,20 @@ func (b *Bot) canCreateDiscordThread() bool {
 
 // startWebNativeUnit allocates w_* + binds via bind, then StartTask (branch grok/web/ via unit id).
 func (b *Bot) startWebNativeUnit(project, cwd, prompt string, kind Kind, actor Actor, bind func(unitID string) error) (FixStartResult, error) {
+	unitID, err := b.allocWebNativeUnit(project, bind)
+	if err != nil {
+		return FixStartResult{}, err
+	}
+	return b.startWebTask(unitID, project, cwd, prompt, kind, actor, "", true)
+}
+
+// allocWebNativeUnit allocates a w_* unit id and binds metadata without starting
+// a task (StartCase intake-only shells stop here; run paths continue to StartTask).
+func (b *Bot) allocWebNativeUnit(project string, bind func(unitID string) error) (string, error) {
 	unitID := gitworktree.NewWebUnitID()
 	if bind != nil {
 		if err := bind(unitID); err != nil {
-			return FixStartResult{}, err
+			return "", err
 		}
 	}
 	// Pre-seed WorktreeBranch so cleanup/list see web prefix before first Ensure completes.
@@ -274,7 +284,7 @@ func (b *Bot) startWebNativeUnit(project, cwd, prompt string, kind Kind, actor A
 			}
 		})
 	}
-	return b.startWebTask(unitID, project, cwd, prompt, kind, actor, "", true)
+	return unitID, nil
 }
 
 func (b *Bot) startWebTask(threadID, project, cwd, prompt string, kind Kind, actor Actor, discordURL string, created bool) (FixStartResult, error) {

@@ -25,6 +25,7 @@ func (s *Server) casesPageData(ctx *hime.Context, project string) pageData {
 	d := s.basePage(ctx)
 	d.IsCases = true
 	d.Project = project
+	d.CanOpenCase = s.canOpenCase(d, project)
 	d.Cases = s.bot.ListCaseBoard(project,
 		ctx.FormValue("phase"), ctx.FormValue("severity"), ctx.FormValue("scope"))
 	return d

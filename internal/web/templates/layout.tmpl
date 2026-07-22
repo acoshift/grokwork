@@ -1663,6 +1663,51 @@
       flex-shrink: 0;
     }
     .case-side a.badge:hover { text-decoration: none; border-color: var(--hover-border); }
+    /* Severity picker (case intake form) — same accent scale as the board rows. */
+    .sev-picker { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .sev-picker .sev-opt {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0;
+      padding: 0.42rem 0.85rem 0.42rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+    }
+    .sev-picker .sev-opt::before {
+      content: "";
+      width: 3px;
+      height: 0.9em;
+      border-radius: 2px;
+      background: var(--border-strong);
+    }
+    .sev-picker .sev-opt.sev-medium::before { background: var(--muted-soft); }
+    .sev-picker .sev-opt.sev-high::before { background: var(--warn); }
+    .sev-picker .sev-opt.sev-critical::before { background: var(--danger); }
+    .sev-picker input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .sev-picker .sev-opt:hover { border-color: var(--hover-border); color: var(--text); }
+    .sev-picker .sev-opt:has(input:checked) {
+      background: var(--surface-l2);
+      border-color: var(--border-strong);
+      color: var(--text);
+    }
+    .sev-picker .sev-opt:has(input:focus-visible) {
+      border-color: var(--focus-border);
+      box-shadow: 0 0 0 3px var(--ring);
+    }
 
     /* ── Danger zone card (project settings) ─────────────────────────── */
     .card.danger-zone { border-color: hsl(var(--red-500) / 30%); }
