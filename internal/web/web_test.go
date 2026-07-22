@@ -175,6 +175,8 @@ func TestPagesRender(t *testing.T) {
 				`selectOverride`,
 				`querySelectorAll("#side-nav")`,
 				`boostScrollByPath`,
+				// SSE table reloads: keep .table-scroll horizontal position.
+				`_tableScrollX`,
 				// Mid-session SSE reconnect catch-up (rev compare → partial refresh).
 				`lastLiveRevs`,
 				`applyLiveRevs`,

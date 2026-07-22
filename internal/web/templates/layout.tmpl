@@ -1842,7 +1842,18 @@
     // Force shell swap when the response is a full document.
     document.body.addEventListener("htmx:beforeSwap", function (e) {
       var d = e.detail;
-      if (!d || !d.boosted) return;
+      if (!d) return;
+      // SSE live-region swaps replace .table-scroll shells (innerHTML), which
+      // would reset scrollLeft and yank the user back to column 0 on every tick.
+      var target = d.target;
+      if (target && target.classList && target.classList.contains("live-region")) {
+        var xs = [];
+        target.querySelectorAll(".table-scroll").forEach(function (el) {
+          xs.push(el.scrollLeft || 0);
+        });
+        target._tableScrollX = xs;
+      }
+      if (!d.boosted) return;
       var html = d.serverResponse || "";
       if (html.indexOf('id="live-root"') === -1) return;
       var root = document.getElementById("live-root");
@@ -1867,6 +1878,15 @@
         // Session live stream: keep the assistant bubble pinned to the latest tail.
         var stream = elt.querySelector("#live-stream-body");
         if (stream) stream.scrollTop = stream.scrollHeight;
+        // Restore table horizontal scroll saved in beforeSwap.
+        var xs = elt._tableScrollX;
+        if (xs && xs.length) {
+          var shells = elt.querySelectorAll(".table-scroll");
+          for (var i = 0; i < shells.length && i < xs.length; i++) {
+            if (xs[i]) shells[i].scrollLeft = xs[i];
+          }
+          delete elt._tableScrollX;
+        }
       }
     });
     // Full-page load of an in-flight session: same pin as afterSwap.
