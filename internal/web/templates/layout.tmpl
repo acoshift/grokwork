@@ -1556,6 +1556,7 @@
         {{if .NavProject}}
         <a href="/projects/{{.NavProject}}" data-icon="overview" class="{{if .IsOverview}}active{{end}}">Overview</a>
         <a href="/projects/{{.NavProject}}/ship" data-icon="ship" class="{{if .IsShip}}active{{end}}">Ship</a>
+        <a href="/projects/{{.NavProject}}/reviews" data-icon="issues" class="{{if .IsReviews}}active{{end}}">Reviews</a>
         <a href="/projects/{{.NavProject}}/issues" data-icon="issues" class="{{if .IsIssues}}active{{end}}">Issues</a>
         {{if .NavLinearEnabled}}<a href="/projects/{{.NavProject}}/linear" data-icon="linear" class="{{if .IsLinear}}active{{end}}">Linear</a>{{end}}
         <a href="/projects/{{.NavProject}}/commits" data-icon="commits" class="{{if .IsCommits}}active{{end}}">Commits</a>
@@ -1566,6 +1567,7 @@
         <a href="{{route "home"}}" data-icon="projects" class="{{if .IsDashboard}}active{{end}}">Projects</a>
         <span class="nav-label">Across projects</span>
         <a href="{{route "ship"}}" data-icon="ship" class="{{if .IsShip}}active{{end}}">Ship</a>
+        <a href="/reviews" data-icon="issues" class="{{if .IsReviews}}active{{end}}">Reviews</a>
         <a href="{{route "sessions"}}" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">Sessions</a>
         <a href="{{route "worktrees"}}" data-icon="worktrees" class="{{if .IsWorktrees}}active{{end}}">Worktrees</a>
         {{if .IsAdmin}}<a href="{{route "config"}}" data-icon="config" class="{{if .IsConfig}}active{{end}}">Config</a>{{end}}

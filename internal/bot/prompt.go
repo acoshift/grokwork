@@ -25,6 +25,7 @@ const (
 	KindLabel
 	KindBoard
 	KindLink
+	KindReview
 	KindTask
 )
 
@@ -70,6 +71,8 @@ func ParseMessage(content, botUserID string) Parsed {
 		return Parsed{Kind: KindLink, Prompt: text}
 	case "/unlink", "unlink":
 		return Parsed{Kind: KindLink, Prompt: text}
+	case "/review", "review":
+		return Parsed{Kind: KindReview, Prompt: text}
 	}
 
 	if isHandOffCommand(lower) {
@@ -86,6 +89,9 @@ func ParseMessage(content, botUserID string) Parsed {
 	}
 	if isLinkCommand(lower) {
 		return Parsed{Kind: KindLink, Prompt: text}
+	}
+	if isReviewCommand(lower) {
+		return Parsed{Kind: KindReview, Prompt: text}
 	}
 
 	return Parsed{Kind: KindTask, Prompt: text}
@@ -117,6 +123,11 @@ func isLabelCommand(lower string) bool {
 
 func isBoardCommand(lower string) bool {
 	return strings.HasPrefix(lower, "/board ")
+}
+
+func isReviewCommand(lower string) bool {
+	// "/review @user …" only — bare "review the flaky test" stays a task.
+	return strings.HasPrefix(lower, "/review ")
 }
 
 func isLinkCommand(lower string) bool {
@@ -204,6 +215,7 @@ func HelpText() string {
 		"• `/label` — show lifecycle label; `/label <open|in_progress|blocked|needs_review|done|abandoned>` sets manual; `/label auto` re-enables auto",
 		"• `/board [running|queued|waiting|stale|label|all]` — team activity board for this channel's project (running, queued, waiting on human, stale)",
 		"• `/link #N` or `/link ENG-123` — bind GitHub/Linear tickets (Linear only when enabled per project); `/link fix …` uses `Fixes`; `/unlink`; `/link clear`",
+		"• `/review @user [optional #N|PR URL]` — request a team review (Discord identity; shows on web My reviews)",
 		"• `/claim` — take ownership of this thread (anyone on the allowlist)",
 		"• `/hand-off @user` — transfer ownership and post a short hand-off card",
 		"• `/reset` — forget this thread's session and remove its worktree (owner/mod)",

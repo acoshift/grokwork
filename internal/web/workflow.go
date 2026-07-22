@@ -16,6 +16,7 @@ import (
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/linear"
+	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -484,6 +485,24 @@ func (s *Server) prDetail(ctx *hime.Context) error {
 		if d.ShowFixPicker || len(d.FixHits) > 1 {
 			d.ShowFixPicker = true
 		}
+	}
+	if store := s.reviewsStore(); store != nil {
+		bucket := store.ListForPR(owner, repo, n)
+		head := detail.HeadSHA
+		if head == "" {
+			head = bucket.LastHeadSHA
+		}
+		d.TeamReviews = buildTeamReviewRows(bucket, head)
+		label, _, _ := reviewstore.TeamRollup(bucket, head)
+		d.TeamRollup = label
+		for _, req := range bucket.Requests {
+			if req.Status == reviewstore.StatusPending {
+				d.TeamPendingRequests = append(d.TeamPendingRequests, req)
+			}
+		}
+	}
+	if d.CanPRReview {
+		d.ReviewerOptions = s.reviewerOptions(project)
 	}
 	return s.viewPage(ctx, "pr_detail", d)
 }

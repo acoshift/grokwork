@@ -31,6 +31,9 @@
     <select id="state" name="state" data-autosubmit>
       <option value="open" {{if eq .Ship.StateFilter "open"}}selected{{end}}>Open (default)</option>
       <option value="failing" {{if eq .Ship.StateFilter "failing"}}selected{{end}}>CI failing</option>
+      <option value="team_changes" {{if eq .Ship.StateFilter "team_changes"}}selected{{end}}>Team changes requested</option>
+      <option value="needs_team_review" {{if eq .Ship.StateFilter "needs_team_review"}}selected{{end}}>Needs team review</option>
+      <option value="team_approved" {{if eq .Ship.StateFilter "team_approved"}}selected{{end}}>Team approved</option>
       <option value="draft" {{if eq .Ship.StateFilter "draft"}}selected{{end}}>Draft</option>
       <option value="merged" {{if eq .Ship.StateFilter "merged"}}selected{{end}}>Merged</option>
       <option value="closed" {{if eq .Ship.StateFilter "closed"}}selected{{end}}>Closed</option>
@@ -88,7 +91,8 @@
         <th>PR</th>
         <th>State</th>
         <th>Checks</th>
-        <th>Review</th>
+        <th>Team review</th>
+        <th>GH review</th>
         {{if not $.Project}}<th>Project</th>{{end}}
         <th>Owner</th>
         <th>Label</th>
@@ -135,12 +139,28 @@
           {{end}}
         </td>
         <td>
-          {{if .ChangesRequested}}
+          {{if eq .TeamRollup "changes_requested"}}
+          <span class="badge status-warn">changes requested</span>
+          {{else if eq .TeamRollup "approved"}}
+          <span class="badge status-done">approved</span>
+          {{else if eq .TeamRollup "review_requested"}}
+          <span class="badge live">requested</span>
+          {{else if eq .TeamRollup "stale_approvals"}}
+          <span class="badge">stale</span>
+          {{else}}
+          <span class="muted">—</span>
+          {{end}}
+          {{if and .TeamReviewSummary (ne .TeamReviewSummary "—")}}
+          <div class="pr-ref">{{.TeamReviewSummary}}</div>
+          {{end}}
+        </td>
+        <td>
+          {{if .GHChangesRequested}}
           <span class="badge status-warn">{{if .Review}}{{.Review}}{{else}}CHANGES_REQUESTED{{end}}</span>
-          {{else if .ReviewApproved}}
+          {{else if .GHReviewApproved}}
           <span class="badge status-done">{{if .Review}}{{.Review}}{{else}}APPROVED{{end}}</span>
           {{else if .Review}}
-          {{.Review}}
+          <span class="mono">{{.Review}}</span>
           {{else}}
           <span class="muted">—</span>
           {{end}}

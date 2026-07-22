@@ -17,12 +17,13 @@ const (
 	WebRoleAdmin  WebRole = "admin"
 )
 
-// WebAuthFeatures are request-time feature gates for future write routes.
-// PR1 only gates existing config/worktree mutations behind auth+admin when Enabled.
+// WebAuthFeatures are request-time feature gates for write routes.
+// Fail-closed when webAuth is disabled (open LAN cannot enable writes).
 type WebAuthFeatures struct {
 	GitHubWrites  bool `json:"githubWrites,omitempty"`
 	Merge         bool `json:"merge,omitempty"`
 	StartSessions bool `json:"startSessions,omitempty"`
+	PRReviews     bool `json:"prReviews,omitempty"` // team PR review (local SOT + optional GH comment)
 }
 
 // WebAuthConfig is optional private-web authentication (Discord OAuth).
@@ -111,8 +112,8 @@ func (c *Config) WebAuthAdminIDs() []string {
 	return slices.Clone(c.WebAuth.AdminDiscordIDs)
 }
 
-// FeatureGitHubWrites / FeatureMerge / FeatureStartSessions are request-time gates.
-// Always false when webAuth is disabled (fail-closed for open LAN).
+// FeatureGitHubWrites / FeatureMerge / FeatureStartSessions / FeaturePRReviews
+// are request-time gates. Always false when webAuth is disabled (fail-closed for open LAN).
 func (c *Config) FeatureGitHubWrites() bool {
 	return c.featureFlag(func(f WebAuthFeatures) bool { return f.GitHubWrites })
 }
@@ -121,6 +122,9 @@ func (c *Config) FeatureMerge() bool {
 }
 func (c *Config) FeatureStartSessions() bool {
 	return c.featureFlag(func(f WebAuthFeatures) bool { return f.StartSessions })
+}
+func (c *Config) FeaturePRReviews() bool {
+	return c.featureFlag(func(f WebAuthFeatures) bool { return f.PRReviews })
 }
 
 func (c *Config) featureFlag(fn func(WebAuthFeatures) bool) bool {
@@ -154,9 +158,9 @@ func (c *Config) webMergeMethodLocked() string {
 	}
 }
 
-// AnyWriteFeatureEnabled reports githubWrites|merge|startSessions when auth is on.
+// AnyWriteFeatureEnabled reports githubWrites|merge|startSessions|prReviews when auth is on.
 func (c *Config) AnyWriteFeatureEnabled() bool {
-	return c.FeatureGitHubWrites() || c.FeatureMerge() || c.FeatureStartSessions()
+	return c.FeatureGitHubWrites() || c.FeatureMerge() || c.FeatureStartSessions() || c.FeaturePRReviews()
 }
 
 // RoleResolveInput is the pure input for ResolveWebRole (unit-testable).

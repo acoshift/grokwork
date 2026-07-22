@@ -25,6 +25,97 @@
   <pre class="bubble-body" style="margin-top:1rem;white-space:pre-wrap;">{{.PR.Body}}</pre>
 </div>
 
+<div class="section card" id="pr-team-review">
+  <h2>Team review</h2>
+  <p class="sub" style="margin-top:0">Discord-attributed team process. Does not satisfy GitHub branch protection.
+    {{if .TeamRollup}} · status <span class="mono">{{.TeamRollup}}</span>{{end}}
+    · GH review <span class="mono">{{.PR.ReviewDecision}}</span>
+  </p>
+  {{if .TeamReviews}}
+  <div class="table-scroll" style="margin-bottom:1rem">
+  <table class="table">
+    <thead><tr><th>When</th><th>Reviewer</th><th>Verdict</th><th>Commit</th><th>Note</th></tr></thead>
+    <tbody>
+    {{range .TeamReviews}}
+      <tr>
+        <td class="mono">{{.Review.At.UTC.Format "2006-01-02 15:04"}}</td>
+        <td>{{if .Review.ReviewerName}}{{.Review.ReviewerName}}{{else}}{{.Review.ReviewerID}}{{end}}</td>
+        <td>
+          <span class="badge">{{.Label}}</span>
+          {{if .Fresh}}<span class="badge live">fresh</span>{{else if .StickyCR}}<span class="badge status-error">stale · still blocking</span>{{else}}<span class="badge">stale</span>{{end}}
+        </td>
+        <td class="mono">{{if .Review.HeadSHA}}{{.Review.HeadSHA}}{{else}}—{{end}}</td>
+        <td>{{if .Review.Body}}{{.Review.Body}}{{else}}—{{end}}{{if .Review.GHCommentURL}} · <a href="{{.Review.GHCommentURL}}" target="_blank" rel="noopener">GH</a>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <p class="muted">No team reviews yet.</p>
+  {{end}}
+
+  {{if .TeamPendingRequests}}
+  <h3 style="font-size:0.95rem;margin:1rem 0 0.5rem">Pending requests</h3>
+  <ul class="sub" style="margin:0 0 1rem;padding-left:1.2rem">
+  {{range .TeamPendingRequests}}
+    <li>
+      {{if .ReviewerName}}{{.ReviewerName}}{{else}}{{.ReviewerID}}{{end}}
+      {{if .RequesterName}} · from {{.RequesterName}}{{end}}
+      {{if $.CanPRReview}}
+      <form method="post" action="/prs/{{$.ActiveOwner}}/{{$.ActiveRepo}}/{{$.PRNumber}}/review-requests/cancel" style="display:inline">
+        {{template "csrf" $}}
+        <input type="hidden" name="project" value="{{$.Project}}">
+        <input type="hidden" name="requestId" value="{{.ID}}">
+        <button type="submit" class="btn-secondary" style="height:1.6rem;font-size:0.75rem;">Cancel</button>
+      </form>
+      {{end}}
+    </li>
+  {{end}}
+  </ul>
+  {{end}}
+
+  {{if and .CanPRReview (eq .PR.State "OPEN")}}
+  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/reviews" id="pr-review-form" style="margin-bottom:1rem">
+    {{template "csrf" $}}
+    <input type="hidden" name="project" value="{{.Project}}">
+    <input type="hidden" name="headSha" value="{{.PR.HeadSHA}}">
+    <label for="verdict">Verdict</label>
+    <select id="verdict" name="verdict" required>
+      <option value="approved">Approve</option>
+      <option value="changes_requested">Request changes</option>
+      <option value="commented">Comment only</option>
+    </select>
+    <label for="review-body">Message</label>
+    <textarea id="review-body" name="body" rows="3" placeholder="Optional for approve; required for request changes"></textarea>
+    {{if .CanGitHubWrite}}
+    <label class="check"><input type="checkbox" name="mirror" value="1" checked> Post summary on GitHub as a PR comment</label>
+    {{end}}
+    <div class="form-actions"><button type="submit" id="btn-submit-review">Submit review</button></div>
+  </form>
+
+  {{if .ReviewerOptions}}
+  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/review-requests" id="pr-request-review-form">
+    {{template "csrf" $}}
+    <input type="hidden" name="project" value="{{.Project}}">
+    <input type="hidden" name="headSha" value="{{.PR.HeadSHA}}">
+    <label for="reviewerId">Request review from</label>
+    <select id="reviewerId" name="reviewerId" required>
+      <option value="">Select teammate…</option>
+      {{range .ReviewerOptions}}
+      <option value="{{.ID}}">{{.Name}}</option>
+      {{end}}
+    </select>
+    <label for="review-note">Note (optional)</label>
+    <input type="text" id="review-note" name="note" placeholder="What should they focus on?">
+    <div class="form-actions"><button type="submit" class="btn-secondary" id="btn-request-review">Request review</button></div>
+  </form>
+  {{end}}
+  {{else if not .CanPRReview}}
+  <p class="muted">Requires member role with <span class="mono">prReviews</span> enabled.</p>
+  {{end}}
+</div>
+
 {{if .CanStartSession}}
 <div class="section card" id="pr-address-actions">
   <h2>Grok actions</h2>

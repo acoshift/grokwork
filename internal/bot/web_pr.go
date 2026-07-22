@@ -49,8 +49,10 @@ func (b *Bot) ApplyPRTerminalState(owner, repo string, number int, state string)
 		if key == "" {
 			continue
 		}
+		var headSHA string
 		_, _, err := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
 			ok := ent.PatchPR(key, func(p *sessionstore.TrackedPR) {
+				headSHA = p.HeadSHA
 				p.State = state
 				p.IsDraft = false
 			})
@@ -61,6 +63,11 @@ func (b *Bot) ApplyPRTerminalState(owner, repo string, number int, state string)
 		if err != nil {
 			log.Printf("web-pr: patch thread=%s: %v", threadID, err)
 			continue
+		}
+		if b.reviews != nil {
+			if _, rerr := b.reviews.ObsoletePendingForPR(owner, repo, number, state, headSHA); rerr != nil {
+				log.Printf("web-pr: obsolete reviews %s/%s#%d: %v", owner, repo, number, rerr)
+			}
 		}
 		affected = append(affected, threadID)
 		b.tryCleanupTerminalPR(threadID)

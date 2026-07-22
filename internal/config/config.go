@@ -170,6 +170,7 @@ type Snapshot struct {
 	// Feature flags for UI (true only when webAuth enabled + feature bit).
 	FeatureGitHubWrites bool
 	FeatureMerge        bool
+	FeaturePRReviews    bool
 }
 
 // DefaultShutdownTimeoutMs is used when shutdownTimeoutMs is unset/invalid.
@@ -827,6 +828,7 @@ func (c *Config) Snapshot() Snapshot {
 	if c.WebAuth != nil && c.WebAuth.Enabled {
 		snap.FeatureGitHubWrites = c.WebAuth.Features.GitHubWrites
 		snap.FeatureMerge = c.WebAuth.Features.Merge
+		snap.FeaturePRReviews = c.WebAuth.Features.PRReviews
 	}
 	// ClientID/InviteURL may read DiscordClientID/DiscordToken; unlock first.
 	// Snapshot already holds RLock — resolve invite without re-locking via local fields.

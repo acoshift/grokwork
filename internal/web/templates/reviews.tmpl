@@ -1,0 +1,73 @@
+{{define "content"}}
+<h1 id="page-reviews">{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· my reviews</span>{{else}}My reviews{{end}}</h1>
+<p class="sub">Pull requests assigned to you for team review. Status is local (Discord identity), not GitHub branch protection.</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+<form method="get" action="{{if .Project}}/projects/{{.Project}}/reviews{{else}}/reviews{{end}}" class="toolbar" id="reviews-filters">
+  {{if not .Project}}
+  <div class="field">
+    <label for="project">Project</label>
+    <select id="project" name="project" data-autosubmit>
+      <option value="" {{if eq .ReviewProjectFilter ""}}selected{{end}}>All projects</option>
+      {{range .NavProjects}}
+      <option value="{{.}}" {{if eq $.ReviewProjectFilter .}}selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
+  </div>
+  {{end}}
+  <div class="field">
+    <label for="status">Status</label>
+    <select id="status" name="status" data-autosubmit>
+      <option value="pending" {{if eq .ReviewStatusFilter "pending"}}selected{{end}}>Pending</option>
+      <option value="completed" {{if eq .ReviewStatusFilter "completed"}}selected{{end}}>Completed</option>
+      <option value="obsolete" {{if eq .ReviewStatusFilter "obsolete"}}selected{{end}}>Obsolete</option>
+      <option value="cancelled" {{if eq .ReviewStatusFilter "cancelled"}}selected{{end}}>Cancelled</option>
+      <option value="all" {{if eq .ReviewStatusFilter "all"}}selected{{end}}>All</option>
+    </select>
+  </div>
+  <button type="submit" class="btn-secondary">Apply</button>
+</form>
+
+<div class="section">
+  <h2>Requests {{if gt .ReviewPendingCount 0}}<span class="badge live">{{.ReviewPendingCount}} pending</span>{{end}}</h2>
+  {{if .ReviewRequests}}
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>PR</th>
+        <th>Project</th>
+        <th>From</th>
+        <th>Requested</th>
+        <th>Head</th>
+        <th>State</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .ReviewRequests}}
+      <tr>
+        <td class="pr-cell">
+          <a class="pr-title" href="/prs/{{.Request.Owner}}/{{.Request.Repo}}/{{.Request.Number}}{{if .Request.Project}}?project={{urlquery .Request.Project}}{{end}}">{{.Request.Owner}}/{{.Request.Repo}}#{{.Request.Number}}</a>
+          {{if .Request.Note}}<div class="pr-ref">{{.Request.Note}}</div>{{end}}
+        </td>
+        <td>{{if .Request.Project}}{{.Request.Project}}{{else}}—{{end}}</td>
+        <td>{{if .Request.RequesterName}}{{.Request.RequesterName}}{{else}}{{.Request.RequesterID}}{{end}}</td>
+        <td class="mono">{{.Request.CreatedAt.UTC.Format "2006-01-02 15:04"}}</td>
+        <td>{{if .Stale}}<span class="badge">head moved</span>{{else}}<span class="badge live">ok</span>{{end}}</td>
+        <td><span class="badge">{{.Request.Status}}</span>{{if .State}} · <span class="mono">{{.State}}</span>{{end}}</td>
+        <td class="row-actions">
+          <a class="btn-secondary" style="display:inline-block;height:2rem;line-height:2rem;padding:0 0.75rem;font-size:0.82rem;text-decoration:none" href="/prs/{{.Request.Owner}}/{{.Request.Repo}}/{{.Request.Number}}{{if .Request.Project}}?project={{urlquery .Request.Project}}{{end}}">Open</a>
+          <a class="btn-secondary" style="display:inline-block;height:2rem;line-height:2rem;padding:0 0.75rem;font-size:0.82rem;text-decoration:none" href="/prs/{{.Request.Owner}}/{{.Request.Repo}}/{{.Request.Number}}/diff{{if .Request.Project}}?project={{urlquery .Request.Project}}{{end}}">Diff</a>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <p class="muted">No review requests match this filter.</p>
+  {{end}}
+</div>
+{{end}}

@@ -163,27 +163,52 @@ func CommentPR(ctx context.Context, repoDir, owner, repo string, number int, bod
 
 // CommentPRWith is CommentPR with an injectable runner.
 func CommentPRWith(ctx context.Context, run Runner, repoDir, owner, repo string, number int, body string) error {
+	_, err := CommentPRWithURL(ctx, run, repoDir, owner, repo, number, body)
+	return err
+}
+
+// CommentPRWithURL posts a PR comment and returns the comment URL when gh prints one.
+func CommentPRWithURL(ctx context.Context, run Runner, repoDir, owner, repo string, number int, body string) (commentURL string, err error) {
 	if run == nil {
 		run = defaultRunner
 	}
 	body = strings.TrimSpace(body)
 	if body == "" {
-		return fmt.Errorf("empty comment body")
+		return "", fmt.Errorf("empty comment body")
 	}
 	if number <= 0 {
-		return fmt.Errorf("invalid PR number")
+		return "", fmt.Errorf("invalid PR number")
 	}
 	path, cleanup, err := writeBodyFile(body)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer cleanup()
 	args := []string{"pr", "comment", strconv.Itoa(number), "--body-file", path}
 	if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
 		args = append(args, "--repo", o+"/"+r)
 	}
-	_, err = run(ctx, repoDir, "gh", args...)
-	return err
+	out, err := run(ctx, repoDir, "gh", args...)
+	if err != nil {
+		return "", err
+	}
+	return firstHTTPURL(string(out)), nil
+}
+
+func firstHTTPURL(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "https://") || strings.HasPrefix(line, "http://") {
+			return line
+		}
+	}
+	// Sometimes URL is embedded mid-line.
+	for _, field := range strings.Fields(s) {
+		if strings.HasPrefix(field, "https://") || strings.HasPrefix(field, "http://") {
+			return field
+		}
+	}
+	return ""
 }
 
 // CloseIssue closes a GitHub issue. If body is non-empty, posts it as a comment first.

@@ -33,6 +33,10 @@ const (
 	ActionPRComment           = "pr.comment"
 	ActionPRClose             = "pr.close"
 	ActionPRMerge             = "pr.merge"
+	ActionPRReviewSubmit      = "pr.review.submit"
+	ActionPRReviewRequest     = "pr.review.request"
+	ActionPRReviewCancel      = "pr.review.cancel"
+	ActionPRReviewObsolete    = "pr.review.obsolete"
 	ActionSessionStart        = "session.start" // Fix with Grok / web session start
 	ActionCommitReviewStart   = "commit.review.start"
 	ActionGitFetch            = "git.fetch"

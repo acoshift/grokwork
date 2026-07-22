@@ -2,9 +2,11 @@ package bot
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -27,22 +29,30 @@ type ShipPRRow struct {
 	RawState string // OPEN, MERGED, CLOSED from gh/session
 	Title    string
 	Checks   string
-	Review   string
+	Review   string // GitHub reviewDecision
 	HeadRef  string
+	HeadSHA  string
 	IsDraft  bool
 	GHOwner  string
 	GHRepo   string
 
-	ChecksFailing    bool
-	ChangesRequested bool
-	ReviewApproved   bool
+	ChecksFailing      bool
+	ChangesRequested   bool // true if GH CR or team sticky CR (attention sort)
+	ReviewApproved     bool // GH APPROVED
+	GHChangesRequested bool // GitHub reviewDecision only
+	GHReviewApproved   bool // GitHub reviewDecision only
+
+	// Team review (local reviewstore; Discord-attributed).
+	TeamRollup        string // reviewstore.Rollup*
+	TeamPending       int
+	TeamReviewSummary string // short badge text for the table
 }
 
 // ShipBoard is a lead-facing view of all bot-tracked PRs.
 type ShipBoard struct {
 	Rows          []ShipPRRow
 	ProjectFilter string
-	StateFilter   string // open | all | draft | merged | closed | failing
+	StateFilter   string // open | all | draft | merged | closed | failing | needs_team_review | team_approved | team_changes
 	Projects      []string
 
 	Open             int
@@ -50,6 +60,7 @@ type ShipBoard struct {
 	ChecksFailing    int
 	ChangesRequested int
 	Approved         int
+	TeamAwaiting     int // open PRs with team rollup review_requested or changes_requested
 	Merged           int
 	Closed           int
 	Total            int
@@ -99,6 +110,7 @@ func (b *Bot) ListShipBoard(projectFilter, stateFilter string) ShipBoard {
 		qlen := b.queueLen(listed.ThreadID)
 		for _, pr := range e.PRs {
 			row := shipRowFrom(listed.ThreadID, e, pr, goal, running, qlen)
+			b.enrichTeamReview(&row)
 			all = append(all, row)
 		}
 	}
@@ -125,6 +137,11 @@ func (b *Bot) ListShipBoard(projectFilter, stateFilter string) ShipBoard {
 		}
 		if r.ReviewApproved && !ghpr.IsTerminal(r.RawState) {
 			board.Approved++
+		}
+		if !ghpr.IsTerminal(r.RawState) &&
+			(r.TeamRollup == reviewstore.RollupReviewRequested ||
+				r.TeamRollup == reviewstore.RollupChangesRequested) {
+			board.TeamAwaiting++
 		}
 	}
 
@@ -172,12 +189,15 @@ func shipRowFrom(threadID string, e sessionstore.Entry, pr sessionstore.TrackedP
 		Checks:           strings.TrimSpace(pr.Checks),
 		Review:           strings.TrimSpace(pr.Review),
 		HeadRef:          pr.HeadRef,
+		HeadSHA:          pr.HeadSHA,
 		IsDraft:          pr.IsDraft,
 		GHOwner:          pr.Owner,
 		GHRepo:           pr.Repo,
-		ChecksFailing:    checksLookFailing(pr.Checks),
-		ChangesRequested: review == "CHANGES_REQUESTED",
-		ReviewApproved:   review == "APPROVED",
+		ChecksFailing:      checksLookFailing(pr.Checks),
+		ChangesRequested:   review == "CHANGES_REQUESTED",
+		ReviewApproved:     review == "APPROVED",
+		GHChangesRequested: review == "CHANGES_REQUESTED",
+		GHReviewApproved:   review == "APPROVED",
 	}
 	if row.RawState == "" && !ghpr.IsTerminal(display) {
 		row.RawState = "OPEN"
@@ -187,6 +207,68 @@ func shipRowFrom(threadID string, e sessionstore.Entry, pr sessionstore.TrackedP
 
 func checksLookFailing(checks string) bool {
 	return strings.Contains(checks, "✗")
+}
+
+func (b *Bot) enrichTeamReview(row *ShipPRRow) {
+	if b == nil || b.reviews == nil || row == nil || row.Number <= 0 {
+		return
+	}
+	bucket := b.reviews.ListForPR(row.GHOwner, row.GHRepo, row.Number)
+	label, pending, effectives := reviewstore.TeamRollup(bucket, row.HeadSHA)
+	row.TeamRollup = label
+	row.TeamPending = pending
+	row.TeamReviewSummary = formatTeamReviewSummary(label, pending, effectives)
+	if label == reviewstore.RollupChangesRequested {
+		row.ChangesRequested = true
+	}
+}
+
+func formatTeamReviewSummary(label string, pending int, effectives []reviewstore.EffectiveReview) string {
+	parts := make([]string, 0, len(effectives)+1)
+	for _, er := range effectives {
+		name := strings.TrimSpace(er.ReviewerName)
+		if name == "" {
+			name = er.ReviewerID
+		}
+		if len(name) > 16 {
+			name = name[:16]
+		}
+		switch er.Verdict {
+		case reviewstore.VerdictApproved:
+			if er.Stale {
+				parts = append(parts, name+" ⏳")
+			} else {
+				parts = append(parts, name+" ✅")
+			}
+		case reviewstore.VerdictChangesRequested:
+			if er.Stale {
+				parts = append(parts, name+" 🔄·stale")
+			} else {
+				parts = append(parts, name+" 🔄")
+			}
+		}
+	}
+	switch label {
+	case reviewstore.RollupReviewRequested:
+		if pending > 0 {
+			parts = append(parts, "+"+strconv.Itoa(pending)+" pending")
+		}
+	case reviewstore.RollupNone:
+		if len(parts) == 0 {
+			return "—"
+		}
+	case reviewstore.RollupStaleApprovals:
+		if len(parts) == 0 {
+			return "stale"
+		}
+	}
+	if len(parts) == 0 {
+		if pending > 0 {
+			return "+" + strconv.Itoa(pending) + " pending"
+		}
+		return "—"
+	}
+	return strings.Join(parts, " · ")
 }
 
 func shipStateMatch(r ShipPRRow, filter string) bool {
@@ -203,6 +285,14 @@ func shipStateMatch(r ShipPRRow, filter string) bool {
 		return r.State == "CLOSED" || strings.EqualFold(r.RawState, "CLOSED")
 	case "failing":
 		return r.ChecksFailing && !ghpr.IsTerminal(r.RawState)
+	case "needs_team_review":
+		return !ghpr.IsTerminal(r.RawState) &&
+			(r.TeamRollup == reviewstore.RollupReviewRequested || r.TeamRollup == reviewstore.RollupNone ||
+				r.TeamRollup == reviewstore.RollupStaleApprovals)
+	case "team_approved":
+		return !ghpr.IsTerminal(r.RawState) && r.TeamRollup == reviewstore.RollupApproved
+	case "team_changes":
+		return !ghpr.IsTerminal(r.RawState) && r.TeamRollup == reviewstore.RollupChangesRequested
 	default:
 		// Unknown filter: treat as open so the page stays useful.
 		return !ghpr.IsTerminal(r.RawState)

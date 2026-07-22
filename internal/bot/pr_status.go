@@ -339,8 +339,35 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 		return nil
 	}
 
+	b.syncReviewStoreFromPR(info)
 	b.announcePRTimeline(s, threadID, prevSnap, info)
 	return nil
+}
+
+// syncReviewStoreFromPR stamps head/state on the team review bucket and
+// obsoletes pending requests when the PR is terminal.
+func (b *Bot) syncReviewStoreFromPR(info ghpr.Info) {
+	if b == nil || b.reviews == nil {
+		return
+	}
+	owner, repo := strings.TrimSpace(info.Owner), strings.TrimSpace(info.Repo)
+	if (owner == "" || repo == "") && info.URL != "" {
+		if parsed := ghpr.ParseGitHubPRURLs(info.URL); len(parsed) > 0 {
+			owner, repo = parsed[0].Owner, parsed[0].Repo
+		}
+	}
+	if owner == "" || repo == "" || info.Number <= 0 {
+		return
+	}
+	if ghpr.IsTerminal(info.State) {
+		if _, err := b.reviews.ObsoletePendingForPR(owner, repo, info.Number, info.State, info.HeadSHA); err != nil {
+			log.Printf("pr-status: obsolete reviews %s/%s#%d: %v", owner, repo, info.Number, err)
+		}
+		return
+	}
+	if err := b.reviews.TouchPRHead(owner, repo, info.Number, info.HeadSHA, info.State); err != nil {
+		log.Printf("pr-status: touch review head %s/%s#%d: %v", owner, repo, info.Number, err)
+	}
 }
 
 // announcePRTimeline posts discrete PR lifecycle events when the poller (or

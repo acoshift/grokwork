@@ -19,6 +19,7 @@ import (
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -76,6 +77,7 @@ type Bot struct {
 	cfg      *config.Config
 	sessions *sessionstore.Store
 	history  *history.Store
+	reviews  *reviewstore.Store
 	states   sync.Map // threadID → *threadState
 	runs     *runjournal.Store
 
@@ -100,6 +102,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) 
 		} else {
 			b.runs = store
 		}
+		if rev, err := reviewstore.New(cfg.DataDir); err != nil {
+			log.Printf("warn: reviewstore: %v", err)
+		} else {
+			b.reviews = rev
+		}
 	}
 	if host, err := os.Hostname(); err == nil {
 		b.hostname = host
@@ -110,6 +117,41 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) 
 	b.startIdleRepoFetch()
 	b.startPRStatusPoller()
 	return b
+}
+
+// Reviews returns the team PR review store (may be nil if init failed).
+func (b *Bot) Reviews() *reviewstore.Store {
+	if b == nil {
+		return nil
+	}
+	return b.reviews
+}
+
+// SetReviews injects a review store (tests).
+func (b *Bot) SetReviews(s *reviewstore.Store) {
+	if b == nil {
+		return
+	}
+	b.reviews = s
+}
+
+// NotifyThread posts a plain message into a Discord thread (no-op for web units / nil session).
+func (b *Bot) NotifyThread(threadID, content string) {
+	if b == nil || strings.TrimSpace(threadID) == "" || strings.TrimSpace(content) == "" {
+		return
+	}
+	if gitworktree.IsWebUnitID(threadID) {
+		return
+	}
+	b.discordMu.RLock()
+	s := b.discord
+	b.discordMu.RUnlock()
+	if s == nil {
+		return
+	}
+	if _, err := discordSend(s, threadID, content); err != nil {
+		log.Printf("notify thread=%s: %v", threadID, err)
+	}
 }
 
 // ActiveRun is a thread currently running a Grok job (dashboard / session detail).
@@ -520,6 +562,8 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleBoard(s, m, parsed)
 	case KindLink:
 		b.handleLink(s, m, parsed)
+	case KindReview:
+		b.handleReview(s, m, parsed)
 	case KindTask:
 		log.Printf("task: starting async for msg=%s", m.ID)
 		// Immediate typing indicator while we open the thread / claim the queue.
@@ -1699,6 +1743,8 @@ func kindName(k Kind) string {
 		return "board"
 	case KindLink:
 		return "link"
+	case KindReview:
+		return "review"
 	case KindTask:
 		return "task"
 	default:

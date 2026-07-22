@@ -19,6 +19,7 @@ import (
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/linear"
+	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -155,6 +156,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("linear_issues", "layout.tmpl", "linear_issues.tmpl")
 	tp.ParseFiles("linear_detail", "layout.tmpl", "linear_detail.tmpl")
 	tp.ParseFiles("pr_detail", "layout.tmpl", "pr_detail.tmpl")
+	tp.ParseFiles("reviews", "layout.tmpl", "reviews.tmpl")
 	tp.ParseFiles("diff", "layout.tmpl", "diff.tmpl", "diff_review.tmpl")
 	tp.ParseFiles("session", "layout.tmpl", "session.tmpl")
 	tp.ParseFiles("commits", "layout.tmpl", "commits.tmpl")
@@ -216,6 +218,14 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postPRClose))))
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/merge",
 		s.requireFeature("merge", s.requireMember(hime.Handler(s.postPRMerge))))
+	mux.Handle("POST /prs/{owner}/{repo}/{n}/reviews",
+		s.requireFeature("prReviews", s.requireMember(hime.Handler(s.postPRReview))))
+	mux.Handle("POST /prs/{owner}/{repo}/{n}/review-requests",
+		s.requireFeature("prReviews", s.requireMember(hime.Handler(s.postPRReviewRequest))))
+	mux.Handle("POST /prs/{owner}/{repo}/{n}/review-requests/cancel",
+		s.requireFeature("prReviews", s.requireMember(hime.Handler(s.postPRReviewCancel))))
+	mux.Handle("GET /reviews", s.requireAuth(hime.Handler(s.myReviews)))
+	mux.Handle("GET /projects/{project}/reviews", s.requireAuth(hime.Handler(s.projectMyReviews)))
 	// Fix with Grok (PR11a)
 	mux.Handle("POST /projects/{project}/issues/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssuesBulkFix))))
@@ -298,6 +308,7 @@ type pageData struct {
 	IsIssues    bool
 	IsLinear    bool
 	IsCommits   bool
+	IsReviews   bool
 	Flash       string
 	Error       string
 	Status      bot.StatusSnapshot
@@ -356,7 +367,17 @@ type pageData struct {
 	CanGitHubWrite  bool
 	CanMerge        bool
 	CanStartSession bool
+	CanPRReview     bool
 	WebMergeMethod  string
+	// Team PR reviews
+	TeamReviews         []teamReviewRow
+	TeamPendingRequests []reviewstore.Request
+	TeamRollup          string
+	ReviewerOptions     []reviewerOption
+	ReviewRequests      []reviewRequestRow
+	ReviewStatusFilter  string
+	ReviewProjectFilter string
+	ReviewPendingCount  int
 	// Fix-with-Grok / session view
 	FixHits       []bot.IssueSessionHit
 	ShowFixPicker bool
@@ -389,6 +410,7 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 	d.CanGitHubWrite = s.cfg.FeatureGitHubWrites()
 	d.CanMerge = s.cfg.FeatureMerge()
 	d.CanStartSession = s.cfg.FeatureStartSessions()
+	d.CanPRReview = s.cfg.FeaturePRReviews()
 	// Auth off = private-network trust model; treat as admin for chrome (Config nav, etc.).
 	d.IsAdmin = !d.AuthEnabled
 	if !d.AuthEnabled {
@@ -410,11 +432,13 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 			d.CanGitHubWrite = false
 			d.CanMerge = false
 			d.CanStartSession = false
+			d.CanPRReview = false
 		}
 	} else {
 		d.CanGitHubWrite = false
 		d.CanMerge = false
 		d.CanStartSession = false
+		d.CanPRReview = false
 	}
 	return d
 }

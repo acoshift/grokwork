@@ -58,7 +58,8 @@
     "features": {
       "githubWrites": false,
       "merge": false,
-      "startSessions": false
+      "startSessions": false,
+      "prReviews": false
     }
   },
   "autoFixCI": false,

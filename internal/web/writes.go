@@ -25,6 +25,8 @@ func (s *Server) requireFeature(feature string, next http.Handler) http.Handler 
 			on = s.cfg.FeatureMerge()
 		case "startSessions":
 			on = s.cfg.FeatureStartSessions()
+		case "prReviews":
+			on = s.cfg.FeaturePRReviews()
 		}
 		if !on {
 			http.Error(w, "not found", http.StatusNotFound)
