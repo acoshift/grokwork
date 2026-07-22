@@ -28,8 +28,11 @@ Running the bot requires `config.json` (copy `config.example.json`). Go 1.26.5+.
 
 ## Workflow
 
-- Before marking any task done, run `/scrutinize` on the change and address what it finds.
-- Then always commit and push to `main`.
+Multiple agents often work on this repo **in parallel**. Avoid editing the shared main checkout in place.
+
+1. **Start in a git worktree** — create an isolated worktree from current `origin/main` (or local `main` after fetch) and do all file edits, builds, and tests there. Do not leave uncommitted WIP on the primary checkout where another agent may race you.
+2. **Ship straight to `main`** — when done: `/scrutinize`, then **commit and push directly to `main`** (fast-forward or rebase onto latest `main` first if needed). Prefer no long-lived feature branches / open PRs for routine agent work — parallel agents stacking branches causes merge conflicts and stolen worktrees. Small, finished commits on `main` keep everyone unblocked.
+3. After push, remove the temporary worktree (and its local branch if any) so the next agent does not inherit stale state.
 
 **Caution:** `config.json` in the repo root is a real, gitignored config containing a live Discord token and private paths — never commit it or print its contents.
 
