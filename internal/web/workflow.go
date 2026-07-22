@@ -506,7 +506,78 @@ func (s *Server) prDetail(ctx *hime.Context) error {
 	if d.CanPRReview {
 		d.ReviewerOptions = s.reviewerOptions(project)
 	}
+	if viewErr == nil {
+		d.PRGates, d.PRShipReady = buildPRGates(detail, d.TeamRollup)
+	}
 	return s.viewPage(ctx, "pr_detail", d)
+}
+
+// prGate is one fact on the PR detail shippability strip.
+type prGate struct {
+	Label string
+	Value string
+	Class string // "ok" | "warn" | "err" | "" (neutral / pending)
+	Hint  string
+}
+
+// buildPRGates turns the PR snapshot + team rollup into the header gate strip
+// and reports whether every gate is green (drives the merge affordance).
+func buildPRGates(pr ghpr.PRDetail, teamRollup string) ([]prGate, bool) {
+	checks := strings.TrimSpace(pr.Checks)
+	cg := prGate{Label: "Checks", Value: checks}
+	switch {
+	case checks == "":
+		cg.Value = "—"
+		cg.Hint = "no CI reported"
+	case ghpr.ChecksFailing(checks):
+		cg.Class = "err"
+		cg.Hint = "failing"
+	case strings.Contains(checks, "…"):
+		cg.Hint = "running"
+	default:
+		cg.Class = "ok"
+		cg.Hint = "green"
+	}
+
+	tg := prGate{Label: "Team review", Value: teamRollupText(teamRollup)}
+	switch teamRollup {
+	case reviewstore.RollupApproved:
+		tg.Class = "ok"
+	case reviewstore.RollupChangesRequested:
+		tg.Class = "warn"
+	case reviewstore.RollupStaleApprovals:
+		tg.Hint = "head moved since approval"
+	case reviewstore.RollupReviewRequested:
+		tg.Hint = "waiting on reviewer"
+	}
+
+	gg := prGate{Label: "GitHub review", Value: pr.ReviewDecision}
+	switch pr.ReviewDecision {
+	case "APPROVED":
+		gg.Class = "ok"
+	case "CHANGES_REQUESTED":
+		gg.Class = "warn"
+	case "":
+		gg.Value = "—"
+		gg.Hint = "not required"
+	}
+
+	mg := prGate{Label: "Mergeable", Value: pr.Mergeable}
+	switch pr.Mergeable {
+	case "MERGEABLE":
+		mg.Class = "ok"
+	case "CONFLICTING":
+		mg.Class = "err"
+		mg.Hint = "resolve conflicts"
+	case "":
+		mg.Value = "—"
+	}
+
+	checksOK := cg.Class == "ok" || checks == ""
+	approved := teamRollup == reviewstore.RollupApproved || pr.ReviewDecision == "APPROVED"
+	ready := pr.State == "OPEN" && !pr.IsDraft && checksOK &&
+		pr.Mergeable == "MERGEABLE" && approved
+	return []prGate{cg, tg, gg, mg}, ready
 }
 
 func (s *Server) prDiffPage(ctx *hime.Context) error {

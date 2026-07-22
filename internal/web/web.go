@@ -353,6 +353,9 @@ type pageData struct {
 	LinearIssue   linear.Issue
 	PR            ghpr.PRDetail
 	PRNumber      int
+	// PR detail shippability strip (nil when the PR snapshot failed to load).
+	PRGates     []prGate
+	PRShipReady bool // every gate green → merge affordance opens expanded
 	DiffBase      string
 	ThreadID      string
 	// Diff review UI (commit / session / PR diff pages + per-file fragments)

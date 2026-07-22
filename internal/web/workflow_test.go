@@ -16,8 +16,10 @@ import (
 
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/linear"
+	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -383,6 +385,58 @@ func TestLinearListAndDetail(t *testing.T) {
 		t.Fatalf("body=%s", body)
 	}
 	assertNavActive(t, body, "Linear")
+}
+
+func TestBuildPRGates(t *testing.T) {
+	green := ghpr.PRDetail{
+		Info:      ghpr.Info{State: "OPEN", ReviewDecision: "APPROVED", Checks: "✓ 5"},
+		Mergeable: "MERGEABLE",
+	}
+	gates, ready := buildPRGates(green, reviewstore.RollupApproved)
+	if !ready {
+		t.Fatalf("green PR not ready: %+v", gates)
+	}
+	if len(gates) != 4 {
+		t.Fatalf("gates=%d", len(gates))
+	}
+	for _, g := range gates {
+		if g.Class != "ok" {
+			t.Fatalf("gate %s class=%q want ok", g.Label, g.Class)
+		}
+	}
+
+	failing := green
+	failing.Checks = "✓ 4 · ✗ 1"
+	gates, ready = buildPRGates(failing, reviewstore.RollupChangesRequested)
+	if ready {
+		t.Fatal("failing checks must not be ready")
+	}
+	if gates[0].Class != "err" || gates[1].Class != "warn" {
+		t.Fatalf("gates=%+v", gates)
+	}
+
+	// No CI configured: checks gate neutral but merge still reachable.
+	noCI := green
+	noCI.Checks = ""
+	gates, ready = buildPRGates(noCI, reviewstore.RollupNone)
+	if !ready {
+		t.Fatal("no-CI approved PR should be ready")
+	}
+	if gates[0].Value != "—" {
+		t.Fatalf("checks value=%q", gates[0].Value)
+	}
+
+	draft := green
+	draft.IsDraft = true
+	if _, ready = buildPRGates(draft, reviewstore.RollupApproved); ready {
+		t.Fatal("draft must not be ready")
+	}
+	conflicting := green
+	conflicting.Mergeable = "CONFLICTING"
+	gates, ready = buildPRGates(conflicting, reviewstore.RollupApproved)
+	if ready || gates[3].Class != "err" {
+		t.Fatalf("conflicting ready=%v gates=%+v", ready, gates)
+	}
 }
 
 func TestPRDetailAndDiff(t *testing.T) {

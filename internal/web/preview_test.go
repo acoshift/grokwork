@@ -16,6 +16,7 @@ import (
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -64,6 +65,25 @@ func TestPreviewServer(t *testing.T) {
 		HTTPListen: "127.0.0.1:18787",
 		ConfigPath: filepath.Join(dir, "config.json"),
 		DataDir:    filepath.Join(dir, "data"),
+	}
+	// GROKWORK_WEB_PREVIEW_AUTH=1: turn on web auth + every write feature so
+	// action surfaces (PR detail rail, merge/review forms) render; a ready-made
+	// admin session cookie is printed at startup.
+	previewAuth := os.Getenv("GROKWORK_WEB_PREVIEW_AUTH") == "1"
+	if previewAuth {
+		cfg.DiscordClientSecret = "preview-secret"
+		cfg.WebPublicBaseURL = "http://127.0.0.1:18787"
+		cfg.WebAuth = &config.WebAuthConfig{
+			Enabled:         true,
+			SessionSecret:   "preview-secret",
+			AdminDiscordIDs: []string{"111111111111111111"},
+			Features: config.WebAuthFeatures{
+				GitHubWrites:  true,
+				Merge:         true,
+				StartSessions: true,
+				PRReviews:     true,
+			},
+		}
 	}
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
@@ -151,6 +171,41 @@ func TestPreviewServer(t *testing.T) {
 	}
 
 	srv := New(cfg, store, hist, bot.New(cfg, store, hist))
+	if previewAuth {
+		sid, _, err := srv.LoginAs("111111111111111111", "mint", config.WebRoleAdmin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(os.Stderr, "preview: auth on — in devtools run: document.cookie = %q\n",
+			sessionCookieName+"="+sid+"; path=/")
+	}
+	// Team review history for acme/webapp#128 (PR detail card + ship rollup).
+	if rev := srv.bot.Reviews(); rev != nil {
+		const head = "4f2c9ae0b17d43c2e8a95f61b2d4c8e9a1f03b57"
+		_, _ = rev.SubmitReview(reviewstore.Review{
+			Owner: "acme", Repo: "webapp", Number: 128, Project: "webapp",
+			HeadSHA:    "b7d21c3aa90f14e2d6c88b5f0a3e97d1c2f4a6b8",
+			Verdict:    reviewstore.VerdictApproved,
+			Body:       "Queue drain logic looks right — ship once e2e is green.",
+			ReviewerID: "222222222222222222", ReviewerName: "poon",
+			At: time.Date(2026, 7, 20, 16, 5, 0, 0, time.UTC),
+		})
+		_, _ = rev.SubmitReview(reviewstore.Review{
+			Owner: "acme", Repo: "webapp", Number: 128, Project: "webapp",
+			HeadSHA:    head,
+			Verdict:    reviewstore.VerdictChangesRequested,
+			Body:       "Debounce window swallows the first retry when the webhook lands mid-settle — needs a test for that path.",
+			ReviewerID: "333333333333333333", ReviewerName: "beam",
+			At: time.Date(2026, 7, 21, 10, 40, 0, 0, time.UTC),
+		})
+		_, _ = rev.RequestReview(reviewstore.Request{
+			Owner: "acme", Repo: "webapp", Number: 128, Project: "webapp",
+			HeadSHA:     head,
+			RequesterID: "222222222222222222", RequesterName: "poon",
+			ReviewerID: "111111111111111111", ReviewerName: "mint",
+			Note: "Re-check the idempotency key change in the settle path.",
+		})
+	}
 	// Synthetic git/gh so the diff review UI can be exercised with a large
 	// changeset: /projects/webapp/commits → commit detail (lazy per-file
 	// hunks), /prs/acme/webapp/128/diff for the PR surface.
@@ -412,6 +467,25 @@ func previewGitRunner() func(ctx context.Context, dir, name string, args ...stri
 				}
 			}
 			return nil, nil
+		case name == "gh" && strings.HasPrefix(joined, "pr view"):
+			return []byte(`{
+				"number":128,"url":"https://github.com/acme/webapp/pull/128",
+				"title":"fix: debounce payment retry queue","state":"OPEN","isDraft":false,
+				"reviewDecision":"CHANGES_REQUESTED",
+				"headRefOid":"` + sha + `",
+				"headRefName":"grok/discord/1390000000000000001","baseRefName":"main",
+				"body":"## What\n\nPayment webhook retries were re-enqueuing per event, so a burst of webhooks for one order queued duplicate settle jobs. This debounces the queue flush per order and makes the settle job idempotent.\n\n## Why\n\nThe checkout E2E was flaky (~1 in 5 runs): the test asserted on the first settle attempt while a duplicate job raced it.\n\n## Testing\n\n- unit: retry queue debounce window\n- e2e: checkout happy path, webhook burst",
+				"mergeable":"MERGEABLE","author":{"login":"grok-work"},
+				"additions":214,"deletions":96,"changedFiles":9
+			}`), nil
+		case name == "gh" && strings.HasPrefix(joined, "pr checks"):
+			return []byte(`[
+				{"name":"build","state":"SUCCESS","bucket":"pass"},
+				{"name":"lint","state":"SUCCESS","bucket":"pass"},
+				{"name":"unit","state":"SUCCESS","bucket":"pass"},
+				{"name":"vet","state":"SUCCESS","bucket":"pass"},
+				{"name":"e2e-checkout","state":"FAILURE","bucket":"fail"}
+			]`), nil
 		case name == "gh" && strings.HasPrefix(joined, "pr diff"):
 			var b strings.Builder
 			for _, f := range files {

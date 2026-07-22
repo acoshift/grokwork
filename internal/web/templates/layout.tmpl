@@ -1040,6 +1040,7 @@
     }
     #pr-team-review .team-review-gh {
       font-size: 0.82rem;
+      overflow-wrap: anywhere;
     }
     #pr-team-review .team-review-blurb {
       margin: 0 0 1rem;
@@ -1085,40 +1086,218 @@
       margin: 0 0 0.7rem;
       color: var(--text);
     }
-    #pr-team-review .team-review-actions {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-    }
-    #pr-team-review .team-review-fields {
-      display: grid;
-      grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
-      gap: 0.75rem 1rem;
-      align-items: start;
-      margin-bottom: 0.55rem;
-    }
-    #pr-team-review .team-review-fields .field label {
-      margin-bottom: 0.3rem;
-    }
-    #pr-team-review .team-review-fields textarea {
-      min-height: 5.5rem;
-      height: auto;
-      resize: vertical;
-      line-height: 1.4;
-    }
-    #pr-team-review .team-review-form .check {
-      margin: 0.15rem 0 0.15rem;
-    }
-    #pr-team-review .team-review-form .form-actions {
-      margin-top: 0.65rem;
-    }
     @media (max-width: 720px) {
-      #pr-team-review .team-review-fields {
-        grid-template-columns: 1fr;
-      }
       #pr-team-review .team-review-note {
         max-width: none;
       }
+    }
+
+    /* ── PR detail (ship): header, gate strip, action rail ───────────── */
+    .pr-crumb {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.55rem;
+      margin: 0 0 0.7rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .pr-crumb .mono { font-size: 0.78rem; }
+    .pr-crumb a { color: var(--muted); font-weight: 500; }
+    .pr-crumb a:hover { color: var(--text); }
+    .pr-crumb .crumb-sep { color: var(--muted-soft); }
+    .pr-title-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem 1rem;
+      margin-bottom: 0.45rem;
+    }
+    .pr-title-row h1 { margin: 0; flex: 1 1 22rem; }
+    .pr-head-links {
+      display: flex;
+      gap: 0.45rem;
+      flex-shrink: 0;
+      padding-top: 0.2rem;
+    }
+    .pr-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem 0.9rem;
+      margin: 0 0 1.25rem;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    .pr-meta .mono { font-size: 0.8rem; }
+    /* Long branch names (grok/discord/<snowflake>) must wrap, not overflow. */
+    .pr-meta > span { min-width: 0; overflow-wrap: anywhere; }
+    .pr-meta .diff-add { color: var(--ok); }
+    .pr-meta .diff-del { color: var(--danger); }
+
+    .pr-gates {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+      gap: 0.65rem;
+      margin-bottom: 1.6rem;
+    }
+    .pr-gate {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 0.7rem 0.85rem 0.62rem;
+      box-shadow: var(--shadow-1);
+    }
+    .pr-gate .gate-label {
+      color: var(--muted-soft);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      font-weight: 550;
+    }
+    .pr-gate .gate-value {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-top: 0.3rem;
+      font-size: 0.94rem;
+      font-weight: 620;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+    .pr-gate .gate-value::before {
+      content: "";
+      flex-shrink: 0;
+      width: 0.42rem;
+      height: 0.42rem;
+      border-radius: 50%;
+      background: var(--muted-soft);
+    }
+    .pr-gate.ok .gate-value { color: var(--ok); }
+    .pr-gate.ok .gate-value::before { background: var(--ok); }
+    .pr-gate.warn .gate-value { color: var(--warn); }
+    .pr-gate.warn .gate-value::before { background: var(--warn); }
+    .pr-gate.err .gate-value { color: var(--danger); }
+    .pr-gate.err .gate-value::before { background: var(--danger); }
+    .pr-gate .gate-hint { margin-top: 0.18rem; font-size: 0.74rem; color: var(--muted); }
+
+    .pr-cols {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 21rem;
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .pr-main { min-width: 0; }
+    /* PR bodies are prose (often markdown), not code — undo pre's mono default. */
+    .pr-body {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--font);
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+    .pr-rail {
+      position: sticky;
+      top: 1.25rem;
+      max-height: calc(100vh - 2.5rem);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+      min-width: 0;
+    }
+    .rail-group {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-1);
+      padding: 0.75rem 1rem 0.8rem;
+    }
+    .rail-group-title {
+      color: var(--muted-soft);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      margin-bottom: 0.15rem;
+    }
+    details.action { border-top: 1px solid var(--border); }
+    details.action:first-of-type { border-top: none; }
+    details.action > summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 0;
+      font-size: 0.9rem;
+      font-weight: 560;
+      cursor: pointer;
+      user-select: none;
+      color: var(--text);
+    }
+    details.action > summary::-webkit-details-marker { display: none; }
+    details.action > summary::after {
+      content: "";
+      width: 1rem;
+      height: 1rem;
+      flex-shrink: 0;
+      background: var(--chev) center / 1rem 1rem no-repeat;
+      opacity: 0.75;
+      transition: transform 0.15s ease;
+    }
+    details.action[open] > summary::after { transform: rotate(180deg); }
+    details.action > summary:hover::after { opacity: 1; }
+    details.action > summary .action-title { flex: 1 1 auto; min-width: 0; }
+    details.action.danger > summary { color: var(--danger); }
+    .action-hint {
+      flex-shrink: 0;
+      font-size: 0.73rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+    .action-hint.ok { color: var(--ok); }
+    .action-body { padding: 0.1rem 0 0.85rem; }
+    .action-body form { display: flex; flex-direction: column; gap: 0.6rem; margin: 0; }
+    .action-body textarea { min-height: 5rem; }
+    .action-body label.check { min-height: 0; font-size: 0.84rem; }
+    .action-body .form-actions { margin-top: 0.1rem; }
+    .action-body .form-actions button { flex: 1 1 auto; }
+    .rail-note {
+      margin: 0.3rem 0 0.55rem;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .action-body .rail-note { margin: 0; }
+    .grok-dispatch {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      padding: 0.45rem 0 0.25rem;
+    }
+    .grok-dispatch label.check { min-height: 0; font-size: 0.84rem; }
+    .btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .btn-pair button { min-width: 0; padding: 0 0.5rem; font-size: 0.84rem; }
+    .grok-pick {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-secondary);
+      padding: 0.6rem 0.7rem;
+      margin: 0.35rem 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .grok-pick-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+    .grok-pick-head .tid { margin-left: auto; font-size: 0.78rem; max-width: 6.5rem; }
+    .grok-pick-goal { font-size: 0.82rem; line-height: 1.4; }
+    .grok-pick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin: 0; }
+    .grok-pick-actions button { min-width: 0; }
+    @media (max-width: 1020px) {
+      .pr-cols { grid-template-columns: 1fr; }
+      .pr-rail { position: static; max-height: none; overflow: visible; }
     }
     .invite-row {
       display: grid;

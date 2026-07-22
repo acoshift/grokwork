@@ -1,28 +1,45 @@
 {{define "content"}}
-<p class="sub" style="margin-bottom:0.5rem"><a href="{{if .Project}}/projects/{{.Project}}/ship{{else}}{{route "ship"}}{{end}}">← Ship board</a></p>
-<h1 id="page-pr-detail">{{.ActiveOwner}}/{{.ActiveRepo}}#{{.PRNumber}}</h1>
-<p class="sub">
-  <a href="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/diff{{if .Project}}?project={{urlquery .Project}}{{end}}">View diff</a>
-  {{if .PR.URL}} · <a href="{{.PR.URL}}" target="_blank" rel="noopener">Open on GitHub ↗</a>{{end}}
+{{$open := eq .PR.State "OPEN"}}
+<p class="pr-crumb">
+  <a href="{{if .Project}}/projects/{{.Project}}/ship{{else}}{{route "ship"}}{{end}}">← Ship board</a>
+  <span class="crumb-sep">/</span>
+  <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}#{{.PRNumber}}</span>
 </p>
+<div class="pr-title-row">
+  <h1 id="page-pr-detail">{{if .PR.Title}}{{.PR.Title}}{{else}}{{.ActiveOwner}}/{{.ActiveRepo}}#{{.PRNumber}}{{end}}</h1>
+  <div class="pr-head-links">
+    <a class="btn btn-compact" href="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/diff{{if .Project}}?project={{urlquery .Project}}{{end}}">View diff</a>
+    {{if .PR.URL}}<a class="btn btn-compact" href="{{.PR.URL}}" target="_blank" rel="noopener">GitHub ↗</a>{{end}}
+  </div>
+</div>
+<div class="pr-meta">
+  {{if eq .PR.State "OPEN"}}<span class="badge live">OPEN</span>{{else if eq .PR.State "MERGED"}}<span class="badge status-merged">MERGED</span>{{else if eq .PR.State "CLOSED"}}<span class="badge status-cancelled">CLOSED</span>{{else if .PR.State}}<span class="badge">{{.PR.State}}</span>{{end}}
+  {{if .PR.IsDraft}}<span class="badge">draft</span>{{end}}
+  {{if .PR.Author}}<span class="mono">{{.PR.Author}}</span>{{end}}
+  {{if .PR.HeadRef}}<span class="mono">{{.PR.HeadRef}} → {{.PR.BaseRef}}</span>{{end}}
+  {{if .PR.ChangedFiles}}<span class="mono"><span class="diff-add">+{{.PR.Additions}}</span> <span class="diff-del">−{{.PR.Deletions}}</span> · {{.PR.ChangedFiles}} files</span>{{end}}
+</div>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
+{{if .PRGates}}
+<div class="pr-gates">
+  {{range .PRGates}}
+  <div class="pr-gate{{if .Class}} {{.Class}}{{end}}">
+    <div class="gate-label">{{.Label}}</div>
+    <div class="gate-value">{{.Value}}</div>
+    {{if .Hint}}<div class="gate-hint">{{.Hint}}</div>{{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+<div class="pr-cols">
+<div class="pr-main">
+
 <div class="section card">
-  <h2>{{.PR.Title}}</h2>
-  <p class="sub" style="margin:0">
-    {{if eq .PR.State "OPEN"}}<span class="badge live">{{.PR.State}}</span>{{else if eq .PR.State "MERGED"}}<span class="badge status-merged">{{.PR.State}}</span>{{else if eq .PR.State "CLOSED"}}<span class="badge status-cancelled">{{.PR.State}}</span>{{else}}<span class="badge">{{.PR.State}}</span>{{end}}
-    {{if .PR.IsDraft}} <span class="badge">draft</span>{{end}}
-    · review <span class="mono">{{.PR.ReviewDecision}}</span>
-    · checks <span class="mono">{{.PR.Checks}}</span>
-    · mergeable <span class="mono">{{.PR.Mergeable}}</span>
-  </p>
-  <p class="sub" style="margin:0.45rem 0 0">
-    <span class="mono">{{.PR.Author}}</span>
-    · <span class="mono">{{.PR.HeadRef}} → {{.PR.BaseRef}}</span>
-    · <span class="mono" style="color:var(--ok)">+{{.PR.Additions}}</span>/<span class="mono" style="color:var(--danger)">−{{.PR.Deletions}}</span> · {{.PR.ChangedFiles}} files
-  </p>
-  <pre class="bubble-body" style="margin-top:1rem;white-space:pre-wrap;">{{.PR.Body}}</pre>
+  <h2>Description</h2>
+  {{if .PR.Body}}<pre class="pr-body">{{.PR.Body}}</pre>{{if .PR.Truncated}}<p class="muted" style="margin:0.6rem 0 0;font-size:0.8rem">Body truncated.</p>{{end}}{{else}}<p class="muted" style="margin:0">No description.</p>{{end}}
 </div>
 
 <div class="section card" id="pr-team-review">
@@ -110,156 +127,180 @@
   </div>
   {{end}}
 
-  {{if and .CanPRReview (eq .PR.State "OPEN")}}
-  <div class="team-review-actions">
-    <div class="team-review-block">
-      <h3 class="team-review-h3">Submit review</h3>
-      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/reviews" id="pr-review-form" class="team-review-form">
+  {{if not .CanPRReview}}
+  <p class="muted team-review-empty" style="margin-top:0.75rem">Requires member role with <span class="mono">prReviews</span> enabled.</p>
+  {{end}}
+</div>
+
+</div>{{/* /pr-main */}}
+
+<aside class="pr-rail">
+
+{{if and .CanMerge $open}}
+<div class="rail-group" id="pr-merge-form">
+  <div class="rail-group-title">Ship</div>
+  <details class="action"{{if .PRShipReady}} open{{end}}>
+    <summary><span class="action-title">Merge pull request</span>{{if .PRShipReady}}<span class="action-hint ok">ready</span>{{else}}<span class="action-hint">gates pending</span>{{end}}</summary>
+    <div class="action-body">
+      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/merge" onsubmit="return confirm('Merge this pull request?');">
+        {{template "csrf" $}}
+        <input type="hidden" name="project" value="{{.Project}}">
+        <div class="field">
+          <label for="merge-method">Method</label>
+          <select id="merge-method" name="method">
+            <option value="squash" {{if eq .WebMergeMethod "squash"}}selected{{end}}>Squash</option>
+            <option value="merge" {{if eq .WebMergeMethod "merge"}}selected{{end}}>Merge commit</option>
+            <option value="rebase" {{if eq .WebMergeMethod "rebase"}}selected{{end}}>Rebase</option>
+          </select>
+        </div>
+        <label class="check"><input type="checkbox" name="attemptAnyway" value="1"> Attempt even if checks look failing</label>
+        <p class="rail-note">Host <span class="mono">gh pr merge</span> with branch protection — never <span class="mono">--admin</span>.</p>
+        <div class="form-actions"><button type="submit">Merge pull request</button></div>
+      </form>
+    </div>
+  </details>
+</div>
+{{end}}
+
+{{if and .CanPRReview $open}}
+<div class="rail-group" id="pr-review-actions">
+  <div class="rail-group-title">Review</div>
+  <details class="action">
+    <summary><span class="action-title">Submit review</span></summary>
+    <div class="action-body">
+      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/reviews" id="pr-review-form">
         {{template "csrf" $}}
         <input type="hidden" name="project" value="{{.Project}}">
         <input type="hidden" name="headSha" value="{{.PR.HeadSHA}}">
-        <div class="team-review-fields">
-          <div class="field">
-            <label for="verdict">Verdict</label>
-            <select id="verdict" name="verdict" required>
-              <option value="approved">Approve</option>
-              <option value="changes_requested">Request changes</option>
-              <option value="commented">Comment only</option>
-            </select>
-          </div>
-          <div class="field field-grow">
-            <label for="review-body">Message</label>
-            <textarea id="review-body" name="body" rows="3" placeholder="Optional for approve; required for request changes"></textarea>
-          </div>
+        <div class="field">
+          <label for="verdict">Verdict</label>
+          <select id="verdict" name="verdict" required>
+            <option value="approved">Approve</option>
+            <option value="changes_requested">Request changes</option>
+            <option value="commented">Comment only</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="review-body">Message</label>
+          <textarea id="review-body" name="body" rows="3" placeholder="Optional for approve; required for request changes"></textarea>
         </div>
         {{if .CanGitHubWrite}}
-        <label class="check"><input type="checkbox" name="mirror" value="1" checked> Post summary on GitHub as a PR comment</label>
+        <label class="check"><input type="checkbox" name="mirror" value="1" checked> Mirror to GitHub as a PR comment</label>
         {{end}}
         <div class="form-actions"><button type="submit" id="btn-submit-review">Submit review</button></div>
       </form>
     </div>
-
-    {{if .ReviewerOptions}}
-    <div class="team-review-block">
-      <h3 class="team-review-h3">Request review</h3>
-      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/review-requests" id="pr-request-review-form" class="team-review-form">
+  </details>
+  {{if .ReviewerOptions}}
+  <details class="action">
+    <summary><span class="action-title">Request review</span>{{if .TeamPendingRequests}}<span class="action-hint">{{len .TeamPendingRequests}} pending</span>{{end}}</summary>
+    <div class="action-body">
+      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/review-requests" id="pr-request-review-form">
         {{template "csrf" $}}
         <input type="hidden" name="project" value="{{.Project}}">
         <input type="hidden" name="headSha" value="{{.PR.HeadSHA}}">
-        <div class="team-review-fields">
-          <div class="field">
-            <label for="reviewerId">Reviewer</label>
-            <select id="reviewerId" name="reviewerId" required>
-              <option value="">Select teammate…</option>
-              {{range .ReviewerOptions}}
-              <option value="{{.ID}}">{{.Name}}</option>
-              {{end}}
-            </select>
-          </div>
-          <div class="field field-grow">
-            <label for="review-note">Note (optional)</label>
-            <input type="text" id="review-note" name="note" placeholder="What should they focus on?">
-          </div>
+        <div class="field">
+          <label for="reviewerId">Reviewer</label>
+          <select id="reviewerId" name="reviewerId" required>
+            <option value="">Select teammate…</option>
+            {{range .ReviewerOptions}}
+            <option value="{{.ID}}">{{.Name}}</option>
+            {{end}}
+          </select>
+        </div>
+        <div class="field">
+          <label for="review-note">Note (optional)</label>
+          <input type="text" id="review-note" name="note" placeholder="What should they focus on?">
         </div>
         <div class="form-actions"><button type="submit" class="btn-secondary" id="btn-request-review">Request review</button></div>
       </form>
     </div>
-    {{end}}
-  </div>
-  {{else if not .CanPRReview}}
-  <p class="muted team-review-empty">Requires member role with <span class="mono">prReviews</span> enabled.</p>
+  </details>
   {{end}}
 </div>
+{{end}}
 
 {{if .CanStartSession}}
-<div class="section card" id="pr-address-actions">
-  <h2>Grok actions</h2>
-  <p class="sub">Starts or reuses a Discord work unit for this PR. Grok pushes fixes; it does not merge.</p>
+<div class="rail-group" id="pr-address-actions">
+  <div class="rail-group-title">Grok</div>
   {{if .ShowFixPicker}}
-  <p class="flash">Multiple sessions already bind this PR. Pick one, or force a new thread.</p>
-  <div class="table-scroll">
-  <table class="table">
-    <thead><tr><th>Thread</th><th>Label</th><th>Goal</th><th></th></tr></thead>
-    <tbody>
-    {{range .FixHits}}
-      <tr>
-        <td class="mono">{{.ThreadID}}</td>
-        <td><span class="badge">{{.Label}}</span>{{if .Busy}} <span class="badge live">busy</span>{{end}}</td>
-        <td>{{.Goal}}</td>
-        <td class="row-actions">
-          <form method="post" action="/prs/{{$.ActiveOwner}}/{{$.ActiveRepo}}/{{$.PRNumber}}/address-ci" style="display:inline">
-            {{template "csrf" $}}
-            <input type="hidden" name="project" value="{{$.Project}}">
-            <input type="hidden" name="thread_id" value="{{.ThreadID}}">
-            <button type="submit" class="btn-secondary" style="height:2rem;font-size:0.82rem;">Continue (CI)</button>
-          </form>
-          <form method="post" action="/prs/{{$.ActiveOwner}}/{{$.ActiveRepo}}/{{$.PRNumber}}/address-review" style="display:inline">
-            {{template "csrf" $}}
-            <input type="hidden" name="project" value="{{$.Project}}">
-            <input type="hidden" name="thread_id" value="{{.ThreadID}}">
-            <button type="submit" class="btn-secondary" style="height:2rem;font-size:0.82rem;">Continue (review)</button>
-          </form>
-        </td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
+  <p class="rail-note">Multiple sessions bind this PR — continue one:</p>
+  {{range .FixHits}}
+  <div class="grok-pick">
+    <div class="grok-pick-head">
+      <span class="badge">{{.Label}}</span>
+      {{if .Busy}}<span class="badge live">busy</span>{{end}}
+      <a class="tid mono" href="/sessions/{{.ThreadID}}{{if $.Project}}?project={{urlquery $.Project}}{{end}}">{{.ThreadID}}</a>
+    </div>
+    {{if .Goal}}<div class="grok-pick-goal">{{.Goal}}</div>{{end}}
+    <form method="post" action="/prs/{{$.ActiveOwner}}/{{$.ActiveRepo}}/{{$.PRNumber}}/address-ci" class="grok-pick-actions">
+      {{template "csrf" $}}
+      <input type="hidden" name="project" value="{{$.Project}}">
+      <input type="hidden" name="thread_id" value="{{.ThreadID}}">
+      <button type="submit" class="btn-secondary btn-compact">Address CI</button>
+      <button type="submit" class="btn-secondary btn-compact" formaction="/prs/{{$.ActiveOwner}}/{{$.ActiveRepo}}/{{$.PRNumber}}/address-review">Address review</button>
+    </form>
   </div>
   {{end}}
-  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-ci" style="margin-bottom:0.75rem;">
+  <p class="rail-note">Or dispatch a fresh thread:</p>
+  {{end}}
+  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-ci" class="grok-dispatch">
     {{template "csrf" $}}
     <input type="hidden" name="project" value="{{.Project}}">
-    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start new thread</label>
-    <div class="form-actions"><button type="submit" id="btn-address-ci">Address CI</button></div>
+    {{if .ShowFixPicker}}
+    <input type="hidden" name="force_new" value="1">
+    {{else}}
+    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start a new thread</label>
+    {{end}}
+    <div class="btn-pair">
+      <button type="submit" class="btn-secondary" id="btn-address-ci">Address CI</button>
+      <button type="submit" class="btn-secondary" id="btn-address-review" formaction="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-review">Address review</button>
+    </div>
   </form>
-  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-review">
-    {{template "csrf" $}}
-    <input type="hidden" name="project" value="{{.Project}}">
-    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start new thread</label>
-    <div class="form-actions"><button type="submit" id="btn-address-review">Address review</button></div>
-  </form>
+  <p class="rail-note">Reuses or opens a Discord work unit. Grok pushes fixes; it never merges.</p>
 </div>
 {{end}}
 
 {{if .CanGitHubWrite}}
-<div class="section card" id="pr-comment-form">
-  <h2>Add comment</h2>
-  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/comments">
-    {{template "csrf" $}}
-    <input type="hidden" name="project" value="{{.Project}}">
-    <label for="pr-body">Comment</label>
-    <textarea id="pr-body" name="body" rows="4" required placeholder="Write a comment…"></textarea>
-    <div class="form-actions"><button type="submit">Post comment</button></div>
-  </form>
+<div class="rail-group" id="pr-comment-form">
+  <div class="rail-group-title">GitHub</div>
+  <details class="action">
+    <summary><span class="action-title">Add comment</span></summary>
+    <div class="action-body">
+      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/comments">
+        {{template "csrf" $}}
+        <input type="hidden" name="project" value="{{.Project}}">
+        <div class="field">
+          <label for="pr-body">Comment</label>
+          <textarea id="pr-body" name="body" rows="4" required placeholder="Write a comment…"></textarea>
+        </div>
+        <div class="form-actions"><button type="submit">Post comment</button></div>
+      </form>
+    </div>
+  </details>
+  {{if $open}}
+  <details class="action danger" id="pr-close-form">
+    <summary><span class="action-title">Close pull request</span></summary>
+    <div class="action-body">
+      <p class="rail-note">Closes without merging. Managed branches clean up on the next sweep.</p>
+      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/close" onsubmit="return confirm('Close this pull request?');">
+        {{template "csrf" $}}
+        <input type="hidden" name="project" value="{{.Project}}">
+        <div class="form-actions"><button type="submit" class="btn-danger">Close pull request</button></div>
+      </form>
+    </div>
+  </details>
+  {{end}}
 </div>
-{{if eq .PR.State "OPEN"}}
-<div class="section card" id="pr-close-form">
-  <h2>Close PR</h2>
-  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/close" onsubmit="return confirm('Close this pull request?');">
-    {{template "csrf" $}}
-    <input type="hidden" name="project" value="{{.Project}}">
-    <div class="form-actions"><button type="submit" class="btn-danger">Close pull request</button></div>
-  </form>
-</div>
-{{end}}
 {{end}}
 
-{{if and .CanMerge (eq .PR.State "OPEN")}}
-<div class="section card" id="pr-merge-form">
-  <h2>Merge PR</h2>
-  <p class="sub" style="margin-top:0">Uses host <span class="mono">gh pr merge</span> with branch protection. Never passes <span class="mono">--admin</span>.</p>
-  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/merge" onsubmit="return confirm('Merge this pull request?');">
-    {{template "csrf" $}}
-    <input type="hidden" name="project" value="{{.Project}}">
-    <label for="merge-method">Method</label>
-    <select id="merge-method" name="method">
-      <option value="squash" {{if eq .WebMergeMethod "squash"}}selected{{end}}>Squash</option>
-      <option value="merge" {{if eq .WebMergeMethod "merge"}}selected{{end}}>Merge commit</option>
-      <option value="rebase" {{if eq .WebMergeMethod "rebase"}}selected{{end}}>Rebase</option>
-    </select>
-    <label class="check"><input type="checkbox" name="attemptAnyway" value="1"> Attempt merge even if checks look failing (still no protection bypass)</label>
-    <div class="form-actions"><button type="submit">Merge pull request</button></div>
-  </form>
+{{if not (or .CanMerge .CanPRReview .CanStartSession .CanGitHubWrite)}}
+<div class="rail-group">
+  <div class="rail-group-title">Actions</div>
+  <p class="rail-note">Read-only access — merge, review, and Grok dispatch need a member role with web features enabled.</p>
 </div>
 {{end}}
+
+</aside>
+</div>{{/* /pr-cols */}}
 {{end}}
