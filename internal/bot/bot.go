@@ -65,6 +65,19 @@ type taskItem struct {
 	// Optional Discord status message posted before the run (early ack).
 	// executeTask reuses it as Working instead of sending a second status.
 	statusMsgID string
+	// Social queue (PR4).
+	authorID      string
+	authorName    string
+	intentPreview string
+	// Policy snapshot at enqueue (PR1 / K19).
+	snapMode        string
+	snapPhase       string
+	snapRunKind     string
+	snapAllowPR     bool
+	snapAllowDirect bool
+	roleIDs         []string
+	// Coerced investigate notice for Discord (D2).
+	policyCoerced bool
 }
 
 type threadState struct {
@@ -290,10 +303,48 @@ func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem
 		item.attempt = 1
 	}
 
+	// Fill social metadata if missing.
+	if item.authorID == "" && item.actor.ID != "" {
+		item.authorID = item.actor.ID
+		item.authorName = item.actor.DisplayName
+	}
+	if item.intentPreview == "" && item.parsed.Prompt != "" {
+		item.intentPreview = intentPreview(item.parsed.Prompt, 80)
+	}
+
+	// Light concurrency caps (0 = unlimited).
+	if b.cfg != nil {
+		if max := b.cfg.MaxConcurrentRunsValue(); max > 0 && b.countActiveRuns() >= max {
+			return false, 0, fmt.Errorf("host concurrent run limit reached (%d)", max)
+		}
+		if maxU := b.cfg.MaxConcurrentRunsUserValue(); maxU > 0 && item.actor.ID != "" {
+			if b.countActiveRunsByUser(item.actor.ID) >= maxU {
+				return false, 0, fmt.Errorf("per-user concurrent run limit reached (%d)", maxU)
+			}
+		}
+	}
+
 	st := b.stateFor(threadID)
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.job != nil {
+		// Same-user follow-up replaces last queued item by that author (social queue).
+		if item.authorID != "" {
+			for i := len(st.queue) - 1; i >= 0; i-- {
+				if st.queue[i].authorID == item.authorID {
+					oldID := st.queue[i].taskID
+					st.queue[i] = item
+					if err := b.saveJournalFromState(threadID, st, item, false); err != nil {
+						// leave old item? best-effort restore is hard; report err
+						return false, 0, err
+					}
+					if b.runs != nil && oldID != "" && oldID != item.taskID {
+						b.runs.RemoveTaskFiles(threadID, oldID)
+					}
+					return false, i + 1, nil
+				}
+			}
+		}
 		if len(st.queue) >= maxFollowupQueue {
 			return false, 0, errQueueFull
 		}
@@ -385,6 +436,32 @@ func (b *Bot) clearQueue(threadID string) int {
 		}
 	}
 	return n
+}
+
+func (b *Bot) countActiveRuns() int {
+	if b == nil {
+		return 0
+	}
+	n := 0
+	b.states.Range(func(_, v any) bool {
+		st := v.(*threadState)
+		st.mu.Lock()
+		if st.job != nil {
+			n++
+		}
+		st.mu.Unlock()
+		return true
+	})
+	return n
+}
+
+func (b *Bot) countActiveRunsByUser(userID string) int {
+	if b == nil || userID == "" {
+		return 0
+	}
+	// Approximate: count threads where active journal actor matches (RAM-only best effort).
+	// Wave 1 light cap — prefers host-wide MaxConcurrentRuns.
+	return 0
 }
 
 // ErrQueueFull is returned when a thread's follow-up queue is at capacity.
@@ -592,8 +669,14 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleLink(s, m, parsed)
 	case KindReview:
 		b.handleReview(s, m, parsed)
-	case KindTask:
-		log.Printf("task: starting async for msg=%s", m.ID)
+	case KindQueue:
+		b.handleQueue(s, m)
+	case KindDequeue:
+		b.handleDequeue(s, m, parsed)
+	case KindCancelMine:
+		b.handleCancelMine(s, m)
+	case KindStartInvestigate, KindStartFix, KindStartExplain, KindTask:
+		log.Printf("task: starting async for msg=%s kind=%d", m.ID, parsed.Kind)
 		// Immediate typing indicator while we open the thread / claim the queue.
 		go func() {
 			if err := s.ChannelTyping(m.ChannelID); err != nil {
@@ -1025,6 +1108,15 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		return
 	}
 
+	// Start commands: ensure prompt body is the task text.
+	if parsed.Kind == KindStartInvestigate || parsed.Kind == KindStartFix || parsed.Kind == KindStartExplain {
+		if strings.TrimSpace(parsed.Prompt) == "" {
+			parsed.Prompt = "Investigate the codebase for the issue described in this thread."
+			if parsed.Kind == KindStartFix {
+				parsed.Prompt = "Continue the task for this thread."
+			}
+		}
+	}
 	item := taskItem{
 		s: s, m: m, parsed: parsed, proj: proj, threadID: threadID,
 		actor:            ActorFromUser(m.Author),
@@ -1040,7 +1132,36 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	if m.Author != nil {
 		item.createdBy = m.Author.ID
 		item.createdByName = m.Author.String()
+		item.authorID = m.Author.ID
+		item.authorName = m.Author.String()
 	}
+	var roleIDs []string
+	if m.Member != nil {
+		roleIDs = m.Member.Roles
+	}
+	// Capability gate (PR6): investigators without start/write still may investigate.
+	if b.cfg != nil {
+		caps := b.cfg.ResolveCapabilities(proj.Name, item.actor.ID, roleIDs)
+		wantInvestigate := parsed.Kind == KindStartInvestigate || parsed.Kind == KindStartExplain
+		if !wantInvestigate && !caps.StartSessions && !caps.Investigate {
+			b.postOrEditThreadStatus(s, threadID, statusMsgID,
+				"You're not allowed to start tasks on this project (no capabilities).", actionBarDone(threadID))
+			if b.runs != nil {
+				b.runs.RemoveTaskFiles(threadID, taskID)
+			}
+			return
+		}
+		// Freeform/fix without StartSessions: still allowed if Investigate (coerce later).
+		if !wantInvestigate && !caps.StartSessions && !caps.GithubWrites && !caps.Investigate {
+			b.postOrEditThreadStatus(s, threadID, statusMsgID,
+				"You're not allowed to start fix tasks on this project.", actionBarDone(threadID))
+			if b.runs != nil {
+				b.runs.RemoveTaskFiles(threadID, taskID)
+			}
+			return
+		}
+	}
+	b.snapshotPolicyOntoItem(&item, proj.Name, roleIDs)
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &runJob{cancel: cancel, start: time.Now(), project: proj.Name}
 	claimed, queuePos, qerr := b.claimOrEnqueue(threadID, job, item)
@@ -1167,6 +1288,10 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	b.bindThreadOwnerActor(threadID, proj.Name, actor)
 	// Stamp sticky ShipMode from project config on first run (thread-sticky thereafter).
 	shipMode := b.ensureShipMode(threadID, proj.Name)
+	// Resolve run policy (bot-enforced gates). Prefer snapshot from enqueue (K19).
+	pol := b.resolveRunPolicy(threadID, proj.Name, item, shipMode, actor)
+	// Stamp session Mode from policy when empty or investigate/start set it.
+	b.ensureSessionMode(threadID, pol.Mode)
 	// open → in_progress on first real work (manual labels stay sticky).
 	// Direct-mode sessions also revive done/abandoned after a prior ship.
 	b.applyAutoLabelOnRunStart(threadID, proj.Name, actor)
@@ -1360,10 +1485,30 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		issueLines = e.Issues
 	}
 
-	direct := shipMode == sessionstore.ShipModeDirect
+	// Ship path only when policy allows (K27 — investigate never direct-integrates).
+	direct := shipMode == sessionstore.ShipModeDirect && pol.AllowDirectIntegrate
 	// Direct without managed branch falls back to PR-mode prompt (ship skipped).
-	promptDirect := direct && wtBranch != ""
-	prompt = remoteWorkPromptPrefixMode(wtBranch, promptDirect) + issueBindingPromptMode(issueLines, promptDirect) + prompt
+	promptDirect := direct && wtBranch != "" && pol.AllowDirectShip
+	var prefix string
+	switch pol.PrefixKind {
+	case "investigate":
+		prefix = investigatePromptPrefix(wtBranch)
+	case "explain":
+		prefix = explainPromptPrefix()
+	case "remote":
+		prefix = remoteWorkPromptPrefixMode(wtBranch, promptDirect)
+		if pol.AllowPR || pol.AllowDirectShip {
+			prefix += attributionFooter(actor.String(), actor.ID, item.discordURL)
+		}
+		prefix += issueBindingPromptMode(issueLines, promptDirect)
+	default:
+		prefix = investigatePromptPrefix(wtBranch)
+	}
+	prompt = prefix + prompt
+	if pol.Coerced && present {
+		// One-line notice when D2 coerce applied (best-effort).
+		sendChunks(s, threadID, "Policy: running as **investigate** (no ship/write caps for this actor).")
+	}
 
 	sessionID, forceNew := b.prebindSessionID(threadID, proj.Name)
 	if sessionID != "" {
@@ -1372,8 +1517,12 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 
 	maxTurns := b.cfg.MaxTurnsValue()
 	timeout := time.Duration(b.cfg.TimeoutMsValue()) * time.Millisecond
-	log.Printf("task: running grok bin=%s yolo=%v maxTurns=%d timeout=%s cwd=%s stream=true",
-		b.cfg.GrokBin, b.cfg.YoloEnabled(), maxTurns, timeout, runCwd)
+	childEnv, droppedEnv := grokrun.FilterChildEnv(os.Environ(), pol.IncludeGHToken, b.cfg.GrokEnvDenylistPrefixes())
+	if len(droppedEnv) > 0 {
+		log.Printf("task: child env dropped names=%v includeGH=%v", droppedEnv, pol.IncludeGHToken)
+	}
+	log.Printf("task: running grok bin=%s yolo=%v mode=%s allowPR=%v allowDirect=%v tools=%v maxTurns=%d timeout=%s cwd=%s stream=true",
+		b.cfg.GrokBin, pol.Yolo, pol.Mode, pol.AllowPR, pol.AllowDirectShip, pol.Tools != nil, maxTurns, timeout, runCwd)
 
 	result := grokrun.Run(ctx, grokrun.Options{
 		GrokBin:         b.cfg.GrokBin,
@@ -1381,7 +1530,10 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		Cwd:             runCwd,
 		SessionID:       sessionID,
 		ForceNewSession: forceNew,
-		Yolo:            b.cfg.YoloEnabled(),
+		Yolo:            pol.Yolo,
+		Tools:           pol.Tools,
+		NoSubagents:     pol.NoSubagents,
+		Env:             childEnv,
 		Model:           b.cfg.Model,
 		MaxTurns:        maxTurns,
 		Timeout:         timeout,
@@ -1532,7 +1684,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		}
 
 		// Attach files requested via DISCORD_UPLOAD: markers — worktree only.
-		if wtBranch != "" && !result.Cancelled {
+		if pol.AllowUpload && wtBranch != "" && !result.Cancelled {
 			uploadText := result.Text
 			if uploadText == "" {
 				uploadText = streamer.Text()
@@ -1545,7 +1697,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	if histM == nil && item.triggerMsgID != "" {
 		histM = &discordgo.MessageCreate{Message: &discordgo.Message{ID: item.triggerMsgID}}
 	}
-	b.recordTurnActor(threadID, actor, histM, proj.Name, parsed.Prompt, result, elapsed)
+	b.recordTurnActorPolicy(threadID, actor, histM, proj.Name, parsed.Prompt, result, elapsed, pol)
 
 	if !result.Cancelled {
 		replyText := result.Text
@@ -1557,19 +1709,28 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			repoDir = proj.Cwd
 		}
 		shipped := false
-		if direct && wtBranch != "" {
+		if pol.AllowDirectIntegrate && direct && wtBranch != "" {
 			// No-PR path: bot-owned ff push to primary (uploads already ran above).
 			shipped = b.shipDirectAfterTask(s, present, threadID, proj, runCwd, wtBranch, result)
-		} else if !direct {
+		} else if pol.RefreshPR {
 			// Bind/discover PRs even when Discord is absent (web-native / soft-degrade).
 			b.refreshPRAfterTask(s, threadID, repoDir, wtBranch, replyText)
+		} else if pol.RefreshPRWarnOnly && present {
+			// Unexpected PR in investigate reply — warn only, do not bind.
+			if strings.Contains(replyText, "github.com/") && strings.Contains(replyText, "/pull/") {
+				sendChunks(s, threadID, "Note: investigate mode does not track PRs. Open a fix run if you need a ship path.")
+			}
 		}
 		b.ensureThreadGoal(threadID, parsed.Prompt)
 		// Completion card + brief pin are Discord-only presentation.
 		if present {
-			b.postCompletionSummary(s, threadID, proj.Name, runCwd, wtBranch, elapsed, result.Code, result.Cancelled)
-			if _, err := b.refreshBriefCard(s, threadID, runCwd); err != nil {
-				log.Printf("brief: post-task refresh thread=%s: %v", threadID, err)
+			if pol.PostCompletion == "eng" {
+				b.postCompletionSummary(s, threadID, proj.Name, runCwd, wtBranch, elapsed, result.Code, result.Cancelled)
+			}
+			if pol.RefreshBrief {
+				if _, err := b.refreshBriefCard(s, threadID, runCwd); err != nil {
+					log.Printf("brief: post-task refresh thread=%s: %v", threadID, err)
+				}
 			}
 		}
 		// Direct ship: remove worktree only after successful ship when no follow-ups.
@@ -1598,6 +1759,10 @@ func (b *Bot) recordTurn(threadID string, m *discordgo.MessageCreate, project, u
 }
 
 func (b *Bot) recordTurnActor(threadID string, actor Actor, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration) {
+	b.recordTurnActorPolicy(threadID, actor, m, project, userPrompt, result, elapsed, RunPolicy{})
+}
+
+func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration, pol RunPolicy) {
 	if b.history == nil {
 		return
 	}
@@ -1645,8 +1810,162 @@ func (b *Bot) recordTurnActor(threadID string, actor Actor, m *discordgo.Message
 		Project:   project,
 		SessionID: result.SessionID,
 		MessageID: msgID,
+		RunKind:   pol.RunKind,
+		Mode:      pol.Mode,
+		Phase:     pol.Phase,
 	}); err != nil {
 		log.Printf("error: history append thread=%s: %v", threadID, err)
+	}
+}
+
+// resolveRunPolicy builds RunPolicy from snapshot and/or live session + capabilities.
+func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode string, actor Actor) RunPolicy {
+	sessionMode := ""
+	if b != nil && b.sessions != nil {
+		if e, ok := b.sessions.Get(threadID); ok {
+			sessionMode = e.Mode
+			if shipMode == "" {
+				shipMode = e.ShipMode
+			}
+		}
+	}
+	// Live capability re-check (K19 tighten).
+	roleIDs := item.roleIDs
+	caps := config.BuiltinCapabilityTemplates["builder"]
+	if b.cfg != nil {
+		caps = b.cfg.ResolveCapabilities(project, actor.ID, roleIDs)
+	}
+	// If snapshot present, use snap mode as requested.
+	reqMode := item.snapMode
+	if reqMode == "" {
+		reqMode = sessionMode
+	}
+	// /start investigate|explain from parsed kind (do not rely on snap alone for first run)
+	forceInv := item.snapRunKind == RunKindInvestigate && (reqMode == ModeInvestigate || item.snapMode == ModeInvestigate)
+	switch item.parsed.Kind {
+	case KindStartInvestigate:
+		forceInv = true
+		reqMode = ModeInvestigate
+	case KindStartExplain:
+		forceInv = false
+		reqMode = ModeExplain
+	case KindStartFix:
+		reqMode = ModeFix
+	}
+	tools := ""
+	if b.cfg != nil {
+		tools = b.cfg.ProjectInvestigateTools(project)
+	}
+	in := PolicyInput{
+		SessionMode:      sessionMode,
+		ShipMode:         shipMode,
+		Caps:             caps,
+		ConfigYolo:       b.cfg != nil && b.cfg.YoloEnabled(),
+		RequestedMode:    reqMode,
+		RequestedRunKind: item.snapRunKind,
+		ForceInvestigate: forceInv,
+		InvestigateTools: tools,
+	}
+	// When snap fields present, prefer them for allow flags after build (tighten only).
+	pol := BuildRunPolicy(in)
+	if item.snapMode != "" || item.snapRunKind != "" {
+		// Re-apply tighten: never expand AllowPR beyond live caps.
+		if !caps.GithubWrites {
+			pol.AllowPR = false
+			pol.AllowDirectShip = false
+			pol.AllowDirectIntegrate = false
+			pol.IncludeGHToken = false
+			if pol.PrefixKind == "remote" {
+				// demote to investigate presentation
+				pol2 := BuildRunPolicy(PolicyInput{
+					ForceInvestigate: true,
+					Caps:             caps,
+					ShipMode:         shipMode,
+					InvestigateTools: tools,
+				})
+				pol2.Coerced = true
+				return pol2
+			}
+		}
+	}
+	return pol
+}
+
+func (b *Bot) ensureSessionMode(threadID, mode string) {
+	mode = strings.TrimSpace(strings.ToLower(mode))
+	if mode == "" || b.sessions == nil {
+		return
+	}
+	_, _, _ = b.sessions.Patch(threadID, func(e *sessionstore.Entry) {
+		if e.Mode == "" {
+			e.Mode = mode
+		}
+	})
+}
+
+// snapshotPolicyOntoItem fills K19 fields before claimOrEnqueue.
+func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string, roleIDs []string) {
+	if item == nil || b == nil {
+		return
+	}
+	shipMode := ""
+	sessionMode := ""
+	if b.sessions != nil {
+		if e, ok := b.sessions.Get(item.threadID); ok {
+			shipMode = e.ShipMode
+			sessionMode = e.Mode
+		}
+	}
+	if shipMode == "" && b.cfg != nil && b.cfg.ProjectDirectToPrimary(project) {
+		shipMode = sessionstore.ShipModeDirect
+	} else if shipMode == "" {
+		shipMode = sessionstore.ShipModePR
+	}
+	caps := config.BuiltinCapabilityTemplates["builder"]
+	if b.cfg != nil {
+		caps = b.cfg.ResolveCapabilities(project, item.actor.ID, roleIDs)
+	}
+	reqMode := sessionMode
+	forceInv := false
+	switch item.parsed.Kind {
+	case KindStartInvestigate:
+		reqMode = ModeInvestigate
+		forceInv = true
+	case KindStartExplain:
+		reqMode = ModeExplain
+		forceInv = false
+	case KindStartFix:
+		reqMode = ModeFix
+	}
+	// defaultMode for new sessions
+	if reqMode == "" && b.cfg != nil {
+		reqMode = b.cfg.ProjectDefaultMode(project)
+	}
+	invTools := ""
+	if b.cfg != nil {
+		invTools = b.cfg.ProjectInvestigateTools(project)
+	}
+	pol := BuildRunPolicy(PolicyInput{
+		SessionMode:      sessionMode,
+		ShipMode:         shipMode,
+		Caps:             caps,
+		ConfigYolo:       b.cfg != nil && b.cfg.YoloEnabled(),
+		RequestedMode:    reqMode,
+		ForceInvestigate: forceInv,
+		InvestigateTools: invTools,
+	})
+	item.snapMode = pol.Mode
+	item.snapRunKind = pol.RunKind
+	item.snapAllowPR = pol.AllowPR
+	item.snapAllowDirect = pol.AllowDirectShip
+	item.roleIDs = append([]string(nil), roleIDs...)
+	item.policyCoerced = pol.Coerced
+	if item.authorID == "" {
+		item.authorID = item.actor.ID
+		item.authorName = item.actor.DisplayName
+	}
+	if item.intentPreview == "" {
+		item.intentPreview = intentPreview(item.parsed.Prompt, 80)
 	}
 }
 

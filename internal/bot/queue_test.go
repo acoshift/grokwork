@@ -61,21 +61,58 @@ func TestQueueFull(t *testing.T) {
 	b := &Bot{}
 	const threadID = "t-full"
 	job := &runJob{cancel: func() {}, start: time.Now(), project: "p"}
-	item := taskItem{threadID: threadID}
+	item := taskItem{threadID: threadID, authorID: "holder"}
 	if claimed, _, err := b.claimOrEnqueue(threadID, job, item); err != nil || !claimed {
 		t.Fatalf("claim: claimed=%v err=%v", claimed, err)
 	}
 	for i := 0; i < maxFollowupQueue; i++ {
 		dummy := &runJob{cancel: func() {}}
-		claimed, pos, err := b.claimOrEnqueue(threadID, dummy, taskItem{threadID: threadID})
+		claimed, pos, err := b.claimOrEnqueue(threadID, dummy, taskItem{
+			threadID: threadID,
+			authorID: "u" + string(rune('a'+i)),
+			parsed:   Parsed{Prompt: "q"},
+		})
 		if err != nil || claimed || pos != i+1 {
 			t.Fatalf("enqueue %d: claimed=%v pos=%d err=%v", i, claimed, pos, err)
 		}
 	}
 	dummy := &runJob{cancel: func() {}}
-	claimed, _, err := b.claimOrEnqueue(threadID, dummy, taskItem{threadID: threadID})
+	claimed, _, err := b.claimOrEnqueue(threadID, dummy, taskItem{threadID: threadID, authorID: "other"})
 	if err != errQueueFull || claimed {
 		t.Fatalf("want queue full, claimed=%v err=%v", claimed, err)
+	}
+}
+
+func TestSameUserQueueReplace(t *testing.T) {
+	b := &Bot{}
+	const threadID = "t-replace"
+	job := &runJob{cancel: func() {}, start: time.Now(), project: "p"}
+	if claimed, _, err := b.claimOrEnqueue(threadID, job, taskItem{threadID: threadID, authorID: "hold"}); err != nil || !claimed {
+		t.Fatalf("claim: %v %v", claimed, err)
+	}
+	_, _, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{
+		threadID: threadID, authorID: "alice", authorName: "Alice",
+		parsed: Parsed{Prompt: "first follow-up"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, pos, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{
+		threadID: threadID, authorID: "alice", authorName: "Alice",
+		parsed: Parsed{Prompt: "second follow-up replaces"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pos != 1 {
+		t.Fatalf("pos=%d want 1 (replaced)", pos)
+	}
+	if n := b.queueLen(threadID); n != 1 {
+		t.Fatalf("queueLen=%d want 1 after replace", n)
+	}
+	q := b.queueSnapshot(threadID)
+	if q[0].parsed.Prompt != "second follow-up replaces" {
+		t.Fatalf("prompt=%q", q[0].parsed.Prompt)
 	}
 }
 

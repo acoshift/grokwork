@@ -531,12 +531,13 @@ func TestStartTaskQueueFull(t *testing.T) {
 	if claimed, _, err := b.claimOrEnqueue(threadID, job, taskItem{threadID: threadID}); err != nil || !claimed {
 		t.Fatalf("hold: %v %v", claimed, err)
 	}
+	// Distinct authors so same-user replace does not collapse the queue.
 	for i := 0; i < maxFollowupQueue; i++ {
 		pos, err := b.StartTask(StartTaskOpts{
 			ThreadID: threadID,
 			Proj:     projectRef{Name: "app", Cwd: projPath},
 			Prompt:   fmt.Sprintf("q%d", i),
-			Actor:    Actor{ID: "u", DisplayName: "U"},
+			Actor:    Actor{ID: fmt.Sprintf("u%d", i), DisplayName: fmt.Sprintf("U%d", i)},
 			Source:   SourceWeb,
 		})
 		if err != nil {
@@ -550,7 +551,7 @@ func TestStartTaskQueueFull(t *testing.T) {
 		ThreadID: threadID,
 		Proj:     projectRef{Name: "app", Cwd: projPath},
 		Prompt:   "overflow",
-		Actor:    Actor{ID: "u", DisplayName: "U"},
+		Actor:    Actor{ID: "u-overflow", DisplayName: "Overflow"},
 		Source:   SourceWeb,
 	})
 	if err != errQueueFull {

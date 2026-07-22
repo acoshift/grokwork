@@ -55,6 +55,17 @@ type TaskRecord struct {
 	CreatedAt        string   `json:"createdAt"`
 	StartedAt        string   `json:"startedAt,omitempty"`
 	Attempt          int      `json:"attempt"`
+
+	// Social queue + policy snapshot (Wave 1).
+	AuthorID      string   `json:"authorId,omitempty"`
+	AuthorName    string   `json:"authorName,omitempty"`
+	IntentPreview string   `json:"intentPreview,omitempty"`
+	SnapMode      string   `json:"snapMode,omitempty"`
+	SnapPhase     string   `json:"snapPhase,omitempty"`
+	SnapRunKind   string   `json:"snapRunKind,omitempty"`
+	SnapAllowPR   bool     `json:"snapAllowPR,omitempty"`
+	SnapAllowDirect bool   `json:"snapAllowDirect,omitempty"`
+	RoleIDs       []string `json:"roleIds,omitempty"`
 }
 
 // Journal is one thread's durable active run + FIFO queue.

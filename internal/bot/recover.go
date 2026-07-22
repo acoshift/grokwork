@@ -284,6 +284,19 @@ func (b *Bot) rehydrateTaskItem(rec runjournal.TaskRecord, proj projectRef, thre
 		referencedPrompt: rec.ReferencedPrompt,
 		triggerMsgID:     rec.TriggerMsgID,
 		statusMsgID:      rec.StatusMsgID,
+		authorID:         rec.AuthorID,
+		authorName:       rec.AuthorName,
+		intentPreview:    rec.IntentPreview,
+		snapMode:         rec.SnapMode,
+		snapPhase:        rec.SnapPhase,
+		snapRunKind:      rec.SnapRunKind,
+		snapAllowPR:      rec.SnapAllowPR,
+		snapAllowDirect:  rec.SnapAllowDirect,
+		roleIDs:          append([]string(nil), rec.RoleIDs...),
+	}
+	if item.authorID == "" {
+		item.authorID = rec.Actor.ID
+		item.authorName = rec.Actor.DisplayName
 	}
 	if item.origin == "" {
 		item.origin = src

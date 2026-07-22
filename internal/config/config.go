@@ -105,6 +105,12 @@ type Config struct {
 	ResumeActiveRuns *bool `json:"resumeActiveRuns,omitempty"`
 	// ShutdownTimeoutMs is how long Bot.Stop waits for drains (default 15000).
 	ShutdownTimeoutMs int `json:"shutdownTimeoutMs,omitempty"`
+	// MaxConcurrentRuns is host-wide active Grok runs (nil/0 = unlimited).
+	MaxConcurrentRuns *int `json:"maxConcurrentRuns,omitempty"`
+	// MaxConcurrentRunsUser is per-actor concurrent runs (nil/0 = unlimited).
+	MaxConcurrentRunsUser *int `json:"maxConcurrentRunsUser,omitempty"`
+	// GrokEnvDenylist is extra env var name prefixes stripped from Grok children (Layer A).
+	GrokEnvDenylist []string `json:"grokEnvDenylist,omitempty"`
 
 	mu         sync.RWMutex
 	DataDir    string `json:"-"`
@@ -469,37 +475,43 @@ func (c *Config) saveLocked() error {
 		AutoFixCI            *bool             `json:"autoFixCI,omitempty"`
 		AutoFixCIMax         int               `json:"autoFixCIMax,omitempty"`
 		BoardStaleDays       *int              `json:"boardStaleDays,omitempty"`
-		BoardDigestChannel   string            `json:"boardDigestChannel,omitempty"`
-		ResumeActiveRuns     *bool             `json:"resumeActiveRuns,omitempty"`
-		ShutdownTimeoutMs    int               `json:"shutdownTimeoutMs,omitempty"`
+		BoardDigestChannel    string            `json:"boardDigestChannel,omitempty"`
+		ResumeActiveRuns      *bool             `json:"resumeActiveRuns,omitempty"`
+		ShutdownTimeoutMs     int               `json:"shutdownTimeoutMs,omitempty"`
+		MaxConcurrentRuns     *int              `json:"maxConcurrentRuns,omitempty"`
+		MaxConcurrentRunsUser *int              `json:"maxConcurrentRunsUser,omitempty"`
+		GrokEnvDenylist       []string          `json:"grokEnvDenylist,omitempty"`
 	}{
-		DiscordToken:         c.DiscordToken,
-		DiscordClientID:      c.DiscordClientID,
-		DiscordClientSecret:  c.DiscordClientSecret,
-		Projects:             cloneProjectsMap(c.Projects),
-		Channels:             cloneStringMap(c.Channels),
-		GrokBin:              c.GrokBin,
-		Yolo:                 c.Yolo,
-		Model:                c.Model,
-		MaxTurns:             c.MaxTurns,
-		TimeoutMs:            c.TimeoutMs,
-		ExtraArgs:            slices.Clone(c.ExtraArgs),
-		SummarizeThreadTitle: c.SummarizeThreadTitle,
-		SummarizeTimeoutMs:   c.SummarizeTimeoutMs,
-		WorktreeIsolation:    c.WorktreeIsolation,
-		WorktreeIdleTTLDays:  cloneIntPtr(c.WorktreeIdleTTLDays),
-		HTTPListen:           c.HTTPListen,
-		WebPublicBaseURL:     c.WebPublicBaseURL,
-		DiscordGuildID:       c.DiscordGuildID,
-		WebMergeMethod:       c.WebMergeMethod,
-		WebAuth:              cloneWebAuth(c.WebAuth),
-		RiskyPathGlobs:       slices.Clone(c.RiskyPathGlobs),
-		AutoFixCI:            c.AutoFixCI,
-		AutoFixCIMax:         c.AutoFixCIMax,
-		BoardStaleDays:       cloneIntPtr(c.BoardStaleDays),
-		BoardDigestChannel:   c.BoardDigestChannel,
-		ResumeActiveRuns:     cloneBoolPtr(c.ResumeActiveRuns),
-		ShutdownTimeoutMs:    c.ShutdownTimeoutMs,
+		DiscordToken:          c.DiscordToken,
+		DiscordClientID:       c.DiscordClientID,
+		DiscordClientSecret:   c.DiscordClientSecret,
+		Projects:              cloneProjectsMap(c.Projects),
+		Channels:              cloneStringMap(c.Channels),
+		GrokBin:               c.GrokBin,
+		Yolo:                  c.Yolo,
+		Model:                 c.Model,
+		MaxTurns:              c.MaxTurns,
+		TimeoutMs:             c.TimeoutMs,
+		ExtraArgs:             slices.Clone(c.ExtraArgs),
+		SummarizeThreadTitle:  c.SummarizeThreadTitle,
+		SummarizeTimeoutMs:    c.SummarizeTimeoutMs,
+		WorktreeIsolation:     c.WorktreeIsolation,
+		WorktreeIdleTTLDays:   cloneIntPtr(c.WorktreeIdleTTLDays),
+		HTTPListen:            c.HTTPListen,
+		WebPublicBaseURL:      c.WebPublicBaseURL,
+		DiscordGuildID:        c.DiscordGuildID,
+		WebMergeMethod:        c.WebMergeMethod,
+		WebAuth:               cloneWebAuth(c.WebAuth),
+		RiskyPathGlobs:        slices.Clone(c.RiskyPathGlobs),
+		AutoFixCI:             c.AutoFixCI,
+		AutoFixCIMax:          c.AutoFixCIMax,
+		BoardStaleDays:        cloneIntPtr(c.BoardStaleDays),
+		BoardDigestChannel:    c.BoardDigestChannel,
+		ResumeActiveRuns:      cloneBoolPtr(c.ResumeActiveRuns),
+		ShutdownTimeoutMs:     c.ShutdownTimeoutMs,
+		MaxConcurrentRuns:     cloneIntPtr(c.MaxConcurrentRuns),
+		MaxConcurrentRunsUser: cloneIntPtr(c.MaxConcurrentRunsUser),
+		GrokEnvDenylist:       slices.Clone(c.GrokEnvDenylist),
 	}
 	raw, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {

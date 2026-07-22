@@ -30,6 +30,34 @@ func TestHelpTextFitsDiscordChunks(t *testing.T) {
 	}
 }
 
+func TestParseStartAndQueueCommands(t *testing.T) {
+	p := ParseMessage("<@1> /start investigate why timeout", "1")
+	if p.Kind != KindStartInvestigate || !strings.Contains(p.Prompt, "timeout") {
+		t.Fatalf("got kind=%d prompt=%q", p.Kind, p.Prompt)
+	}
+	p = ParseMessage("<@1> /investigate flaky test", "1")
+	if p.Kind != KindStartInvestigate {
+		t.Fatalf("kind=%d", p.Kind)
+	}
+	p = ParseMessage("<@1> /queue", "1")
+	if p.Kind != KindQueue {
+		t.Fatalf("kind=%d", p.Kind)
+	}
+	p = ParseMessage("<@1> /dequeue 2", "1")
+	if p.Kind != KindDequeue || strings.TrimSpace(p.Arg) != "2" {
+		t.Fatalf("kind=%d arg=%q", p.Kind, p.Arg)
+	}
+	p = ParseMessage("<@1> /cancel-mine", "1")
+	if p.Kind != KindCancelMine {
+		t.Fatalf("kind=%d", p.Kind)
+	}
+	// freeform "investigate timeout" stays a task
+	p = ParseMessage("<@1> investigate timeout", "1")
+	if p.Kind != KindTask {
+		t.Fatalf("freeform investigate should be task, kind=%d", p.Kind)
+	}
+}
+
 func TestParseMessage(t *testing.T) {
 	p := ParseMessage("<@123> project:app fix bug", "123")
 	if p.Kind != KindTask || p.Prompt != "project:app fix bug" {

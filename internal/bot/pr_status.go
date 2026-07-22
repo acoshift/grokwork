@@ -646,6 +646,7 @@ func preservePRFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	preserveIssueFields(next, prev)
 	preserveWorkflowFields(next, prev)
 	preserveShipFields(next, prev)
+	preserveModeFields(next, prev)
 }
 
 // preserveShipFields copies direct-to-primary ship metadata across session Set rebuilds.
@@ -664,5 +665,15 @@ func preserveShipFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	}
 	if next.PrimaryBranch == "" {
 		next.PrimaryBranch = prev.PrimaryBranch
+	}
+}
+
+// preserveModeFields copies Wave-1 session Mode across executeTask Set rebuilds.
+func preserveModeFields(next *sessionstore.Entry, prev sessionstore.Entry) {
+	if next == nil {
+		return
+	}
+	if next.Mode == "" {
+		next.Mode = prev.Mode
 	}
 }

@@ -34,8 +34,16 @@ type ProjectConfig struct {
 	// DirectToPrimary, when true, new sessions stamp ShipMode=direct and ship
 	// via fast-forward push to the project primary (no PR). nil/false = PR mode.
 	DirectToPrimary *bool                 `json:"directToPrimary,omitempty"`
-	GitHub          *ProjectGitHubConfig  `json:"github,omitempty"`
-	Linear          *ProjectLinearConfig  `json:"linear,omitempty"`
+	// SafeTeamMode enables capability templates (K16). nil/false → legacy builder default.
+	SafeTeamMode            *bool                    `json:"safeTeamMode,omitempty"`
+	SafeTeamDefaultTemplate string                   `json:"safeTeamDefaultTemplate,omitempty"` // default investigator
+	DefaultMode             string                   `json:"defaultMode,omitempty"`             // investigate|fix|… empty=legacy
+	CapabilityTemplates     map[string]Capabilities  `json:"capabilityTemplates,omitempty"`
+	CapabilityByRole        map[string]string        `json:"capabilityByRole,omitempty"` // Discord role ID → template
+	CapabilityByUser        map[string]string        `json:"capabilityByUser,omitempty"` // Discord user ID → template
+	InvestigateTools        string                   `json:"investigateTools,omitempty"` // comma tools allowlist
+	GitHub                  *ProjectGitHubConfig     `json:"github,omitempty"`
+	Linear                  *ProjectLinearConfig     `json:"linear,omitempty"`
 }
 
 // ProjectsMap is project name → config. JSON accepts either a path string or a full object.
@@ -108,15 +116,22 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 	}
 	// Always write object form so Linear/GitHub fields round-trip.
 	type outObj struct {
-		Path                     string               `json:"path"`
-		DiscordChannelID         string               `json:"discordChannelId,omitempty"`
-		DiscordGuildID           string               `json:"discordGuildId,omitempty"`
-		AllowedUserIDs           []string             `json:"allowedUserIds,omitempty"`
-		AllowedRoleIDs           []string             `json:"allowedRoleIds,omitempty"`
-		RepoFetchIntervalMinutes *int                 `json:"repoFetchIntervalMinutes,omitempty"`
-		DirectToPrimary          *bool                `json:"directToPrimary,omitempty"`
-		GitHub                   *ProjectGitHubConfig `json:"github,omitempty"`
-		Linear                   *ProjectLinearConfig `json:"linear,omitempty"`
+		Path                     string                  `json:"path"`
+		DiscordChannelID         string                  `json:"discordChannelId,omitempty"`
+		DiscordGuildID           string                  `json:"discordGuildId,omitempty"`
+		AllowedUserIDs           []string                `json:"allowedUserIds,omitempty"`
+		AllowedRoleIDs           []string                `json:"allowedRoleIds,omitempty"`
+		RepoFetchIntervalMinutes *int                    `json:"repoFetchIntervalMinutes,omitempty"`
+		DirectToPrimary          *bool                   `json:"directToPrimary,omitempty"`
+		SafeTeamMode             *bool                   `json:"safeTeamMode,omitempty"`
+		SafeTeamDefaultTemplate  string                  `json:"safeTeamDefaultTemplate,omitempty"`
+		DefaultMode              string                  `json:"defaultMode,omitempty"`
+		CapabilityTemplates      map[string]Capabilities `json:"capabilityTemplates,omitempty"`
+		CapabilityByRole         map[string]string       `json:"capabilityByRole,omitempty"`
+		CapabilityByUser         map[string]string       `json:"capabilityByUser,omitempty"`
+		InvestigateTools         string                  `json:"investigateTools,omitempty"`
+		GitHub                   *ProjectGitHubConfig    `json:"github,omitempty"`
+		Linear                   *ProjectLinearConfig    `json:"linear,omitempty"`
 	}
 	out := make(map[string]outObj, len(m))
 	for name, pc := range m {
@@ -128,6 +143,13 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			AllowedRoleIDs:           slices.Clone(pc.AllowedRoleIDs),
 			RepoFetchIntervalMinutes: cloneIntPtr(pc.RepoFetchIntervalMinutes),
 			DirectToPrimary:          cloneBoolPtr(pc.DirectToPrimary),
+			SafeTeamMode:             cloneBoolPtr(pc.SafeTeamMode),
+			SafeTeamDefaultTemplate:  pc.SafeTeamDefaultTemplate,
+			DefaultMode:              pc.DefaultMode,
+			CapabilityTemplates:      cloneCapabilitiesMap(pc.CapabilityTemplates),
+			CapabilityByRole:         cloneStringMap(pc.CapabilityByRole),
+			CapabilityByUser:         cloneStringMap(pc.CapabilityByUser),
+			InvestigateTools:         pc.InvestigateTools,
 			GitHub:                   cloneProjectGitHub(pc.GitHub),
 			Linear:                   cloneProjectLinear(pc.Linear),
 		}
@@ -157,6 +179,13 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			AllowedRoleIDs:           slices.Clone(v.AllowedRoleIDs),
 			RepoFetchIntervalMinutes: cloneIntPtr(v.RepoFetchIntervalMinutes),
 			DirectToPrimary:          cloneBoolPtr(v.DirectToPrimary),
+			SafeTeamMode:             cloneBoolPtr(v.SafeTeamMode),
+			SafeTeamDefaultTemplate:  v.SafeTeamDefaultTemplate,
+			DefaultMode:              v.DefaultMode,
+			CapabilityTemplates:      cloneCapabilitiesMap(v.CapabilityTemplates),
+			CapabilityByRole:         cloneStringMap(v.CapabilityByRole),
+			CapabilityByUser:         cloneStringMap(v.CapabilityByUser),
+			InvestigateTools:         v.InvestigateTools,
 			GitHub:                   cloneProjectGitHub(v.GitHub),
 			Linear:                   cloneProjectLinear(v.Linear),
 		}

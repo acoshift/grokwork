@@ -26,12 +26,20 @@ const (
 	KindBoard
 	KindLink
 	KindReview
+	KindQueue
+	KindDequeue
+	KindCancelMine
+	KindStartInvestigate
+	KindStartFix
+	KindStartExplain
 	KindTask
 )
 
 type Parsed struct {
 	Kind   Kind
 	Prompt string
+	// Arg is optional argument text (queue index, start body, etc.).
+	Arg string
 }
 
 var mentionRE = regexp.MustCompile(`<@!?\d+>`)
@@ -73,8 +81,18 @@ func ParseMessage(content, botUserID string) Parsed {
 		return Parsed{Kind: KindLink, Prompt: text}
 	case "/review", "review":
 		return Parsed{Kind: KindReview, Prompt: text}
+	case "/queue", "queue":
+		return Parsed{Kind: KindQueue, Prompt: text}
+	case "/cancel-mine", "cancel-mine", "/cancelmine", "cancelmine":
+		return Parsed{Kind: KindCancelMine, Prompt: text}
 	}
 
+	if isStartCommand(lower, text) {
+		return parseStartCommand(text)
+	}
+	if isDequeueCommand(lower) {
+		return Parsed{Kind: KindDequeue, Prompt: text, Arg: strings.TrimSpace(text[len("/dequeue"):])}
+	}
 	if isHandOffCommand(lower) {
 		return Parsed{Kind: KindHandOff, Prompt: text}
 	}
@@ -133,6 +151,51 @@ func isReviewCommand(lower string) bool {
 func isLinkCommand(lower string) bool {
 	// "/link …" and "/unlink …" always commands. Bare "link the docs" stays a task.
 	return strings.HasPrefix(lower, "/link ") || strings.HasPrefix(lower, "/unlink ")
+}
+
+func isDequeueCommand(lower string) bool {
+	return strings.HasPrefix(lower, "/dequeue ") || lower == "/dequeue"
+}
+
+func isStartCommand(lower, text string) bool {
+	return strings.HasPrefix(lower, "/start ") || lower == "/start" ||
+		strings.HasPrefix(lower, "/investigate ") || lower == "/investigate"
+}
+
+func parseStartCommand(text string) Parsed {
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return Parsed{Kind: KindTask, Prompt: text}
+	}
+	cmd := strings.ToLower(fields[0])
+	rest := strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
+	switch cmd {
+	case "/start":
+		if rest == "" {
+			return Parsed{Kind: KindHelp, Prompt: text}
+		}
+		subFields := strings.Fields(rest)
+		sub := strings.ToLower(subFields[0])
+		body := ""
+		if len(subFields) > 1 {
+			body = strings.TrimSpace(rest[len(subFields[0]):])
+		}
+		switch sub {
+		case "investigate":
+			return Parsed{Kind: KindStartInvestigate, Prompt: body, Arg: sub}
+		case "fix":
+			return Parsed{Kind: KindStartFix, Prompt: body, Arg: sub}
+		case "explain":
+			return Parsed{Kind: KindStartExplain, Prompt: body, Arg: sub}
+		default:
+			// /start <freeform as investigate-or-fix via default>
+			return Parsed{Kind: KindStartFix, Prompt: rest, Arg: "fix"}
+		}
+	case "/investigate":
+		return Parsed{Kind: KindStartInvestigate, Prompt: rest, Arg: "investigate"}
+	default:
+		return Parsed{Kind: KindTask, Prompt: text}
+	}
 }
 
 func stripBotMention(content, botUserID string) string {
@@ -221,11 +284,17 @@ func HelpText() string {
 		"• `/reset` — forget this thread's session and remove its worktree (owner/mod)",
 		"• `/fix-ci` — fetch failing CI checks and queue a minimal fix on this PR branch",
 		"• `/cancel` — stop the current run (owner/mod; queued follow-ups still run)",
+		"• `/queue` — list queued follow-ups (author + intent)",
+		"• `/dequeue N` — remove queue item N (1-based; owner/mod or your own)",
+		"• `/cancel-mine` — remove your queued items",
+		"• `/start investigate|fix|explain <task>` — set session mode and run",
+		"• `/investigate <task>` — read-only investigate (no PR / no direct ship)",
 		"• `/help` — this message",
 		"",
 		"**Run action bar** — buttons on the live status / done message and `/status`:",
 		"Cancel · Continue (modal) · Reset (confirm) · History (admin UI path)",
 		"",
 		"Anyone may queue tasks (soft open). Cancel/reset: thread owner, co-owners, or Discord mods (Manage Messages / Manage Threads / Admin).",
+		"Investigate mode never opens PRs or ships to primary. SafeTeamMode maps unmapped users to investigator.",
 	}, "\n")
 }

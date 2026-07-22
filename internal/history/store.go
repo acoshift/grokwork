@@ -27,6 +27,11 @@ type Turn struct {
 	Project   string `json:"project,omitempty"`
 	SessionID string `json:"sessionId,omitempty"`
 	MessageID string `json:"messageId,omitempty"`
+	// Wave 1 classification (optional on older records).
+	RunKind string `json:"runKind,omitempty"` // fix|investigate|explain|fix_ci|…
+	Mode    string `json:"mode,omitempty"`    // session mode at turn time
+	Phase   string `json:"phase,omitempty"`
+	Preset  string `json:"preset,omitempty"`
 }
 
 // DisplayError returns a user-visible error line for the history UI.

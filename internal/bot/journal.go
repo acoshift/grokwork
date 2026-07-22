@@ -170,6 +170,12 @@ func taskRecordFromItem(item taskItem, status runjournal.Status) runjournal.Task
 	if trigger == "" && item.m != nil {
 		trigger = item.m.ID
 	}
+	authorID := item.authorID
+	authorName := item.authorName
+	if authorID == "" {
+		authorID = item.actor.ID
+		authorName = item.actor.DisplayName
+	}
 	return runjournal.TaskRecord{
 		ID:               id,
 		Status:           status,
@@ -189,6 +195,15 @@ func taskRecordFromItem(item taskItem, status runjournal.Status) runjournal.Task
 		CreatedAt:        now,
 		StartedAt:        now,
 		Attempt:          attempt,
+		AuthorID:         authorID,
+		AuthorName:       authorName,
+		IntentPreview:    item.intentPreview,
+		SnapMode:         item.snapMode,
+		SnapPhase:        item.snapPhase,
+		SnapRunKind:      item.snapRunKind,
+		SnapAllowPR:      item.snapAllowPR,
+		SnapAllowDirect:  item.snapAllowDirect,
+		RoleIDs:          append([]string(nil), item.roleIDs...),
 	}
 }
 

@@ -41,6 +41,9 @@ type Options struct {
 	// JSONSchema, when set, passes --json-schema so the model is constrained to
 	// that shape (implies --output-format json in the CLI).
 	JSONSchema string
+	// Env, when non-nil, is used as the child process environment instead of os.Environ().
+	// Callers should pass a fully built env (Layer A filter, token omit, etc.).
+	Env []string
 
 	// OnTextDelta/OnThought enable streaming-json output.
 	OnTextDelta func(delta string)
@@ -245,7 +248,11 @@ func Run(ctx context.Context, opt Options) Result {
 
 	cmd := exec.CommandContext(ctx, opt.GrokBin, args...)
 	cmd.Dir = opt.Cwd
-	cmd.Env = os.Environ()
+	if opt.Env != nil {
+		cmd.Env = opt.Env
+	} else {
+		cmd.Env = os.Environ()
+	}
 	setProcessGroup(cmd)
 
 	var stderr bytes.Buffer

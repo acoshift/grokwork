@@ -71,6 +71,10 @@ type Entry struct {
 	ShippedSHA    string `json:"shippedSha,omitempty"`
 	ShippedAt     string `json:"shippedAt,omitempty"` // RFC3339
 	PrimaryBranch string `json:"primaryBranch,omitempty"`
+
+	// Mode is the session run mode: "" (legacy fix), "investigate", "explain", "fix", "case".
+	// Orthogonal to ShipMode (K27). Empty = eng fix default for capable actors.
+	Mode string `json:"mode,omitempty"`
 }
 
 // Ship mode values for Entry.ShipMode.

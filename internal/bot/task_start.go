@@ -196,6 +196,8 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 		discordURL:      opts.DiscordURL,
 		taskID:          taskID,
 		attempt:         1,
+		authorID:        opts.Actor.ID,
+		authorName:      opts.Actor.DisplayName,
 	}
 	if item.origin == "" {
 		item.origin = src
@@ -204,6 +206,7 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 		item.createdBy = opts.Actor.ID
 		item.createdByName = opts.Actor.DisplayName
 	}
+	b.snapshotPolicyOntoItem(&item, opts.Proj.Name, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &runJob{cancel: cancel, start: time.Now(), project: opts.Proj.Name}

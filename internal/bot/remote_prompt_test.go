@@ -59,6 +59,13 @@ func TestIssueBindingPromptInPrefixChain(t *testing.T) {
 	}
 }
 
+func TestAttributionInShipPrefix(t *testing.T) {
+	p := remoteWorkPromptPrefix("grok/discord/1") + attributionFooter("bob", "42", "https://discord.com/x")
+	if !strings.Contains(p, "Prompter: bob") || !strings.Contains(p, "42") || !strings.Contains(p, "https://discord.com/x") {
+		t.Fatalf("missing attribution:\n%s", p)
+	}
+}
+
 func TestRemoteWorkPromptPrefixDirect(t *testing.T) {
 	p := remoteWorkPromptPrefixMode("grok/discord/123", true)
 	for _, want := range []string{
