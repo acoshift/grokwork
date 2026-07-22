@@ -8,3 +8,4 @@ config.json
 .idea/
 *.iml
 restart.sh
+.worktrees/
