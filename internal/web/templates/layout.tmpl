@@ -1534,59 +1534,78 @@
     .toolbar .field-sm input[type=number] { width: 5.5rem; }
     .toolbar button, .toolbar .btn { height: 2.5rem; flex: 0 0 auto; }
 
-    /* ── Pager (commits list, etc.) ──────────────────────────────────── */
+    /* ── Pager (commits list, etc.) ──────────────────────────────────────
+       Ledger footer: mono range readout on the left, a joined Newer/Older
+       capsule on the right. ← / → keys click [data-pager-prev/next]. */
     .pager {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      justify-content: space-between;
-      gap: 0.5rem 1rem;
-      margin-top: 0.9rem;
-      padding: 0.55rem 0.15rem 0.1rem;
+      gap: 0.6rem 1rem;
+      margin-top: 1rem;
+      padding-top: 0.7rem;
       border-top: 1px solid var(--border);
-      font-size: 0.88rem;
     }
-    .pager-status {
+    .pager-readout {
+      margin: 0;
       color: var(--muted);
-      font-size: 0.84rem;
-      letter-spacing: 0.01em;
-      flex: 1 1 auto;
-      text-align: center;
-      min-width: 4.5rem;
+      font-size: 0.82rem;
+      letter-spacing: 0.02em;
+    }
+    .pager-num {
+      color: var(--text);
+      font-size: 0.88rem;
+      font-weight: 550;
+      font-variant-numeric: tabular-nums;
+    }
+    .pager-dot { margin: 0 0.15rem; color: var(--muted-soft); }
+    .pager-nav {
+      display: inline-flex;
+      align-items: stretch;
+      margin-left: auto;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+      overflow: hidden;
     }
     .pager-link {
       display: inline-flex;
       align-items: center;
-      gap: 0.28rem;
+      gap: 0.32rem;
+      padding: 0.34rem 0.9rem;
+      min-height: 2rem;
       color: var(--text);
+      font-size: 0.85rem;
       font-weight: 550;
       text-decoration: none;
-      padding: 0.35rem 0.55rem;
-      border-radius: 999px;
-      min-height: 1.85rem;
       transition: background 0.12s ease, color 0.12s ease;
     }
-    .pager-link:hover {
-      background: var(--surface-l2);
-      color: var(--text);
+    .pager-link + .pager-link { border-left: 1px solid var(--border); }
+    a.pager-link:hover {
+      background: var(--button);
+      color: var(--button-fg);
       text-decoration: none;
     }
     .pager-link:focus-visible {
       outline: none;
-      box-shadow: 0 0 0 3px var(--ring-strong);
+      box-shadow: inset 0 0 0 2px var(--focus-border);
     }
     .pager-link.is-disabled {
       color: var(--muted-soft);
+      background: var(--surface-l1);
       pointer-events: none;
       cursor: default;
-      opacity: 0.7;
     }
     .pager-chevron {
       font-size: 1.15em;
       line-height: 1;
       font-weight: 500;
       translate: 0 -0.02em;
+      transition: translate 0.12s ease;
     }
+    a[data-pager-prev]:hover .pager-chevron { translate: -0.14em -0.02em; }
+    a[data-pager-next]:hover .pager-chevron { translate: 0.14em -0.02em; }
 
     /* ── Conversation turns ──────────────────────────────────────────── */
     .turns { display: flex; flex-direction: column; gap: 1.1rem; }
@@ -2115,6 +2134,18 @@
         if (el.form.requestSubmit) el.form.requestSubmit();
         else el.form.submit();
       }
+    });
+
+    // ← / → page through any on-page pager (commits list). Skipped while
+    // typing so text-field caret movement is untouched.
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      var t = e.target;
+      if (t instanceof Element && (t.matches("input, textarea, select") || t.isContentEditable)) return;
+      var sel = e.key === "ArrowLeft" ? "a[data-pager-prev]" : "a[data-pager-next]";
+      var link = document.querySelector(".pager " + sel);
+      if (link) { e.preventDefault(); link.click(); }
     });
 
     // Pause domain partial swaps while a field is focused (e.g. ship digest select).

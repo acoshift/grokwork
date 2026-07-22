@@ -1209,11 +1209,15 @@ func TestCommitsListPagination(t *testing.T) {
 	if !strings.Contains(body, `aria-label="Commits pagination"`) {
 		t.Fatal("expected pager on multi-page list")
 	}
-	if !strings.Contains(body, "Page 1") {
-		t.Fatalf("missing page status: %s", body)
+	if !strings.Contains(body, `commits <span class="pager-num mono">1–50</span>`) ||
+		!strings.Contains(body, `page <span class="pager-num mono">1</span>`) {
+		t.Fatalf("missing range readout: %s", body)
 	}
-	if !strings.Contains(body, `page=2`) || !strings.Contains(body, `aria-label="Next page"`) {
-		t.Fatalf("missing next link: %s", body)
+	if !strings.Contains(body, `page=2`) || !strings.Contains(body, `data-pager-next rel="next"`) {
+		t.Fatalf("missing next (Older) link: %s", body)
+	}
+	if strings.Contains(body, `data-pager-prev rel="prev"`) { // page 1: Newer renders disabled
+		t.Fatal("page 1 must not link a newer page")
 	}
 	if strings.Contains(body, "Commit 50") { // 0-based index 50 is page 2
 		t.Fatal("page 1 must not include commit 50")
@@ -1232,14 +1236,18 @@ func TestCommitsListPagination(t *testing.T) {
 	if lastSkip != "50" {
 		t.Fatalf("page 2 want skip 50 got %q", lastSkip)
 	}
-	if !strings.Contains(body, "Page 2") || !strings.Contains(body, `page=1`) {
-		t.Fatalf("page 2 missing status/prev: %s", body)
+	if !strings.Contains(body, `commits <span class="pager-num mono">51–60</span>`) ||
+		!strings.Contains(body, `page <span class="pager-num mono">2</span>`) {
+		t.Fatalf("page 2 missing range readout: %s", body)
+	}
+	if !strings.Contains(body, `page=1`) || !strings.Contains(body, `data-pager-prev rel="prev"`) {
+		t.Fatalf("page 2 missing prev (Newer) link: %s", body)
 	}
 	if !strings.Contains(body, "Commit 50") {
 		t.Fatalf("page 2 missing later commits: %s", body)
 	}
-	// 60 total → page 2 has 10 rows, no third page.
-	if strings.Contains(body, `page=3`) {
+	// 60 total → page 2 has 10 rows, no third page; Older renders disabled.
+	if strings.Contains(body, `page=3`) || strings.Contains(body, `data-pager-next rel="next"`) {
 		t.Fatal("should not offer page 3 when history ends")
 	}
 }

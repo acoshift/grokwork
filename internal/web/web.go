@@ -385,7 +385,11 @@ type pageData struct {
 	CommitPage      int
 	CommitHasPrev   bool
 	CommitHasNext   bool
-	CanReviewCommit bool
+	// 1-based position of the first/last row on this page within the full
+	// log (total is unknown — git log has no cheap count). Zero when empty.
+	CommitRangeStart int
+	CommitRangeEnd   int
+	CanReviewCommit  bool
 	// Write UI flags (from config snapshot + session)
 	CanGitHubWrite  bool
 	CanMerge        bool

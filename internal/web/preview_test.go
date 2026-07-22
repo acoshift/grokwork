@@ -35,7 +35,9 @@ func TestPreviewServer(t *testing.T) {
 	dir := t.TempDir()
 	mkProj := func(name string) string {
 		p := filepath.Join(dir, name)
-		if err := os.MkdirAll(p, 0o755); err != nil {
+		// .git marker so ResolveLocalRepo treats the project as a checkout and
+		// the commits browser renders; every git call hits the fake runner.
+		if err := os.MkdirAll(filepath.Join(p, ".git"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		return p
@@ -411,6 +413,44 @@ func previewFilePatch(f previewFile) string {
 	return b.String()
 }
 
+// previewCommitRows returns a deterministic 137-commit history (newest first,
+// git log \x1f-delimited format) so the commits browser shows 3 pages at the
+// 50-row page size: full first pages plus a short tail.
+func previewCommitRows(headSHA string) []string {
+	rows := []string{
+		headSHA + "\x1fRework billing pipeline into async ledger jobs\x1fGrok\x1fgrok@grokwork.local\x1f2026-07-21T09:14:00Z",
+		"b7d21c3aa90f14e2d6c88b5f0a3e97d1c2f4a6b8\x1fweb: invoice detail drawer\x1fmint\x1fmint@acme.dev\x1f2026-07-20T17:41:00Z",
+		"9e04f7d2c5b8a1e6f3d0c9b4a7e2f5d8c1b6a3e0\x1ffix: webhook retry off-by-one\x1fpoon\x1fpoon@acme.dev\x1f2026-07-20T11:08:00Z",
+	}
+	subjects := []string{
+		"web: tighten invoice table spacing",
+		"fix: ledger settle job idempotency key",
+		"refactor: extract webhook signature check",
+		"chore: bump payment SDK",
+		"feat: per-order retry debounce window",
+		"test: checkout webhook burst e2e",
+		"docs: settlement flow runbook",
+		"perf: batch ledger row inserts",
+	}
+	authors := [][2]string{
+		{"Grok", "grok@grokwork.local"},
+		{"mint", "mint@acme.dev"},
+		{"poon", "poon@acme.dev"},
+	}
+	base := time.Date(2026, 7, 20, 8, 30, 0, 0, time.UTC)
+	for i := 0; len(rows) < 137; i++ {
+		h := uint64(i)*0x9E3779B97F4A7C15 + 0xC0FFEE
+		sha := fmt.Sprintf("%016x%016x%08x", h, h*0xD1B54A32D192ED03, uint32(i)+0xabcde01)
+		au := authors[i%len(authors)]
+		rows = append(rows, fmt.Sprintf("%s\x1f%s\x1f%s\x1f%s\x1f%s",
+			sha,
+			subjects[i%len(subjects)],
+			au[0], au[1],
+			base.Add(-time.Duration(i)*7*time.Hour).Format(time.RFC3339)))
+	}
+	return rows
+}
+
 // previewGitRunner fakes git/gh for the commits browser and diff review UI.
 func previewGitRunner() func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 	files := previewChangeset()
@@ -421,10 +461,23 @@ func previewGitRunner() func(ctx context.Context, dir, name string, args ...stri
 		joined := strings.Join(args, " ")
 		switch {
 		case name == "git" && strings.HasPrefix(joined, "log"):
-			rows := []string{
-				sha + "\x1fRework billing pipeline into async ledger jobs\x1fGrok\x1fgrok@grokwork.local\x1f2026-07-21T09:14:00Z",
-				"b7d21c3aa90f14e2d6c88b5f0a3e97d1c2f4a6b8\x1fweb: invoice detail drawer\x1fmint\x1fmint@acme.dev\x1f2026-07-20T17:41:00Z",
-				"9e04f7d2c5b8a1e6f3d0c9b4a7e2f5d8c1b6a3e0\x1ffix: webhook retry off-by-one\x1fpoon\x1fpoon@acme.dev\x1f2026-07-20T11:08:00Z",
+			// Honor -n / --skip so the commits pager renders multiple pages.
+			limit, skip := 50, 0
+			for i, a := range args {
+				if a == "-n" && i+1 < len(args) {
+					limit, _ = strconv.Atoi(args[i+1])
+				}
+				if a == "--skip" && i+1 < len(args) {
+					skip, _ = strconv.Atoi(args[i+1])
+				}
+			}
+			rows := previewCommitRows(sha)
+			if skip >= len(rows) {
+				return []byte{}, nil
+			}
+			rows = rows[skip:]
+			if limit > 0 && limit < len(rows) {
+				rows = rows[:limit]
 			}
 			return []byte(strings.Join(rows, "\n") + "\n"), nil
 		case name == "git" && strings.HasPrefix(joined, "rev-parse"):

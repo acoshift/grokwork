@@ -89,6 +89,10 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 		d.CommitHasNext = true
 		list = list[:pageSize]
 	}
+	if n := len(list); n > 0 {
+		d.CommitRangeStart = skip + 1
+		d.CommitRangeEnd = skip + n
+	}
 	d.Commits = list
 	if d.Error == "" && listErr != nil {
 		d.Error = listErr.Error()
