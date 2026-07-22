@@ -39,7 +39,7 @@
 
 <div class="section card">
   <h2>Description</h2>
-  {{if .PR.Body}}<pre class="pr-body">{{.PR.Body}}</pre>{{if .PR.Truncated}}<p class="muted" style="margin:0.6rem 0 0;font-size:0.8rem">Body truncated.</p>{{end}}{{else}}<p class="muted" style="margin:0">No description.</p>{{end}}
+  {{if .PR.Body}}<div class="md">{{markdown .PR.Body}}</div>{{if .PR.Truncated}}<p class="muted" style="margin:0.6rem 0 0;font-size:0.8rem">Body truncated.</p>{{end}}{{else}}<p class="muted" style="margin:0">No description.</p>{{end}}
 </div>
 
 <div class="section card" id="pr-team-review">

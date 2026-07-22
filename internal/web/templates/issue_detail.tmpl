@@ -21,7 +21,7 @@
     {{range .Issue.Labels}} · <span class="badge">{{.}}</span>{{end}}
     {{if .Issue.Truncated}} · <span class="muted">body truncated</span>{{end}}
   </p>
-  <pre class="bubble-body" style="margin-top:1rem;white-space:pre-wrap;">{{.Issue.Body}}</pre>
+  {{if .Issue.Body}}<div class="md" style="margin-top:1rem">{{markdown .Issue.Body}}</div>{{else}}<p class="muted" style="margin:1rem 0 0">No description.</p>{{end}}
 </div>
 
 {{if .Issue.LinkedPRs}}
@@ -141,7 +141,7 @@
   {{range .Issue.Comments}}
   <div class="card" style="margin-bottom:0.75rem;">
     <div class="muted mono" style="font-size:0.85rem;">{{.Author}}</div>
-    <pre class="bubble-body" style="margin-top:0.5rem;white-space:pre-wrap;">{{.Body}}</pre>
+    {{if .Body}}<div class="md" style="margin-top:0.5rem">{{markdown .Body}}</div>{{end}}
   </div>
   {{else}}
   <div class="empty">No comments.</div>

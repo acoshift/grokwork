@@ -16,7 +16,7 @@
     {{end}}
     · team <span class="mono">{{.LinearIssue.TeamKey}}</span>
   </p>
-  <pre class="bubble-body" style="margin-top:1rem;white-space:pre-wrap;">{{.LinearIssue.Description}}</pre>
+  {{if .LinearIssue.Description}}<div class="md" style="margin-top:1rem">{{markdown .LinearIssue.Description}}</div>{{else}}<p class="muted" style="margin:1rem 0 0">No description.</p>{{end}}
 </div>
 
 {{if and .CanStartSession .LinearEnabled}}

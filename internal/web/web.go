@@ -19,6 +19,7 @@ import (
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/linear"
+	"github.com/acoshift/grokwork/internal/markdown"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -134,6 +135,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	})
 
 	app.TemplateFunc("add", func(a, b int) int { return a + b })
+	app.TemplateFunc("markdown", markdown.Render)
 
 	// One template set per page: layout root for full documents; named {{define}}s
 	// for SSE fragments (ctx.View("dashboard#dashboard_stats", …)).

@@ -457,7 +457,7 @@ func TestPRDetailAndDiff(t *testing.T) {
 		t.Fatalf("pr status=%d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	for _, want := range []string{`id="page-pr-detail"`, "Ship feature", "pr body", "APPROVED", "MERGEABLE"} {
+	for _, want := range []string{`id="page-pr-detail"`, "Ship feature", "pr body", `class="md"`, "APPROVED", "MERGEABLE"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("pr missing %q", want)
 		}

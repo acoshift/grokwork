@@ -5,6 +5,7 @@ go 1.26.5
 require (
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/moonrhythm/hime v1.6.0
+	github.com/yuin/goldmark v1.8.4
 )
 
 require (
