@@ -1,0 +1,59 @@
+{{define "content"}}
+<p class="pr-crumb">
+  <a href="/projects/{{.Project}}">← {{.Project}}</a>
+</p>
+<h1 id="page-start">Start a task <span class="muted" style="font-weight:500;font-size:1.05rem">· {{.Project}}</span></h1>
+<p class="sub">The web equivalent of tagging <span class="mono">@Grok</span> in a mapped channel: describe the work and Grok runs it on a fresh worktree, streaming into a new session.</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if .CanStartSession}}
+{{/* Form stays out of any live region — this page has none — so nothing wipes typed text. */}}
+<div class="section card" id="start-form">
+  <form method="post" action="/projects/{{.Project}}/start">
+    {{template "csrf" $}}
+    <div class="field">
+      <label for="start-title">Title <span class="muted">(optional)</span></label>
+      <input type="text" id="start-title" name="title" placeholder="Short summary — defaults to the prompt">
+    </div>
+    <div class="field">
+      <label for="start-prompt">Task</label>
+      <textarea id="start-prompt" name="prompt" rows="8" required placeholder="Describe what Grok should do…"></textarea>
+    </div>
+    <div class="field">
+      <label for="start-mode">Mode</label>
+      <select id="start-mode" name="mode">
+        {{if eq .StartDefaultMode "fix"}}<option value="">Fix &amp; ship (default)</option>{{else}}<option value="">Project default ({{.StartDefaultMode}})</option>
+        <option value="fix">Fix &amp; ship</option>{{end}}
+        <option value="investigate">Investigate</option>
+        <option value="explain">Explain</option>
+      </select>
+      <p class="rail-note" style="margin-top:0.4rem">Investigate never opens PRs or ships.</p>
+    </div>
+    <div class="form-actions"><button type="submit" id="btn-start">Start task</button></div>
+  </form>
+</div>
+{{else}}
+<div class="section card">
+  <p class="rail-note">Read-only access — starting a task needs a member role with <span class="mono">startSessions</span> enabled.</p>
+</div>
+{{end}}
+
+<div class="section card" id="start-context">
+  <h2>What happens</h2>
+  <p class="sub" style="margin-top:0">
+    Ship mode is fixed per project (set in
+    {{if .IsAdmin}}<a href="/config/projects/{{.Project}}">settings</a>{{else}}project settings{{end}})
+    and stays sticky for the life of the session.
+  </p>
+  <p class="sub" style="margin-top:0.35rem">
+    When a run ships:
+    {{if .StartDirectShip}}<span class="badge">Direct to primary</span> — the bot fast-forwards the project default branch and pushes; no PR.{{else}}<span class="badge">PR mode</span> — the session works on a managed branch and opens a pull request.{{end}}
+  </p>
+  {{if ne .StartDefaultMode "fix"}}<p class="sub" style="margin-top:0.35rem">Project default mode is <span class="mono">{{.StartDefaultMode}}</span> — investigate and explain runs never ship.</p>{{end}}
+  <p class="sub" style="margin-top:0.35rem">
+    Destination:
+    {{if .StartDiscordDest}}opens a Discord thread in this project's mapped channel.{{else}}<span class="mono">web-native</span> — no Discord thread; the run streams here only.{{end}}
+  </p>
+</div>
+{{end}}

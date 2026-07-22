@@ -38,6 +38,12 @@ const (
 	ActionPRReviewCancel      = "pr.review.cancel"
 	ActionPRReviewObsolete    = "pr.review.obsolete"
 	ActionSessionStart        = "session.start" // Fix with Grok / web session start
+	ActionSessionCancel       = "session.cancel"
+	ActionSessionReset        = "session.reset"
+	ActionSessionDequeue      = "session.dequeue"
+	ActionSessionLabel        = "session.label"
+	ActionSessionGoal         = "session.goal"
+	ActionSessionClaim        = "session.claim"
 	ActionCommitReviewStart   = "commit.review.start"
 	ActionGitFetch            = "git.fetch"
 )

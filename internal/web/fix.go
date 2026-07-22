@@ -132,9 +132,9 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 
 	// Start each issue in parallel: gh issue view + Discord thread create dominate latency.
 	type bulkOne struct {
-		n      int
-		res    bot.FixStartResult
-		err    error
+		n   int
+		res bot.FixStartResult
+		err error
 	}
 	out := make([]bulkOne, len(numbers))
 	var wg sync.WaitGroup
@@ -642,6 +642,13 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 	// was browsing (also covers history-only threads with ?project=).
 	if d.NavProject != "" {
 		d.Project = d.NavProject
+	}
+	// Session lifecycle controls: fold the ownership/admin check into the
+	// startSessions gate so control affordances only render when the matching
+	// POST would actually run (auth-off keeps them hidden — the POSTs 404 there).
+	d.CanControlSession = d.CanStartSession && s.canControlSession(ctx, d.SessionEntry)
+	if s.bot != nil {
+		d.QueueItems = s.bot.QueueItems(threadID)
 	}
 	return d
 }

@@ -38,7 +38,7 @@ type Server struct {
 	bot         *bot.Bot
 	app         *hime.App
 	webSessions *sessionStore
-	webUsers    *userStore // durable name/avatar; survives logout
+	webUsers    *userStore   // durable name/avatar; survives logout
 	oauth       DiscordOAuth // nil → HTTPDiscordOAuth
 	audit       *audit.Logger
 	// Test injectables (nil → production defaults).
@@ -86,46 +86,46 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	app.Server().GraceTimeout = time.Millisecond
 
 	app.Routes(hime.Routes{
-		"home":                    "/",
-		"login":                   "/login",
-		"auth.discord":            "/auth/discord",
-		"auth.discord.callback":   "/auth/discord/callback",
-		"logout":                  "/logout",
-		"history":                 "/history",
-		"history.thread":          "/history/",
-		"sessions":                "/sessions",
-		"sessions.thread":         "/sessions/",
-		"ship":                    "/ship",
-		"worktrees":               "/worktrees",
-		"worktrees.prune":         "/worktrees/prune",
-		"worktrees.pruneIdle":     "/worktrees/prune-idle",
-		"config":                  "/config",
-		"config.addProject":       "/config/projects",
-		"config.removeProject":    "/config/projects/remove",
-		"config.setProjectLinear": "/config/projects/linear",
-		"config.setProjectGitHub": "/config/projects/github",
-		"config.setProjectChannel": "/config/projects/channel",
-		"config.setProjectFetch":  "/config/projects/fetch",
-		"config.setProjectShip":   "/config/projects/ship",
-		"config.setProjectSafeTeam": "/config/projects/safe-team",
-		"config.setProjectVerify": "/config/projects/verify",
-		"config.setProjectCapabilityUser": "/config/projects/capabilities/users",
+		"home":                               "/",
+		"login":                              "/login",
+		"auth.discord":                       "/auth/discord",
+		"auth.discord.callback":              "/auth/discord/callback",
+		"logout":                             "/logout",
+		"history":                            "/history",
+		"history.thread":                     "/history/",
+		"sessions":                           "/sessions",
+		"sessions.thread":                    "/sessions/",
+		"ship":                               "/ship",
+		"worktrees":                          "/worktrees",
+		"worktrees.prune":                    "/worktrees/prune",
+		"worktrees.pruneIdle":                "/worktrees/prune-idle",
+		"config":                             "/config",
+		"config.addProject":                  "/config/projects",
+		"config.removeProject":               "/config/projects/remove",
+		"config.setProjectLinear":            "/config/projects/linear",
+		"config.setProjectGitHub":            "/config/projects/github",
+		"config.setProjectChannel":           "/config/projects/channel",
+		"config.setProjectFetch":             "/config/projects/fetch",
+		"config.setProjectShip":              "/config/projects/ship",
+		"config.setProjectSafeTeam":          "/config/projects/safe-team",
+		"config.setProjectVerify":            "/config/projects/verify",
+		"config.setProjectCapabilityUser":    "/config/projects/capabilities/users",
 		"config.removeProjectCapabilityUser": "/config/projects/capabilities/users/remove",
-		"config.setProjectCapabilityRole": "/config/projects/capabilities/roles",
+		"config.setProjectCapabilityRole":    "/config/projects/capabilities/roles",
 		"config.removeProjectCapabilityRole": "/config/projects/capabilities/roles/remove",
-		"config.setGuild":         "/config/guild",
-		"config.addProjectUser":   "/config/projects/users",
-		"config.removeProjectUser": "/config/projects/users/remove",
-		"config.addProjectRole":   "/config/projects/roles",
-		"config.removeProjectRole": "/config/projects/roles/remove",
-		"config.addChannel":       "/config/channels",
-		"config.removeChannel":    "/config/channels/remove",
-		"config.settings":         "/config/settings",
-		"issues":                  "/issues",
-		"issues.project":          "/projects/",
-		"commits":                 "/commits",
-		"pr.detail":               "/prs/",
-		"sse":                     "/events",
+		"config.setGuild":                    "/config/guild",
+		"config.addProjectUser":              "/config/projects/users",
+		"config.removeProjectUser":           "/config/projects/users/remove",
+		"config.addProjectRole":              "/config/projects/roles",
+		"config.removeProjectRole":           "/config/projects/roles/remove",
+		"config.addChannel":                  "/config/channels",
+		"config.removeChannel":               "/config/channels/remove",
+		"config.settings":                    "/config/settings",
+		"issues":                             "/issues",
+		"issues.project":                     "/projects/",
+		"commits":                            "/commits",
+		"pr.detail":                          "/prs/",
+		"sse":                                "/events",
 		// Live partials (htmx SSE domain swaps) — separate URLs so each region
 		// can refresh independently. Fragments render via View("page#define").
 		"partial.home.projects":   "/partials/home/projects",
@@ -174,6 +174,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("reviews", "layout.tmpl", "reviews.tmpl")
 	tp.ParseFiles("diff", "layout.tmpl", "diff.tmpl", "diff_review.tmpl")
 	tp.ParseFiles("session", "layout.tmpl", "session.tmpl")
+	tp.ParseFiles("start", "layout.tmpl", "start.tmpl")
 	tp.ParseFiles("commits", "layout.tmpl", "commits.tmpl")
 	tp.ParseFiles("commit_detail", "layout.tmpl", "commit_detail.tmpl", "diff_review.tmpl")
 
@@ -205,6 +206,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/projects/{name}", s.requireAdmin(hime.Handler(s.projectConfigPage)))
 	// Project workspace (project-first UX): overview + scoped list pages.
 	mux.Handle("GET /projects/{project}", s.requireAuth(hime.Handler(s.projectOverview)))
+	mux.Handle("GET /projects/{project}/start", s.requireAuth(hime.Handler(s.startComposer)))
 	mux.Handle("GET /projects/{project}/ship", s.requireAuth(hime.Handler(s.shipScoped)))
 	mux.Handle("GET /projects/{project}/cases", s.requireAuth(hime.Handler(s.casesScoped)))
 	mux.Handle("GET /projects/{project}/sessions", s.requireAuth(hime.Handler(s.sessionsScoped)))
@@ -242,6 +244,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("prReviews", s.requireMember(hime.Handler(s.postPRReviewCancel))))
 	mux.Handle("GET /reviews", s.requireAuth(hime.Handler(s.myReviews)))
 	mux.Handle("GET /projects/{project}/reviews", s.requireAuth(hime.Handler(s.projectMyReviews)))
+	// Start a freeform task from the web (project workspace composer).
+	mux.Handle("POST /projects/{project}/start",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postStart))))
 	// Fix with Grok (PR11a)
 	mux.Handle("POST /projects/{project}/issues/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssuesBulkFix))))
@@ -256,6 +261,19 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAddressReview))))
 	mux.Handle("POST /sessions/{threadID}/continue",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionContinue))))
+	// Session lifecycle controls (cancel/reset/dequeue/label/goal/claim).
+	mux.Handle("POST /sessions/{threadID}/cancel",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionCancel))))
+	mux.Handle("POST /sessions/{threadID}/reset",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionReset))))
+	mux.Handle("POST /sessions/{threadID}/queue/remove",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionQueueRemove))))
+	mux.Handle("POST /sessions/{threadID}/label",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionLabel))))
+	mux.Handle("POST /sessions/{threadID}/goal",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionGoal))))
+	mux.Handle("POST /sessions/{threadID}/claim",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionClaim))))
 	// Commit review → new Discord/web session; Grok opens issues agentically
 	mux.Handle("POST /projects/{project}/commits/{sha}/review",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCommitReview))))
@@ -335,6 +353,7 @@ type pageData struct {
 	IsLinear    bool
 	IsCommits   bool
 	IsReviews   bool
+	IsStart     bool
 	Flash       string
 	Error       string
 	Status      bot.StatusSnapshot
@@ -346,9 +365,9 @@ type pageData struct {
 	IdleTTLDays int
 	Config      config.Snapshot
 	// Per-project config page (/config/projects/{name}).
-	ProjectItem       config.ProjectItem
-	DiscordUserNames  map[string]string // Discord user id → display name (best-effort)
-	SSEPath           string
+	ProjectItem      config.ProjectItem
+	DiscordUserNames map[string]string // Discord user id → display name (best-effort)
+	SSEPath          string
 	// Project-first shell scope: NavProject switches the sidebar into
 	// workspace mode. URL-derived only (see navScopeFromURL) so history
 	// restores can recompute it client-side.
@@ -383,18 +402,18 @@ type pageData struct {
 	// PR detail shippability strip (nil when the PR snapshot failed to load).
 	PRGates     []prGate
 	PRShipReady bool // every gate green → merge affordance opens expanded
-	DiffBase      string
-	ThreadID      string
+	DiffBase    string
+	ThreadID    string
 	// Diff review UI (commit / session / PR diff pages + per-file fragments)
 	DiffReview *diffReviewData
 	FileFrag   *fileFragData
 	// Commits UI
-	Commits         []ghpr.CommitSummary
-	Commit          ghpr.CommitDetail
-	CommitRef       string
-	CommitPage      int
-	CommitHasPrev   bool
-	CommitHasNext   bool
+	Commits       []ghpr.CommitSummary
+	Commit        ghpr.CommitDetail
+	CommitRef     string
+	CommitPage    int
+	CommitHasPrev bool
+	CommitHasNext bool
 	// 1-based position of the first/last row on this page within the full
 	// log (total is unknown — git log has no cheap count). Zero when empty.
 	CommitRangeStart int
@@ -431,6 +450,16 @@ type pageData struct {
 	// In-flight turn (session detail streaming, mirrors Discord live message).
 	RunPrompt   string
 	RunLiveText string
+	// Session lifecycle controls (cancel/reset/dequeue/claim on the detail page).
+	// CanControlSession gates control affordances: it already folds in
+	// CanStartSession (feature+role), so the buttons never render when the POST
+	// would 404/403 on the feature gate.
+	CanControlSession bool
+	QueueItems        []bot.QueueItem
+	// Start-task composer (/projects/{project}/start).
+	StartDirectShip  bool   // ship mode badge: true → Direct to primary, false → PR mode
+	StartDiscordDest bool   // a start would open a Discord thread (gateway up + mapped channel)
+	StartDefaultMode string // project default mode (empty normalized to "fix")
 }
 
 func (s *Server) basePage(ctx *hime.Context) pageData {

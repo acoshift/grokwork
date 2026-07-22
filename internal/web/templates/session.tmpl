@@ -63,10 +63,73 @@
     </div>
   </details>
 </div>
+
+<div class="rail-group" id="session-lifecycle">
+  <div class="rail-group-title">Lifecycle</div>
+  <details class="action">
+    <summary><span class="action-title">Label</span></summary>
+    <div class="action-body">
+      {{$cur := .SessionEntry.EffectiveLabel}}{{$manual := .SessionEntry.LabelManual}}
+      <form method="post" action="/sessions/{{.ThreadID}}/label">
+        {{template "csrf" $}}
+        <div class="field">
+          <label for="session-label">Label</label>
+          <select id="session-label" name="label">
+            <option value="open"{{if and $manual (eq $cur "open")}} selected{{end}}>open</option>
+            <option value="in_progress"{{if and $manual (eq $cur "in_progress")}} selected{{end}}>in progress</option>
+            <option value="blocked"{{if and $manual (eq $cur "blocked")}} selected{{end}}>blocked</option>
+            <option value="needs_review"{{if and $manual (eq $cur "needs_review")}} selected{{end}}>needs review</option>
+            <option value="done"{{if and $manual (eq $cur "done")}} selected{{end}}>done</option>
+            <option value="abandoned"{{if and $manual (eq $cur "abandoned")}} selected{{end}}>abandoned</option>
+            <option value="auto"{{if not $manual}} selected{{end}}>auto</option>
+          </select>
+        </div>
+        <div class="form-actions"><button type="submit" id="btn-label">Apply label</button></div>
+      </form>
+    </div>
+  </details>
+  <details class="action">
+    <summary><span class="action-title">Goal</span></summary>
+    <div class="action-body">
+      <form method="post" action="/sessions/{{.ThreadID}}/goal">
+        {{template "csrf" $}}
+        <div class="field">
+          <label for="session-goal">Sticky goal</label>
+          <input type="text" id="session-goal" name="goal" maxlength="200" value="{{.SessionEntry.Goal}}" placeholder="One-line goal for this unit">
+        </div>
+        <div class="form-actions"><button type="submit" id="btn-goal">Save goal</button></div>
+      </form>
+    </div>
+  </details>
+</div>
+
+<div class="rail-group" id="session-ownership">
+  <div class="rail-group-title">Ownership</div>
+  <div class="action-body">
+    <p class="rail-note">{{if .SessionEntry.OwnerName}}Owner: <strong>{{.SessionEntry.OwnerName}}</strong>{{else}}Unowned — any member may control it.{{end}}{{if .SessionEntry.CoOwnerIDs}} · {{len .SessionEntry.CoOwnerIDs}} co-owner(s){{end}}</p>
+    <form method="post" action="/sessions/{{.ThreadID}}/claim"{{if .SessionEntry.HasOwner}} onsubmit="return confirm('Take over ownership? The current owner becomes a co-owner.')"{{end}}>
+      {{template "csrf" $}}
+      <div class="form-actions"><button type="submit" id="btn-claim" class="btn-secondary">Claim ownership</button></div>
+    </form>
+  </div>
+</div>
 {{else}}
 <div class="rail-group">
   <div class="rail-group-title">Actions</div>
   <p class="rail-note">Read-only access — continuing this work unit needs a member role with <span class="mono">startSessions</span> enabled.</p>
+</div>
+{{end}}
+
+{{if .CanControlSession}}
+<div class="rail-group" id="session-danger">
+  <div class="rail-group-title">Danger zone</div>
+  <div class="action-body">
+    <form method="post" action="/sessions/{{.ThreadID}}/reset" onsubmit="return confirm('Forget session, remove worktree and branch?')">
+      {{template "csrf" $}}
+      <div class="form-actions"><button type="submit" id="btn-reset" class="btn-danger"{{if .RunBusy}} disabled title="Cancel the active run before resetting"{{end}}>Reset session</button></div>
+    </form>
+    <p class="rail-note" style="margin-top:0.55rem">Removes the worktree, deletes the managed branch, and clears the session. This cannot be undone.</p>
+  </div>
 </div>
 {{end}}
 
@@ -79,13 +142,41 @@
   <h2>Work unit</h2>
   <p class="sub" style="margin:0">
     {{if .SessionEntry.Label}}<span class="badge">{{.SessionEntry.Label}}</span>{{else}}<span class="badge">open</span>{{end}}
-    {{if .RunBusy}} <span class="badge live">running</span>{{if .RunElapsed}} <span class="mono muted">{{.RunElapsed}}</span>{{end}}{{if .RunQueue}} <span class="badge">{{.RunQueue}} queued</span>{{end}}{{end}}
+    {{if .RunBusy}} <span class="badge live">running</span>{{if .RunElapsed}} <span class="mono muted">{{.RunElapsed}}</span>{{end}}{{end}}
     {{if .SessionEntry.Origin}} · origin <span class="mono">{{.SessionEntry.Origin}}</span>{{end}}
     {{if .SessionEntry.OwnerName}} · owner {{.SessionEntry.OwnerName}}{{end}}
     {{if .SessionEntry.WorktreeBranch}} · branch <span class="mono">{{.SessionEntry.WorktreeBranch}}</span>{{end}}
   </p>
+  {{if and .RunBusy .CanControlSession}}
+  {{/* Button-only form is the sanctioned live-region exception: it holds no typed
+       input, so an SSE swap between render and submit at worst flashes "no active run".
+       Never place text/textarea inputs inside a live region — refreshes wipe them. */}}
+  <form method="post" action="/sessions/{{.ThreadID}}/cancel" style="margin:0.6rem 0 0">
+    {{template "csrf" $}}
+    <button type="submit" id="btn-cancel-run" class="btn-danger btn-compact">Cancel run</button>
+  </form>
+  {{end}}
   {{if .SessionEntry.Goal}}
   <p style="margin:0.85rem 0 0"><span class="bubble-label" style="display:block">Goal</span>{{.SessionEntry.Goal}}</p>
+  {{end}}
+  {{if .QueueItems}}
+  <p style="margin:0.85rem 0 0.25rem"><span class="bubble-label" style="display:block">Queue ({{len .QueueItems}})</span></p>
+  <ul class="queue-list" style="margin:0;padding-left:1.25rem">
+    {{range .QueueItems}}
+    <li>
+      <span class="mono muted">#{{.Position}}</span>
+      {{if .AuthorName}}<strong>{{.AuthorName}}</strong>{{end}}
+      {{if .Intent}}<span class="muted">— {{.Intent}}</span>{{end}}
+      {{if and $.CanStartSession (or (eq .AuthorID $.UserID) $.CanControlSession)}}
+      <form method="post" action="/sessions/{{$.ThreadID}}/queue/remove" style="display:inline;margin-left:0.4rem">
+        {{template "csrf" $}}
+        <input type="hidden" name="task_id" value="{{.TaskID}}">
+        <button type="submit" class="btn-danger btn-compact">Remove</button>
+      </form>
+      {{end}}
+    </li>
+    {{end}}
+  </ul>
   {{end}}
   {{if .SessionEntry.Issues}}
   <p style="margin:0.85rem 0 0.25rem"><span class="bubble-label" style="display:block">Bound issues</span></p>

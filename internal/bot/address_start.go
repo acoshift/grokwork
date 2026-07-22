@@ -11,9 +11,9 @@ import (
 
 // Additional sentinels for Address CI / Continue / Address review.
 var (
-	ErrInvalidPR     = fmt.Errorf("invalid pull request")
-	ErrEmptyPrompt   = fmt.Errorf("empty prompt")
-	ErrUnknownThread = fmt.Errorf("unknown session/thread")
+	ErrInvalidPR        = fmt.Errorf("invalid pull request")
+	ErrEmptyPrompt      = fmt.Errorf("empty prompt")
+	ErrUnknownThread    = fmt.Errorf("unknown session/thread")
 	ErrNoReviewComments = fmt.Errorf("no unresolved review comments")
 )
 
@@ -303,7 +303,7 @@ func (b *Bot) startPRCreate(project, cwd string, tracked sessionstore.TrackedPR,
 		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
 		if err != nil {
 			log.Printf("address: create Discord thread failed project=%s: %v — web-native fallback", project, err)
-			return b.startWebNativeUnit(project, cwd, prompt, actor, func(unitID string) error {
+			return b.startWebNativeUnit(project, cwd, prompt, KindTask, actor, func(unitID string) error {
 				return b.bindTrackedPR(unitID, project, tracked, actor, "", true)
 			})
 		}
@@ -311,9 +311,9 @@ func (b *Bot) startPRCreate(project, cwd string, tracked sessionstore.TrackedPR,
 		if err := b.bindTrackedPR(threadID, project, tracked, actor, discordURL, true); err != nil {
 			return FixStartResult{}, err
 		}
-		return b.startWebTask(threadID, project, cwd, prompt, actor, discordURL, true)
+		return b.startWebTask(threadID, project, cwd, prompt, KindTask, actor, discordURL, true)
 	}
-	return b.startWebNativeUnit(project, cwd, prompt, actor, func(unitID string) error {
+	return b.startWebNativeUnit(project, cwd, prompt, KindTask, actor, func(unitID string) error {
 		return b.bindTrackedPR(unitID, project, tracked, actor, "", true)
 	})
 }

@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-
-	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // CommitReviewOpts starts a new work unit from the web Commit Review action.
@@ -83,64 +81,19 @@ func (b *Bot) startCommitReviewCreate(project, cwd, prompt, goal string, opts Co
 		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
 		if err != nil {
 			log.Printf("commit-review: create Discord thread failed project=%s: %v — web-native fallback", project, err)
-			return b.startWebNativeUnit(project, cwd, prompt, opts.Actor, func(unitID string) error {
-				return b.bindCommitReviewSession(unitID, project, goal, opts.Actor, "", true)
+			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
+				return b.bindWebStartedSession(unitID, project, goal, opts.Actor, "", true)
 			})
 		}
 		discordURL := DiscordThreadURL(b.cfg.ProjectDiscordGuildID(project), threadID)
-		if err := b.bindCommitReviewSession(threadID, project, goal, opts.Actor, discordURL, true); err != nil {
+		if err := b.bindWebStartedSession(threadID, project, goal, opts.Actor, discordURL, true); err != nil {
 			return FixStartResult{}, err
 		}
-		return b.startWebTask(threadID, project, cwd, prompt, opts.Actor, discordURL, true)
+		return b.startWebTask(threadID, project, cwd, prompt, KindTask, opts.Actor, discordURL, true)
 	}
-	return b.startWebNativeUnit(project, cwd, prompt, opts.Actor, func(unitID string) error {
-		return b.bindCommitReviewSession(unitID, project, goal, opts.Actor, "", true)
+	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
+		return b.bindWebStartedSession(unitID, project, goal, opts.Actor, "", true)
 	})
-}
-
-func (b *Bot) bindCommitReviewSession(threadID, project, goal string, actor Actor, discordURL string, isNew bool) error {
-	if b.sessions == nil {
-		return fmt.Errorf("sessions store nil")
-	}
-	_, ok, err := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
-		if ent.Project == "" {
-			ent.Project = project
-		}
-		if isNew || ent.Origin == "" {
-			ent.Origin = SourceWeb
-		}
-		if isNew || ent.CreatedBy == "" {
-			ent.CreatedBy = actor.ID
-			ent.CreatedByName = actor.DisplayName
-		}
-		if discordURL != "" && ent.DiscordURL == "" {
-			ent.DiscordURL = discordURL
-		}
-		if goal != "" && (isNew || ent.Goal == "") {
-			ent.Goal = goal
-		}
-		if actor.ID != "" {
-			ensureSessionOwner(ent, actor.ID, actor.String())
-		}
-	})
-	if err != nil {
-		return err
-	}
-	if ok {
-		return nil
-	}
-	e := sessionstore.Entry{
-		Project:       project,
-		Origin:        SourceWeb,
-		CreatedBy:     actor.ID,
-		CreatedByName: actor.DisplayName,
-		DiscordURL:    discordURL,
-		Goal:          goal,
-	}
-	if actor.ID != "" {
-		ensureSessionOwner(&e, actor.ID, actor.String())
-	}
-	return b.sessions.Set(threadID, e)
 }
 
 func commitReviewThreadTitle(opts CommitReviewOpts) string {

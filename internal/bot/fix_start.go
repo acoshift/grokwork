@@ -63,13 +63,13 @@ const (
 
 // FixStartResult is returned from StartFix.
 type FixStartResult struct {
-	Status        FixStartStatus
-	ThreadID      string
-	QueuePos      int
-	Hits          []IssueSessionHit // set when Status == picker
-	DiscordOffline bool             // reuse path with Discord down
-	DiscordURL    string
-	Created       bool // true when a new Discord thread was opened
+	Status         FixStartStatus
+	ThreadID       string
+	QueuePos       int
+	Hits           []IssueSessionHit // set when Status == picker
+	DiscordOffline bool              // reuse path with Discord down
+	DiscordURL     string
+	Created        bool // true when a new Discord thread was opened
 }
 
 // StartFix discovers or creates a work unit, binds the issue with Fixes, and StartTasks.
@@ -228,7 +228,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
 		if err != nil {
 			log.Printf("fix: create Discord thread failed project=%s: %v — web-native fallback", project, err)
-			return b.startWebNativeUnit(project, cwd, prompt, opts.Actor, func(unitID string) error {
+			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
 				return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
 			})
 		}
@@ -236,10 +236,10 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		if err := b.bindFixIssue(threadID, project, tracked, opts.Actor, discordURL, true); err != nil {
 			return FixStartResult{}, err
 		}
-		return b.startWebTask(threadID, project, cwd, prompt, opts.Actor, discordURL, true)
+		return b.startWebTask(threadID, project, cwd, prompt, KindTask, opts.Actor, discordURL, true)
 	}
 	// No gateway/threadAPI: web-native unit (no createWorkflowThread).
-	return b.startWebNativeUnit(project, cwd, prompt, opts.Actor, func(unitID string) error {
+	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
 		return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
 	})
 }
@@ -253,7 +253,7 @@ func (b *Bot) canCreateDiscordThread() bool {
 }
 
 // startWebNativeUnit allocates w_* + binds via bind, then StartTask (branch grok/web/ via unit id).
-func (b *Bot) startWebNativeUnit(project, cwd, prompt string, actor Actor, bind func(unitID string) error) (FixStartResult, error) {
+func (b *Bot) startWebNativeUnit(project, cwd, prompt string, kind Kind, actor Actor, bind func(unitID string) error) (FixStartResult, error) {
 	unitID := gitworktree.NewWebUnitID()
 	if bind != nil {
 		if err := bind(unitID); err != nil {
@@ -274,14 +274,15 @@ func (b *Bot) startWebNativeUnit(project, cwd, prompt string, actor Actor, bind 
 			}
 		})
 	}
-	return b.startWebTask(unitID, project, cwd, prompt, actor, "", true)
+	return b.startWebTask(unitID, project, cwd, prompt, kind, actor, "", true)
 }
 
-func (b *Bot) startWebTask(threadID, project, cwd, prompt string, actor Actor, discordURL string, created bool) (FixStartResult, error) {
+func (b *Bot) startWebTask(threadID, project, cwd, prompt string, kind Kind, actor Actor, discordURL string, created bool) (FixStartResult, error) {
 	pos, err := b.StartTask(StartTaskOpts{
 		ThreadID:      threadID,
 		Proj:          projectRef{Name: project, Cwd: cwd},
 		Prompt:        prompt,
+		Kind:          kind,
 		Actor:         actor,
 		Source:        SourceWeb,
 		Origin:        SourceWeb,

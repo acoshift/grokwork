@@ -103,6 +103,7 @@ func TestPagesRender(t *testing.T) {
 		// Project workspace pages (project-first UX).
 		{"/projects/proj", `id="page-project-overview"`},
 		{"/projects/proj", `id="live-project-pulse"`},
+		{"/projects/proj/start", `id="page-start"`},
 		{"/projects/proj/ship", `id="page-ship"`},
 		{"/projects/proj/cases", `id="page-cases"`},
 		{"/projects/proj/cases", `id="case-pipeline"`},
@@ -583,6 +584,7 @@ func TestNavBrandChrome(t *testing.T) {
 		`class="proj-switch"`,
 		"All projects",
 		">Overview<",
+		">Start task<",
 		">Ship<",
 		">Cases<",
 		">Issues<",
@@ -590,6 +592,7 @@ func TestNavBrandChrome(t *testing.T) {
 		">Sessions<",
 		">Worktrees<",
 		">Settings<",
+		`href="/projects/proj/start"`,
 		`href="/projects/proj/ship"`,
 		`href="/projects/proj/cases"`,
 		`href="/projects/proj/issues"`,

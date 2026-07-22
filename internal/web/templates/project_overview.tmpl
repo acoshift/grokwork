@@ -1,5 +1,12 @@
 {{define "content"}}
-<h1 id="page-project-overview">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· overview</span></h1>
+<div class="pr-title-row">
+  <h1 id="page-project-overview">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· overview</span></h1>
+  {{if .CanStartSession}}
+  <div class="pr-head-links">
+    <a class="btn btn-compact" href="/projects/{{.Project}}/start">New task</a>
+  </div>
+  {{end}}
+</div>
 <p class="sub">Live pulse of this workspace. Queue work by tagging <span class="mono">@Grok</span> in a mapped Discord channel; browse
   <a href="/projects/{{.Project}}/issues">issues</a>{{if .NavLinearEnabled}}, <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}
   or <a href="/projects/{{.Project}}/commits">commits</a> to start from existing work.</p>

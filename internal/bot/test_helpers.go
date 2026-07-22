@@ -111,6 +111,37 @@ func FillQueueForTest(b *Bot, threadID, project string) error {
 	return nil
 }
 
+// SeedQueuedFollowupForTest claims an active job (if the thread is idle) and
+// enqueues one follow-up carrying the given identity, so web queue-management
+// tests can render and dequeue a real queue item with a known author/taskID.
+func SeedQueuedFollowupForTest(b *Bot, threadID, project, taskID, authorID, authorName, intent string) error {
+	if b == nil {
+		return fmt.Errorf("nil bot")
+	}
+	if _, busy := b.getJob(threadID); !busy {
+		job := &runJob{cancel: func() {}, start: time.Now(), project: project}
+		claimed, _, err := b.claimOrEnqueue(threadID, job, taskItem{threadID: threadID})
+		if err != nil || !claimed {
+			return fmt.Errorf("claim active: claimed=%v err=%v", claimed, err)
+		}
+	}
+	it := taskItem{
+		threadID:      threadID,
+		taskID:        taskID,
+		authorID:      authorID,
+		authorName:    authorName,
+		intentPreview: intent,
+	}
+	claimed, _, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, it)
+	if err != nil {
+		return err
+	}
+	if claimed {
+		return fmt.Errorf("expected enqueue but claimed the active job")
+	}
+	return nil
+}
+
 // WaitIdleForTest blocks until no active jobs remain or timeout elapses.
 func WaitIdleForTest(b *Bot, timeout time.Duration) {
 	if b == nil {

@@ -143,17 +143,21 @@ func createWorkflowThread(api threadAPI, channelID, title, starterContent string
 // StartTaskOpts starts a Grok run on an existing thread (Discord or web-created).
 // Presentation is optional: nil DG → no Discord posts (still runs Grok + history).
 type StartTaskOpts struct {
-	ThreadID         string
-	Proj             projectRef
-	Prompt           string
-	Actor            Actor
-	Source           string // SourceDiscord | SourceWeb
-	DG               *discordgo.Session
-	AttachmentPaths  []string
-	Origin           string // session Origin field
-	CreatedBy        string
-	CreatedByName    string
-	DiscordURL       string
+	ThreadID        string
+	Proj            projectRef
+	Prompt          string
+	Actor           Actor
+	Source          string // SourceDiscord | SourceWeb
+	DG              *discordgo.Session
+	AttachmentPaths []string
+	Origin          string // session Origin field
+	CreatedBy       string
+	CreatedByName   string
+	DiscordURL      string
+	// Kind selects the task Kind for policy snapshotting (zero value → KindTask).
+	// Web starts map their mode select onto KindStartInvestigate/KindStartExplain
+	// exactly as Discord "/start investigate|explain" does.
+	Kind Kind
 }
 
 // StartTask claims the thread queue and runs the task (async drain).
@@ -173,6 +177,10 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 	if src == "" {
 		src = SourceDiscord
 	}
+	kind := opts.Kind
+	if kind == KindEmpty {
+		kind = KindTask
+	}
 	taskID := runjournal.NewTaskID()
 	matCtx, matCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	paths, _, matErr := b.materializeTaskFiles(matCtx, threadID, taskID, nil, opts.AttachmentPaths, nil)
@@ -184,7 +192,7 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 	item := taskItem{
 		s:               opts.DG,
 		m:               nil,
-		parsed:          Parsed{Kind: KindTask, Prompt: opts.Prompt},
+		parsed:          Parsed{Kind: kind, Prompt: opts.Prompt},
 		proj:            opts.Proj,
 		threadID:        threadID,
 		actor:           opts.Actor,
@@ -342,4 +350,3 @@ func preserveWorkflowFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 		next.DiscordURL = prev.DiscordURL
 	}
 }
-

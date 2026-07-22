@@ -30,25 +30,7 @@ func (b *Bot) handleQueue(s *discordgo.Session, m *discordgo.MessageCreate) {
 	} else {
 		lines = append(lines, fmt.Sprintf("**Queue** (%d):", len(st.queue)))
 		for i, it := range st.queue {
-			who := it.authorName
-			if who == "" {
-				who = it.actor.DisplayName
-			}
-			if who == "" {
-				who = it.authorID
-			}
-			if who == "" {
-				who = "?"
-			}
-			intent := it.intentPreview
-			if intent == "" {
-				intent = intentPreview(it.parsed.Prompt, 80)
-			}
-			mode := it.snapMode
-			if mode == "" {
-				mode = "fix"
-			}
-			lines = append(lines, fmt.Sprintf("%d. **%s** · `%s` · %s", i+1, who, mode, intent))
+			lines = append(lines, fmt.Sprintf("%d. **%s** · `%s` · %s", i+1, queueItemAuthor(it), queueItemMode(it), queueItemIntent(it)))
 		}
 	}
 	if _, err := s.ChannelMessageSendReply(m.ChannelID, strings.Join(lines, "\n"), ref(m)); err != nil {
@@ -159,4 +141,119 @@ func (b *Bot) queueSnapshot(threadID string) []taskItem {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return append([]taskItem(nil), st.queue...)
+}
+
+// queueItemAuthor / queueItemMode / queueItemIntent are the shared display fields
+// rendered by both the Discord /queue card and the web QueueItems projection.
+func queueItemAuthor(it taskItem) string {
+	who := it.authorName
+	if who == "" {
+		who = it.actor.DisplayName
+	}
+	if who == "" {
+		who = it.authorID
+	}
+	if who == "" {
+		who = "?"
+	}
+	return who
+}
+
+func queueItemMode(it taskItem) string {
+	mode := it.snapMode
+	if mode == "" {
+		mode = "fix"
+	}
+	return mode
+}
+
+func queueItemIntent(it taskItem) string {
+	intent := it.intentPreview
+	if intent == "" {
+		intent = intentPreview(it.parsed.Prompt, 80)
+	}
+	return intent
+}
+
+// QueueItem is a read-only projection of one pending follow-up (web queue view).
+type QueueItem struct {
+	TaskID     string
+	AuthorID   string
+	AuthorName string
+	Mode       string
+	Intent     string
+	Position   int // 1-based, matching the Discord /queue numbering
+}
+
+// QueueItems returns the pending follow-up queue for a thread (Discord-free).
+// Empty for idle/unknown threads. Reuses handleQueue's display logic.
+//
+// Read-only: it must never allocate a threadState (this is called on every
+// session-page view; states are never reaped, so stateFor here would leak an
+// entry per viewed thread that StatusSnapshot/countActiveRuns then iterate
+// forever). Mirror queueLen's Load-only pattern.
+func (b *Bot) QueueItems(threadID string) []QueueItem {
+	if b == nil {
+		return nil
+	}
+	v, ok := b.states.Load(threadID)
+	if !ok {
+		return nil
+	}
+	st := v.(*threadState)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.queue) == 0 {
+		return nil
+	}
+	items := make([]QueueItem, 0, len(st.queue))
+	for i, it := range st.queue {
+		items = append(items, QueueItem{
+			TaskID:     it.taskID,
+			AuthorID:   it.authorID,
+			AuthorName: queueItemAuthor(it),
+			Mode:       queueItemMode(it),
+			Intent:     queueItemIntent(it),
+			Position:   i + 1,
+		})
+	}
+	return items
+}
+
+// RemoveQueuedTask removes a pending follow-up by TaskID (never by index, so a
+// concurrent drain can never remove the wrong item). Discord-free port of
+// handleDequeue's locked core. Permission: the item's author or canControl.
+func (b *Bot) RemoveQueuedTask(threadID, taskID, actorID string, canControl bool) error {
+	if b == nil {
+		return fmt.Errorf("bot is nil")
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return fmt.Errorf("empty task id")
+	}
+	st := b.stateFor(threadID)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	idx := -1
+	for i, it := range st.queue {
+		if it.taskID == taskID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("queue item not found")
+	}
+	it := st.queue[idx]
+	if !canControl && !(it.authorID != "" && it.authorID == actorID) {
+		return fmt.Errorf("not allowed to remove this queue item")
+	}
+	st.queue = append(st.queue[:idx], st.queue[idx+1:]...)
+	if err := b.saveJournalFromState(threadID, st, taskItem{}, false); err != nil {
+		log.Printf("warn: journal dequeue thread=%s: %v", threadID, err)
+	}
+	if b.runs != nil && it.taskID != "" {
+		b.runs.RemoveTaskFiles(threadID, it.taskID)
+	}
+	return nil
 }
