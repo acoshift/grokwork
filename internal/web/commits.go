@@ -48,9 +48,6 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 		return s.viewPage(ctx, "commits", d)
 	}
 	ref := strings.TrimSpace(ctx.FormValue("ref"))
-	if ref == "" {
-		ref = "HEAD"
-	}
 	pageSize := ghpr.DefaultCommitListLimit
 	page := 1
 	if p, err := strconv.Atoi(strings.TrimSpace(ctx.FormValue("page"))); err == nil && p > 0 {
@@ -64,7 +61,6 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	d.RepoCatalog = catalog
 	d.ActiveOwner = active.Owner
 	d.ActiveRepo = active.Repo
-	d.CommitRef = ref
 	d.CommitPage = page
 	d.CommitHasPrev = page > 1
 	d.CanReviewCommit = d.CanStartSession
@@ -74,11 +70,20 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	}
 	repoPath, pathErr := gitworktree.ResolveLocalRepo(ctx.Context(), root, active.Owner, active.Repo)
 	if pathErr != nil {
+		if ref == "" {
+			ref = "HEAD"
+		}
+		d.CommitRef = ref
 		if d.Error == "" {
 			d.Error = pathErr.Error()
 		}
 		return s.viewPage(ctx, "commits", d)
 	}
+	// Empty ref → primary tip (same as new worktree base), not stale local HEAD.
+	if ref == "" {
+		ref = gitworktree.PrimaryStartRef(ctx.Context(), repoPath)
+	}
+	d.CommitRef = ref
 	// Fetch one extra row so we know whether a next page exists.
 	list, listErr := ghpr.ListCommitsWith(ctx.Context(), s.ghRun(), repoPath, ghpr.CommitListOpts{
 		Ref:   ref,

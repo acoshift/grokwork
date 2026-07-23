@@ -990,6 +990,9 @@ func TestCommitsListAndDetail(t *testing.T) {
 		`class="active">Commits</a>`,
 		`action="/projects/proj/commits/fetch"`,
 		`>Fetch</button>`,
+		// No origin in fixture repo → default ref falls back to HEAD.
+		`value="HEAD"`,
+		`placeholder="origin/main"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list missing %q in %s", want, body)
@@ -1249,6 +1252,61 @@ func TestCommitsListPagination(t *testing.T) {
 	// 60 total → page 2 has 10 rows, no third page; Older renders disabled.
 	if strings.Contains(body, `page=3`) || strings.Contains(body, `data-pager-next rel="next"`) {
 		t.Fatal("should not offer page 3 when history ends")
+	}
+}
+
+func TestCommitsDefaultRefPrimary(t *testing.T) {
+	srv := workflowServer(t)
+	projPath, ok := srv.cfg.ProjectPath("proj")
+	if !ok {
+		t.Fatal("proj path")
+	}
+	// Same as worktree create: prefer origin/main when the tracking ref exists.
+	cmd := exec.Command("git", "-C", projPath, "update-ref", "refs/remotes/origin/main", "HEAD")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("update-ref origin/main: %v\n%s", err, out)
+	}
+
+	var logRef string
+	orig := srv.ghRunner
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if name == "git" && len(args) > 0 && args[0] == "log" {
+			if len(args) > 0 {
+				logRef = args[len(args)-1]
+			}
+		}
+		return orig(ctx, dir, name, args...)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/commits?owner=acme&repo=app", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `value="origin/main"`) {
+		t.Fatalf("default ref input want origin/main: %s", body)
+	}
+	if !strings.Contains(body, `· ref <span class="mono">origin/main</span>`) {
+		t.Fatalf("default ref banner want origin/main: %s", body)
+	}
+	if logRef != "origin/main" {
+		t.Fatalf("git log ref=%q want origin/main", logRef)
+	}
+
+	// Explicit ref still wins.
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/commits?owner=acme&repo=app&ref=HEAD", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("explicit status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `value="HEAD"`) {
+		t.Fatalf("explicit ref=HEAD not honored: %s", w.Body.String())
+	}
+	if logRef != "HEAD" {
+		t.Fatalf("git log ref=%q want HEAD", logRef)
 	}
 }
 

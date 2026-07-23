@@ -16,11 +16,17 @@ func TestResolveNewBranchStartPrefersOrigin(t *testing.T) {
 	if got := resolveNewBranchStart(ctx, repo); got != "HEAD" {
 		t.Fatalf("no origin: got %q want HEAD", got)
 	}
+	if got := PrimaryStartRef(ctx, repo); got != "HEAD" {
+		t.Fatalf("PrimaryStartRef no origin: got %q want HEAD", got)
+	}
 
 	// Simulate origin/main without a real remote.
 	runGitTest(t, repo, "update-ref", "refs/remotes/origin/main", "HEAD")
 	if got := resolveNewBranchStart(ctx, repo); got != "origin/main" {
 		t.Fatalf("got %q want origin/main", got)
+	}
+	if got := PrimaryStartRef(ctx, repo); got != "origin/main" {
+		t.Fatalf("PrimaryStartRef: got %q want origin/main", got)
 	}
 
 	runGitTest(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")

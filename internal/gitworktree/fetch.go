@@ -83,6 +83,14 @@ func fetchKey(repo string) string {
 	return abs
 }
 
+// PrimaryStartRef is the tip new managed worktrees are based on, and the
+// default ref for the commits browser. Prefers origin's default branch (or
+// common origin/* candidates) so views are not based on a stale local HEAD
+// after fetch. Falls back to HEAD.
+func PrimaryStartRef(ctx context.Context, repo string) string {
+	return resolveNewBranchStart(ctx, repo)
+}
+
 // resolveNewBranchStart picks the tip for a newly created managed branch.
 // Prefers origin's default branch (or common origin/* candidates) so worktrees
 // are not based on a stale local HEAD after fetch. Falls back to HEAD.
