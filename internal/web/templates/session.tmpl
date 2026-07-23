@@ -52,7 +52,7 @@
 
 <aside class="pr-rail">
 
-{{if and .SessionEntry.IsCase (or .CanCaseInvestigate .CanCaseEscalate .CanCaseDraft .CanCaseClose)}}
+{{if and .SessionEntry.IsCase (or .CanCaseInvestigate .CanCaseEscalate .CanCaseAnswer .CanCaseDraft .CanCaseClose)}}
 {{/* Case phase forms stay outside the live region so SSE swaps do not wipe typed notes. */}}
 <div class="rail-group" id="session-case-actions">
   <div class="rail-group-title">Case</div>
@@ -87,7 +87,7 @@
     </div>
   </details>
   {{end}}
-  {{if .CanCaseDraft}}
+  {{if .CanCaseAnswer}}
   <details class="action">
     <summary><span class="action-title">Answer (knowledge path)</span></summary>
     <div class="action-body">
@@ -101,6 +101,8 @@
       </form>
     </div>
   </details>
+  {{end}}
+  {{if .CanCaseDraft}}
   <details class="action">
     <summary><span class="action-title">Customer update</span></summary>
     <div class="action-body">

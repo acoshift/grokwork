@@ -651,13 +651,17 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 		d.QueueItems = s.bot.QueueItems(threadID)
 	}
 	// Case panel affordances when Mode=case.
+	// On eng phases (fixing/shipping), hide support desk actions (investigate,
+	// escalate, answer); keep customer-update + close and the Grok continue box.
 	if d.SessionEntry.IsCase() && d.CanStartSession {
 		caps := s.cfg.ResolveCapabilities(d.SessionEntry.Project, d.UserID, nil)
 		closed := d.SessionEntry.IsCaseClosed()
-		d.CanCaseEscalate = !closed && bot.CanEscalateCaseCaps(caps)
-		d.CanCaseDraft = !closed && bot.CanDraftCaseCaps(caps)
+		shipPhase := d.SessionEntry.IsCaseShipPhase()
+		d.CanCaseEscalate = !closed && !shipPhase && bot.CanEscalateCaseCaps(caps)
+		d.CanCaseDraft = !closed && bot.CanDraftCaseCaps(caps) // customer-update
+		d.CanCaseAnswer = !closed && !shipPhase && bot.CanDraftCaseCaps(caps)
 		d.CanCaseClose = !closed && d.CanControlSession
-		d.CanCaseInvestigate = !closed && (caps.Investigate || caps.FileEscalation || caps.StartSessions || d.CanControlSession)
+		d.CanCaseInvestigate = !closed && !shipPhase && (caps.Investigate || caps.FileEscalation || caps.StartSessions || d.CanControlSession)
 	}
 	return d
 }

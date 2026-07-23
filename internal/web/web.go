@@ -483,8 +483,10 @@ type pageData struct {
 	// parity — startSessions feature+role AND investigator-class capability.
 	CanOpenCase bool
 	// Session case panel affordances (Mode=case only).
+	// Investigate/escalate/answer hide on fixing|shipping (eng phases).
 	CanCaseEscalate    bool
-	CanCaseDraft       bool // answer + customer-update
+	CanCaseDraft       bool // customer-update (open cases)
+	CanCaseAnswer      bool // knowledge-path answer; not shown on eng phases
 	CanCaseClose       bool // owner/co/admin
 	CanCaseInvestigate bool
 }

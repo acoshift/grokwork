@@ -61,6 +61,59 @@ func TestCasePanelRendersOnSession(t *testing.T) {
 	}
 }
 
+func TestCasePanelHidesSupportActionsOnEngPhases(t *testing.T) {
+	// fixing/shipping: investigate, escalate, answer go away; customer update + close remain.
+	srv, _, _ := fixEnabledServer(t)
+	_ = srv.cfg.AddProjectAllowedUser("proj", "member-1")
+	sid, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, phase := range []string{sessionstore.PhaseFixing, sessionstore.PhaseShipping} {
+		tid := "t-case-eng-" + phase
+		if err := srv.sessions.Set(tid, sessionstore.Entry{
+			Project:       "proj",
+			Mode:          "case",
+			Phase:         phase,
+			CustomerTitle: "Escalated pay wall",
+			OwnerID:       "member-1",
+			OwnerName:     "Member",
+			Origin:        "web",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/sessions/"+tid+"?project=proj", nil)
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("phase=%s status=%d body=%s", phase, w.Code, w.Body.String())
+		}
+		body := w.Body.String()
+		for _, want := range []string{
+			`id="session-case-panel"`,
+			`id="session-case-actions"`,
+			"btn-case-customer",
+			"btn-case-close",
+			"btn-continue", // eng work via Grok box
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("phase=%s missing %q", phase, want)
+			}
+		}
+		for _, hide := range []string{
+			"btn-case-investigate",
+			"btn-case-escalate",
+			"btn-case-answer",
+		} {
+			if strings.Contains(body, hide) {
+				t.Fatalf("phase=%s should hide %q", phase, hide)
+			}
+		}
+	}
+}
+
 func TestPostCaseEscalate(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	_ = srv.cfg.AddProjectAllowedUser("proj", "member-1")
