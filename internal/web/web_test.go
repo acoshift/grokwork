@@ -84,6 +84,46 @@ func testServer(t *testing.T) (*Server, *config.Config, string) {
 	return New(cfg, store, hist, b), cfg, dir
 }
 
+func TestSessionVerifyPanelAndShipFromCase(t *testing.T) {
+	srv, _, _ := testServer(t)
+	if err := srv.sessions.Set("thread-99", sessionstore.Entry{
+		SessionID: "sess-99", Project: "proj",
+		LastVerify: &sessionstore.LastVerify{
+			Name: "unit", OK: false, ExitCode: 1, At: "2026-07-23T00:00:00Z",
+			Summary: "unit fail · 10ms", LogTail: "FAIL: TestX",
+		},
+		Mode: "case", Phase: sessionstore.PhaseShipping, CustomerTitle: "Pay wall",
+		PRs: []sessionstore.TrackedPR{{
+			URL: "https://github.com/acme/app/pull/7", Number: 7, State: "OPEN",
+			Title: "fix pay", Owner: "acme", Repo: "app",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99?project=proj", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("session status=%d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{`id="session-verify-panel"`, "unit", "FAIL: TestX", "status-error"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("session missing %q", want)
+		}
+	}
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/ship", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ship status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "from case") {
+		t.Fatal("ship board missing from case badge")
+	}
+}
+
 func TestPagesRender(t *testing.T) {
 	srv, _, _ := testServer(t)
 	h := srv.Handler()

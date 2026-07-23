@@ -237,6 +237,24 @@
 {{end}}
 
 {{define "session_live"}}
+{{if .SessionEntry.LastVerify}}
+<div class="section card" id="session-verify-panel">
+  <h2>Last verify</h2>
+  <p class="sub" style="margin:0">
+    {{if .SessionEntry.LastVerify.OK}}<span class="badge status-done">pass</span>{{else}}<span class="badge status-error">fail</span>{{end}}
+    {{if .SessionEntry.LastVerify.Name}} <span class="mono">{{.SessionEntry.LastVerify.Name}}</span>{{end}}
+    {{if .SessionEntry.LastVerify.At}} · <span class="mono muted">{{shortTime .SessionEntry.LastVerify.At}}</span>{{end}}
+    {{if not .SessionEntry.LastVerify.OK}} · exit <span class="mono">{{.SessionEntry.LastVerify.ExitCode}}</span>{{end}}
+  </p>
+  {{if .SessionEntry.LastVerify.Summary}}
+  <p class="muted" style="margin:0.55rem 0 0">{{.SessionEntry.LastVerify.Summary}}</p>
+  {{end}}
+  {{if and (not .SessionEntry.LastVerify.OK) .SessionEntry.LastVerify.LogTail}}
+  <pre class="mono" style="margin:0.65rem 0 0;padding:0.65rem;background:var(--surface-2);border-radius:6px;font-size:0.78rem;overflow:auto;max-height:12rem;white-space:pre-wrap">{{.SessionEntry.LastVerify.LogTail}}</pre>
+  {{end}}
+</div>
+{{end}}
+
 {{if .SessionEntry.IsCase}}
 <div class="section card" id="session-case-panel">
   <h2>Case <span class="muted" style="font-weight:500;font-size:0.9rem">· {{if .SessionEntry.Phase}}{{.SessionEntry.Phase}}{{else}}intake{{end}}</span></h2>

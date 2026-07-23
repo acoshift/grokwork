@@ -10,6 +10,26 @@ import (
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
+func TestShipRowFromCase(t *testing.T) {
+	e := sessionstore.Entry{
+		Project: "p", Mode: "case", Phase: sessionstore.PhaseShipping,
+		CustomerTitle: "Checkout broken",
+		PRs: []sessionstore.TrackedPR{{
+			URL: "https://github.com/acme/app/pull/1", Number: 1, State: "OPEN",
+			Owner: "acme", Repo: "app",
+		}},
+	}
+	row := shipRowFrom("tid", e, e.PRs[0], "goal", false, 0)
+	if !row.FromCase || row.CasePhase != sessionstore.PhaseShipping || row.CaseTitle != "Checkout broken" {
+		t.Fatalf("%+v", row)
+	}
+	e.Mode = "fix"
+	row = shipRowFrom("tid", e, e.PRs[0], "goal", false, 0)
+	if row.FromCase {
+		t.Fatal("non-case should not be FromCase")
+	}
+}
+
 func TestListShipBoard(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{

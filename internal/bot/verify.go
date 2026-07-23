@@ -67,9 +67,11 @@ func (b *Bot) handleVerify(s *discordgo.Session, m *discordgo.MessageCreate, par
 
 	replyText(s, m, fmt.Sprintf("Running **%d** verify command(s)…", len(toRun)))
 	var cards []string
+	var results []verifyResult
 	allOK := true
 	for _, cmd := range toRun {
 		res := b.runOneVerify(cwd, cmd)
+		results = append(results, res)
 		cards = append(cards, formatVerifyCard(res))
 		if !res.OK {
 			allOK = false
@@ -85,11 +87,64 @@ func (b *Bot) handleVerify(s *discordgo.Session, m *discordgo.MessageCreate, par
 	msg, err := s.ChannelMessageSend(m.ChannelID, sanitizeDiscordContent(clampDiscord(body)))
 	if err != nil {
 		log.Printf("error: verify card: %v", err)
+		// Still persist result for web session panel.
+		b.storeLastVerify(m.ChannelID, results, "")
 		return
 	}
-	_, _, _ = b.sessions.Patch(m.ChannelID, func(ent *sessionstore.Entry) {
-		ent.VerifyMsgID = msg.ID
+	b.storeLastVerify(m.ChannelID, results, msg.ID)
+}
+
+// storeLastVerify persists a compact verify snapshot for the web session panel.
+func (b *Bot) storeLastVerify(threadID string, results []verifyResult, discordMsgID string) {
+	if b == nil || b.sessions == nil || len(results) == 0 {
+		return
+	}
+	lv := lastVerifyFromResults(results)
+	_, _, _ = b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+		if discordMsgID != "" {
+			ent.VerifyMsgID = discordMsgID
+		}
+		ent.LastVerify = lv
+		_ = sessionstore.ClampWave2Fields(ent)
 	})
+}
+
+func lastVerifyFromResults(results []verifyResult) *sessionstore.LastVerify {
+	if len(results) == 0 {
+		return nil
+	}
+	allOK := true
+	var names []string
+	var parts []string
+	var logTail string
+	exit := 0
+	for _, r := range results {
+		names = append(names, r.Name)
+		status := "pass"
+		if !r.OK {
+			allOK = false
+			status = "fail"
+			exit = r.ExitCode
+		}
+		parts = append(parts, fmt.Sprintf("%s %s · %s", r.Name, status, r.Elapsed.Round(time.Millisecond)))
+		if r.Log != "" {
+			logTail = r.Log
+		}
+	}
+	if allOK {
+		exit = 0
+	}
+	if len(logTail) > 1200 {
+		logTail = "…\n" + logTail[len(logTail)-1200:]
+	}
+	return &sessionstore.LastVerify{
+		Name:     strings.Join(names, ", "),
+		OK:       allOK,
+		ExitCode: exit,
+		At:       time.Now().UTC().Format(time.RFC3339),
+		Summary:  strings.Join(parts, "; "),
+		LogTail:  logTail,
+	}
 }
 
 type verifyResult struct {

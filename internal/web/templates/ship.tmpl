@@ -129,6 +129,7 @@
           {{end}}
           {{if .Running}} <span class="badge live">running</span>{{end}}
           {{if gt .Queue 0}} <span class="badge">queue {{.Queue}}</span>{{end}}
+          {{if .FromCase}} <span class="badge" title="{{if .CaseTitle}}{{.CaseTitle}}{{else}}support case{{end}}{{if .CasePhase}} · {{.CasePhase}}{{end}}">from case{{if .CasePhase}} · {{.CasePhase}}{{end}}</span>{{end}}
         </td>
         <td class="mono">
           {{if .ChecksFailing}}

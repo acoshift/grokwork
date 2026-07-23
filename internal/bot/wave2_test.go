@@ -69,6 +69,7 @@ func TestPreserveWave2Fields(t *testing.T) {
 			{ID: "q1", Text: "?", Status: "open"},
 		},
 		VerifyMsgID: "m1",
+		LastVerify:  &sessionstore.LastVerify{Name: "unit", OK: true, Summary: "unit pass"},
 	}
 	next := sessionstore.Entry{SessionID: "s"}
 	preservePRFields(&next, prev)
@@ -77,6 +78,25 @@ func TestPreserveWave2Fields(t *testing.T) {
 	}
 	if len(next.OpenQuestions) != 1 || next.VerifyMsgID != "m1" {
 		t.Fatalf("wave2: %+v", next)
+	}
+	if next.LastVerify == nil || !next.LastVerify.OK || next.LastVerify.Name != "unit" {
+		t.Fatalf("LastVerify: %+v", next.LastVerify)
+	}
+}
+
+func TestLastVerifyFromResults(t *testing.T) {
+	lv := lastVerifyFromResults([]verifyResult{
+		{Name: "unit", OK: true, ExitCode: 0, Elapsed: time.Second, Log: "ok"},
+		{Name: "lint", OK: false, ExitCode: 2, Elapsed: time.Millisecond * 50, Log: "err line"},
+	})
+	if lv == nil || lv.OK || lv.ExitCode != 2 {
+		t.Fatalf("%+v", lv)
+	}
+	if !strings.Contains(lv.Name, "unit") || !strings.Contains(lv.Name, "lint") {
+		t.Fatalf("names %q", lv.Name)
+	}
+	if lv.LogTail != "err line" {
+		t.Fatalf("log %q", lv.LogTail)
 	}
 }
 

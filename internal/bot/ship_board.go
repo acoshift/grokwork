@@ -46,6 +46,11 @@ type ShipPRRow struct {
 	TeamRollup        string // reviewstore.Rollup*
 	TeamPending       int
 	TeamReviewSummary string // short badge text for the table
+
+	// FromCase is true when the session Mode=case (support-originated ship path).
+	FromCase  bool
+	CasePhase string // case phase when FromCase
+	CaseTitle string // CustomerTitle when set
 }
 
 // ShipBoard is a lead-facing view of all bot-tracked PRs.
@@ -200,28 +205,31 @@ func shipRowFrom(threadID string, e sessionstore.Entry, pr sessionstore.TrackedP
 	display := ghpr.DisplayState(info)
 	review := strings.ToUpper(strings.TrimSpace(pr.Review))
 	row := ShipPRRow{
-		ThreadID:         threadID,
-		Project:          e.Project,
-		OwnerID:          e.OwnerID,
-		OwnerName:        e.OwnerName,
-		Goal:             goal,
-		Label:            e.EffectiveLabel(),
-		LabelManual:      e.LabelManual,
-		Running:          running,
-		Queue:            queue,
-		UpdatedAt:        e.UpdatedAt,
-		URL:              pr.URL,
-		Number:           pr.Number,
-		State:            display,
-		RawState:         strings.ToUpper(strings.TrimSpace(pr.State)),
-		Title:            strings.TrimSpace(pr.Title),
-		Checks:           strings.TrimSpace(pr.Checks),
-		Review:           strings.TrimSpace(pr.Review),
-		HeadRef:          pr.HeadRef,
-		HeadSHA:          pr.HeadSHA,
-		IsDraft:          pr.IsDraft,
-		GHOwner:          pr.Owner,
-		GHRepo:           pr.Repo,
+		ThreadID:           threadID,
+		Project:            e.Project,
+		OwnerID:            e.OwnerID,
+		OwnerName:          e.OwnerName,
+		Goal:               goal,
+		Label:              e.EffectiveLabel(),
+		LabelManual:        e.LabelManual,
+		Running:            running,
+		Queue:              queue,
+		UpdatedAt:          e.UpdatedAt,
+		FromCase:           e.IsCase(),
+		CasePhase:          e.CasePhase(),
+		CaseTitle:          strings.TrimSpace(e.CustomerTitle),
+		URL:                pr.URL,
+		Number:             pr.Number,
+		State:              display,
+		RawState:           strings.ToUpper(strings.TrimSpace(pr.State)),
+		Title:              strings.TrimSpace(pr.Title),
+		Checks:             strings.TrimSpace(pr.Checks),
+		Review:             strings.TrimSpace(pr.Review),
+		HeadRef:            pr.HeadRef,
+		HeadSHA:            pr.HeadSHA,
+		IsDraft:            pr.IsDraft,
+		GHOwner:            pr.Owner,
+		GHRepo:             pr.Repo,
 		ChecksFailing:      checksLookFailing(pr.Checks),
 		ChangesRequested:   review == "CHANGES_REQUESTED",
 		ReviewApproved:     review == "APPROVED",

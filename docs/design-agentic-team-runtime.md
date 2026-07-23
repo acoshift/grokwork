@@ -27,38 +27,40 @@ This design repositions grokwork as the **team agent runtime**: a shared executi
 
 ---
 
-## Code baseline recheck (rev 5 — 2026-07-22)
+## Code baseline recheck (rev 7 — 2026-07-23)
 
-Rechecked against `main` after features landed **orthogonal to** this design (No-PR ship, team PR reviews, web live turn, crash resume, etc.). **Do not treat Wave 1 as “already partially built.”** Almost none of the Trust train (modes, RunPolicy, capabilities, social queue, env filter) exists in code yet.
+Rev 5 snapshot is **historical**. Trust (Wave 1), IDE-free (Wave 2), Support/CS cases (Wave 3 + web board/intake/session panel), and related polish are largely on `main` as of 2026-07-23.
 
 ### Implementation status vs this design
 
 | Design item | Status | Evidence |
 |-------------|--------|----------|
-| **Session `Mode`** (investigate/explain/fix/case) | **Not started** | `Entry` has **no** `Mode`/`Phase`/case/dossier fields |
-| **RunPolicy hard gates** in `executeTask` | **Not started** | Still unconditional yolo from config; no `Tools` on task runs; prefix is `remoteWorkPromptPrefixMode(branch, direct)` only |
-| **Capabilities / SafeTeamMode** | **Not started** | No `capabilities.go`; Discord allowlist remains binary `AccessAllowed` |
-| **Queue as social object** | **Not started** | `taskItem` has no Author*/IntentPreview; no `/queue`; still max-5 append FIFO |
-| **K19 policy/RoleIDs snapshot** | **Not started** | `runjournal.TaskRecord` has Actor but no Snap*/RoleIDs |
-| **history.Turn RunKind** | **Not started** | Turn has prompt/response/status only |
-| **Filtered Grok child env (K26)** | **Not started** | `cmd.Env = os.Environ()` in `grokrun/run.go` |
-| **Attribution trailers (PR8)** | **Not started** | Still TODO.md unchecked |
-| **Checkpoints / `/undo`** | **Not started** | “checkpoint” in code = runjournal interrupt, not git refs |
-| **Verify harness** | **Not started** | — |
-| **`/sync`** | **Not started** | — |
-| **Decision cards** | **Not started** | — |
-| **Case / dossier / customer update** | **Not started** | — |
-| **Discord `/comments` + `/address`** | **Partial** | Web `StartAddressReview` / `StartAddressCI` exist; Discord text commands **not** in `ParseMessage` |
-| **Task presets `/start`** | **Not started** | Still TODO templates |
-| **`Options.Tools` / tools-off rewrite** | **Infrastructure ready** | Used for summarize/tools-off paths; task `executeTask` does **not** set Tools |
-| **Crash-safe resume** | **Shipped (other design)** | `runjournal` + `ResumeActiveRuns` (default on) — see `design-crash-safe-active-runs.md` |
-| **No-PR / direct-to-primary** | **Shipped (other design)** | `ProjectConfig.DirectToPrimary`, `Entry.ShipMode`, `direct_ship.go` — see `design-no-pr-mode.md` |
-| **Team PR reviews (web)** | **Shipped (outside this plan)** | `internal/reviewstore`, web PR reviews, `FeaturePRReviews`, audit actions |
-| **Discord `/review`** | **Partial** | `KindReview` + `handleReview` (request map) — not full GitHub review-request + radar from TODO |
-| **Web in-flight turn stream** | **Shipped** | `publishRunPrompt` + session partial streams live reply (design-full-workflow had deferred token stream) |
-| **Web auth + project ACL** | **Partial** | OAuth optional; `WebAuthFeatures` include GitHubWrites/Merge/StartSessions/**PRReviews**; project visibility tightened; TODO still lists “web UI auth” incomplete vs full safe-team slice |
-| **Audit log** | **Partial** | Web mutations + session start + PR review actions; **not** full run/tool/capability audit |
-| **Bulk issue Fix, commit-review-as-session, idle fetch, markdown bodies** | **Shipped** | Orthogonal product polish |
+| **Session `Mode`** (investigate/explain/fix/case) | **Shipped** | `Entry.Mode` / Phase / case fields; freeform + `/start` + web start |
+| **RunPolicy hard gates** in `executeTask` | **Shipped** | `run_policy.go`; AllowPR/tools/env gates; K27 ShipMode × Mode |
+| **Capabilities / SafeTeamMode** | **Shipped** | `capabilities.go`; project config UI; K16 unmapped default |
+| **Queue as social object** | **Shipped** | Author/intent; `/queue` `/dequeue` `/cancel-mine` |
+| **K19 policy/RoleIDs snapshot** | **Shipped** | taskItem + journal Snap* fields; live tighten |
+| **history.Turn RunKind** | **Shipped** | RunKind/Mode/Phase on turns |
+| **Filtered Grok child env (Layer A / K26)** | **Shipped** | denylist + omit GH_TOKEN when !IncludeGHToken; Layer B allowlist still deferred |
+| **Attribution trailers (PR8)** | **Not started** | See `design-per-user-github-identity.md` Tier A |
+| **Checkpoints / `/undo`** | **Shipped** | `refs/grok-cp/…`; `/checkpoint` `/undo` `/restore` |
+| **Verify harness** | **Shipped** | project `verifyCommands`; `/verify`; config UI; session `LastVerify` panel |
+| **`/sync`** | **Shipped** | fetch + merge origin primary |
+| **Decision cards** | **Shipped** | `DECISION:` blocks → Discord buttons → OpenQuestions |
+| **Case / dossier / customer update** | **Shipped** | Discord case cmds + web board / create / session panel / phase POSTs |
+| **Discord `/comments` + `/address`** | **Shipped** | Wired to `ghpr` + `StartAddressReview` |
+| **Task presets `/start`** | **Shipped** | `/start investigate\|fix\|explain` + web start modes |
+| **`Options.Tools` / tools-off rewrite** | **Shipped** | investigate tool allowlist on task runs |
+| **Crash-safe resume** | **Shipped (other design)** | `runjournal` + `ResumeActiveRuns` |
+| **No-PR / direct-to-primary** | **Shipped (other design)** | `DirectToPrimary`, `ShipMode` |
+| **Team PR reviews (web)** | **Shipped** | `reviewstore` + web PR reviews |
+| **Discord `/review`** | **Partial** | Request map shipped; not full GH review-request radar |
+| **Web in-flight turn stream** | **Shipped** | session partial live reply |
+| **Web auth + project ACL** | **Partial** | OAuth optional; feature flags; project visibility |
+| **Audit log** | **Partial** | Web mutations + session/case actions; not full tool audit |
+| **Bulk issue Fix, commit-review, idle fetch** | **Shipped** | Orthogonal polish |
+| **OS agent sandbox** | **Design only** | `docs/design-agent-sandbox.md` |
+| **Wave 4 power** | **Deferred** | fork-fix, conflict clinic, SafeOps, ephemeral previews |
 
 ### Critical composition rule (new since rev 4)
 

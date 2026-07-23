@@ -742,4 +742,8 @@ func preserveModeFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	if next.VerifyMsgID == "" {
 		next.VerifyMsgID = prev.VerifyMsgID
 	}
+	if next.LastVerify == nil && prev.LastVerify != nil {
+		cp := *prev.LastVerify
+		next.LastVerify = &cp
+	}
 }

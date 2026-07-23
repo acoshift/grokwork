@@ -105,6 +105,18 @@ type Entry struct {
 	Checkpoints   []CheckpointMeta `json:"checkpoints,omitempty"`
 	OpenQuestions []OpenQuestion   `json:"openQuestions,omitempty"`
 	VerifyMsgID   string           `json:"verifyMsgId,omitempty"`
+	// LastVerify is the most recent @Grok /verify (or web verify) result for the session UI.
+	LastVerify *LastVerify `json:"lastVerify,omitempty"`
+}
+
+// LastVerify is a compact pass/fail snapshot for the web session panel.
+type LastVerify struct {
+	Name     string `json:"name,omitempty"` // command name(s)
+	OK       bool   `json:"ok,omitempty"`
+	ExitCode int    `json:"exitCode,omitempty"` // last/aggregate exit
+	At       string `json:"at,omitempty"`       // RFC3339
+	Summary  string `json:"summary,omitempty"`  // one-line e.g. "unit pass · 1.2s"
+	LogTail  string `json:"logTail,omitempty"`  // capped log excerpt
 }
 
 // CheckpointMeta is bot-owned git checkpoint metadata (refs/grok-cp/<threadId>/<id>).
