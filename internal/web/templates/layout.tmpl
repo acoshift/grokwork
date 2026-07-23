@@ -3,7 +3,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  {{/* maximum-scale=1 + user-scalable=no: native-app feel — blocks pinch/double-tap
+       zoom on Android and iOS auto-zoom on input focus; iOS Safari ignores the meta
+       for pinch gestures, so the gesturestart handler below covers it. */}}
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>{{.Title}} · Grok Work</title>
   <meta name="description" content="Grok Work admin console">
   <meta name="theme-color" content="#f7f7f7" media="(prefers-color-scheme: light)">
@@ -204,6 +207,9 @@
       min-height: 100vh;
       line-height: 1.55;
       -webkit-font-smoothing: antialiased;
+      /* No double-tap-to-zoom (iOS Safari honors this even where it ignores
+         the viewport meta); pan/scroll unaffected. */
+      touch-action: manipulation;
     }
     a { color: var(--accent); text-decoration: none; }
     a:hover { color: var(--link-hover); text-decoration: underline; }
@@ -534,6 +540,9 @@
       line-height: 1.25;
     }
     .sub { color: var(--muted); margin: 0 0 1.35rem; font-size: 0.92rem; }
+    /* Unbroken mono tokens in prose (filesystem paths on the config pages)
+       must wrap instead of widening the page past the phone viewport. */
+    .sub .mono { overflow-wrap: anywhere; }
     .sub a { font-weight: 500; }
     .section { margin-bottom: 1.85rem; }
     .section h2 {
@@ -1940,6 +1949,8 @@
       font-weight: 500;
       padding: 0.55rem 0.9rem 0.6rem;
       border-radius: var(--radius) var(--radius) 0 0;
+      /* Labels stay one line inside the horizontally scrollable strip. */
+      white-space: nowrap;
     }
     .cfg-tabs a:hover { color: var(--text); background: var(--surface-l1); text-decoration: none; }
     .cfg-tabs a.active { color: var(--text); font-weight: 600; }
@@ -2821,8 +2832,11 @@
         max-width: 100%;
         min-width: 0;
       }
+      /* !important: many config forms set their desktop column layout via an
+         inline style attribute, which would otherwise beat this breakpoint and
+         push multi-column grids past the phone viewport. */
       form.inline,
-      .inline { grid-template-columns: 1fr; }
+      .inline { grid-template-columns: 1fr !important; }
       th, td { padding: 0.55rem 0.65rem; font-size: 0.88rem; }
       .invite-row { grid-template-columns: 1fr; }
       .invite-row button,
@@ -3307,6 +3321,16 @@
     };
   })();
 
+  (function () {
+    // iOS Safari ignores user-scalable=no for pinch gestures; cancelling its
+    // proprietary gesture events is the only way to keep the app at 1x like a
+    // native shell. Touch-devices only: desktop Safari fires the same events
+    // for trackpad pinch, which must keep zooming the page.
+    if (navigator.maxTouchPoints > 0) {
+      document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+      document.addEventListener("gesturechange", function (e) { e.preventDefault(); });
+    }
+  })();
   (function () {
     var statusEl = document.getElementById("sse-status");
     // Matches the layout.tmpl mobile shell breakpoint.
