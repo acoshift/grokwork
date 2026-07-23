@@ -2543,6 +2543,21 @@
       a.case-stage { min-width: 6rem; padding: 0.55rem 0.7rem 0.5rem; }
       .case-pipeline .stage-count { font-size: 1.2rem; }
       a.case-archive { flex: 1 1 100%; }
+      /* iOS Safari zooms focused form controls when computed font-size is <16px. */
+      input[type=text],
+      input[type=number],
+      input[type=password],
+      input[type=email],
+      input[type=search],
+      input[type=tel],
+      input[type=url],
+      select,
+      textarea,
+      .invite-row input[type=text],
+      .roster .role-cell select,
+      .rv-filter {
+        font-size: 16px;
+      }
     }
   </style>
 </head>
