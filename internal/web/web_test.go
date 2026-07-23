@@ -226,8 +226,7 @@ func TestPagesRender(t *testing.T) {
 				`boostScrollByPath`,
 				// SSE table reloads: keep .table-scroll horizontal position.
 				`_tableScrollX`,
-				// SSE turn bubbles: keep .bubble-body vertical position (and page Y).
-				`_bubbleScrollY`,
+				// SSE live regions: keep window Y when content grows.
 				`_pageScrollY`,
 				// Mid-session SSE reconnect catch-up (rev compare → partial refresh).
 				`lastLiveRevs`,

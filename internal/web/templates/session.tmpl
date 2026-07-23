@@ -369,9 +369,9 @@
       <div class="bubble assistant">
         <div class="bubble-label">Grok <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">(live)</span></div>
         {{if .RunLiveText}}
-        <div class="bubble-body md bubble-stream" id="live-stream-body">{{markdown .RunLiveText}}</div>
+        <div class="bubble-body md" id="live-stream-body">{{markdown .RunLiveText}}</div>
         {{else}}
-        <div class="bubble-body muted bubble-stream" id="live-stream-body">streaming…</div>
+        <div class="bubble-body muted" id="live-stream-body">streaming…</div>
         {{end}}
       </div>
     </article>

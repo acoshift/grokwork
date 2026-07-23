@@ -1928,8 +1928,6 @@
       border-left-width: 3px;
       border-radius: var(--radius);
       padding: 0.7rem 0.85rem;
-      max-height: 28rem;
-      overflow: auto;
       color: var(--text);
     }
     /* GFM turn bodies: proportional type, normal flow; keep bubble chrome. */
@@ -1938,10 +1936,6 @@
       font-family: inherit;
       font-size: 0.9rem;
       line-height: 1.6;
-    }
-    .bubble-body.md pre {
-      /* Nested code fences already box themselves; avoid double max-height. */
-      max-height: none;
     }
     .bubble.user .bubble-body {
       background: hsl(var(--blue-500) / 6%);
@@ -1955,10 +1949,6 @@
     }
     .turn-live .bubble.assistant .bubble-body {
       border-left-color: var(--accent, hsl(var(--blue-500) / 70%));
-    }
-    .bubble-stream {
-      /* Prefer showing the latest streamed tail (Discord-style). */
-      scroll-behavior: auto;
     }
 
     /* ── Diff review (commit / session / PR diffs) ───────────────────── */
@@ -2619,17 +2609,8 @@
       setStatus("reconnecting…", "err");
     });
 
-    // How close to the bottom counts as "following" a growing bubble/page.
-    var BUBBLE_PIN_PX = 48;
-    function bubbleNearBottom(el) {
-      if (!el) return true;
-      var max = el.scrollHeight - el.clientHeight;
-      if (max <= 0) return true;
-      return (max - (el.scrollTop || 0)) <= BUBBLE_PIN_PX;
-    }
-    function pinBubbleBottom(el) {
-      if (el) el.scrollTop = el.scrollHeight;
-    }
+    // How close to the page bottom counts as "following" growing content.
+    var PAGE_PIN_PX = 48;
 
     // Boosted navigation must swap #live-root only. If live-region attrs leaked
     // onto a child link (disableInheritance not applied), htmx would target the
@@ -2647,17 +2628,10 @@
           xs.push(el.scrollLeft || 0);
         });
         target._tableScrollX = xs;
-        // Turn bubbles (.bubble-body max-height + overflow) and the live stream:
-        // save Y so reading mid-turn is not yanked to top on every dashboard tick.
-        var ys = [];
-        target.querySelectorAll(".bubble-body").forEach(function (el) {
-          ys.push({ top: el.scrollTop || 0, pin: bubbleNearBottom(el) });
-        });
-        target._bubbleScrollY = ys;
         var pageMax = document.documentElement.scrollHeight - window.innerHeight;
         var pageY = window.scrollY || 0;
         target._pageScrollY = pageY;
-        target._pagePinBottom = pageMax <= 0 || (pageMax - pageY) <= BUBBLE_PIN_PX;
+        target._pagePinBottom = pageMax <= 0 || (pageMax - pageY) <= PAGE_PIN_PX;
       }
       if (!d.boosted) return;
       var html = d.serverResponse || "";
@@ -2681,26 +2655,6 @@
       if (elt && elt.classList && elt.classList.contains("live-region")) {
         // Desktop shows the clock; mobile setStatus strips it to "live".
         setStatus("live · " + new Date().toLocaleTimeString(), "ok");
-        // Restore bubble vertical scroll saved in beforeSwap. Stick-to-bottom
-        // only when the user was already following the tail (or for a brand-new
-        // live stream bubble with no prior state).
-        var ys = elt._bubbleScrollY;
-        var bubbles = elt.querySelectorAll(".bubble-body");
-        if (ys && ys.length) {
-          for (var i = 0; i < bubbles.length; i++) {
-            var b = bubbles[i];
-            if (i < ys.length) {
-              if (ys[i].pin) pinBubbleBottom(b);
-              else b.scrollTop = ys[i].top || 0;
-            } else if (b.id === "live-stream-body") {
-              pinBubbleBottom(b);
-            }
-          }
-          delete elt._bubbleScrollY;
-        } else {
-          // No prior state (first paint after nav into a streaming session).
-          pinBubbleBottom(elt.querySelector("#live-stream-body"));
-        }
         // Restore table horizontal scroll saved in beforeSwap.
         var xs = elt._tableScrollX;
         if (xs && xs.length) {
@@ -2721,10 +2675,6 @@
         delete elt._pagePinBottom;
       }
     });
-    // Full-page load of an in-flight session: pin live stream to the latest tail.
-    (function () {
-      pinBubbleBottom(document.getElementById("live-stream-body"));
-    })();
     document.body.addEventListener("htmx:responseError", function (e) {
       var elt = e.detail && e.detail.elt;
       if (elt && elt.classList && elt.classList.contains("live-region")) {
