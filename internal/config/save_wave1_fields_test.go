@@ -37,6 +37,9 @@ func TestSaveLockedPreservesWave1RootFields(t *testing.T) {
 	cfg.MaxConcurrentRuns = &max
 	cfg.MaxConcurrentRunsUser = &maxU
 	cfg.GrokEnvDenylist = []string{"CUSTOM_SECRET_"}
+	cfg.DiscordUserGitHub = map[string]GitHubIdentity{
+		"u9": {Login: "nine", Name: "Nine"},
+	}
 
 	cfg.mu.Lock()
 	err = cfg.saveLocked()
@@ -61,5 +64,8 @@ func TestSaveLockedPreservesWave1RootFields(t *testing.T) {
 	}
 	if len(again.GrokEnvDenylist) != 1 || again.GrokEnvDenylist[0] != "CUSTOM_SECRET_" {
 		t.Fatalf("GrokEnvDenylist lost: %v", again.GrokEnvDenylist)
+	}
+	if again.DiscordUserGitHub["u9"].Login != "nine" {
+		t.Fatalf("DiscordUserGitHub lost: %+v", again.DiscordUserGitHub)
 	}
 }

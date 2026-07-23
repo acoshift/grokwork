@@ -1577,7 +1577,22 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		}
 		prefix += remoteWorkPromptPrefixMode(wtBranch, promptDirect)
 		if pol.AllowPR || pol.AllowDirectShip {
-			prefix += attributionFooter(actor.String(), actor.ID, item.discordURL)
+			attr := AttributionInput{
+				PrompterName: actor.String(),
+				PrompterID:   actor.ID,
+				ThreadURL:    item.discordURL,
+			}
+			if e, ok := b.sessions.Get(threadID); ok {
+				attr.SessionID = e.SessionID
+			}
+			if b.cfg != nil && actor.ID != "" {
+				if gh, ok := b.cfg.LookupGitHubIdentity(actor.ID); ok {
+					attr.GitHubLogin = gh.Login
+					attr.GitHubName = gh.Name
+					attr.GitHubEmail = gh.Email
+				}
+			}
+			prefix += BuildAttributionBlock(attr)
 		}
 		prefix += issueBindingPromptMode(issueLines, promptDirect)
 	default:

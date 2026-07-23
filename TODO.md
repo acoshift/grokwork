@@ -76,15 +76,16 @@ Order is suggested priority, not a commitment. **Code on `main` wins** if this f
 
 ## Next (recommended order)
 
-### 1. Attribution trailers (Tier A) — **not started**
+### 1. Attribution trailers (Tier A) — **shipped** (prompt + config map)
 
 See `docs/design-per-user-github-identity.md` Tier A. **Host still pushes/opens PRs.**
 
-- [ ] Discord user → GitHub login map (config and/or web)
-- [ ] Commit trailers / optional `GIT_AUTHOR_*` (prompter + Co-authored-by / noreply email)
-- [ ] PR body footer: Discord prompter, mapped `@login`, thread URL, session id
-- [ ] Web comment prefix “On behalf of …” when map exists
+- [x] Discord user → GitHub login map (`config.discordUserGitHub` + `SetGitHubIdentity` / `LookupGitHubIdentity`)
+- [x] Commit trailers + Co-authored-by / noreply email instructions in ship prompt (`BuildAttributionBlock`)
+- [x] PR body footer: Discord prompter, mapped `@login`, thread URL, session id
+- [ ] Web comment prefix “On behalf of …” when map exists (optional follow-up)
 - [ ] Optional: use map for `/review @user` → GitHub review request
+- [ ] Web UI for editing the Discord→GitHub map (config JSON works today)
 
 ### 2. Governance depth — **partial**
 
@@ -166,7 +167,7 @@ From `design-agentic-team-runtime.md` — only after gates proven:
 |-------|--------|---------|
 | **A. Multi-person basics** | **Done** | Ownership, claim/hand-off, queue social |
 | **B. PR-aware thread** | **Done** | PR cards, completion, CI triage, timeline |
-| **C. Safe team mode** | **Mostly done** | Caps/modes/env Layer A shipped; **attribution + audit depth + Layer B** remain |
+| **C. Safe team mode** | **Mostly done** | Caps/modes/env Layer A + **attribution Tier A** shipped; audit depth + Layer B remain |
 | **D. Team artifacts** | **Mostly done** | Brief, labels, board, action bar; templates/watchers optional |
 | **E. Review loop** | **Mostly done** | Issue bind, `/comments`+`/address`; full `/review` radar optional |
 | **F. Support / cases** | **Done** | Discord + web case lifecycle |

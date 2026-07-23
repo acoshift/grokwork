@@ -28,33 +28,33 @@ const (
 
 // RunPolicy is the bot-enforced gate set for one Grok child run (K2).
 type RunPolicy struct {
-	Mode             string
-	Phase            string
-	RunKind          string
-	AllowPR          bool
-	AllowDirectShip  bool
-	Yolo             bool
-	Tools            *string // nil unrestricted; non-nil → allowlist / tools-off
-	NoSubagents      bool
-	IncludeGHToken   bool
-	PrefixKind       string // "remote" | "investigate" | "explain" | "none"
-	RefreshPR        bool
-	RefreshPRWarnOnly bool
-	PostCompletion   string // "eng" | "dossier" | "none"
-	RefreshBrief     bool
-	AllowUpload      bool
+	Mode                 string
+	Phase                string
+	RunKind              string
+	AllowPR              bool
+	AllowDirectShip      bool
+	Yolo                 bool
+	Tools                *string // nil unrestricted; non-nil → allowlist / tools-off
+	NoSubagents          bool
+	IncludeGHToken       bool
+	PrefixKind           string // "remote" | "investigate" | "explain" | "none"
+	RefreshPR            bool
+	RefreshPRWarnOnly    bool
+	PostCompletion       string // "eng" | "dossier" | "none"
+	RefreshBrief         bool
+	AllowUpload          bool
 	AllowDirectIntegrate bool
-	DirtyTreeWarn    bool
-	Coerced          bool // StartSessions without GithubWrites coerced to investigate
+	DirtyTreeWarn        bool
+	Coerced              bool // StartSessions without GithubWrites coerced to investigate
 }
 
 // PolicyInput is the pure decision input for BuildRunPolicy.
 type PolicyInput struct {
-	SessionMode   string // Entry.Mode or empty
-	SessionPhase  string // Wave 3; empty in Wave 1
-	ShipMode      string // sessionstore.ShipModePR | ShipModeDirect | ""
-	Caps          config.Capabilities
-	ConfigYolo    bool
+	SessionMode  string // Entry.Mode or empty
+	SessionPhase string // Wave 3; empty in Wave 1
+	ShipMode     string // sessionstore.ShipModePR | ShipModeDirect | ""
+	Caps         config.Capabilities
+	ConfigYolo   bool
 	// RequestedMode from /start or freeform inherit; empty → session or fix default.
 	RequestedMode string
 	// RequestedRunKind optional explicit kind (fix_ci, address).
@@ -312,28 +312,173 @@ func explainPromptPrefix() string {
 	}, "\n")
 }
 
-// attributionFooter appends Tier A attribution lines for ship runs.
+// AttributionInput is pure input for Tier A ship attribution (no I/O).
+type AttributionInput struct {
+	PrompterName string // Discord display / Actor.String()
+	PrompterID   string // Discord snowflake
+	ThreadURL    string // Discord jump or empty
+	SessionID    string // optional Grok/session id
+	// GitHub map (optional). Empty Login = unmapped.
+	GitHubLogin string
+	GitHubName  string
+	GitHubEmail string // optional; empty → noreply derived when login set
+}
+
+// attributionFooter is a thin wrapper for tests / call sites that only have Discord fields.
 func attributionFooter(prompter, prompterID, threadURL string) string {
+	return BuildAttributionBlock(AttributionInput{
+		PrompterName: prompter,
+		PrompterID:   prompterID,
+		ThreadURL:    threadURL,
+	})
+}
+
+// BuildAttributionBlock is the Tier A ship contract block: PR/commit footer + trailers.
+// Host remains the pusher; this only instructs the model what text to include.
+// Unmapped actors still get Discord prompter + thread lines without inventing @login.
+func BuildAttributionBlock(in AttributionInput) string {
 	var b strings.Builder
-	b.WriteString("\nAttribution (required in PR body / commit message when you ship):\n")
-	if prompter != "" {
+	b.WriteString("\nAttribution (required when you ship — PR body footer and commit message trailers):\n")
+	b.WriteString("The host bot still pushes and opens the PR; you must still record who asked.\n")
+
+	// Human-readable footer lines (PR body).
+	if in.PrompterName != "" || in.PrompterID != "" {
 		b.WriteString("- Prompter: ")
-		b.WriteString(prompter)
-		if prompterID != "" {
-			b.WriteString(" (Discord ")
-			b.WriteString(prompterID)
+		if in.PrompterName != "" {
+			b.WriteString(in.PrompterName)
+		}
+		if in.PrompterID != "" {
+			if in.PrompterName != "" {
+				b.WriteString(" ")
+			}
+			b.WriteString("(Discord ")
+			b.WriteString(in.PrompterID)
 			b.WriteString(")")
 		}
 		b.WriteString("\n")
 	}
-	if threadURL != "" {
-		b.WriteString("- Thread: ")
-		b.WriteString(threadURL)
+	login := strings.TrimPrefix(strings.TrimSpace(in.GitHubLogin), "@")
+	if login != "" {
+		b.WriteString("- GitHub: @")
+		b.WriteString(login)
 		b.WriteString("\n")
 	}
-	b.WriteString("- Include a trailer line: Prompter-Discord: <id or name>; Thread: <url>\n")
+	if in.ThreadURL != "" {
+		b.WriteString("- Thread: ")
+		b.WriteString(in.ThreadURL)
+		b.WriteString("\n")
+	}
+	if in.SessionID != "" {
+		b.WriteString("- Session: ")
+		b.WriteString(in.SessionID)
+		b.WriteString("\n")
+	}
+
+	// Required copy-paste footer for PR body (and direct-ship commit messages).
+	b.WriteString("\nAppend this exact footer block to the PR body")
+	if in.ThreadURL != "" || in.PrompterID != "" {
+		b.WriteString(" (and to the commit message body for direct-to-primary ship)")
+	}
+	b.WriteString(":\n")
+	b.WriteString("```\n")
+	b.WriteString(AttributionPRFooterText(in))
+	b.WriteString("```\n")
+
+	// Commit trailers.
+	b.WriteString("\nOn every commit that ships this work, include these git trailers (blank line before trailers):\n")
+	b.WriteString("```\n")
+	b.WriteString(AttributionCommitTrailers(in))
+	b.WriteString("```\n")
+	if login != "" {
+		name, email := AttributionAuthorFields(in)
+		if name != "" && email != "" {
+			b.WriteString("Optional: if you set git author for this commit, use name \"")
+			b.WriteString(name)
+			b.WriteString("\" and email \"")
+			b.WriteString(email)
+			b.WriteString("\" (committer may remain the host bot).\n")
+		}
+	}
 	b.WriteString("")
 	return b.String()
+}
+
+// AttributionPRFooterText is the durable PR-body / direct-ship message footer (no fences).
+func AttributionPRFooterText(in AttributionInput) string {
+	var lines []string
+	lines = append(lines, "---")
+	lines = append(lines, "Requested via Grok Work")
+	if in.PrompterName != "" || in.PrompterID != "" {
+		p := "Prompter: "
+		if in.PrompterName != "" {
+			p += in.PrompterName
+		}
+		if in.PrompterID != "" {
+			if in.PrompterName != "" {
+				p += " "
+			}
+			p += "(Discord " + in.PrompterID + ")"
+		}
+		lines = append(lines, p)
+	}
+	login := strings.TrimPrefix(strings.TrimSpace(in.GitHubLogin), "@")
+	if login != "" {
+		lines = append(lines, "GitHub: @"+login)
+	}
+	if in.ThreadURL != "" {
+		lines = append(lines, "Thread: "+in.ThreadURL)
+	}
+	if in.SessionID != "" {
+		lines = append(lines, "Session: "+in.SessionID)
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// AttributionCommitTrailers returns Co-authored-by (when mapped) + Prompter-Discord trailers.
+func AttributionCommitTrailers(in AttributionInput) string {
+	var lines []string
+	login := strings.TrimPrefix(strings.TrimSpace(in.GitHubLogin), "@")
+	if login != "" {
+		name, email := AttributionAuthorFields(in)
+		if name != "" && email != "" {
+			lines = append(lines, "Co-authored-by: "+name+" <"+email+">")
+		}
+	}
+	if in.PrompterID != "" || in.PrompterName != "" {
+		id := in.PrompterID
+		if id == "" {
+			id = in.PrompterName
+		}
+		line := "Prompter-Discord: " + id
+		if in.ThreadURL != "" {
+			line += "; Thread: " + in.ThreadURL
+		}
+		lines = append(lines, line)
+	} else if in.ThreadURL != "" {
+		lines = append(lines, "Prompter-Discord: unknown; Thread: "+in.ThreadURL)
+	}
+	if len(lines) == 0 {
+		return "Prompter-Discord: unknown\n"
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// AttributionAuthorFields returns suggested GIT_AUTHOR name/email for a mapped identity.
+// Unmapped → empty strings.
+func AttributionAuthorFields(in AttributionInput) (name, email string) {
+	login := strings.TrimPrefix(strings.TrimSpace(in.GitHubLogin), "@")
+	if login == "" {
+		return "", ""
+	}
+	name = strings.TrimSpace(in.GitHubName)
+	if name == "" {
+		name = login
+	}
+	email = strings.TrimSpace(in.GitHubEmail)
+	if email == "" {
+		email = config.NoreplyGitHubEmail(in.PrompterID, login)
+	}
+	return name, email
 }
 
 // intentPreview truncates a prompt for queue display (~80 runes).

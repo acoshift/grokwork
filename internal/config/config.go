@@ -60,18 +60,18 @@ type Config struct {
 	DiscordClientID string `json:"discordClientId,omitempty"`
 	// DiscordClientSecret is the OAuth2 client secret for web login (never log).
 	// Prefer env DISCORD_CLIENT_SECRET / GROK_WORK_DISCORD_CLIENT_SECRET.
-	DiscordClientSecret string            `json:"discordClientSecret,omitempty"`
-	Projects            ProjectsMap       `json:"projects"`
-	Channels            map[string]string `json:"channels"` // channel ID → project name
-	GrokBin             string            `json:"grokBin"`
-	Yolo                *bool             `json:"yolo"`
-	Model               string            `json:"model"`
-	MaxTurns            int               `json:"maxTurns"`
-	TimeoutMs           int               `json:"timeoutMs"`
-	ExtraArgs           []string          `json:"extraArgs"`
-	SummarizeThreadTitle *bool            `json:"summarizeThreadTitle"`
-	SummarizeTimeoutMs  int               `json:"summarizeTimeoutMs"`
-	WorktreeIsolation   *bool             `json:"worktreeIsolation"`
+	DiscordClientSecret  string            `json:"discordClientSecret,omitempty"`
+	Projects             ProjectsMap       `json:"projects"`
+	Channels             map[string]string `json:"channels"` // channel ID → project name
+	GrokBin              string            `json:"grokBin"`
+	Yolo                 *bool             `json:"yolo"`
+	Model                string            `json:"model"`
+	MaxTurns             int               `json:"maxTurns"`
+	TimeoutMs            int               `json:"timeoutMs"`
+	ExtraArgs            []string          `json:"extraArgs"`
+	SummarizeThreadTitle *bool             `json:"summarizeThreadTitle"`
+	SummarizeTimeoutMs   int               `json:"summarizeTimeoutMs"`
+	WorktreeIsolation    *bool             `json:"worktreeIsolation"`
 	// WorktreeIdleTTLDays is days of inactivity before pruning thread worktrees.
 	// nil/omitted → DefaultWorktreeIdleTTLDays (30). 0 disables idle cleanup.
 	WorktreeIdleTTLDays *int `json:"worktreeIdleTTLDays,omitempty"`
@@ -117,6 +117,9 @@ type Config struct {
 	MaxConcurrentRunsUser *int `json:"maxConcurrentRunsUser,omitempty"`
 	// GrokEnvDenylist is extra env var name prefixes stripped from Grok children (Layer A).
 	GrokEnvDenylist []string `json:"grokEnvDenylist,omitempty"`
+	// DiscordUserGitHub maps Discord user snowflake → GitHub identity for Tier A
+	// attribution (commit trailers / PR footer). Host remains the pusher; no tokens.
+	DiscordUserGitHub map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
 
 	mu         sync.RWMutex
 	DataDir    string `json:"-"`
@@ -124,6 +127,13 @@ type Config struct {
 
 	catalogMu    sync.Mutex
 	catalogCache map[string]catalogCacheEntry
+}
+
+// GitHubIdentity is a Discord-mapped GitHub profile for attribution only (Tier A).
+type GitHubIdentity struct {
+	Login string `json:"login"`           // required for map usefulness; bare login without @
+	Name  string `json:"name,omitempty"`  // optional display name for Co-authored-by
+	Email string `json:"email,omitempty"` // optional; default id+login@users.noreply.github.com
 }
 
 // CapabilityMapItem is a user/role → template row for the project config UI.
@@ -142,7 +152,7 @@ type ProjectItem struct {
 	LinearEnvHint            string // e.g. LINEAR_API_KEY_HOMECONNECT
 	DiscordChannelID         string
 	DiscordGuildID           string
-	GitHubReposText           string // "owner/repo" lines for config form
+	GitHubReposText          string   // "owner/repo" lines for config form
 	ChannelOptions           []string // channel IDs mapped to this project (preferred dropdown)
 	AllowedUserIDs           []string
 	AllowedRoleIDs           []string
@@ -478,37 +488,38 @@ func (c *Config) saveLocked() error {
 	// Re-read existing file so unknown/extra fields from other tools are not wiped
 	// for keys we don't own; we rewrite the full known schema.
 	out := struct {
-		DiscordToken         string            `json:"discordToken"`
-		DiscordClientID      string            `json:"discordClientId,omitempty"`
-		DiscordClientSecret  string            `json:"discordClientSecret,omitempty"`
-		Projects             ProjectsMap       `json:"projects"`
-		Channels             map[string]string `json:"channels"`
-		GrokBin              string            `json:"grokBin"`
-		Yolo                 *bool             `json:"yolo"`
-		Model                string            `json:"model"`
-		MaxTurns             int               `json:"maxTurns"`
-		TimeoutMs            int               `json:"timeoutMs"`
-		ExtraArgs            []string          `json:"extraArgs"`
-		SummarizeThreadTitle *bool             `json:"summarizeThreadTitle"`
-		SummarizeTimeoutMs   int               `json:"summarizeTimeoutMs"`
-		WorktreeIsolation    *bool             `json:"worktreeIsolation"`
-		WorktreeIdleTTLDays  *int              `json:"worktreeIdleTTLDays,omitempty"`
-		HTTPListen           string            `json:"httpListen,omitempty"`
-		WebPublicBaseURL     string            `json:"webPublicBaseURL,omitempty"`
-		DiscordGuildID       string            `json:"discordGuildId,omitempty"`
-		WebMergeMethod       string            `json:"webMergeMethod,omitempty"`
-		DiscordPRLink        string            `json:"discordPRLink,omitempty"`
-		WebAuth              *WebAuthConfig    `json:"webAuth,omitempty"`
-		RiskyPathGlobs       []string          `json:"riskyPathGlobs,omitempty"`
-		AutoFixCI            *bool             `json:"autoFixCI,omitempty"`
-		AutoFixCIMax         int               `json:"autoFixCIMax,omitempty"`
-		BoardStaleDays       *int              `json:"boardStaleDays,omitempty"`
-		BoardDigestChannel    string            `json:"boardDigestChannel,omitempty"`
-		ResumeActiveRuns      *bool             `json:"resumeActiveRuns,omitempty"`
-		ShutdownTimeoutMs     int               `json:"shutdownTimeoutMs,omitempty"`
-		MaxConcurrentRuns     *int              `json:"maxConcurrentRuns,omitempty"`
-		MaxConcurrentRunsUser *int              `json:"maxConcurrentRunsUser,omitempty"`
-		GrokEnvDenylist       []string          `json:"grokEnvDenylist,omitempty"`
+		DiscordToken          string                    `json:"discordToken"`
+		DiscordClientID       string                    `json:"discordClientId,omitempty"`
+		DiscordClientSecret   string                    `json:"discordClientSecret,omitempty"`
+		Projects              ProjectsMap               `json:"projects"`
+		Channels              map[string]string         `json:"channels"`
+		GrokBin               string                    `json:"grokBin"`
+		Yolo                  *bool                     `json:"yolo"`
+		Model                 string                    `json:"model"`
+		MaxTurns              int                       `json:"maxTurns"`
+		TimeoutMs             int                       `json:"timeoutMs"`
+		ExtraArgs             []string                  `json:"extraArgs"`
+		SummarizeThreadTitle  *bool                     `json:"summarizeThreadTitle"`
+		SummarizeTimeoutMs    int                       `json:"summarizeTimeoutMs"`
+		WorktreeIsolation     *bool                     `json:"worktreeIsolation"`
+		WorktreeIdleTTLDays   *int                      `json:"worktreeIdleTTLDays,omitempty"`
+		HTTPListen            string                    `json:"httpListen,omitempty"`
+		WebPublicBaseURL      string                    `json:"webPublicBaseURL,omitempty"`
+		DiscordGuildID        string                    `json:"discordGuildId,omitempty"`
+		WebMergeMethod        string                    `json:"webMergeMethod,omitempty"`
+		DiscordPRLink         string                    `json:"discordPRLink,omitempty"`
+		WebAuth               *WebAuthConfig            `json:"webAuth,omitempty"`
+		RiskyPathGlobs        []string                  `json:"riskyPathGlobs,omitempty"`
+		AutoFixCI             *bool                     `json:"autoFixCI,omitempty"`
+		AutoFixCIMax          int                       `json:"autoFixCIMax,omitempty"`
+		BoardStaleDays        *int                      `json:"boardStaleDays,omitempty"`
+		BoardDigestChannel    string                    `json:"boardDigestChannel,omitempty"`
+		ResumeActiveRuns      *bool                     `json:"resumeActiveRuns,omitempty"`
+		ShutdownTimeoutMs     int                       `json:"shutdownTimeoutMs,omitempty"`
+		MaxConcurrentRuns     *int                      `json:"maxConcurrentRuns,omitempty"`
+		MaxConcurrentRunsUser *int                      `json:"maxConcurrentRunsUser,omitempty"`
+		GrokEnvDenylist       []string                  `json:"grokEnvDenylist,omitempty"`
+		DiscordUserGitHub     map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
 	}{
 		DiscordToken:          c.DiscordToken,
 		DiscordClientID:       c.DiscordClientID,
@@ -541,6 +552,7 @@ func (c *Config) saveLocked() error {
 		MaxConcurrentRuns:     cloneIntPtr(c.MaxConcurrentRuns),
 		MaxConcurrentRunsUser: cloneIntPtr(c.MaxConcurrentRunsUser),
 		GrokEnvDenylist:       slices.Clone(c.GrokEnvDenylist),
+		DiscordUserGitHub:     cloneGitHubIdentityMap(c.DiscordUserGitHub),
 	}
 	raw, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
