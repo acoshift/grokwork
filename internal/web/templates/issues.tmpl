@@ -1,5 +1,5 @@
 {{define "content"}}
-<h1 id="page-issues-list">Issues · {{.Project}}</h1>
+<h1 id="page-issues-list">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· issues</span></h1>
 <p class="sub">
   Repo: <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span>
   {{if .LinearEnabled}} · <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}

@@ -146,7 +146,7 @@ func (s *Server) issuesPageShell(ctx *hime.Context) (pageData, error) {
 	repo := strings.TrimSpace(ctx.FormValue("repo"))
 	active, err := config.ResolveRepoPicker(catalog, owner, repo)
 	d := s.basePage(ctx)
-	d.Title = "Issues · " + project
+	d.Title = project + " · Issues"
 	d.IsIssues = true
 	d.Project = project
 	d.RepoCatalog = catalog

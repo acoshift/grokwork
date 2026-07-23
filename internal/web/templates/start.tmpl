@@ -1,5 +1,5 @@
 {{define "content"}}
-<h1 id="page-start">Start a task <span class="muted" style="font-weight:500;font-size:1.05rem">· {{.Project}}</span></h1>
+<h1 id="page-start">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· start task</span></h1>
 <p class="sub">The web equivalent of tagging <span class="mono">@Grok</span> in a mapped channel: describe the work and Grok runs it on a fresh worktree, streaming into a new session.</p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}

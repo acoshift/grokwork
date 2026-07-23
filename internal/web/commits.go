@@ -35,7 +35,7 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	active, err := config.ResolveRepoPicker(catalog, owner, repo)
 	if err != nil {
 		d := s.basePage(ctx)
-		d.Title = "Commits · " + project
+		d.Title = project + " · Commits"
 		d.IsCommits = true
 		d.Project = project
 		d.RepoCatalog = catalog
@@ -58,7 +58,7 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	}
 	skip := (page - 1) * pageSize
 	d := s.basePage(ctx)
-	d.Title = "Commits · " + project
+	d.Title = project + " · Commits"
 	d.IsCommits = true
 	d.Project = project
 	d.RepoCatalog = catalog
