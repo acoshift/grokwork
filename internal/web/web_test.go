@@ -108,7 +108,14 @@ func TestSessionVerifyPanelAndShipFromCase(t *testing.T) {
 		t.Fatalf("session status=%d", w.Code)
 	}
 	body := w.Body.String()
-	for _, want := range []string{`id="session-verify-panel"`, "unit", "FAIL: TestX", "status-error"} {
+	for _, want := range []string{
+		`id="session-verify-panel"`, "unit", "FAIL: TestX", "status-error",
+		// Tracked PR → in-app detail (header + work-unit list).
+		`href="/prs/acme/app/7?project=proj">PR #7</a>`,
+		`href="/prs/acme/app/7?project=proj">acme/app#7</a>`,
+		"fix pay",
+		"Pull requests",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("session missing %q", want)
 		}

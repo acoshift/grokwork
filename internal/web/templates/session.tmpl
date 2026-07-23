@@ -15,6 +15,13 @@
     {{else}}
     <a class="btn btn-compact" href="/sessions/{{.ThreadID}}/diff{{if .Project}}?project={{urlquery .Project}}{{end}}" aria-disabled="true" title="Worktree no longer on disk">Worktree diff</a>
     {{end}}
+    {{range .SessionEntry.PRs}}
+    {{if and .Owner .Repo .Number}}
+    <a class="btn btn-compact" href="/prs/{{.Owner}}/{{.Repo}}/{{.Number}}{{if $.Project}}?project={{urlquery $.Project}}{{end}}">PR #{{.Number}}</a>
+    {{else if .URL}}
+    <a class="btn btn-compact" href="{{.URL}}" target="_blank" rel="noopener">PR{{if .Number}} #{{.Number}}{{end}} ↗</a>
+    {{end}}
+    {{end}}
     <a class="btn btn-compact" href="/history/{{.ThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}">Turn log</a>
     {{if .DiscordURL}}<a class="btn btn-compact" href="{{.DiscordURL}}" target="_blank" rel="noopener">Discord ↗</a>{{end}}
   </div>
@@ -325,6 +332,36 @@
         <button type="submit" class="btn-danger btn-compact">Remove</button>
       </form>
       {{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+  {{if .SessionEntry.PRs}}
+  <p style="margin:0.85rem 0 0.25rem"><span class="bubble-label" style="display:block">Pull requests</span></p>
+  <ul style="margin:0;padding-left:1.25rem">
+    {{range .SessionEntry.PRs}}
+    <li>
+      {{if and .Owner .Repo .Number}}
+      <a class="mono" href="/prs/{{.Owner}}/{{.Repo}}/{{.Number}}{{if $.Project}}?project={{urlquery $.Project}}{{end}}">{{.Owner}}/{{.Repo}}#{{.Number}}</a>
+      {{else if .Number}}
+      <span class="mono">#{{.Number}}</span>
+      {{else if .URL}}
+      <a class="mono" href="{{.URL}}" target="_blank" rel="noopener">{{.URL}}</a>
+      {{else}}
+      <span class="muted">PR</span>
+      {{end}}
+      {{if eq .State "OPEN"}}
+      <span class="badge live">{{.State}}</span>
+      {{else if eq .State "MERGED"}}
+      <span class="badge status-merged">{{.State}}</span>
+      {{else if eq .State "CLOSED"}}
+      <span class="badge status-cancelled">{{.State}}</span>
+      {{else if .State}}
+      <span class="badge">{{.State}}</span>
+      {{end}}
+      {{if .IsDraft}} <span class="badge">draft</span>{{end}}
+      {{if .Title}} <span class="muted">— {{.Title}}</span>{{end}}
+      {{if and .URL .Owner .Repo .Number}} <a href="{{.URL}}" target="_blank" rel="noopener" title="Open on GitHub">↗</a>{{end}}
     </li>
     {{end}}
   </ul>

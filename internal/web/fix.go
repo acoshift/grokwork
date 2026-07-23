@@ -603,6 +603,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 	d := s.basePage(ctx)
 	d.ThreadID = threadID
 	if ent, ok := s.sessions.Get(threadID); ok {
+		ent.NormalizePRs()
 		d.SessionEntry = ent
 		d.Project = ent.Project
 		d.DiscordURL = ent.DiscordURL
