@@ -399,6 +399,74 @@ func TestWorktreeIdleTTLDays(t *testing.T) {
 	}
 }
 
+func TestWorktreesRoot(t *testing.T) {
+	cfgDir := t.TempDir()
+	cfg := &Config{
+		Projects:   ProjectsMap{},
+		Channels:   map[string]string{},
+		ConfigPath: filepath.Join(cfgDir, "config.json"),
+		DataDir:    filepath.Join(cfgDir, "data"),
+	}
+	wantDefault := filepath.Join(cfg.DataDir, "worktrees")
+	if got := cfg.WorktreesRoot(); got != wantDefault {
+		t.Fatalf("default root=%q want %q", got, wantDefault)
+	}
+	if snap := cfg.Snapshot(); snap.WorktreesRoot != wantDefault || snap.WorktreeDir != "" {
+		t.Fatalf("snapshot default root=%q dir=%q", snap.WorktreesRoot, snap.WorktreeDir)
+	}
+
+	abs := filepath.Join(t.TempDir(), "wt")
+	if err := cfg.SetWorktreeDir(abs); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WorktreeDirValue() != abs {
+		t.Fatalf("value=%q", cfg.WorktreeDirValue())
+	}
+	if got := cfg.WorktreesRoot(); got != filepath.Clean(abs) {
+		t.Fatalf("abs root=%q want %q", got, filepath.Clean(abs))
+	}
+
+	// Relative paths resolve against the config file directory.
+	if err := cfg.SetWorktreeDir("rel-worktrees"); err != nil {
+		t.Fatal(err)
+	}
+	wantRel := filepath.Join(cfgDir, "rel-worktrees")
+	if got := cfg.WorktreesRoot(); got != wantRel {
+		t.Fatalf("rel root=%q want %q", got, wantRel)
+	}
+
+	if err := cfg.SetWorktreeSettings(10, ""); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WorktreeIdleTTLDaysValue() != 10 {
+		t.Fatalf("days=%d", cfg.WorktreeIdleTTLDaysValue())
+	}
+	if cfg.WorktreeDirValue() != "" {
+		t.Fatalf("cleared dir still set: %q", cfg.WorktreeDirValue())
+	}
+	if got := cfg.WorktreesRoot(); got != wantDefault {
+		t.Fatalf("after clear root=%q want %q", got, wantDefault)
+	}
+
+	disk, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		WorktreeDir         string `json:"worktreeDir"`
+		WorktreeIdleTTLDays *int   `json:"worktreeIdleTTLDays"`
+	}
+	if err := json.Unmarshal(disk, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.WorktreeDir != "" {
+		t.Fatalf("empty override should omit/empty on disk: %q", parsed.WorktreeDir)
+	}
+	if parsed.WorktreeIdleTTLDays == nil || *parsed.WorktreeIdleTTLDays != 10 {
+		t.Fatalf("disk ttl=%v", parsed.WorktreeIdleTTLDays)
+	}
+}
+
 func TestBoardSettings(t *testing.T) {
 	cfg := &Config{
 		Projects:   ProjectsMap{},

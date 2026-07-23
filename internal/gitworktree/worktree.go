@@ -146,20 +146,22 @@ func IsManagedBranch(branch string) bool {
 	return PrefixFromBranch(branch) != ""
 }
 
-func WorktreePath(dataDir, project, unitID string) string {
-	return filepath.Join(dataDir, "worktrees", sanitizePathSegment(project), sanitizePathSegment(unitID))
+// WorktreePath returns worktreesRoot/<project>/<unitID>.
+// worktreesRoot is the configured worktree folder (default <DataDir>/worktrees).
+func WorktreePath(worktreesRoot, project, unitID string) string {
+	return filepath.Join(worktreesRoot, sanitizePathSegment(project), sanitizePathSegment(unitID))
 }
 
 // ResolveSessionWorktreePath picks the best on-disk worktree for a unit.
 // Prefer sessionCwd when it is still a real worktree root; otherwise the
-// canonical path under dataDir. This heals sessions that stored absolute paths
-// under an old data directory (e.g. …/grok-discord/data/worktrees/… after a
-// rename to grokwork). onDisk is true only when the path is a git worktree root
-// (not merely a directory nested inside another repo — worktrees live under
-// the bot dataDir, so empty dirs would otherwise resolve to the bot's own repo).
-// When nothing usable is on disk, returns the canonical path with onDisk=false.
-func ResolveSessionWorktreePath(dataDir, project, unitID, sessionCwd, mainCwd string) (path string, onDisk bool) {
-	canonical := WorktreePath(dataDir, project, unitID)
+// canonical path under worktreesRoot. This heals sessions that stored absolute
+// paths under an old data directory (e.g. …/grok-discord/data/worktrees/… after
+// a rename to grokwork). onDisk is true only when the path is a git worktree root
+// (not merely a directory nested inside another repo — empty dirs would otherwise
+// resolve to a parent repo). When nothing usable is on disk, returns the
+// canonical path with onDisk=false.
+func ResolveSessionWorktreePath(worktreesRoot, project, unitID, sessionCwd, mainCwd string) (path string, onDisk bool) {
+	canonical := WorktreePath(worktreesRoot, project, unitID)
 	sessionCwd = strings.TrimSpace(sessionCwd)
 	mainCwd = strings.TrimSpace(mainCwd)
 
@@ -174,13 +176,13 @@ func ResolveSessionWorktreePath(dataDir, project, unitID, sessionCwd, mainCwd st
 }
 
 // FindOnDiskByUnitID returns the first on-disk worktree whose path segment is unitID.
-// Used when session metadata lost project/cwd but the worktree still exists under dataDir.
-func FindOnDiskByUnitID(dataDir, unitID string) (OnDisk, bool) {
+// Used when session metadata lost project/cwd but the worktree still exists under worktreesRoot.
+func FindOnDiskByUnitID(worktreesRoot, unitID string) (OnDisk, bool) {
 	unitID = strings.TrimSpace(unitID)
 	if unitID == "" {
 		return OnDisk{}, false
 	}
-	list, err := ListOnDisk(dataDir)
+	list, err := ListOnDisk(worktreesRoot)
 	if err != nil {
 		return OnDisk{}, false
 	}
@@ -215,8 +217,9 @@ func IsRepo(dir string) bool {
 // CleanupIfPRDone removes the worktree/branch when the PR is merged or closed.
 // Uses default branch naming for unitID (BranchPrefix / web).
 // Missing gh → cleaned=false with err set.
-func CleanupIfPRDone(ctx context.Context, repo, dataDir, project, unitID string) (cleaned bool, state string, err error) {
-	return CleanupIfPRDoneWith(ctx, repo, dataDir, project, unitID, EnsureOpts{})
+// worktreesRoot is the configured worktree folder (see WorktreePath).
+func CleanupIfPRDone(ctx context.Context, repo, worktreesRoot, project, unitID string) (cleaned bool, state string, err error) {
+	return CleanupIfPRDoneWith(ctx, repo, worktreesRoot, project, unitID, EnsureOpts{})
 }
 
 // CleanupIfPRDoneWith is like CleanupIfPRDone but honors BranchPrefix (or empty → PrefixForUnitID).
@@ -224,7 +227,7 @@ func CleanupIfPRDone(ctx context.Context, repo, dataDir, project, unitID string)
 // the unit id form so PrefixForUnitID applies when BranchPrefix is empty and unit is w_*.
 // When the preferred branch is absent, also tries other managed prefixes for unitID so
 // legacy grok/discord/* trees are cleaned after the default prefix change.
-func CleanupIfPRDoneWith(ctx context.Context, repo, dataDir, project, unitID string, opts EnsureOpts) (cleaned bool, state string, err error) {
+func CleanupIfPRDoneWith(ctx context.Context, repo, worktreesRoot, project, unitID string, opts EnsureOpts) (cleaned bool, state string, err error) {
 	if repo == "" || unitID == "" {
 		return false, "", nil
 	}
@@ -238,8 +241,8 @@ func CleanupIfPRDoneWith(ctx context.Context, repo, dataDir, project, unitID str
 	} else {
 		prefix = NormalizePrefix(prefix)
 	}
-	branch := resolveExistingManagedBranch(ctx, repo, dataDir, project, unitID, prefix)
-	path := WorktreePath(dataDir, project, unitID)
+	branch := resolveExistingManagedBranch(ctx, repo, worktreesRoot, project, unitID, prefix)
+	path := WorktreePath(worktreesRoot, project, unitID)
 
 	hasPath := false
 	if st, statErr := os.Stat(path); statErr == nil && st.IsDir() {
@@ -331,14 +334,16 @@ func AddDetached(ctx context.Context, repo, path, sha string) error {
 }
 
 // Ensure creates or reuses a default-prefix worktree for unitID.
-func Ensure(ctx context.Context, repo, dataDir, project, unitID string) (Tree, error) {
-	return EnsureWith(ctx, repo, dataDir, project, unitID, EnsureOpts{})
+// worktreesRoot is the configured worktree folder (see WorktreePath).
+func Ensure(ctx context.Context, repo, worktreesRoot, project, unitID string) (Tree, error) {
+	return EnsureWith(ctx, repo, worktreesRoot, project, unitID, EnsureOpts{})
 }
 
 // EnsureWith creates or reuses a worktree; BranchPrefix empty uses PrefixForUnitID(unitID).
 // When reusing an on-disk worktree, HEAD is preferred if it is a managed branch so
 // legacy grok/discord/* trees are not renamed to the new default by accident.
-func EnsureWith(ctx context.Context, repo, dataDir, project, unitID string, opts EnsureOpts) (Tree, error) {
+// worktreesRoot is the configured worktree folder (see WorktreePath).
+func EnsureWith(ctx context.Context, repo, worktreesRoot, project, unitID string, opts EnsureOpts) (Tree, error) {
 	if repo == "" || unitID == "" {
 		return Tree{}, fmt.Errorf("repo and unitID are required")
 	}
@@ -354,11 +359,11 @@ func EnsureWith(ctx context.Context, repo, dataDir, project, unitID string, opts
 	}
 	// Prefer an already-existing managed branch for this unit (legacy grok/discord/*
 	// after the prefix rename) over creating a parallel BranchPrefix branch.
-	branch := resolveExistingManagedBranch(ctx, repo, dataDir, project, unitID, prefix)
+	branch := resolveExistingManagedBranch(ctx, repo, worktreesRoot, project, unitID, prefix)
 	if !IsManagedBranch(branch) {
 		return Tree{}, fmt.Errorf("refuse to ensure unmanaged branch %q", branch)
 	}
-	path := WorktreePath(dataDir, project, unitID)
+	path := WorktreePath(worktreesRoot, project, unitID)
 	t := Tree{Path: path, Branch: branch, Repo: repo}
 
 	if ok, err := isUsableWorktree(ctx, repo, path); err != nil {
@@ -718,12 +723,12 @@ func headBranch(ctx context.Context, path string) string {
 // resolveExistingManagedBranch picks the branch for unitID that already exists
 // (preferred prefix first, then other managed prefixes, then worktree HEAD).
 // Returns preferred+unitID when nothing exists yet (caller creates it).
-func resolveExistingManagedBranch(ctx context.Context, repo, dataDir, project, unitID, preferredPrefix string) string {
+func resolveExistingManagedBranch(ctx context.Context, repo, worktreesRoot, project, unitID, preferredPrefix string) string {
 	preferred := preferredPrefix + unitID
 	if branchExists(ctx, repo, preferred) {
 		return preferred
 	}
-	path := WorktreePath(dataDir, project, unitID)
+	path := WorktreePath(worktreesRoot, project, unitID)
 	if cur := headBranch(ctx, path); IsManagedBranch(cur) && strings.HasSuffix(cur, "/"+unitID) {
 		return cur
 	}

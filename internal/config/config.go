@@ -72,6 +72,11 @@ type Config struct {
 	SummarizeThreadTitle *bool             `json:"summarizeThreadTitle"`
 	SummarizeTimeoutMs   int               `json:"summarizeTimeoutMs"`
 	WorktreeIsolation    *bool             `json:"worktreeIsolation"`
+	// WorktreeDir is the root directory for per-thread git worktrees
+	// (<root>/<project>/<unitID>). Empty/omitted → <DataDir>/worktrees.
+	// Absolute, or relative to the config file directory. Applies to newly
+	// created worktrees; existing sessions keep their stored cwd until reset.
+	WorktreeDir string `json:"worktreeDir,omitempty"`
 	// WorktreeIdleTTLDays is days of inactivity before pruning thread worktrees.
 	// nil/omitted → DefaultWorktreeIdleTTLDays (30). 0 disables idle cleanup.
 	WorktreeIdleTTLDays *int `json:"worktreeIdleTTLDays,omitempty"`
@@ -189,6 +194,10 @@ type Snapshot struct {
 	TimeoutMs           int // effective (default 1800000 = 30m)
 	Yolo                bool
 	WorktreeIsolation   bool
+	// WorktreeDir is the configured override (empty = default under DataDir).
+	WorktreeDir string
+	// WorktreesRoot is the effective absolute root for new worktrees.
+	WorktreesRoot       string
 	WorktreeIdleTTLDays int // effective value (default 30 when unset)
 	AutoFixCI           bool
 	AutoFixCIMax        int    // effective cap (default 2)
@@ -502,6 +511,7 @@ func (c *Config) saveLocked() error {
 		SummarizeThreadTitle  *bool                     `json:"summarizeThreadTitle"`
 		SummarizeTimeoutMs    int                       `json:"summarizeTimeoutMs"`
 		WorktreeIsolation     *bool                     `json:"worktreeIsolation"`
+		WorktreeDir           string                    `json:"worktreeDir,omitempty"`
 		WorktreeIdleTTLDays   *int                      `json:"worktreeIdleTTLDays,omitempty"`
 		HTTPListen            string                    `json:"httpListen,omitempty"`
 		WebPublicBaseURL      string                    `json:"webPublicBaseURL,omitempty"`
@@ -535,6 +545,7 @@ func (c *Config) saveLocked() error {
 		SummarizeThreadTitle:  c.SummarizeThreadTitle,
 		SummarizeTimeoutMs:    c.SummarizeTimeoutMs,
 		WorktreeIsolation:     c.WorktreeIsolation,
+		WorktreeDir:           strings.TrimSpace(c.WorktreeDir),
 		WorktreeIdleTTLDays:   cloneIntPtr(c.WorktreeIdleTTLDays),
 		HTTPListen:            c.HTTPListen,
 		WebPublicBaseURL:      c.WebPublicBaseURL,
@@ -605,6 +616,86 @@ func (c *Config) SetGrokRunLimits(maxTurns, timeoutMs int) error {
 	defer c.mu.Unlock()
 	c.MaxTurns = maxTurns
 	c.TimeoutMs = timeoutMs
+	return c.saveLocked()
+}
+
+// WorktreesRoot returns the directory that contains <project>/<unitID> worktrees.
+// Empty WorktreeDir → <DataDir>/worktrees. Relative WorktreeDir is resolved
+// against the config file directory.
+func (c *Config) WorktreesRoot() string {
+	if c == nil {
+		return "worktrees"
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.worktreesRootLocked()
+}
+
+func (c *Config) worktreesRootLocked() string {
+	raw := strings.TrimSpace(c.WorktreeDir)
+	if raw == "" {
+		if c.DataDir == "" {
+			return "worktrees"
+		}
+		return filepath.Join(c.DataDir, "worktrees")
+	}
+	if filepath.IsAbs(raw) {
+		return filepath.Clean(raw)
+	}
+	base := ""
+	if c.ConfigPath != "" {
+		base = filepath.Dir(c.ConfigPath)
+	}
+	if base == "" {
+		return filepath.Clean(raw)
+	}
+	return filepath.Clean(filepath.Join(base, raw))
+}
+
+// WorktreeDirValue returns the configured worktreeDir override (may be empty).
+func (c *Config) WorktreeDirValue() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return strings.TrimSpace(c.WorktreeDir)
+}
+
+// SetWorktreeDir sets the worktree root for new worktrees and persists.
+// Empty clears the override (use DataDir/worktrees). Relative paths are stored
+// as given and resolved at runtime against the config directory.
+func (c *Config) SetWorktreeDir(dir string) error {
+	if c == nil {
+		return fmt.Errorf("nil config")
+	}
+	dir = strings.TrimSpace(dir)
+	// Reject control characters / NULs that would never be valid paths.
+	if strings.ContainsRune(dir, 0) {
+		return fmt.Errorf("worktreeDir must not contain NUL")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.WorktreeDir = dir
+	return c.saveLocked()
+}
+
+// SetWorktreeSettings sets idle TTL and worktree root together and persists.
+// days: 0 disables automatic idle cleanup; negative rejected.
+// worktreeDir: empty clears override (DataDir/worktrees).
+func (c *Config) SetWorktreeSettings(days int, worktreeDir string) error {
+	if days < 0 {
+		return fmt.Errorf("worktreeIdleTTLDays must be >= 0 (0 disables cleanup)")
+	}
+	worktreeDir = strings.TrimSpace(worktreeDir)
+	if strings.ContainsRune(worktreeDir, 0) {
+		return fmt.Errorf("worktreeDir must not contain NUL")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	d := days
+	c.WorktreeIdleTTLDays = &d
+	c.WorktreeDir = worktreeDir
 	return c.saveLocked()
 }
 
@@ -972,6 +1063,8 @@ func (c *Config) Snapshot() Snapshot {
 		TimeoutMs:           timeoutMs,
 		Yolo:                c.YoloEnabled(),
 		WorktreeIsolation:   c.WorktreeIsolationEnabled(),
+		WorktreeDir:         strings.TrimSpace(c.WorktreeDir),
+		WorktreesRoot:       c.worktreesRootLocked(),
 		WorktreeIdleTTLDays: idleDays,
 		AutoFixCI:           c.AutoFixCI != nil && *c.AutoFixCI,
 		AutoFixCIMax:        autoFixMax,

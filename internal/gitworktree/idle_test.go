@@ -8,13 +8,13 @@ import (
 )
 
 func TestListOnDisk(t *testing.T) {
-	data := t.TempDir()
-	if got, err := ListOnDisk(data); err != nil || got != nil {
+	root := t.TempDir()
+	if got, err := ListOnDisk(root); err != nil || got != nil {
 		t.Fatalf("empty: got %v err %v", got, err)
 	}
 
 	mk := func(project, thread string) string {
-		p := filepath.Join(data, "worktrees", project, thread)
+		p := filepath.Join(root, project, thread)
 		if err := os.MkdirAll(p, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -23,12 +23,12 @@ func TestListOnDisk(t *testing.T) {
 	p1 := mk("app", "111")
 	p2 := mk("app", "222")
 	_ = mk("other", "333")
-	// File under worktrees should be ignored.
-	if err := os.WriteFile(filepath.Join(data, "worktrees", "app", "not-a-dir"), []byte("x"), 0o644); err != nil {
+	// File under worktrees root should be ignored.
+	if err := os.WriteFile(filepath.Join(root, "app", "not-a-dir"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	list, err := ListOnDisk(data)
+	list, err := ListOnDisk(root)
 	if err != nil {
 		t.Fatal(err)
 	}

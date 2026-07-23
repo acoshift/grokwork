@@ -210,7 +210,7 @@ func (b *Bot) maybeRemoveDirectWorktree(threadID string, proj projectRef, runCwd
 	}
 	path := runCwd
 	if path == "" {
-		path, _ = gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, proj.Name, threadID, "", mainRepo)
+		path, _ = gitworktree.ResolveSessionWorktreePath(b.cfg.WorktreesRoot(), proj.Name, threadID, "", mainRepo)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

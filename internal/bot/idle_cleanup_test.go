@@ -20,25 +20,25 @@ func TestPruneIdleWorktrees(t *testing.T) {
 	ctx := context.Background()
 
 	oldThread := "1001"
-	tr, err := gitworktree.Ensure(ctx, repo, data, "app", oldThread)
+	tr, err := gitworktree.Ensure(ctx, repo, filepath.Join(data, "worktrees"), "app", oldThread)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	newThread := "1002"
-	trNew, err := gitworktree.Ensure(ctx, repo, data, "app", newThread)
+	trNew, err := gitworktree.Ensure(ctx, repo, filepath.Join(data, "worktrees"), "app", newThread)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	busyThread := "1003"
-	trBusy, err := gitworktree.Ensure(ctx, repo, data, "app", busyThread)
+	trBusy, err := gitworktree.Ensure(ctx, repo, filepath.Join(data, "worktrees"), "app", busyThread)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	orphanThread := "1004"
-	trOrphan, err := gitworktree.Ensure(ctx, repo, data, "app", orphanThread)
+	trOrphan, err := gitworktree.Ensure(ctx, repo, filepath.Join(data, "worktrees"), "app", orphanThread)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestListAndPruneWorktree(t *testing.T) {
 	ctx := context.Background()
 
 	threadID := "2001"
-	tr, err := gitworktree.Ensure(ctx, repo, data, "app", threadID)
+	tr, err := gitworktree.Ensure(ctx, repo, filepath.Join(data, "worktrees"), "app", threadID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestListAndPruneWorktree(t *testing.T) {
 	}
 
 	// Busy refuse
-	tr2, err := gitworktree.Ensure(ctx, repo, data, "app", "2002")
+	tr2, err := gitworktree.Ensure(ctx, repo, filepath.Join(data, "worktrees"), "app", "2002")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestListWorktreesHealsStaleDataDirCwd(t *testing.T) {
 	data := t.TempDir()
 	ctx := context.Background()
 	threadID := "rename-1"
-	tr, err := gitworktree.Ensure(ctx, repo, data, "app", threadID)
+	tr, err := gitworktree.Ensure(ctx, repo, filepath.Join(data, "worktrees"), "app", threadID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestPruneIdleNowUsesConfig(t *testing.T) {
 	data := t.TempDir()
 	ctx := context.Background()
 	threadID := "3001"
-	tr, err := gitworktree.Ensure(ctx, repo, data, "app", threadID)
+	tr, err := gitworktree.Ensure(ctx, repo, filepath.Join(data, "worktrees"), "app", threadID)
 	if err != nil {
 		t.Fatal(err)
 	}

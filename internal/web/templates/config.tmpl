@@ -78,17 +78,27 @@
 </div>
 
 <div class="section card" id="worktree-cleanup">
-  <h2>Worktree idle cleanup</h2>
-  <p class="sub" style="margin-top:0">Prune per-thread git worktrees after this many days without activity. <span class="mono">0</span> disables automatic cleanup. Default is <span class="mono">30</span>.</p>
-  <form class="inline" method="post" action="{{route "config.settings"}}" style="grid-template-columns: 1fr auto;">
+  <h2>Worktrees</h2>
+  <p class="sub" style="margin-top:0">
+    New per-thread git worktrees are created under <span class="mono">&lt;root&gt;/&lt;project&gt;/&lt;threadId&gt;</span>.
+    Leave the folder empty to use the default <span class="mono">data/worktrees</span> next to <span class="mono">config.json</span>.
+    Absolute path recommended; relative paths resolve against the config file directory.
+    Existing sessions keep their stored path until reset. Idle prune after this many days without activity (<span class="mono">0</span> disables; default <span class="mono">30</span>).
+  </p>
+  <form class="inline" method="post" action="{{route "config.settings"}}" style="grid-template-columns: 2fr 1fr auto;">
     {{template "csrf" $}}
     <input type="hidden" name="section" value="worktree">
+    <div>
+      <label for="worktree-dir">Worktree folder</label>
+      <input id="worktree-dir" type="text" name="worktreeDir" value="{{.Config.WorktreeDir}}" placeholder="empty = data/worktrees" autocomplete="off" spellcheck="false">
+    </div>
     <div>
       <label for="worktree-idle-ttl">Idle TTL (days)</label>
       <input id="worktree-idle-ttl" type="number" name="worktreeIdleTTLDays" min="0" step="1" required value="{{.Config.WorktreeIdleTTLDays}}" autocomplete="off">
     </div>
     <button type="submit">Save</button>
   </form>
+  <p class="sub" style="margin:0.5rem 0 0">Effective root for new worktrees: <span class="mono">{{.Config.WorktreesRoot}}</span></p>
 </div>
 
 <div class="section card" id="resume-active-runs">

@@ -262,7 +262,8 @@ func (b *Bot) removeWorktreeCandidate(c idleCandidate, reason string) error {
 func (b *Bot) collectAllWorktrees() []idleCandidate {
 	byThread := map[string]idleCandidate{}
 
-	onDisk, err := gitworktree.ListOnDisk(b.cfg.DataDir)
+	wtRoot := b.cfg.WorktreesRoot()
+	onDisk, err := gitworktree.ListOnDisk(wtRoot)
 	if err != nil {
 		log.Printf("warn: worktree list: %v", err)
 	}
@@ -295,10 +296,10 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 		if mainCwd == "" {
 			mainCwd, _ = b.resolveProjectRepo(e.Project, "")
 		}
-		// Prefer live dirs: session cwd if still present, else canonical dataDir path
+		// Prefer live dirs: session cwd if still present, else canonical worktrees root
 		// (covers dataDir renames like grok-discord → grokwork).
 		path, pathOnDisk := gitworktree.ResolveSessionWorktreePath(
-			b.cfg.DataDir, e.Project, threadID, e.Cwd, mainCwd,
+			wtRoot, e.Project, threadID, e.Cwd, mainCwd,
 		)
 		if pathOnDisk && e.Cwd != "" && e.Cwd != path {
 			// Heal stale absolute cwd left after a dataDir / host path rename.
@@ -350,9 +351,9 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 	for _, c := range byThread {
 		if c.path != "" {
 			if st, err := os.Stat(c.path); err != nil || !st.IsDir() {
-				// Last chance: re-resolve under current dataDir (session may have been wrong).
+				// Last chance: re-resolve under current worktrees root (session may have been wrong).
 				if c.project != "" && c.threadID != "" {
-					alt, ok := gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, c.project, c.threadID, "", c.mainCwd)
+					alt, ok := gitworktree.ResolveSessionWorktreePath(wtRoot, c.project, c.threadID, "", c.mainCwd)
 					if ok {
 						c.path = alt
 						c.onDisk = true
@@ -419,8 +420,9 @@ func (b *Bot) resolveProjectRepo(project, mainCwd string) (repo, name string) {
 		return p, project
 	}
 	// On-disk segment may be sanitized; match against config names.
+	root := b.cfg.WorktreesRoot()
 	for _, n := range b.cfg.ProjectNames() {
-		if gitworktree.WorktreePath(b.cfg.DataDir, n, "x") == gitworktree.WorktreePath(b.cfg.DataDir, project, "x") {
+		if gitworktree.WorktreePath(root, n, "x") == gitworktree.WorktreePath(root, project, "x") {
 			if p, ok := b.cfg.ProjectPath(n); ok {
 				return p, n
 			}

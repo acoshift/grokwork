@@ -44,6 +44,7 @@
   "summarizeThreadTitle": true,
   "summarizeTimeoutMs": 45000,
   "worktreeIsolation": true,
+  "worktreeDir": "",
   "worktreeIdleTTLDays": 30,
   "resumeActiveRuns": true,
   "httpListen": ":8787",

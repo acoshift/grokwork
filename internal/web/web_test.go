@@ -1099,7 +1099,7 @@ func TestConfigAddsPersist(t *testing.T) {
 	for _, want := range []string{
 		"added", newProj, "ch-added", "Remove", "Add channel map",
 		"Grok run limits", "maxTurns", "timeoutMs",
-		"Worktree idle cleanup", "worktreeIdleTTLDays", "Crash-safe active runs", "resumeActiveRuns", "CI triage", "autoFixCI",
+		"Worktrees", "worktreeIdleTTLDays", "worktreeDir", "Crash-safe active runs", "resumeActiveRuns", "CI triage", "autoFixCI",
 		"Discord PR links", "discordPRLink", "Completion risk paths",
 	} {
 		if !strings.Contains(body, want) {
@@ -1132,10 +1132,12 @@ func TestConfigAddsPersist(t *testing.T) {
 		t.Fatalf("run limits turns=%d timeout=%d", cfg.MaxTurnsValue(), cfg.TimeoutMsValue())
 	}
 
-	// Settings: idle TTL
+	// Settings: worktree dir + idle TTL
+	customWT := filepath.Join(t.TempDir(), "custom-worktrees")
 	reqTTL := httptest.NewRequest(http.MethodPost, "/config/settings", strings.NewReader(url.Values{
 		"section":             {"worktree"},
 		"worktreeIdleTTLDays": {"14"},
+		"worktreeDir":         {customWT},
 	}.Encode()))
 	reqTTL.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	wTTL := httptest.NewRecorder()
@@ -1145,6 +1147,12 @@ func TestConfigAddsPersist(t *testing.T) {
 	}
 	if cfg.WorktreeIdleTTLDaysValue() != 14 {
 		t.Fatalf("ttl days=%d", cfg.WorktreeIdleTTLDaysValue())
+	}
+	if cfg.WorktreeDirValue() != customWT {
+		t.Fatalf("worktreeDir=%q want %q", cfg.WorktreeDirValue(), customWT)
+	}
+	if cfg.WorktreesRoot() != filepath.Clean(customWT) {
+		t.Fatalf("WorktreesRoot=%q want %q", cfg.WorktreesRoot(), filepath.Clean(customWT))
 	}
 
 	// Settings: CI triage
@@ -1655,7 +1663,7 @@ func TestWorktreePruneRoutes(t *testing.T) {
 	runGit("commit", "-m", "init")
 
 	threadID := "wt-web-1"
-	tr, err := gitworktree.Ensure(context.Background(), repo, cfg.DataDir, "proj", threadID)
+	tr, err := gitworktree.Ensure(context.Background(), repo, cfg.WorktreesRoot(), "proj", threadID)
 	if err != nil {
 		t.Fatal(err)
 	}

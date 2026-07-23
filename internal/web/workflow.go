@@ -740,13 +740,13 @@ func (s *Server) resolveSessionDiffCwd(ent sessionstore.Entry, threadID string) 
 		}
 	}
 
-	// Canonical / healed worktree under dataDir (requires real git root).
-	if path, onDisk := gitworktree.ResolveSessionWorktreePath(s.cfg.DataDir, project, threadID, ent.Cwd, mainCwd); onDisk {
+	// Canonical / healed worktree under worktrees root (requires real git root).
+	if path, onDisk := gitworktree.ResolveSessionWorktreePath(s.cfg.WorktreesRoot(), project, threadID, ent.Cwd, mainCwd); onDisk {
 		return path, project
 	}
 
 	// Session metadata may have lost project/cwd while the worktree still exists.
-	if d, ok := gitworktree.FindOnDiskByUnitID(s.cfg.DataDir, threadID); ok && gitworktree.IsRepo(d.Path) {
+	if d, ok := gitworktree.FindOnDiskByUnitID(s.cfg.WorktreesRoot(), threadID); ok && gitworktree.IsRepo(d.Path) {
 		if project == "" {
 			project = d.Project
 		}

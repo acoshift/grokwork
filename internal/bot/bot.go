@@ -817,7 +817,7 @@ func (b *Bot) resetThreadCore(threadID string) (msg string, err error) {
 			mainCwd = e.Cwd
 		}
 		branch := e.WorktreeBranch
-		path, _ := gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, e.Project, threadID, e.Cwd, mainCwd)
+		path, _ := gitworktree.ResolveSessionWorktreePath(b.cfg.WorktreesRoot(), e.Project, threadID, e.Cwd, mainCwd)
 		if branch == "" {
 			branch = gitworktree.BranchNameForUnit(threadID)
 		}
@@ -861,7 +861,7 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		isCase = e.IsCase()
 	}
 	if !skipPRCleanup {
-		if cleaned, state, cErr := gitworktree.CleanupIfPRDoneWith(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID, opts); cErr != nil {
+		if cleaned, state, cErr := gitworktree.CleanupIfPRDoneWith(ctx, proj.Cwd, b.cfg.WorktreesRoot(), proj.Name, threadID, opts); cErr != nil {
 			log.Printf("warn: worktree PR cleanup check thread=%s: %v", threadID, cErr)
 		} else if cleaned {
 			log.Printf("task: cleaned worktree after PR %s thread=%s", state, threadID)
@@ -878,7 +878,7 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 	}
 
 	if e, ok := b.sessions.Get(threadID); ok && e.WorktreeBranch != "" {
-		path, onDisk := gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, e.Project, threadID, e.Cwd, proj.Cwd)
+		path, onDisk := gitworktree.ResolveSessionWorktreePath(b.cfg.WorktreesRoot(), e.Project, threadID, e.Cwd, proj.Cwd)
 		if onDisk && path != "" && path != proj.Cwd && gitworktree.IsRepo(path) {
 			if e.Cwd != path {
 				b.healSessionWorktreeCwd(threadID, path)
@@ -887,7 +887,7 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 			return path, e.WorktreeBranch, nil
 		}
 	}
-	tree, err := gitworktree.EnsureWith(ctx, proj.Cwd, b.cfg.DataDir, proj.Name, threadID, opts)
+	tree, err := gitworktree.EnsureWith(ctx, proj.Cwd, b.cfg.WorktreesRoot(), proj.Name, threadID, opts)
 	if err != nil {
 		return "", "", err
 	}

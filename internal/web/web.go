@@ -1249,9 +1249,15 @@ func (s *Server) updateSettings(ctx *hime.Context) error {
 	case "worktree":
 		raw := strings.TrimSpace(ctx.PostFormValue("worktreeIdleTTLDays"))
 		days, _ := strconv.Atoi(raw)
+		worktreeDir := strings.TrimSpace(ctx.PostFormValue("worktreeDir"))
 		msg := fmt.Sprintf("Worktree idle TTL set to %d day(s)", days)
 		if days == 0 {
 			msg = "Worktree idle cleanup disabled"
+		}
+		if worktreeDir == "" {
+			msg += "; new worktrees use data/worktrees"
+		} else {
+			msg += "; new worktrees use " + worktreeDir
 		}
 		return s.configRedirect(ctx, msg, nil)
 	case "run":
@@ -1350,7 +1356,8 @@ func (s *Server) updateWorktreeSettingsErr(ctx *hime.Context) error {
 	if err != nil {
 		return fmt.Errorf("worktreeIdleTTLDays must be an integer")
 	}
-	return s.cfg.SetWorktreeIdleTTLDays(days)
+	worktreeDir := strings.TrimSpace(ctx.PostFormValue("worktreeDir"))
+	return s.cfg.SetWorktreeSettings(days, worktreeDir)
 }
 
 func (s *Server) updateBoardSettingsErr(ctx *hime.Context) error {

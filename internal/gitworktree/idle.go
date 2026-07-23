@@ -3,6 +3,7 @@ package gitworktree
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -10,7 +11,7 @@ import (
 // Runtime TTL comes from config.worktreeIdleTTLDays; this constant is for tests/docs.
 const DefaultIdleTTL = 30 * 24 * time.Hour
 
-// OnDisk is a worktree directory found under dataDir/worktrees/<project>/<threadID>.
+// OnDisk is a worktree directory found under worktreesRoot/<project>/<threadID>.
 // Project and ThreadID are the on-disk path segments (already sanitized).
 type OnDisk struct {
 	Project  string
@@ -18,10 +19,13 @@ type OnDisk struct {
 	Path     string
 }
 
-// ListOnDisk returns every thread worktree directory under dataDir/worktrees.
+// ListOnDisk returns every thread worktree directory under worktreesRoot.
 // Missing root is not an error (returns nil).
-func ListOnDisk(dataDir string) ([]OnDisk, error) {
-	root := filepath.Join(dataDir, "worktrees")
+func ListOnDisk(worktreesRoot string) ([]OnDisk, error) {
+	root := worktreesRoot
+	if strings.TrimSpace(root) == "" {
+		return nil, nil
+	}
 	projEntries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {

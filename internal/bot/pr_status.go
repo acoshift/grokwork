@@ -494,7 +494,7 @@ func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 	if branch == "" {
 		branch = gitworktree.BranchNameForUnit(threadID)
 	}
-	path, onDisk := gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, e.Project, threadID, e.Cwd, mainCwd)
+	path, onDisk := gitworktree.ResolveSessionWorktreePath(b.cfg.WorktreesRoot(), e.Project, threadID, e.Cwd, mainCwd)
 	if onDisk && e.Cwd != "" && e.Cwd != path {
 		b.healSessionWorktreeCwd(threadID, path)
 	}
@@ -505,7 +505,7 @@ func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 		if p := gitworktree.PrefixFromBranch(branch); p != "" {
 			opts.BranchPrefix = p
 		}
-		cleaned, state, err := gitworktree.CleanupIfPRDoneWith(ctx, mainCwd, b.cfg.DataDir, e.Project, threadID, opts)
+		cleaned, state, err := gitworktree.CleanupIfPRDoneWith(ctx, mainCwd, b.cfg.WorktreesRoot(), e.Project, threadID, opts)
 		if err != nil {
 			log.Printf("pr-status: CleanupIfPRDone thread=%s: %v — trying Remove", threadID, err)
 			if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {
@@ -564,7 +564,7 @@ func (b *Bot) prViewCwd(e sessionstore.Entry) string {
 	if b != nil && b.cfg != nil && e.Project != "" {
 		unitID := unitIDFromSession(e)
 		if unitID != "" {
-			path, onDisk := gitworktree.ResolveSessionWorktreePath(b.cfg.DataDir, e.Project, unitID, e.Cwd, e.MainCwd)
+			path, onDisk := gitworktree.ResolveSessionWorktreePath(b.cfg.WorktreesRoot(), e.Project, unitID, e.Cwd, e.MainCwd)
 			if onDisk && gitworktree.IsRepo(path) {
 				return path
 			}
