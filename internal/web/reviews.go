@@ -220,7 +220,7 @@ func (s *Server) postPRReviewRequest(ctx *hime.Context) error {
 		return s.prRedirect(ctx, owner, repo, n, project, "", fmt.Errorf("reviewer required"))
 	}
 	if !s.canRequestReviewer(project, reviewerID) {
-		return s.prRedirect(ctx, owner, repo, n, project, "", fmt.Errorf("reviewer is not a project member"))
+		return s.prRedirect(ctx, owner, repo, n, project, "", fmt.Errorf("reviewer is not eligible (builder-class required)"))
 	}
 	reviewerName := s.displayNameFor(reviewerID)
 
@@ -397,26 +397,45 @@ func (s *Server) renderMyReviews(ctx *hime.Context, projectScope string) error {
 	return s.viewPage(ctx, "reviews", d)
 }
 
+// canRequestReviewer reports whether reviewerID may be assigned a team review.
+// Requires project membership (or web admin) and builder-class caps (CanShip).
+// Investigators and other non-builder templates are excluded from both the
+// request-review dropdown and POST validation.
 func (s *Server) canRequestReviewer(project, reviewerID string) bool {
 	reviewerID = strings.TrimSpace(reviewerID)
+	project = strings.TrimSpace(project)
 	if reviewerID == "" || s.cfg == nil {
 		return false
 	}
-	for _, id := range s.cfg.WebAuthAdminIDs() {
-		if id == reviewerID {
-			return true
-		}
-	}
-	// CanAccessProject with member role checks project allowlist by user id.
 	if project != "" {
-		return s.cfg.CanAccessProject(project, reviewerID, config.WebRoleMember)
+		return s.eligibleReviewer(project, reviewerID)
 	}
 	for _, name := range s.cfg.ProjectNames() {
-		if s.cfg.CanAccessProject(name, reviewerID, config.WebRoleMember) {
+		if s.eligibleReviewer(name, reviewerID) {
 			return true
 		}
 	}
 	return false
+}
+
+// eligibleReviewer is true when the user can access the project (allowlist or
+// web admin) and resolves to builder-class capabilities (StartSessions +
+// GithubWrites). Role-mapped caps without a user map entry are not visible
+// here (web has no Discord roles for other users) — same as start-session gates.
+func (s *Server) eligibleReviewer(project, userID string) bool {
+	if !s.reviewerOnProject(project, userID) {
+		return false
+	}
+	return s.cfg.ResolveCapabilities(project, userID, nil).CanShip()
+}
+
+func (s *Server) reviewerOnProject(project, userID string) bool {
+	for _, id := range s.cfg.WebAuthAdminIDs() {
+		if id == userID {
+			return true
+		}
+	}
+	return s.cfg.CanAccessProject(project, userID, config.WebRoleMember)
 }
 
 func (s *Server) displayNameFor(discordID string) string {
@@ -431,16 +450,14 @@ func (s *Server) reviewerOptions(project string) []reviewerOption {
 	project = strings.TrimSpace(project)
 	ids := map[string]struct{}{}
 	if project != "" {
-		if snap := s.cfg.Snapshot(); true {
-			for _, p := range snap.Projects {
-				if !strings.EqualFold(p.Name, project) {
-					continue
-				}
-				for _, id := range p.AllowedUserIDs {
-					id = strings.TrimSpace(id)
-					if id != "" {
-						ids[id] = struct{}{}
-					}
+		for _, p := range s.cfg.Snapshot().Projects {
+			if !strings.EqualFold(p.Name, project) {
+				continue
+			}
+			for _, id := range p.AllowedUserIDs {
+				id = strings.TrimSpace(id)
+				if id != "" {
+					ids[id] = struct{}{}
 				}
 			}
 		}
@@ -465,6 +482,14 @@ func (s *Server) reviewerOptions(project string) []reviewerOption {
 	}
 	out := make([]reviewerOption, 0, len(ids))
 	for id := range ids {
+		// Builder-class only (builder / approver / admin templates via CanShip).
+		if project != "" {
+			if !s.cfg.ResolveCapabilities(project, id, nil).CanShip() {
+				continue
+			}
+		} else if !s.canRequestReviewer("", id) {
+			continue
+		}
 		name := names[id]
 		if name == "" {
 			name = id
