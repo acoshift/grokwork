@@ -65,7 +65,15 @@
       </p>
       <div class="form-actions">
         <button type="submit">Save verify commands</button>
-        <button type="submit" class="btn-secondary" formaction="{{route "config.generateProjectVerify"}}" title="Inspect the project checkout with Grok and draft verify commands (not saved until you Save)">Suggest with Grok</button>
+        <button type="button" class="btn-secondary"
+          data-grok-stream
+          data-url="{{route "config.generateProjectVerify"}}"
+          data-title="Suggest verify commands"
+          data-subtitle="Inspecting the project checkout"
+          data-fill="#project-verify-cmds"
+          data-result-key="text"
+          data-auto-close="900"
+          title="Inspect the project checkout with Grok and draft verify commands (not saved until you Save)">Suggest with Grok</button>
       </div>
     </form>
   </div>

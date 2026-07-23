@@ -17,6 +17,7 @@ import (
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -183,7 +184,9 @@ func TestPagesRender(t *testing.T) {
 		{"/config/projects/proj/workflow", "Verify commands"},
 		{"/config/projects/proj/workflow", "name=\"verifyCommands\""},
 		{"/config/projects/proj/workflow", "Suggest with Grok"},
+		{"/config/projects/proj/workflow", "data-grok-stream"},
 		{"/config/projects/proj/workflow", "/config/projects/verify/generate"},
+		{"/config", `id="gw-stream-modal"`}, // reusable stream modal shell
 		{"/config/projects/proj/integrations", `id="page-project-config-integrations"`},
 		{"/config/projects/proj/integrations", "Discord guild ID"},
 		{"/config/projects/proj/integrations", "name=\"guildId\""},
@@ -1538,10 +1541,20 @@ func TestGenerateProjectVerifyDraft(t *testing.T) {
 		t.Fatal(err)
 	}
 	called := false
-	srv.suggestVerify = func(ctx context.Context, grokBin, model, cwd string, timeout time.Duration) (string, error) {
+	var sawActivity bool
+	srv.suggestVerify = func(ctx context.Context, grokBin, model, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error) {
 		called = true
 		if cwd == "" {
 			t.Fatal("empty cwd")
+		}
+		if hooks != nil {
+			if hooks.OnActivity != nil {
+				hooks.OnActivity("read_file: go.mod")
+				sawActivity = true
+			}
+			if hooks.OnTextDelta != nil {
+				hooks.OnTextDelta("unit | go test ./...\n")
+			}
 		}
 		return "Here you go:\n\n```\nunit | go test ./...\nlint | make lint | 120000\n```\n", nil
 	}
@@ -1550,17 +1563,34 @@ func TestGenerateProjectVerifyDraft(t *testing.T) {
 	form := url.Values{"name": {"proj"}}
 	req := httptest.NewRequest(http.MethodPost, "/config/projects/verify/generate", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "text/event-stream")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+	if w.Code != http.StatusOK {
 		t.Fatalf("generate status=%d body=%s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "text/event-stream") {
+		t.Fatalf("Content-Type=%q", ct)
 	}
 	if !called {
 		t.Fatal("suggestVerify not called")
 	}
-	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/config/projects/proj/workflow?") || !strings.Contains(loc, "ok=") {
-		t.Fatalf("Location=%q", loc)
+	if !sawActivity {
+		t.Fatal("expected activity hook to fire")
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"event: status",
+		"event: activity",
+		"event: text",
+		"event: result",
+		"event: done",
+		`"text":"unit | go test ./...\nlint | make lint | 120000"`,
+		`"count":2`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("SSE body missing %q:\n%s", want, body)
+		}
 	}
 	// Config still has the old saved commands.
 	if vc := cfg.ProjectVerifyCommands("proj"); len(vc) != 1 || vc[0].Name != "old" {
@@ -1575,11 +1605,11 @@ func TestGenerateProjectVerifyDraft(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("workflow status=%d", w.Code)
 		}
-		body := w.Body.String()
-		if !strings.Contains(body, "unit | go test ./...") || !strings.Contains(body, "make lint") {
-			t.Fatalf("draft missing from page (load %d): %s", i+1, body)
+		page := w.Body.String()
+		if !strings.Contains(page, "unit | go test ./...") || !strings.Contains(page, "make lint") {
+			t.Fatalf("draft missing from page (load %d): %s", i+1, page)
 		}
-		if strings.Contains(body, "echo old") {
+		if strings.Contains(page, "echo old") {
 			t.Fatal("page still showing saved commands instead of draft")
 		}
 	}
@@ -1607,7 +1637,7 @@ func TestGenerateProjectVerifyDraft(t *testing.T) {
 
 func TestGenerateProjectVerifyError(t *testing.T) {
 	srv, _, _ := testServer(t)
-	srv.suggestVerify = func(ctx context.Context, grokBin, model, cwd string, timeout time.Duration) (string, error) {
+	srv.suggestVerify = func(ctx context.Context, grokBin, model, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error) {
 		return "", context.DeadlineExceeded
 	}
 	h := srv.Handler()
@@ -1616,12 +1646,18 @@ func TestGenerateProjectVerifyError(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
-		t.Fatalf("status=%d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	loc := w.Header().Get("Location")
-	if !strings.Contains(loc, "err=") {
-		t.Fatalf("want err flash: %s", loc)
+	body := w.Body.String()
+	if !strings.Contains(body, "event: error") {
+		t.Fatalf("want error event: %s", body)
+	}
+	if !strings.Contains(body, "event: done") {
+		t.Fatalf("want done event: %s", body)
+	}
+	if !strings.Contains(body, "deadline") && !strings.Contains(body, "Deadline") {
+		t.Fatalf("want deadline message: %s", body)
 	}
 }
 

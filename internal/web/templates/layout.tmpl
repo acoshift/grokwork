@@ -1044,6 +1044,181 @@
     }
     .nowrap { white-space: nowrap; }
 
+    /* ── Grok stream modal (reusable one-shot run UI) ──────────────────
+       Signature: monochrome terminal pane with a live caret — watch the
+       model write, not a chat bubble. Lives outside #live-root so boosts
+       never tear it down mid-stream. */
+    .gw-stream-modal {
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 0;
+      width: min(40rem, calc(100vw - 2rem));
+      max-height: min(34rem, calc(100vh - 2.5rem));
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: var(--shadow-2), 0 24px 64px -28px hsl(var(--black) / 35%);
+    }
+    .gw-stream-modal::backdrop {
+      background: hsl(0 0% 0% / 42%);
+      backdrop-filter: blur(2px);
+    }
+    .gw-stream-shell {
+      display: flex;
+      flex-direction: column;
+      max-height: min(34rem, calc(100vh - 2.5rem));
+    }
+    .gw-stream-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 1rem 1.1rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .gw-stream-head-text { flex: 1 1 auto; min-width: 0; }
+    .gw-stream-eyebrow {
+      margin: 0 0 0.2rem;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .gw-stream-title {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+    }
+    .gw-stream-sub {
+      margin: 0.25rem 0 0;
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .gw-stream-x {
+      flex: 0 0 auto;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--muted);
+      font-size: 1.25rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .gw-stream-x:hover {
+      background: var(--surface-l2);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .gw-stream-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem 0.75rem;
+      padding: 0.55rem 1.1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-l1);
+      min-height: 2.35rem;
+    }
+    .gw-stream-phase {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--muted);
+    }
+    .gw-stream-phase.is-run {
+      color: var(--accent);
+      border-color: hsl(var(--blue-500) / 35%);
+      background: var(--accent-soft);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    .gw-stream-phase.is-ok {
+      color: var(--ok);
+      border-color: hsl(var(--green-600) / 30%);
+      background: var(--ok-bg);
+    }
+    .gw-stream-phase.is-err {
+      color: var(--danger);
+      border-color: hsl(var(--red-500) / 30%);
+      background: var(--danger-bg);
+    }
+    .gw-stream-activity {
+      flex: 1 1 10rem;
+      min-width: 0;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .gw-stream-log {
+      margin: 0;
+      padding: 0.85rem 1.1rem 1.1rem;
+      flex: 1 1 auto;
+      min-height: 11rem;
+      max-height: 18rem;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background:
+        linear-gradient(var(--surface-l1), var(--surface-l1)),
+        linear-gradient(90deg, var(--accent) 0 2px, transparent 2px);
+      background-color: var(--surface-l1);
+      color: var(--text);
+      border: 0;
+      /* 2px left rail — the “live wire” of a running Grok job */
+      box-shadow: inset 2px 0 0 var(--border-strong);
+    }
+    .gw-stream-log.is-run {
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+    .gw-stream-log.is-err {
+      box-shadow: inset 2px 0 0 var(--danger);
+      color: var(--danger);
+    }
+    .gw-stream-log .gw-thought {
+      color: var(--muted-soft);
+    }
+    .gw-stream-caret {
+      display: inline-block;
+      width: 0.55ch;
+      height: 1.05em;
+      margin-left: 1px;
+      vertical-align: text-bottom;
+      background: var(--text);
+      animation: gw-caret 1s step-end infinite;
+    }
+    .gw-stream-log:not(.is-run) .gw-stream-caret { display: none; }
+    @keyframes gw-caret {
+      50% { opacity: 0; }
+    }
+    .gw-stream-foot {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      padding: 0.75rem 1.1rem 1rem;
+      border-top: 1px solid var(--border);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .gw-stream-phase.is-run { animation: none; }
+      .gw-stream-caret { animation: none; opacity: 0.7; }
+    }
+
     /* ── PR team review card ─────────────────────────────────────────── */
     #pr-team-review .team-review-head {
       display: flex;
@@ -2783,7 +2958,355 @@
       </div>
     </main>
   </div>
+  {{/* Outside #live-root / boost target so stream runs survive navigation swaps. */}}
+  <dialog id="gw-stream-modal" class="gw-stream-modal" aria-labelledby="gw-stream-title">
+    <div class="gw-stream-shell">
+      <header class="gw-stream-head">
+        <div class="gw-stream-head-text">
+          <p class="gw-stream-eyebrow">Grok</p>
+          <h2 class="gw-stream-title" id="gw-stream-title">Running…</h2>
+          <p class="gw-stream-sub" id="gw-stream-sub" hidden></p>
+        </div>
+        <button type="button" class="gw-stream-x" data-gw-stream-close aria-label="Close">×</button>
+      </header>
+      <div class="gw-stream-meta">
+        <span class="gw-stream-phase" id="gw-stream-phase">idle</span>
+        <span class="gw-stream-activity mono" id="gw-stream-activity"></span>
+      </div>
+      <pre class="gw-stream-log" id="gw-stream-log" aria-live="polite"></pre>
+      <footer class="gw-stream-foot">
+        <button type="button" class="btn-secondary" data-gw-stream-close id="gw-stream-close-btn">Cancel</button>
+      </footer>
+    </div>
+  </dialog>
   <script>
+  /* Reusable Grok one-shot stream modal.
+     Open via window.GrokStream.open({...}) or a button with data-grok-stream.
+     Protocol: SSE events status | activity | thought | text | result | error | done. */
+  (function () {
+    var dlg = document.getElementById("gw-stream-modal");
+    if (!dlg) return;
+
+    var titleEl = document.getElementById("gw-stream-title");
+    var subEl = document.getElementById("gw-stream-sub");
+    var phaseEl = document.getElementById("gw-stream-phase");
+    var activityEl = document.getElementById("gw-stream-activity");
+    var logEl = document.getElementById("gw-stream-log");
+    var closeBtn = document.getElementById("gw-stream-close-btn");
+
+    var abortCtrl = null;
+    var autoCloseTimer = null;
+    var running = false;
+    var opts = null;
+    var textBuf = "";
+    var thoughtBuf = "";
+
+    function setPhase(text, cls) {
+      if (!phaseEl) return;
+      phaseEl.textContent = text || "idle";
+      phaseEl.className = "gw-stream-phase" + (cls ? " " + cls : "");
+    }
+
+    function setActivity(line) {
+      if (activityEl) activityEl.textContent = line || "";
+    }
+
+    function renderLog() {
+      if (!logEl) return;
+      var html = "";
+      if (thoughtBuf) {
+        html += '<span class="gw-thought">' + escapeHTML(thoughtBuf) + "</span>";
+      }
+      if (textBuf) {
+        if (html) html += "\n";
+        html += escapeHTML(textBuf);
+      }
+      if (running) html += '<span class="gw-stream-caret" aria-hidden="true"></span>';
+      logEl.innerHTML = html || (running ? '<span class="gw-stream-caret" aria-hidden="true"></span>' : "");
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function escapeHTML(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function clearAutoClose() {
+      if (autoCloseTimer) {
+        clearTimeout(autoCloseTimer);
+        autoCloseTimer = null;
+      }
+    }
+
+    function finishUI(kind, message) {
+      running = false;
+      if (logEl) {
+        logEl.classList.remove("is-run");
+        if (kind === "err") logEl.classList.add("is-err");
+        else logEl.classList.remove("is-err");
+      }
+      if (kind === "ok") setPhase("done", "is-ok");
+      else if (kind === "err") setPhase("failed", "is-err");
+      else setPhase("idle", "");
+      if (message) setActivity(message);
+      renderLog();
+      if (closeBtn) closeBtn.textContent = kind === "ok" ? "Close" : "Dismiss";
+    }
+
+    function closeModal() {
+      clearAutoClose();
+      if (abortCtrl) {
+        try { abortCtrl.abort(); } catch (e) { /* ignore */ }
+        abortCtrl = null;
+      }
+      running = false;
+      if (dlg.open) dlg.close();
+    }
+
+    function applyFill(result) {
+      if (!opts || !opts.fill) return;
+      var key = opts.resultKey || "text";
+      var val = result && result[key] != null ? result[key] : "";
+      if (val === "" || val == null) return;
+      var el = document.querySelector(opts.fill);
+      if (!el) return;
+      if ("value" in el) el.value = val;
+      else el.textContent = val;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    function handleEvent(name, data) {
+      data = data || {};
+      switch (name) {
+        case "status":
+          if (data.message) setActivity(data.message);
+          break;
+        case "activity":
+          if (data.line) setActivity(data.line);
+          break;
+        case "thought":
+          if (data.delta) {
+            thoughtBuf += data.delta;
+            renderLog();
+          }
+          break;
+        case "text":
+          if (data.delta) {
+            textBuf += data.delta;
+            renderLog();
+          }
+          break;
+        case "result":
+          finishUI(data.ok === false ? "err" : "ok", data.message || "");
+          if (data.ok !== false) {
+            applyFill(data);
+            if (typeof opts.onComplete === "function") {
+              try { opts.onComplete(data); } catch (e) { /* ignore */ }
+            }
+            var ms = opts.autoCloseMs;
+            if (ms == null) ms = 900;
+            ms = Number(ms);
+            if (ms > 0) {
+              clearAutoClose();
+              autoCloseTimer = setTimeout(function () { closeModal(); }, ms);
+            }
+          } else if (typeof opts.onError === "function") {
+            try { opts.onError(data.message || "failed"); } catch (e) { /* ignore */ }
+          }
+          break;
+        case "error":
+          finishUI("err", data.message || "Something went wrong");
+          if (typeof opts.onError === "function") {
+            try { opts.onError(data.message || "error"); } catch (e) { /* ignore */ }
+          }
+          break;
+        case "done":
+          if (running) finishUI("ok", "");
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Minimal SSE parser for fetch streams (POST + CSRF).
+    function parseSSEChunk(buffer, onEvent) {
+      var parts = buffer.split("\n\n");
+      var rest = parts.pop() || "";
+      for (var i = 0; i < parts.length; i++) {
+        var block = parts[i];
+        if (!block) continue;
+        var eventName = "message";
+        var dataLines = [];
+        var lines = block.split("\n");
+        for (var j = 0; j < lines.length; j++) {
+          var line = lines[j];
+          if (line.indexOf("event:") === 0) {
+            eventName = line.slice(6).trim();
+          } else if (line.indexOf("data:") === 0) {
+            dataLines.push(line.slice(5).replace(/^ /, ""));
+          }
+        }
+        if (!dataLines.length) continue;
+        var raw = dataLines.join("\n");
+        var data = {};
+        try { data = JSON.parse(raw); } catch (e) { data = { message: raw }; }
+        onEvent(eventName, data);
+      }
+      return rest;
+    }
+
+    async function runStream(o) {
+      opts = o || {};
+      clearAutoClose();
+      if (abortCtrl) {
+        try { abortCtrl.abort(); } catch (e) { /* ignore */ }
+      }
+      abortCtrl = new AbortController();
+      textBuf = "";
+      thoughtBuf = "";
+      running = true;
+      if (logEl) {
+        logEl.classList.add("is-run");
+        logEl.classList.remove("is-err");
+      }
+      setPhase("running", "is-run");
+      setActivity(opts.subtitle || "Starting…");
+      if (titleEl) titleEl.textContent = opts.title || "Running…";
+      if (subEl) {
+        if (opts.subtitle) {
+          subEl.hidden = false;
+          subEl.textContent = opts.subtitle;
+        } else {
+          subEl.hidden = true;
+          subEl.textContent = "";
+        }
+      }
+      if (closeBtn) closeBtn.textContent = "Cancel";
+      renderLog();
+      if (!dlg.open) {
+        if (typeof dlg.showModal === "function") dlg.showModal();
+        else dlg.setAttribute("open", "");
+      }
+
+      var method = (opts.method || "POST").toUpperCase();
+      var headers = Object.assign({ "Accept": "text/event-stream" }, opts.headers || {});
+      var body = opts.body;
+      if (body && typeof body === "object" && !(body instanceof FormData) && !(typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams)) {
+        headers["Content-Type"] = headers["Content-Type"] || "application/json";
+        body = JSON.stringify(body);
+      }
+
+      try {
+        var res = await fetch(opts.url, {
+          method: method,
+          headers: headers,
+          body: method === "GET" || method === "HEAD" ? undefined : body,
+          credentials: "same-origin",
+          signal: abortCtrl.signal
+        });
+        if (!res.ok) {
+          var errText = "";
+          try { errText = await res.text(); } catch (e) { /* ignore */ }
+          handleEvent("error", { message: errText || ("HTTP " + res.status) });
+          handleEvent("done", {});
+          return;
+        }
+        if (!res.body || !res.body.getReader) {
+          // Fallback: non-stream body (tests / proxies).
+          var full = await res.text();
+          var rem = parseSSEChunk(full + "\n\n", handleEvent);
+          if (rem) parseSSEChunk(rem + "\n\n", handleEvent);
+          if (running) handleEvent("done", {});
+          return;
+        }
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buf = "";
+        while (true) {
+          var chunk = await reader.read();
+          if (chunk.done) break;
+          buf += decoder.decode(chunk.value, { stream: true });
+          buf = parseSSEChunk(buf, handleEvent);
+        }
+        if (buf) parseSSEChunk(buf + "\n\n", handleEvent);
+        if (running) handleEvent("done", {});
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          finishUI("idle", "Cancelled");
+          setPhase("cancelled", "");
+          return;
+        }
+        handleEvent("error", { message: (err && err.message) || "Network error" });
+        handleEvent("done", {});
+      }
+    }
+
+    function openFromButton(btn) {
+      if (!btn) return;
+      var url = btn.getAttribute("data-url");
+      if (!url) return;
+      var form = btn.closest("form");
+      var body = null;
+      var method = (btn.getAttribute("data-method") || "POST").toUpperCase();
+      if (method !== "GET" && method !== "HEAD") {
+        if (form) {
+          body = new FormData(form);
+        } else {
+          body = new URLSearchParams();
+        }
+        // Optional extra fields from data-body-* attributes.
+        Array.prototype.forEach.call(btn.attributes, function (attr) {
+          if (attr.name.indexOf("data-body-") !== 0) return;
+          var key = attr.name.slice("data-body-".length);
+          if (!key) return;
+          if (body instanceof FormData) body.set(key, attr.value);
+          else body.set(key, attr.value);
+        });
+      }
+      var autoClose = btn.getAttribute("data-auto-close");
+      runStream({
+        url: url,
+        method: method,
+        body: body,
+        title: btn.getAttribute("data-title") || btn.textContent.trim() || "Running…",
+        subtitle: btn.getAttribute("data-subtitle") || "",
+        fill: btn.getAttribute("data-fill") || "",
+        resultKey: btn.getAttribute("data-result-key") || "text",
+        autoCloseMs: autoClose == null || autoClose === "" ? 900 : Number(autoClose)
+      });
+    }
+
+    document.addEventListener("click", function (e) {
+      var btn = e.target && e.target.closest && e.target.closest("[data-grok-stream]");
+      if (!btn) return;
+      e.preventDefault();
+      openFromButton(btn);
+    });
+
+    dlg.querySelectorAll("[data-gw-stream-close]").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        e.preventDefault();
+        closeModal();
+      });
+    });
+    dlg.addEventListener("cancel", function (e) {
+      // Esc: abort run and close.
+      e.preventDefault();
+      closeModal();
+    });
+
+    window.GrokStream = {
+      open: runStream,
+      close: closeModal,
+      isOpen: function () { return !!dlg.open; },
+      isRunning: function () { return running; }
+    };
+  })();
+
   (function () {
     var statusEl = document.getElementById("sse-status");
     // Matches the layout.tmpl mobile shell breakpoint.

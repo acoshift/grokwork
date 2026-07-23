@@ -12,10 +12,19 @@ import (
 // Default tools for inspect-only verify command suggestion.
 const suggestVerifyTools = "read_file,list_dir,grep"
 
+// SuggestStreamHooks receive live output while SuggestVerifyCommands runs.
+// All fields are optional. Callbacks may run on a worker goroutine.
+type SuggestStreamHooks struct {
+	OnTextDelta func(delta string)
+	OnThought   func(delta string)
+	OnActivity  func(line string)
+}
+
 // SuggestVerifyCommands asks Grok to inspect cwd and propose project verify
 // harness lines (name | command [| timeoutMs]). Does not persist config.
 // Returns cleaned multi-line text ready for config.ParseVerifyCommandsText.
-func SuggestVerifyCommands(ctx context.Context, grokBin, model, cwd string, timeout time.Duration) (string, error) {
+// When hooks is non-nil, streaming-json is enabled so the UI can show progress.
+func SuggestVerifyCommands(ctx context.Context, grokBin, model, cwd string, timeout time.Duration, hooks *SuggestStreamHooks) (string, error) {
 	cwd = strings.TrimSpace(cwd)
 	if cwd == "" {
 		return "", fmt.Errorf("project path is required")
@@ -51,7 +60,7 @@ func SuggestVerifyCommands(ctx context.Context, grokBin, model, cwd string, time
 		"- If you are unsure, prefer fewer, high-confidence commands over speculative ones",
 	}, "\n")
 
-	result := Run(ctx, Options{
+	opt := Options{
 		GrokBin:          grokBin,
 		Prompt:           prompt,
 		Cwd:              cwd,
@@ -64,7 +73,14 @@ func SuggestVerifyCommands(ctx context.Context, grokBin, model, cwd string, time
 		NoPlan:           true,
 		NoMemory:         true,
 		DisableWebSearch: true,
-	})
+	}
+	if hooks != nil {
+		opt.OnTextDelta = hooks.OnTextDelta
+		opt.OnThought = hooks.OnThought
+		opt.OnActivity = hooks.OnActivity
+	}
+
+	result := Run(ctx, opt)
 	if result.Cancelled {
 		return "", fmt.Errorf("suggest verify commands cancelled or timed out")
 	}

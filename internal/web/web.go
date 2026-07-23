@@ -58,8 +58,8 @@ type Server struct {
 	// workflow textarea after "Suggest with Grok"; not persisted until Save).
 	verifyDraftMu sync.Mutex
 	verifyDrafts  map[string]string
-	// Test injectable; nil → grokrun.SuggestVerifyCommands.
-	suggestVerify func(ctx context.Context, grokBin, model, cwd string, timeout time.Duration) (string, error)
+	// Test injectable; nil → grokrun.SuggestVerifyCommands (SSE stream hooks optional).
+	suggestVerify func(ctx context.Context, grokBin, model, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error)
 }
 
 // New builds a hime app with dashboard, history, config, and SSE routes.
@@ -1048,29 +1048,52 @@ func (s *Server) setProjectVerify(ctx *hime.Context) error {
 	return s.projectConfigTabRedirect(ctx, name, "workflow", msg, err)
 }
 
-// generateProjectVerify runs a short Grok inspect of the project checkout and
-// fills the verify-commands textarea with a draft (not saved until Save).
+// generateProjectVerify streams a short Grok inspect of the project checkout
+// as SSE (status / activity / text / result / done). On success stores a draft
+// for the verify textarea (not saved until Save). Client: GrokStream modal.
 func (s *Server) generateProjectVerify(ctx *hime.Context) error {
 	name := strings.TrimSpace(ctx.PostFormValue("name"))
 	if name == "" {
-		return s.projectConfigTabRedirect(ctx, name, "workflow", "", fmt.Errorf("project name is required"))
+		// Query fallback so GET debug still works; prefer form body.
+		name = strings.TrimSpace(ctx.FormValue("name"))
+	}
+	w := ctx.ResponseWriter()
+	stream, err := newSSEStream(w)
+	if err != nil {
+		return ctx.Status(http.StatusInternalServerError).Error(err.Error())
+	}
+
+	fail := func(msg string) error {
+		_ = stream.Error(msg)
+		_ = stream.Done()
+		return nil
+	}
+	if name == "" {
+		return fail("project name is required")
 	}
 	path, ok := s.cfg.ProjectPath(name)
 	if !ok {
-		return s.projectConfigTabRedirect(ctx, name, "workflow", "", fmt.Errorf("project %q not found", name))
+		return fail(fmt.Sprintf("project %q not found", name))
 	}
+
+	_ = stream.Status("Inspecting repository…")
 
 	snap := s.cfg.Snapshot()
 	suggest := s.suggestVerify
 	if suggest == nil {
 		suggest = grokrun.SuggestVerifyCommands
 	}
-	raw, err := suggest(ctx.Context(), snap.GrokBin, snap.Model, path, 3*time.Minute)
+	hooks := &grokrun.SuggestStreamHooks{
+		OnTextDelta: func(delta string) { _ = stream.TextDelta(delta) },
+		OnThought:   func(delta string) { _ = stream.ThoughtDelta(delta) },
+		OnActivity:  func(line string) { _ = stream.Activity(line) },
+	}
+	raw, err := suggest(ctx.Context(), snap.GrokBin, snap.Model, path, 3*time.Minute, hooks)
 	s.auditAction(ctx, "config.generate_project_verify", err, map[string]any{
 		"name": name,
 	})
 	if err != nil {
-		return s.projectConfigTabRedirect(ctx, name, "workflow", "", err)
+		return fail(err.Error())
 	}
 	// Production suggest already cleans; still extract so injectable/mocks and
 	// partial model prose parse reliably.
@@ -1079,17 +1102,26 @@ func (s *Server) generateProjectVerify(ctx *hime.Context) error {
 	}
 	cmds, err := config.ParseVerifyCommandsText(raw)
 	if err != nil {
-		return s.projectConfigTabRedirect(ctx, name, "workflow", "", fmt.Errorf("could not parse Grok output: %w", err))
+		return fail(fmt.Sprintf("could not parse Grok output: %v", err))
 	}
 	if len(cmds) == 0 {
-		return s.projectConfigTabRedirect(ctx, name, "workflow", "", fmt.Errorf("Grok returned no verify commands"))
+		return fail("Grok returned no verify commands")
 	}
-	s.putVerifyDraft(name, config.FormatVerifyCommandsText(cmds))
-	msg := fmt.Sprintf("Suggested 1 verify command for project %q — review and Save to apply", name)
+	text := config.FormatVerifyCommandsText(cmds)
+	s.putVerifyDraft(name, text)
+	msg := "Suggested 1 verify command — review and Save to apply"
 	if len(cmds) != 1 {
-		msg = fmt.Sprintf("Suggested %d verify commands for project %q — review and Save to apply", len(cmds), name)
+		msg = fmt.Sprintf("Suggested %d verify commands — review and Save to apply", len(cmds))
 	}
-	return s.projectConfigTabRedirect(ctx, name, "workflow", msg, nil)
+	_ = stream.Result(map[string]any{
+		"ok":      true,
+		"text":    text,
+		"count":   len(cmds),
+		"message": msg,
+		"project": name,
+	})
+	_ = stream.Done()
+	return nil
 }
 
 func (s *Server) putVerifyDraft(name, text string) {
