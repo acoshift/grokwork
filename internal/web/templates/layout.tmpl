@@ -2619,6 +2619,18 @@
       setStatus("reconnecting…", "err");
     });
 
+    // How close to the bottom counts as "following" a growing bubble/page.
+    var BUBBLE_PIN_PX = 48;
+    function bubbleNearBottom(el) {
+      if (!el) return true;
+      var max = el.scrollHeight - el.clientHeight;
+      if (max <= 0) return true;
+      return (max - (el.scrollTop || 0)) <= BUBBLE_PIN_PX;
+    }
+    function pinBubbleBottom(el) {
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+
     // Boosted navigation must swap #live-root only. If live-region attrs leaked
     // onto a child link (disableInheritance not applied), htmx would target the
     // region with no select and nest a full layout — double sidebar/navbar.
@@ -2626,8 +2638,8 @@
     document.body.addEventListener("htmx:beforeSwap", function (e) {
       var d = e.detail;
       if (!d) return;
-      // SSE live-region swaps replace .table-scroll shells (innerHTML), which
-      // would reset scrollLeft and yank the user back to column 0 on every tick.
+      // SSE live-region swaps replace scrollable shells (innerHTML), which
+      // would reset scroll positions on every domain tick.
       var target = d.target;
       if (target && target.classList && target.classList.contains("live-region")) {
         var xs = [];
@@ -2635,6 +2647,17 @@
           xs.push(el.scrollLeft || 0);
         });
         target._tableScrollX = xs;
+        // Turn bubbles (.bubble-body max-height + overflow) and the live stream:
+        // save Y so reading mid-turn is not yanked to top on every dashboard tick.
+        var ys = [];
+        target.querySelectorAll(".bubble-body").forEach(function (el) {
+          ys.push({ top: el.scrollTop || 0, pin: bubbleNearBottom(el) });
+        });
+        target._bubbleScrollY = ys;
+        var pageMax = document.documentElement.scrollHeight - window.innerHeight;
+        var pageY = window.scrollY || 0;
+        target._pageScrollY = pageY;
+        target._pagePinBottom = pageMax <= 0 || (pageMax - pageY) <= BUBBLE_PIN_PX;
       }
       if (!d.boosted) return;
       var html = d.serverResponse || "";
@@ -2658,24 +2681,49 @@
       if (elt && elt.classList && elt.classList.contains("live-region")) {
         // Desktop shows the clock; mobile setStatus strips it to "live".
         setStatus("live · " + new Date().toLocaleTimeString(), "ok");
-        // Session live stream: keep the assistant bubble pinned to the latest tail.
-        var stream = elt.querySelector("#live-stream-body");
-        if (stream) stream.scrollTop = stream.scrollHeight;
+        // Restore bubble vertical scroll saved in beforeSwap. Stick-to-bottom
+        // only when the user was already following the tail (or for a brand-new
+        // live stream bubble with no prior state).
+        var ys = elt._bubbleScrollY;
+        var bubbles = elt.querySelectorAll(".bubble-body");
+        if (ys && ys.length) {
+          for (var i = 0; i < bubbles.length; i++) {
+            var b = bubbles[i];
+            if (i < ys.length) {
+              if (ys[i].pin) pinBubbleBottom(b);
+              else b.scrollTop = ys[i].top || 0;
+            } else if (b.id === "live-stream-body") {
+              pinBubbleBottom(b);
+            }
+          }
+          delete elt._bubbleScrollY;
+        } else {
+          // No prior state (first paint after nav into a streaming session).
+          pinBubbleBottom(elt.querySelector("#live-stream-body"));
+        }
         // Restore table horizontal scroll saved in beforeSwap.
         var xs = elt._tableScrollX;
         if (xs && xs.length) {
           var shells = elt.querySelectorAll(".table-scroll");
-          for (var i = 0; i < shells.length && i < xs.length; i++) {
-            if (xs[i]) shells[i].scrollLeft = xs[i];
+          for (var j = 0; j < shells.length && j < xs.length; j++) {
+            if (xs[j]) shells[j].scrollLeft = xs[j];
           }
           delete elt._tableScrollX;
         }
+        // Keep window Y stable when streamed content grows; follow the page
+        // tail only if the user was already at the bottom.
+        if (elt._pagePinBottom) {
+          window.scrollTo(0, document.documentElement.scrollHeight);
+        } else if (typeof elt._pageScrollY === "number") {
+          window.scrollTo(0, elt._pageScrollY);
+        }
+        delete elt._pageScrollY;
+        delete elt._pagePinBottom;
       }
     });
-    // Full-page load of an in-flight session: same pin as afterSwap.
+    // Full-page load of an in-flight session: pin live stream to the latest tail.
     (function () {
-      var stream = document.getElementById("live-stream-body");
-      if (stream) stream.scrollTop = stream.scrollHeight;
+      pinBubbleBottom(document.getElementById("live-stream-body"));
     })();
     document.body.addEventListener("htmx:responseError", function (e) {
       var elt = e.detail && e.detail.elt;
