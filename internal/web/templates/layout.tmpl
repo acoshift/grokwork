@@ -1432,7 +1432,11 @@
       background: var(--surface-l2);
       color: var(--muted);
       border: 1px solid var(--border);
-      vertical-align: baseline;
+      /* inline-flex takes its baseline from the first flex item — the empty
+         ::before dot, whose synthesized baseline is its bottom edge — which
+         lifts the chip above the surrounding text baseline. Middle-align the
+         box instead so chips sit centered on adjacent inline text. */
+      vertical-align: middle;
     }
     .badge::before {
       content: "";
