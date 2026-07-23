@@ -900,6 +900,12 @@
       -webkit-appearance: none;
       -moz-appearance: none;
       cursor: pointer;
+      /* Chrome centers the label in the content box, so only ASYMMETRIC
+         vertical padding moves it: 2px bottom counters the system font's
+         ascent>descent metrics, which otherwise leave the label ~1px low
+         (measured 26px above vs 22px below the ink at 2x). */
+      padding-top: 0;
+      padding-bottom: 2px;
       padding-right: 2.35rem;
       background-image: var(--chev);
       background-repeat: no-repeat;
@@ -1845,7 +1851,7 @@
       font-size: 0.84rem;
     }
     .choice-extra label { margin: 0; }
-    .choice-extra select { width: 11rem; height: 2.1rem; padding: 0.3rem 1.9rem 0.3rem 0.55rem; }
+    .choice-extra select { width: 11rem; height: 2.1rem; padding: 0 1.9rem 2px 0.55rem; }
 
     /* Member roster: one row per principal (user/role), inline role select. */
     .roster { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -1914,7 +1920,7 @@
       white-space: nowrap;
     }
     .roster .role-cell form { margin: 0; }
-    .roster .role-cell select { height: 2.1rem; font-size: 0.82rem; padding: 0.3rem 1.9rem 0.3rem 0.55rem; }
+    .roster .role-cell select { height: 2.1rem; font-size: 0.82rem; padding: 0 1.9rem 2px 0.55rem; }
     .roster .role-cell select.is-default { color: var(--muted); font-style: italic; }
     .caps { display: flex; flex-wrap: wrap; gap: 0.25rem; }
     .cap {
