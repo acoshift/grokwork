@@ -168,8 +168,11 @@ func TestIssueCommentOnBehalfOfMapped(t *testing.T) {
 		t.Fatalf("bodies=%v", *bodies)
 	}
 	got := (*bodies)[0]
-	if !strings.HasPrefix(got, "On behalf of @member-gh (Discord member-1 / M):\n\n") {
+	if !strings.HasPrefix(got, "On behalf of @member-gh (M):\n\n") {
 		t.Fatalf("want On behalf of prefix, got:\n%s", got)
+	}
+	if strings.Contains(got, "Discord") || strings.Contains(got, "member-1") {
+		t.Fatalf("must not include Discord id:\n%s", got)
 	}
 	if !strings.HasSuffix(got, "hello issue") {
 		t.Fatalf("body lost:\n%s", got)
@@ -225,8 +228,11 @@ func TestPRCommentOnBehalfOfMapped(t *testing.T) {
 		t.Fatalf("bodies=%v", *bodies)
 	}
 	got := (*bodies)[0]
-	if !strings.HasPrefix(got, "On behalf of @mem (Discord member-1 / Mem):\n\n") {
+	if !strings.HasPrefix(got, "On behalf of @mem (Mem):\n\n") {
 		t.Fatalf("prefix:\n%s", got)
+	}
+	if strings.Contains(got, "Discord") || strings.Contains(got, "member-1") {
+		t.Fatalf("must not include Discord id:\n%s", got)
 	}
 	if !strings.HasSuffix(got, "lgtm") {
 		t.Fatalf("body:\n%s", got)

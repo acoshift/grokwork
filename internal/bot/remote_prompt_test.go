@@ -61,8 +61,11 @@ func TestIssueBindingPromptInPrefixChain(t *testing.T) {
 
 func TestAttributionInShipPrefix(t *testing.T) {
 	p := remoteWorkPromptPrefix("grok/discord/1") + attributionFooter("bob", "42", "https://discord.com/x")
-	if !strings.Contains(p, "Prompter: bob") || !strings.Contains(p, "42") || !strings.Contains(p, "https://discord.com/x") {
+	if !strings.Contains(p, "Prompter: bob") {
 		t.Fatalf("missing attribution:\n%s", p)
+	}
+	if strings.Contains(p, "42") || strings.Contains(p, "https://discord.com/x") {
+		t.Fatalf("must not include Discord id or thread URL:\n%s", p)
 	}
 }
 

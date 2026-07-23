@@ -119,8 +119,11 @@ func TestInvestigatePromptNoPR(t *testing.T) {
 
 func TestAttributionFooter(t *testing.T) {
 	s := attributionFooter("alice", "99", "https://discord/x")
-	if !strings.Contains(s, "alice") || !strings.Contains(s, "99") || !strings.Contains(s, "https://discord/x") {
+	if !strings.Contains(s, "alice") {
 		t.Fatalf("footer=%s", s)
+	}
+	if strings.Contains(s, "99") || strings.Contains(s, "https://discord/x") {
+		t.Fatalf("must not include Discord id or thread URL: footer=%s", s)
 	}
 }
 

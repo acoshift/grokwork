@@ -25,26 +25,43 @@ func TestBuildAttributionBlockMapped(t *testing.T) {
 		_ = os.WriteFile(p, []byte("=== MAPPED ===\n"+block+"\n=== TRAILERS ===\n"+AttributionCommitTrailers(in)+"\n=== FOOTER ===\n"+AttributionPRFooterText(in)+"\n"), 0o600)
 	}
 	for _, want := range []string{
-		"Prompter: Alice (Discord 42)",
+		"Prompter: Alice",
 		"GitHub: @alice-gh",
-		"Thread: https://discord.com/channels/1/2",
 		"Session: sess-abc",
 		"Co-authored-by: Alice Example <42+alice-gh@users.noreply.github.com>",
-		"Prompter-Discord: 42; Thread: https://discord.com/channels/1/2",
+		"Prompter: Alice",
 		"Requested via Grok Work",
 	} {
 		if !strings.Contains(block, want) {
 			t.Fatalf("missing %q in:\n%s", want, block)
 		}
 	}
+	// Must not leak Discord id or thread jump link into ship text.
+	for _, ban := range []string{
+		"Discord 42",
+		"(Discord",
+		"Prompter-Discord",
+		"Thread: https://discord.com",
+		"https://discord.com/channels/1/2",
+	} {
+		if strings.Contains(block, ban) {
+			t.Fatalf("must not contain %q in:\n%s", ban, block)
+		}
+	}
 	// Footer text is reusable pure helper
 	foot := AttributionPRFooterText(in)
-	if !strings.Contains(foot, "@alice-gh") || !strings.Contains(foot, "Discord 42") {
+	if !strings.Contains(foot, "@alice-gh") || !strings.Contains(foot, "Prompter: Alice") {
 		t.Fatalf("footer:\n%s", foot)
+	}
+	if strings.Contains(foot, "Discord") || strings.Contains(foot, "Thread:") {
+		t.Fatalf("footer leaked Discord fields:\n%s", foot)
 	}
 	trail := AttributionCommitTrailers(in)
 	if !strings.HasPrefix(trail, "Co-authored-by:") {
 		t.Fatalf("trailers:\n%s", trail)
+	}
+	if strings.Contains(trail, "Prompter-Discord") || strings.Contains(trail, "Thread:") {
+		t.Fatalf("trailers leaked Discord fields:\n%s", trail)
 	}
 	name, email := AttributionAuthorFields(in)
 	if name != "Alice Example" || email != "42+alice-gh@users.noreply.github.com" {
@@ -67,11 +84,8 @@ func TestBuildAttributionBlockUnmapped(t *testing.T) {
 			_ = f.Close()
 		}
 	}
-	if !strings.Contains(block, "Prompter: Bob (Discord 99)") {
+	if !strings.Contains(block, "Prompter: Bob") {
 		t.Fatalf("missing prompter:\n%s", block)
-	}
-	if !strings.Contains(block, "Thread: https://discord.com/x") {
-		t.Fatalf("missing thread:\n%s", block)
 	}
 	// Must not invent a GitHub @login
 	if strings.Contains(block, "GitHub: @") {
@@ -80,8 +94,15 @@ func TestBuildAttributionBlockUnmapped(t *testing.T) {
 	if strings.Contains(block, "Co-authored-by:") {
 		t.Fatalf("unmapped must not Co-authored-by:\n%s", block)
 	}
-	if !strings.Contains(block, "Prompter-Discord: 99") {
-		t.Fatalf("missing discord trailer:\n%s", block)
+	for _, ban := range []string{
+		"Discord 99",
+		"Prompter-Discord",
+		"Thread: https://discord.com",
+		"https://discord.com/x",
+	} {
+		if strings.Contains(block, ban) {
+			t.Fatalf("must not contain %q in:\n%s", ban, block)
+		}
 	}
 	foot := AttributionPRFooterText(in)
 	if strings.Contains(foot, "GitHub:") {
@@ -95,16 +116,22 @@ func TestBuildAttributionBlockUnmapped(t *testing.T) {
 
 func TestOnBehalfOfCommentBodyMapped(t *testing.T) {
 	got := OnBehalfOfCommentBody("42", "Alice", "alice-gh", "please merge")
-	if !strings.HasPrefix(got, "On behalf of @alice-gh (Discord 42 / Alice):\n\n") {
+	if !strings.HasPrefix(got, "On behalf of @alice-gh (Alice):\n\n") {
 		t.Fatalf("prefix:\n%s", got)
 	}
 	if !strings.HasSuffix(got, "please merge") {
 		t.Fatalf("body lost:\n%s", got)
 	}
-	// @ stripped from login
+	if strings.Contains(got, "Discord") || strings.Contains(got, "42") {
+		t.Fatalf("must not include Discord id:\n%s", got)
+	}
+	// @ stripped from login; no display name → bare @login
 	got2 := OnBehalfOfCommentBody("9", "", "@bob", "x")
-	if !strings.HasPrefix(got2, "On behalf of @bob (Discord 9):\n\n") {
+	if !strings.HasPrefix(got2, "On behalf of @bob:\n\n") {
 		t.Fatalf("got2:\n%s", got2)
+	}
+	if strings.Contains(got2, "Discord") || strings.Contains(got2, "9") {
+		t.Fatalf("got2 leaked id:\n%s", got2)
 	}
 }
 
@@ -131,10 +158,13 @@ func TestOnBehalfOfCommentBodyEmpty(t *testing.T) {
 }
 
 func TestAttributionFooterBackwardCompat(t *testing.T) {
-	// Old call site shape still produces Discord attribution.
+	// Old call site still produces display-name attribution (no Discord id / thread URL).
 	p := attributionFooter("bob", "42", "https://discord.com/x")
-	if !strings.Contains(p, "Prompter: bob") || !strings.Contains(p, "42") {
+	if !strings.Contains(p, "Prompter: bob") {
 		t.Fatalf("%s", p)
+	}
+	if strings.Contains(p, "42") || strings.Contains(p, "https://discord.com/x") {
+		t.Fatalf("must not include Discord id or thread URL:\n%s", p)
 	}
 }
 
@@ -151,6 +181,9 @@ func TestAttributionInShipPrefixMapped(t *testing.T) {
 	}
 	if !strings.Contains(p, "@bobdev") || !strings.Contains(p, "Co-authored-by:") {
 		t.Fatalf("missing map attribution:\n%s", p)
+	}
+	if strings.Contains(p, "https://discord.com/x") {
+		t.Fatalf("thread URL leaked into ship prefix:\n%s", p)
 	}
 }
 
@@ -200,6 +233,9 @@ func TestLookupAndBuildEndToEnd(t *testing.T) {
 	block := BuildAttributionBlock(in)
 	if !strings.Contains(block, "@alice-gh") || !strings.Contains(block, "Co-authored-by: Alice <") {
 		t.Fatalf("block:\n%s", block)
+	}
+	if strings.Contains(block, "https://discord.com/channels/g/t") || strings.Contains(block, "Discord 42") {
+		t.Fatalf("leaked Discord fields:\n%s", block)
 	}
 	// Reload from disk
 	raw2, err := os.ReadFile(path)

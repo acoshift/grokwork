@@ -335,37 +335,24 @@ func attributionFooter(prompter, prompterID, threadURL string) string {
 
 // BuildAttributionBlock is the Tier A ship contract block: PR/commit footer + trailers.
 // Host remains the pusher; this only instructs the model what text to include.
-// Unmapped actors still get Discord prompter + thread lines without inventing @login.
+// Human-visible attribution uses display name + optional GitHub @login only —
+// never Discord snowflakes or Discord thread jump links.
 func BuildAttributionBlock(in AttributionInput) string {
 	var b strings.Builder
 	b.WriteString("\nAttribution (required when you ship — PR body footer and commit message trailers):\n")
 	b.WriteString("The host bot still pushes and opens the PR; you must still record who asked.\n")
+	b.WriteString("Do not put Discord user IDs or Discord thread URLs in the PR body or commit trailers.\n")
 
-	// Human-readable footer lines (PR body).
-	if in.PrompterName != "" || in.PrompterID != "" {
+	// Human-readable summary for the model (no Discord id / thread link).
+	if name := strings.TrimSpace(in.PrompterName); name != "" {
 		b.WriteString("- Prompter: ")
-		if in.PrompterName != "" {
-			b.WriteString(in.PrompterName)
-		}
-		if in.PrompterID != "" {
-			if in.PrompterName != "" {
-				b.WriteString(" ")
-			}
-			b.WriteString("(Discord ")
-			b.WriteString(in.PrompterID)
-			b.WriteString(")")
-		}
+		b.WriteString(name)
 		b.WriteString("\n")
 	}
 	login := strings.TrimPrefix(strings.TrimSpace(in.GitHubLogin), "@")
 	if login != "" {
 		b.WriteString("- GitHub: @")
 		b.WriteString(login)
-		b.WriteString("\n")
-	}
-	if in.ThreadURL != "" {
-		b.WriteString("- Thread: ")
-		b.WriteString(in.ThreadURL)
 		b.WriteString("\n")
 	}
 	if in.SessionID != "" {
@@ -375,20 +362,19 @@ func BuildAttributionBlock(in AttributionInput) string {
 	}
 
 	// Required copy-paste footer for PR body (and direct-ship commit messages).
-	b.WriteString("\nAppend this exact footer block to the PR body")
-	if in.ThreadURL != "" || in.PrompterID != "" {
-		b.WriteString(" (and to the commit message body for direct-to-primary ship)")
-	}
-	b.WriteString(":\n")
+	b.WriteString("\nAppend this exact footer block to the PR body (and to the commit message body for direct-to-primary ship):\n")
 	b.WriteString("```\n")
 	b.WriteString(AttributionPRFooterText(in))
 	b.WriteString("```\n")
 
 	// Commit trailers.
-	b.WriteString("\nOn every commit that ships this work, include these git trailers (blank line before trailers):\n")
-	b.WriteString("```\n")
-	b.WriteString(AttributionCommitTrailers(in))
-	b.WriteString("```\n")
+	trailers := AttributionCommitTrailers(in)
+	if trailers != "" {
+		b.WriteString("\nOn every commit that ships this work, include these git trailers (blank line before trailers):\n")
+		b.WriteString("```\n")
+		b.WriteString(trailers)
+		b.WriteString("```\n")
+	}
 	if login != "" {
 		name, email := AttributionAuthorFields(in)
 		if name != "" && email != "" {
@@ -399,34 +385,21 @@ func BuildAttributionBlock(in AttributionInput) string {
 			b.WriteString("\" (committer may remain the host bot).\n")
 		}
 	}
-	b.WriteString("")
 	return b.String()
 }
 
 // AttributionPRFooterText is the durable PR-body / direct-ship message footer (no fences).
+// Omits Discord snowflakes and Discord thread URLs.
 func AttributionPRFooterText(in AttributionInput) string {
 	var lines []string
 	lines = append(lines, "---")
 	lines = append(lines, "Requested via Grok Work")
-	if in.PrompterName != "" || in.PrompterID != "" {
-		p := "Prompter: "
-		if in.PrompterName != "" {
-			p += in.PrompterName
-		}
-		if in.PrompterID != "" {
-			if in.PrompterName != "" {
-				p += " "
-			}
-			p += "(Discord " + in.PrompterID + ")"
-		}
-		lines = append(lines, p)
+	if name := strings.TrimSpace(in.PrompterName); name != "" {
+		lines = append(lines, "Prompter: "+name)
 	}
 	login := strings.TrimPrefix(strings.TrimSpace(in.GitHubLogin), "@")
 	if login != "" {
 		lines = append(lines, "GitHub: @"+login)
-	}
-	if in.ThreadURL != "" {
-		lines = append(lines, "Thread: "+in.ThreadURL)
 	}
 	if in.SessionID != "" {
 		lines = append(lines, "Session: "+in.SessionID)
@@ -434,7 +407,8 @@ func AttributionPRFooterText(in AttributionInput) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// AttributionCommitTrailers returns Co-authored-by (when mapped) + Prompter-Discord trailers.
+// AttributionCommitTrailers returns Co-authored-by (when mapped) + Prompter name.
+// No Discord id and no Discord thread URL.
 func AttributionCommitTrailers(in AttributionInput) string {
 	var lines []string
 	login := strings.TrimPrefix(strings.TrimSpace(in.GitHubLogin), "@")
@@ -444,21 +418,11 @@ func AttributionCommitTrailers(in AttributionInput) string {
 			lines = append(lines, "Co-authored-by: "+name+" <"+email+">")
 		}
 	}
-	if in.PrompterID != "" || in.PrompterName != "" {
-		id := in.PrompterID
-		if id == "" {
-			id = in.PrompterName
-		}
-		line := "Prompter-Discord: " + id
-		if in.ThreadURL != "" {
-			line += "; Thread: " + in.ThreadURL
-		}
-		lines = append(lines, line)
-	} else if in.ThreadURL != "" {
-		lines = append(lines, "Prompter-Discord: unknown; Thread: "+in.ThreadURL)
+	if name := strings.TrimSpace(in.PrompterName); name != "" {
+		lines = append(lines, "Prompter: "+name)
 	}
 	if len(lines) == 0 {
-		return "Prompter-Discord: unknown\n"
+		return ""
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
@@ -483,11 +447,11 @@ func AttributionAuthorFields(in AttributionInput) (name, email string) {
 
 // OnBehalfOfCommentBody prefixes a host-bot GitHub comment when the acting Discord
 // user is mapped to a GitHub login. Unmapped actors and empty/whitespace-only bodies
-// are returned unchanged — no invented @login.
+// are returned unchanged — no invented @login. Does not include Discord snowflakes.
 //
 // Example (mapped):
 //
-//	On behalf of @alice (Discord 42 / Alice):
+//	On behalf of @alice (Alice):
 //
 //	please merge when green
 func OnBehalfOfCommentBody(discordID, displayName, githubLogin, body string) string {
@@ -498,25 +462,14 @@ func OnBehalfOfCommentBody(discordID, displayName, githubLogin, body string) str
 	if login == "" {
 		return body
 	}
-	discordID = strings.TrimSpace(discordID)
+	_ = discordID // kept in signature for call-site compatibility; never written into body
 	displayName = strings.TrimSpace(displayName)
 	var who strings.Builder
 	who.WriteString("On behalf of @")
 	who.WriteString(login)
-	if discordID != "" || displayName != "" {
-		who.WriteString(" (Discord")
-		if discordID != "" {
-			who.WriteString(" ")
-			who.WriteString(discordID)
-		}
-		if displayName != "" {
-			if discordID != "" {
-				who.WriteString(" / ")
-			} else {
-				who.WriteString(" ")
-			}
-			who.WriteString(displayName)
-		}
+	if displayName != "" {
+		who.WriteString(" (")
+		who.WriteString(displayName)
 		who.WriteString(")")
 	}
 	who.WriteString(":\n\n")
