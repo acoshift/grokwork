@@ -352,27 +352,7 @@
   <h2>Turns <span class="muted" style="font-weight:500;font-size:0.9rem">({{if .RunBusy}}{{add $done 1}}{{else}}{{$done}}{{end}})</span></h2>
   {{if or .Thread.Turns .RunBusy}}
   <div class="turns" id="turns">
-    {{range $i, $t := .Thread.Turns}}
-    <article class="turn">
-      <header class="turn-meta">
-        <span class="mono muted">#{{add $i 1}}</span>
-        <span class="badge status-{{$t.Status}}">{{$t.Status}}</span>
-        {{if $t.User}}<span>{{$t.User}}</span>{{end}}
-      </header>
-      <div class="bubble user">
-        <div class="bubble-label">User</div>
-        <div class="bubble-body md">{{markdown $t.Prompt}}</div>
-      </div>
-      <div class="bubble assistant">
-        <div class="bubble-label">Grok</div>
-        {{if $t.Response}}
-        <div class="bubble-body md">{{markdown $t.Response}}</div>
-        {{else}}
-        <div class="bubble-body muted">(no response text yet)</div>
-        {{end}}
-      </div>
-    </article>
-    {{end}}
+    {{/* Newest first so long replies do not bury the live/latest turn. #N stays chronological. */}}
     {{if .RunBusy}}
     <article class="turn turn-live" id="turn-live">
       <header class="turn-meta">
@@ -395,6 +375,32 @@
         {{end}}
       </div>
     </article>
+    {{end}}
+    {{$turns := .Thread.Turns}}
+    {{$n := len $turns}}
+    {{range $i, $_ := $turns}}
+    {{$ri := sub (sub $n 1) $i}}
+    {{with $t := index $turns $ri}}
+    <article class="turn">
+      <header class="turn-meta">
+        <span class="mono muted">#{{add $ri 1}}</span>
+        <span class="badge status-{{$t.Status}}">{{$t.Status}}</span>
+        {{if $t.User}}<span>{{$t.User}}</span>{{end}}
+      </header>
+      <div class="bubble user">
+        <div class="bubble-label">User</div>
+        <div class="bubble-body md">{{markdown $t.Prompt}}</div>
+      </div>
+      <div class="bubble assistant">
+        <div class="bubble-label">Grok</div>
+        {{if $t.Response}}
+        <div class="bubble-body md">{{markdown $t.Response}}</div>
+        {{else}}
+        <div class="bubble-body muted">(no response text yet)</div>
+        {{end}}
+      </div>
+    </article>
+    {{end}}
     {{end}}
   </div>
   {{else}}
