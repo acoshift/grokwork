@@ -437,8 +437,8 @@ func TestSessionQueueHidesRemoveForForeignItem(t *testing.T) {
 	}
 }
 
-// TestSessionRailControlsForMember: an owning member sees the label/goal/claim
-// rail controls and the danger-zone reset.
+// TestSessionRailControlsForMember: an owning member sees the label/goal
+// rail controls and the danger-zone reset, but not Claim (already owns it).
 func TestSessionRailControlsForMember(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	seedOwned(t, srv, "rail-th", "member-1", "Member One")
@@ -459,14 +459,40 @@ func TestSessionRailControlsForMember(t *testing.T) {
 		`id="btn-label"`,
 		`action="/sessions/rail-th/goal"`,
 		`id="btn-goal"`,
-		`action="/sessions/rail-th/claim"`,
-		`id="btn-claim"`,
 		`action="/sessions/rail-th/reset"`,
 		`id="btn-reset"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("rail missing %q", want)
 		}
+	}
+	// Owner already has the unit — Claim would be a no-op.
+	if strings.Contains(body, `id="btn-claim"`) {
+		t.Fatal("owner must not see Claim ownership")
+	}
+}
+
+// TestSessionClaimShownForNonOwner: a non-owning member still gets Claim.
+func TestSessionClaimShownForNonOwner(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	seedOwned(t, srv, "rail-claim", "member-1", "Member One")
+	sid, _, err := srv.LoginAs("allow-user", "Allow", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions/rail-claim", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="btn-claim"`) {
+		t.Fatal("non-owner member should see Claim ownership")
+	}
+	if !strings.Contains(body, `action="/sessions/rail-claim/claim"`) {
+		t.Fatal("non-owner member missing claim form action")
 	}
 }
 
