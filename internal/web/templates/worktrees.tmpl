@@ -41,7 +41,27 @@
 <div class="section">
   <h2>{{if .Project}}Project worktrees{{else}}All worktrees{{end}} <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Worktrees}})</span></h2>
   {{if .Worktrees}}
-  <div class="table-scroll">
+  <div class="m-rows">
+    {{range .Worktrees}}
+    <div class="m-row">
+      <span class="m-row-main">
+        <a class="m-row-t mono tid" href="/sessions/{{.ThreadID}}{{if or $.Project .Project}}?project={{urlquery (or $.Project .Project)}}{{end}}">{{.ThreadID}}</a>
+        <span class="m-row-s">{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{if .Branch}}<span class="mono">{{.Branch}}</span>{{else}}no branch{{end}}{{if .IdleFor}} · idle {{.IdleFor}}{{end}}{{if .IdlePastTTL}} · past TTL{{end}}{{if not .OnDisk}} · missing path{{end}}</span>
+      </span>
+      {{if .Busy}}
+      <span class="badge live">busy</span>
+      {{else}}
+      <form class="m-row-act" method="post" action="{{route "worktrees.prune"}}" onsubmit="return confirm('Prune worktree for thread {{.ThreadID}}? This removes the worktree, branch, and session.');">
+        {{template "csrf" $}}
+        <input type="hidden" name="threadId" value="{{.ThreadID}}">
+        {{if $.Project}}<input type="hidden" name="project" value="{{$.Project}}">{{end}}
+        <button type="submit" class="btn-danger">Prune</button>
+      </form>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  <div class="table-scroll m-hide">
   <table>
     <thead>
       <tr>

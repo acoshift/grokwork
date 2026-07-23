@@ -26,7 +26,21 @@
 <div class="section">
   <h2>Recent sessions <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Threads}} shown)</span></h2>
   {{if .Threads}}
-  <div class="table-scroll">
+  <div class="m-rows">
+    {{range .Threads}}
+    <a class="m-row" href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}">
+      <span class="m-row-main">
+        {{if .LastPrompt}}
+        <span class="m-row-t">{{.LastPrompt}}</span>
+        {{else}}
+        <span class="m-row-t mono">{{.ThreadID}}</span>
+        {{end}}
+        <span class="m-row-s">{{if .LastPrompt}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{.UpdatedAt}}{{end}}</span>
+      </span>
+    </a>
+    {{end}}
+  </div>
+  <div class="table-scroll m-hide">
   <table>
     <thead>
       <tr>
@@ -95,7 +109,18 @@
   </div>
 </div>
 {{if .Status.ActiveRuns}}
-<div class="table-scroll" style="margin-bottom:1.5rem">
+<div class="m-rows" style="margin-bottom:1.5rem">
+  {{range .Status.ActiveRuns}}
+  <a class="m-row" href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}">
+    <span class="m-row-main">
+      <span class="m-row-t mono">{{.ThreadID}}</span>
+      <span class="m-row-s">{{if .Activity}}{{.Activity}} · {{end}}running {{.Elapsed}}</span>
+    </span>
+    {{if gt .QueueLen 0}}<span class="badge">{{.QueueLen}} queued</span>{{else}}<span class="badge live">live</span>{{end}}
+  </a>
+  {{end}}
+</div>
+<div class="table-scroll m-hide" style="margin-bottom:1.5rem">
 <table>
   <thead>
     <tr><th>Thread</th><th>Elapsed</th><th>Activity</th><th>Queue</th></tr>

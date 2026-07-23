@@ -84,7 +84,30 @@
 <div class="section">
   <h2>Pull requests <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Ship.Rows}} shown · {{.Ship.Total}} tracked{{if .Ship.ProjectFilter}} in {{.Ship.ProjectFilter}}{{end}})</span></h2>
   {{if .Ship.Rows}}
-  <div class="table-scroll">
+  <div class="m-rows">
+    {{range .Ship.Rows}}
+    <a class="m-row" href="{{if and .GHOwner .GHRepo .Number}}/prs/{{.GHOwner}}/{{.GHRepo}}/{{.Number}}?project={{urlquery .Project}}{{else if .URL}}{{.URL}}{{else}}/sessions/{{.ThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}{{end}}">
+      <span class="m-row-main">
+        <span class="m-row-t">{{if .Title}}{{.Title}}{{else if .Goal}}{{.Goal}}{{else if and .GHOwner .GHRepo .Number}}{{.GHOwner}}/{{.GHRepo}}#{{.Number}}{{else if .Number}}#{{.Number}}{{else}}PR{{end}}</span>
+        <span class="m-row-s">{{if and .GHOwner .GHRepo .Number}}<span class="mono">{{.GHOwner}}/{{.GHRepo}}#{{.Number}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{if .OwnerName}}{{.OwnerName}} · {{end}}{{shortTime .UpdatedAt}}</span>
+        <span class="m-row-s">
+          {{if eq .State "OPEN"}}<span class="badge live">open</span>
+          {{else if eq .State "DRAFT"}}<span class="badge">draft</span>
+          {{else if eq .State "MERGED"}}<span class="badge status-merged">merged</span>
+          {{else if eq .State "CLOSED"}}<span class="badge status-cancelled">closed</span>
+          {{else if .State}}<span class="badge">{{.State}}</span>{{end}}
+          {{if .Running}}<span class="badge live">running</span>{{end}}
+          {{if .ChecksFailing}}<span class="badge status-error">CI failing</span>{{end}}
+          {{if eq .TeamRollup "changes_requested"}}<span class="badge status-warn">changes requested</span>
+          {{else if eq .TeamRollup "approved"}}<span class="badge status-done">approved</span>
+          {{else if eq .TeamRollup "review_requested"}}<span class="badge live">review requested</span>{{end}}
+          {{if .FromCase}}<span class="badge">from case</span>{{end}}
+        </span>
+      </span>
+    </a>
+    {{end}}
+  </div>
+  <div class="table-scroll m-hide">
   <table>
     <thead>
       <tr>

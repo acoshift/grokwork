@@ -54,7 +54,17 @@
 
 <div class="section">
   {{if .Commits}}
-  <div class="table-scroll">
+  <div class="m-rows">
+    {{range .Commits}}
+    <a class="m-row" href="/projects/{{$.Project}}/commits/{{.SHA}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">
+      <span class="m-row-main">
+        <span class="m-row-t">{{.Subject}}</span>
+        <span class="m-row-s"><span class="mono">{{.ShortSHA}}</span>{{if .AuthorName}} · {{.AuthorName}}{{end}}{{if not .AuthorDate.IsZero}} · {{.AuthorDate.Format "2006-01-02 15:04"}}{{end}}</span>
+      </span>
+    </a>
+    {{end}}
+  </div>
+  <div class="table-scroll m-hide">
   <table>
     <thead><tr><th>SHA</th><th>Subject</th><th>Author</th><th>Date</th></tr></thead>
     <tbody>

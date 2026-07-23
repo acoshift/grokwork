@@ -5,7 +5,21 @@
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
 {{if .Threads}}
-<div class="table-scroll" id="sessions-table">
+<div class="m-rows">
+  {{range .Threads}}
+  <a class="m-row" href="/sessions/{{.ThreadID}}{{if or $.Project .Project}}?project={{urlquery (or $.Project .Project)}}{{end}}">
+    <span class="m-row-main">
+      {{if .LastPrompt}}
+      <span class="m-row-t">{{.LastPrompt}}</span>
+      {{else}}
+      <span class="m-row-t mono">{{.ThreadID}}</span>
+      {{end}}
+      <span class="m-row-s">{{if .LastPrompt}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{.UpdatedAt}}{{end}}</span>
+    </span>
+  </a>
+  {{end}}
+</div>
+<div class="table-scroll m-hide" id="sessions-table">
 <table>
   <thead>
     <tr>

@@ -19,6 +19,20 @@
   {{template "home_projects" .}}
 </div>
 
+{{/* Phone-only: Worktrees has no bottom tab (five max), so the global
+     board keeps a drill-in row here. Desktop reaches it from the sidebar. */}}
+<div class="section m-only" id="m-lead-views">
+  <h2>Lead views</h2>
+  <div class="m-rows">
+    <a class="m-row" href="{{route "worktrees"}}">
+      <span class="m-row-main">
+        <span class="m-row-t">Worktrees</span>
+        <span class="m-row-s">per-thread checkouts · idle cleanup · prune</span>
+      </span>
+    </a>
+  </div>
+</div>
+
 <div class="section">
   <h2>Now running</h2>
   <div class="live-region"
@@ -66,7 +80,18 @@
 {{define "home_runs"}}
 <div id="runs-wrap">
   {{if .Status.ActiveRuns}}
-  <div class="table-scroll">
+  <div class="m-rows">
+    {{range .Status.ActiveRuns}}
+    <a class="m-row" href="/sessions/{{.ThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}">
+      <span class="m-row-main">
+        <span class="m-row-t mono">{{.ThreadID}}</span>
+        <span class="m-row-s">{{if .Project}}{{.Project}} · {{end}}running {{.Elapsed}}</span>
+      </span>
+      {{if gt .QueueLen 0}}<span class="badge">{{.QueueLen}} queued</span>{{else}}<span class="badge live">live</span>{{end}}
+    </a>
+    {{end}}
+  </div>
+  <div class="table-scroll m-hide">
   <table id="runs-table">
     <thead>
       <tr><th>Thread</th><th>Project</th><th>Elapsed</th><th>Queue</th></tr>
