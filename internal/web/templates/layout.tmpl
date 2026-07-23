@@ -213,8 +213,6 @@
     .wrap {
       display: grid;
       grid-template-columns: 14.5rem minmax(0, 1fr);
-      max-width: 96rem;
-      margin: 0 auto;
       min-height: 100vh;
     }
     .wrap.is-login { display: block; }
@@ -234,7 +232,6 @@
       min-width: 0;
       padding: 2rem 2.4rem 4rem;
     }
-    main.main > #live-root { max-width: 76rem; }
     .wrap.is-login main.main { padding-top: 4rem; }
 
     .brand {
@@ -1359,6 +1356,17 @@
     .action-body label.check { min-height: 0; font-size: 0.84rem; }
     .action-body .form-actions { margin-top: 0.1rem; }
     .action-body .form-actions button { flex: 1 1 auto; }
+    /* One-off rail CTAs (claim ownership, reset session, commit review):
+       uniform compact size, stretched to the rail card width. */
+    .rail-group > form .form-actions { margin-top: 0.45rem; }
+    .rail-group > form .form-actions button {
+      flex: 1 1 auto;
+      height: 2.1rem;
+      min-width: 0;
+      padding: 0 0.85rem;
+      font-size: 0.82rem;
+      font-weight: 560;
+    }
     .rail-note {
       margin: 0.3rem 0 0.55rem;
       font-size: 0.78rem;
