@@ -1,14 +1,18 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -107,24 +111,92 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		return
 	}
 
-	msg := fmt.Sprintf("<@%s> please review **%s/%s#%d** (requested by <@%s>)",
-		reviewerID, pr.Owner, pr.Repo, pr.Number, m.Author.ID)
-	if note != "" {
-		msg += "\n> " + note
-	}
-	if u := b.discordPRURL(pr.Owner, pr.Repo, pr.Number, pr.URL); u != "" {
-		msg += "\n" + u
-	}
-	if req.ID != "" {
-		msg += "\n_Team review request — appears on web **My reviews** (not a GitHub formal review)._"
-	}
+	// Formal GitHub review request when the reviewer is on the Tier A map.
+	// Team store is already saved; GH failure is reported without rolling back.
+	cwd := b.prViewCwd(e)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	ghLogin, ghErr := requestFormalGitHubReview(ctx, nil, b.cfg, cwd, pr.Owner, pr.Repo, pr.Number, reviewerID)
+
+	msg := formatReviewRequestReply(reviewRequestReply{
+		ReviewerID:  reviewerID,
+		RequesterID: m.Author.ID,
+		Owner:       pr.Owner,
+		Repo:        pr.Repo,
+		Number:      pr.Number,
+		Note:        note,
+		PRURL:       b.discordPRURL(pr.Owner, pr.Repo, pr.Number, pr.URL),
+		TeamOK:      req.ID != "",
+		GitHubLogin: ghLogin,
+		GitHubErr:   ghErr,
+	})
 	if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply review-ok: %v", err)
 	}
 }
 
+// ResolveMappedGitHubLogin returns the bare GitHub login for a Discord user when
+// present in the Tier A map; empty string means unmapped (do not invent @login).
+func ResolveMappedGitHubLogin(cfg *config.Config, discordUserID string) string {
+	if cfg == nil {
+		return ""
+	}
+	id, ok := cfg.LookupGitHubIdentity(discordUserID)
+	if !ok {
+		return ""
+	}
+	return strings.TrimPrefix(strings.TrimSpace(id.Login), "@")
+}
+
+// requestFormalGitHubReview requests a formal PR review via host gh when mapped.
+// Empty login means skip (unmapped); team store is independent. run may be nil.
+func requestFormalGitHubReview(ctx context.Context, run ghpr.Runner, cfg *config.Config, cwd, owner, repo string, number int, discordReviewerID string) (login string, err error) {
+	login = ResolveMappedGitHubLogin(cfg, discordReviewerID)
+	if login == "" {
+		return "", nil
+	}
+	err = ghpr.RequestReviewersWith(ctx, run, cwd, owner, repo, number, login)
+	return login, err
+}
+
+type reviewRequestReply struct {
+	ReviewerID  string
+	RequesterID string
+	Owner       string
+	Repo        string
+	Number      int
+	Note        string
+	PRURL       string
+	TeamOK      bool
+	GitHubLogin string // bare login if formal request attempted
+	GitHubErr   error
+}
+
+func formatReviewRequestReply(r reviewRequestReply) string {
+	msg := fmt.Sprintf("<@%s> please review **%s/%s#%d** (requested by <@%s>)",
+		r.ReviewerID, r.Owner, r.Repo, r.Number, r.RequesterID)
+	if r.Note != "" {
+		msg += "\n> " + r.Note
+	}
+	if r.PRURL != "" {
+		msg += "\n" + r.PRURL
+	}
+	if r.TeamOK {
+		msg += "\n_Team review request — appears on web **My reviews**._"
+	}
+	switch {
+	case r.GitHubLogin != "" && r.GitHubErr == nil:
+		msg += fmt.Sprintf("\n_Also requested formal GitHub review from @%s._", r.GitHubLogin)
+	case r.GitHubLogin != "" && r.GitHubErr != nil:
+		msg += fmt.Sprintf("\n⚠️ Team request saved, but GitHub review request for @%s failed: %s", r.GitHubLogin, r.GitHubErr.Error())
+	default:
+		msg += "\n_No GitHub map for this Discord user — team request only (not a formal GitHub review request). Map them under **Config → GitHub map**._"
+	}
+	return msg
+}
+
 func reviewHelpText() string {
-	return "Usage: `@Grok /review @user` · optional PR `#42`, URL, or `owner/repo#n` when the thread has multiple PRs."
+	return "Usage: `@Grok /review @user` · optional PR `#42`, URL, or `owner/repo#n` when the thread has multiple PRs. Mapped users also get a formal GitHub review request."
 }
 
 func parseReviewArgs(prompt string) (reviewerID, rest string) {

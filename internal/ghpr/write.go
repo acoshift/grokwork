@@ -238,6 +238,39 @@ func CloseIssueWith(ctx context.Context, run Runner, repoDir, owner, repo string
 	return err
 }
 
+// RequestReviewers adds GitHub PR reviewers by login (host gh auth).
+// Equivalent to: gh pr edit N --add-reviewer login[,login…] [--repo owner/repo]
+func RequestReviewers(ctx context.Context, repoDir, owner, repo string, number int, logins ...string) error {
+	return RequestReviewersWith(ctx, defaultRunner, repoDir, owner, repo, number, logins...)
+}
+
+// RequestReviewersWith is RequestReviewers with an injectable runner.
+func RequestReviewersWith(ctx context.Context, run Runner, repoDir, owner, repo string, number int, logins ...string) error {
+	if run == nil {
+		run = defaultRunner
+	}
+	if number <= 0 {
+		return fmt.Errorf("invalid PR number")
+	}
+	cleaned := make([]string, 0, len(logins))
+	for _, l := range logins {
+		l = strings.TrimPrefix(strings.TrimSpace(l), "@")
+		if l == "" {
+			continue
+		}
+		cleaned = append(cleaned, l)
+	}
+	if len(cleaned) == 0 {
+		return fmt.Errorf("no reviewers")
+	}
+	args := []string{"pr", "edit", strconv.Itoa(number), "--add-reviewer", strings.Join(cleaned, ",")}
+	if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
+		args = append(args, "--repo", o+"/"+r)
+	}
+	_, err := run(ctx, repoDir, "gh", args...)
+	return err
+}
+
 // ClosePR closes a pull request (no comment required).
 func ClosePR(ctx context.Context, repoDir, owner, repo string, number int) error {
 	return ClosePRWith(ctx, defaultRunner, repoDir, owner, repo, number)
@@ -261,8 +294,8 @@ func ClosePRWith(ctx context.Context, run Runner, repoDir, owner, repo string, n
 
 // MergeOpts controls gh pr merge (never includes bypass flags).
 type MergeOpts struct {
-	Method         MergeMethod
-	AttemptAnyway  bool // allow when checks failing; still no --admin
+	Method        MergeMethod
+	AttemptAnyway bool // allow when checks failing; still no --admin
 }
 
 // MergePreflight is the pure allow/deny decision before calling gh.

@@ -291,3 +291,48 @@ func TestEmptyCommentRejected(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestRequestReviewersWithMappedLogin(t *testing.T) {
+	var saw []string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		saw = append([]string{name}, args...)
+		return []byte("ok"), nil
+	}
+	if err := RequestReviewersWith(context.Background(), run, "/repo", "acme", "app", 9, "@alice-gh"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(saw, " ")
+	if !strings.Contains(joined, "pr edit 9") {
+		t.Fatalf("want pr edit: %v", saw)
+	}
+	if !strings.Contains(joined, "--add-reviewer alice-gh") {
+		t.Fatalf("want stripped login: %v", saw)
+	}
+	if !strings.Contains(joined, "--repo acme/app") {
+		t.Fatalf("want repo: %v", saw)
+	}
+	// Multi-login comma join
+	saw = nil
+	if err := RequestReviewersWith(context.Background(), run, "/repo", "o", "r", 1, "a", "@b"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(saw, " "), "--add-reviewer a,b") {
+		t.Fatalf("%v", saw)
+	}
+}
+
+func TestRequestReviewersRejectsEmpty(t *testing.T) {
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		t.Fatal("should not run")
+		return nil, nil
+	}
+	if err := RequestReviewersWith(context.Background(), run, "/r", "o", "r", 1); err == nil {
+		t.Fatal("expected error for no logins")
+	}
+	if err := RequestReviewersWith(context.Background(), run, "/r", "o", "r", 1, "  ", "@"); err == nil {
+		t.Fatal("expected error for blank logins")
+	}
+	if err := RequestReviewersWith(context.Background(), run, "/r", "o", "r", 0, "x"); err == nil {
+		t.Fatal("expected invalid PR number")
+	}
+}

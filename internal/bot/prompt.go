@@ -405,7 +405,7 @@ func HelpText() string {
 		"• `/label` — show lifecycle label; `/label <open|in_progress|blocked|needs_review|done|abandoned>` sets manual; `/label auto` re-enables auto",
 		"• `/board [running|queued|waiting|stale|label|all]` — team activity board for this channel's project (running, queued, waiting on human, stale)",
 		"• `/link #N` or `/link ENG-123` — bind GitHub/Linear tickets (Linear only when enabled per project); `/link fix …` uses `Fixes`; `/unlink`; `/link clear`",
-		"• `/review @user [optional #N|PR URL]` — request a team review (Discord identity; shows on web My reviews)",
+		"• `/review @user [optional #N|PR URL]` — request a team review (web My reviews); mapped Discord→GitHub users also get a formal GitHub review request",
 		"• `/claim` — take ownership of this thread (anyone on the allowlist)",
 		"• `/hand-off @user` — transfer ownership and post a short hand-off card",
 		"• `/reset` — forget this thread's session and remove its worktree (owner/mod)",

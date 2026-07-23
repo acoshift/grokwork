@@ -84,7 +84,7 @@ See `docs/design-per-user-github-identity.md` Tier A. **Host still pushes/opens 
 - [x] Commit trailers + Co-authored-by / noreply email instructions in ship prompt (`BuildAttributionBlock`)
 - [x] PR body footer: Discord prompter, mapped `@login`, thread URL, session id
 - [x] Web comment prefix “On behalf of …” when map exists (`OnBehalfOfCommentBody` on PR/issue comment + issue close)
-- [ ] Optional: use map for `/review @user` → GitHub review request
+- [x] Use map for `/review @user` → formal GitHub review request (`gh pr edit --add-reviewer`; unmapped stays team-store only)
 - [x] Web UI for editing the Discord→GitHub map (`/config` → GitHub map section)
 
 ### 2. Governance depth — **partial**
@@ -102,7 +102,7 @@ See `docs/design-per-user-github-identity.md` Tier A. **Host still pushes/opens 
 
 - [ ] **Watchers** — `@Grok /watch` or 👀; mention once on complete/fail
 - [ ] **Notification hygiene** — `notifyOnDone: never | errors | always | long_only`
-- [ ] **Discord `/review` depth** — GitHub review-request + optional `#code-review` radar (request map already exists)
+- [ ] **Discord `/review` depth** — optional `#code-review` radar (formal GH review-request via map is shipped)
 - [ ] **`/rerequest` / re-review** after address (if still desired)
 - [ ] **Path scope (monorepo)** — `/scope api/`; warn if diff escapes
 - [ ] **Project conventions blurb** — config or repo `GROK_DISCORD.md` (capped); `/conventions`
