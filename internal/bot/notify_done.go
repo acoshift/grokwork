@@ -45,6 +45,7 @@ func outcomeLabel(o runOutcome) string {
 }
 
 // shouldNotifyAuthor reports whether the run author should be @mentioned.
+// long_only = elapsed ≥ threshold OR non-OK outcome (short failures still ping).
 func shouldNotifyAuthor(mode string, longMs int, outcome runOutcome, elapsed time.Duration) bool {
 	mode = config.NormalizeNotifyOnDone(mode)
 	switch mode {
@@ -55,6 +56,9 @@ func shouldNotifyAuthor(mode string, longMs int, outcome runOutcome, elapsed tim
 	case config.NotifyOnDoneErrors:
 		return outcome != outcomeOK
 	case config.NotifyOnDoneLongOnly:
+		if outcome != outcomeOK {
+			return true
+		}
 		if longMs <= 0 {
 			longMs = config.DefaultNotifyOnDoneLongMs
 		}
@@ -102,14 +106,46 @@ func formatNotifyDoneMessage(ids []string, outcome runOutcome, elapsed time.Dura
 	return fmt.Sprintf("%s — run **%s** · %s", strings.Join(mentions, " "), label, formatElapsed(elapsed))
 }
 
+// notifySend posts a notify-done message. Injectable for tests.
+type notifySend func(threadID, content string, userIDs []string) error
+
+func discordNotifySend(s *discordgo.Session) notifySend {
+	return func(threadID, content string, userIDs []string) error {
+		if s == nil {
+			return fmt.Errorf("discord session is nil")
+		}
+		_, err := s.ChannelMessageSendComplex(threadID, &discordgo.MessageSend{
+			Content: sanitizeDiscordContent(content),
+			AllowedMentions: &discordgo.MessageAllowedMentions{
+				Users: userIDs,
+			},
+			Flags: discordgo.MessageFlagsSuppressEmbeds,
+		})
+		return err
+	}
+}
+
 // notifyRunDone pings watchers and optionally the run author after a Discord-visible run.
 func (b *Bot) notifyRunDone(s *discordgo.Session, threadID, authorID string, result grokrun.Result, elapsed time.Duration) {
-	if b == nil || s == nil || threadID == "" || gitworktree.IsWebUnitID(threadID) {
+	b.notifyRunDoneSend(threadID, authorID, result, elapsed, discordNotifySend(s))
+}
+
+// notifyRunFailed is used for pre-Grok failures (worktree/attachments) so watchers
+// still get a ping under the same policy as a failed run.
+func (b *Bot) notifyRunFailed(s *discordgo.Session, threadID, authorID string, elapsed time.Duration) {
+	b.notifyRunDone(s, threadID, authorID, grokrun.Result{Code: 1}, elapsed)
+}
+
+// notifyRunDoneSend is the testable core of notifyRunDone (real session lookup + policy).
+func (b *Bot) notifyRunDoneSend(threadID, authorID string, result grokrun.Result, elapsed time.Duration, send notifySend) {
+	if b == nil || send == nil || threadID == "" || gitworktree.IsWebUnitID(threadID) {
 		return
 	}
 	var watchers []string
-	if e, ok := b.sessions.Get(threadID); ok {
-		watchers = append([]string(nil), e.WatcherIDs...)
+	if b.sessions != nil {
+		if e, ok := b.sessions.Get(threadID); ok {
+			watchers = append([]string(nil), e.WatcherIDs...)
+		}
 	}
 	mode := config.DefaultNotifyOnDone
 	longMs := config.DefaultNotifyOnDoneLongMs
@@ -126,15 +162,20 @@ func (b *Bot) notifyRunDone(s *discordgo.Session, threadID, authorID string, res
 	if msg == "" {
 		return
 	}
-	if _, err := s.ChannelMessageSendComplex(threadID, &discordgo.MessageSend{
-		Content: sanitizeDiscordContent(msg),
-		AllowedMentions: &discordgo.MessageAllowedMentions{
-			Users: ids,
-		},
-		Flags: discordgo.MessageFlagsSuppressEmbeds,
-	}); err != nil {
+	if err := send(threadID, msg, ids); err != nil {
 		log.Printf("warn: notify-done thread=%s: %v", threadID, err)
 	}
+}
+
+// taskAuthorID resolves who queued/started this run for notify policy.
+func taskAuthorID(item taskItem, m *discordgo.MessageCreate) string {
+	if m != nil && m.Author != nil && m.Author.ID != "" {
+		return m.Author.ID
+	}
+	if item.actor.ID != "" {
+		return item.actor.ID
+	}
+	return item.authorID
 }
 
 // preserveWatcherFields copies watch list across session Set rebuilds.

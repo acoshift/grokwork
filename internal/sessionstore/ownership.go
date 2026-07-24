@@ -59,6 +59,9 @@ func (e *Entry) HandOff(newOwnerID, newOwnerName string) {
 	}
 }
 
+// MaxWatchers caps opt-in completion pings per thread.
+const MaxWatchers = 20
+
 // IsWatcher reports whether userID is watching this thread for run completion pings.
 func (e Entry) IsWatcher(userID string) bool {
 	if userID == "" {
@@ -68,11 +71,15 @@ func (e Entry) IsWatcher(userID string) bool {
 }
 
 // AddWatcher opts userID into completion/fail mentions (deduped).
+// Returns false if already present, empty, or the list is at MaxWatchers.
 func (e *Entry) AddWatcher(userID string) bool {
 	if e == nil || userID == "" {
 		return false
 	}
 	if slices.Contains(e.WatcherIDs, userID) {
+		return false
+	}
+	if len(e.WatcherIDs) >= MaxWatchers {
 		return false
 	}
 	e.WatcherIDs = append(e.WatcherIDs, userID)

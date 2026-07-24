@@ -15,7 +15,7 @@
         <option value="never" {{if eq .Config.NotifyOnDone "never"}}selected{{end}}>never — no author pings</option>
         <option value="errors" {{if eq .Config.NotifyOnDone "errors"}}selected{{end}}>errors — only fail / cancel / max-turns</option>
         <option value="always" {{if eq .Config.NotifyOnDone "always"}}selected{{end}}>always — every finished run</option>
-        <option value="long_only" {{if eq .Config.NotifyOnDone "long_only"}}selected{{end}}>long_only — only when run exceeds threshold</option>
+        <option value="long_only" {{if eq .Config.NotifyOnDone "long_only"}}selected{{end}}>long_only — long runs or any fail/cancel</option>
       </select>
     </div>
     <div>
@@ -25,8 +25,11 @@
     <button type="submit">Save</button>
   </form>
   <p class="sub" style="margin:0.5rem 0 0">
-    Default is <span class="mono">errors</span>. Long threshold default is <span class="mono">300000</span> ms (5 minutes).
+    Default is <span class="mono">errors</span> (author pinged on fail/cancel/max-turns after upgrade).
+    <span class="mono">long_only</span> pings the author when elapsed ≥ threshold <strong>or</strong> the run failed/cancelled.
+    Long threshold default is <span class="mono">300000</span> ms (5 minutes).
     Thread status / completion cards still post either way — this only controls author pings.
+    Watchers (<span class="mono">@Grok /watch</span>) are always mentioned on complete/fail, independent of this policy.
   </p>
 </div>
 </div>

@@ -27,6 +27,10 @@ func (b *Bot) handleWatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		return
 	}
+	wasWatching := false
+	if e0, ok0 := b.sessions.Get(m.ChannelID); ok0 {
+		wasWatching = e0.IsWatcher(m.Author.ID)
+	}
 	var added bool
 	e, ok, err := b.sessions.Patch(m.ChannelID, func(ent *sessionstore.Entry) {
 		added = ent.AddWatcher(m.Author.ID)
@@ -43,9 +47,20 @@ func (b *Bot) handleWatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		return
 	}
-	msg := "Already watching this thread — you will be mentioned when a run completes or fails."
-	if added {
-		msg = fmt.Sprintf("Watching this thread (%d watcher(s)). You will be @mentioned once when a run completes or fails. `@Grok /unwatch` to stop.", len(e.WatcherIDs))
+	var msg string
+	switch {
+	case added:
+		msg = fmt.Sprintf(
+			"Watching this thread (%d watcher(s)). You will be @mentioned when each run completes or fails until `@Grok /unwatch`.",
+			len(e.WatcherIDs),
+		)
+	case wasWatching:
+		msg = "Already watching this thread — you stay on the list for every run until `@Grok /unwatch`."
+	default:
+		msg = fmt.Sprintf(
+			"Could not add you as a watcher (limit is %d). Ask someone to `/unwatch` or wait.",
+			sessionstore.MaxWatchers,
+		)
 	}
 	if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply watch-ok: %v", err)

@@ -1485,6 +1485,9 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			}
 			sendChunks(s, threadID, "Could not create git worktree: "+wtErr.Error())
 		}
+		if present && s != nil {
+			b.notifyRunFailed(s, threadID, taskAuthorID(item, m), time.Since(job.start))
+		}
 		return
 	}
 	if wtBranch != "" {
@@ -1540,6 +1543,9 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 				if present {
 					sendChunks(s, threadID, msg)
 				}
+				if present && s != nil {
+					b.notifyRunFailed(s, threadID, taskAuthorID(item, m), time.Since(job.start))
+				}
 				return
 			}
 			files = append(files, savedAttachment{Path: p, Filename: filepath.Base(p)})
@@ -1569,6 +1575,9 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 					}
 				}
 				sendChunks(s, threadID, msg)
+				if present && s != nil {
+					b.notifyRunFailed(s, threadID, taskAuthorID(item, m), time.Since(job.start))
+				}
 				return
 			}
 			prompt = promptWithAttachments(prompt, files)
@@ -1933,15 +1942,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 
 	// Watchers + notifyOnDone author pings (Discord threads only).
 	if present && s != nil {
-		authorID := ""
-		if m != nil && m.Author != nil {
-			authorID = m.Author.ID
-		} else if item.actor.ID != "" {
-			authorID = item.actor.ID
-		} else if item.authorID != "" {
-			authorID = item.authorID
-		}
-		b.notifyRunDone(s, threadID, authorID, result, elapsed)
+		b.notifyRunDone(s, threadID, taskAuthorID(item, m), result, elapsed)
 	}
 }
 

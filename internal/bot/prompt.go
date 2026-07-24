@@ -446,7 +446,7 @@ func HelpText() string {
 		"• `/sync` — fetch + merge origin primary into this branch",
 		"• `/comments` — list unresolved PR review comments",
 		"• `/address` — queue a run to address unresolved review comments",
-		"• `/watch` — get @mentioned when a run on this thread completes or fails",
+		"• `/watch` — @mention you when each run on this thread completes or fails (until `/unwatch`)",
 		"• `/unwatch` — stop completion pings for you",
 		"• `/help` — this message",
 		"",

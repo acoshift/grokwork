@@ -1,6 +1,10 @@
 package bot
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -41,10 +45,17 @@ func TestShouldNotifyAuthor(t *testing.T) {
 		t.Fatal("errors+err")
 	}
 	if shouldNotifyAuthor(config.NotifyOnDoneLongOnly, 60_000, outcomeOK, short) {
-		t.Fatal("long short")
+		t.Fatal("long short ok")
 	}
 	if !shouldNotifyAuthor(config.NotifyOnDoneLongOnly, 60_000, outcomeOK, long) {
-		t.Fatal("long long")
+		t.Fatal("long long ok")
+	}
+	// long_only still pings on short failures
+	if !shouldNotifyAuthor(config.NotifyOnDoneLongOnly, 60_000, outcomeError, short) {
+		t.Fatal("long short err")
+	}
+	if !shouldNotifyAuthor(config.NotifyOnDoneLongOnly, 60_000, outcomeCancelled, short) {
+		t.Fatal("long short cancel")
 	}
 	// empty mode → errors default
 	if shouldNotifyAuthor("", 0, outcomeOK, short) {
@@ -56,7 +67,6 @@ func TestShouldNotifyAuthor(t *testing.T) {
 }
 
 func TestNotifyMentionIDs(t *testing.T) {
-	// Watcher always; author only when policy says so.
 	ids := notifyMentionIDs("author", []string{"w1", "w1", "w2"}, config.NotifyOnDoneNever, 0, outcomeOK, time.Second)
 	if len(ids) != 2 || ids[0] != "w1" || ids[1] != "w2" {
 		t.Fatalf("watchers only: %v", ids)
@@ -65,12 +75,10 @@ func TestNotifyMentionIDs(t *testing.T) {
 	if len(ids) != 2 {
 		t.Fatalf("author+watcher: %v", ids)
 	}
-	// Author already watcher → one id
 	ids = notifyMentionIDs("w1", []string{"w1"}, config.NotifyOnDoneAlways, 0, outcomeOK, time.Second)
 	if len(ids) != 1 || ids[0] != "w1" {
 		t.Fatalf("dedupe: %v", ids)
 	}
-	// Errors policy + success → watchers only
 	ids = notifyMentionIDs("author", []string{"w1"}, config.NotifyOnDoneErrors, 0, outcomeOK, time.Second)
 	if len(ids) != 1 || ids[0] != "w1" {
 		t.Fatalf("errors success: %v", ids)
@@ -109,6 +117,21 @@ func TestWatcherAddRemove(t *testing.T) {
 	}
 }
 
+func TestWatcherCap(t *testing.T) {
+	var e sessionstore.Entry
+	for i := 0; i < sessionstore.MaxWatchers; i++ {
+		if !e.AddWatcher("w" + strconv.Itoa(i)) {
+			t.Fatalf("add %d", i)
+		}
+	}
+	if e.AddWatcher("overflow") {
+		t.Fatal("cap should reject")
+	}
+	if len(e.WatcherIDs) != sessionstore.MaxWatchers {
+		t.Fatalf("len=%d", len(e.WatcherIDs))
+	}
+}
+
 func TestPreserveWatcherFields(t *testing.T) {
 	prev := sessionstore.Entry{WatcherIDs: []string{"a", "b"}}
 	next := sessionstore.Entry{}
@@ -116,7 +139,6 @@ func TestPreserveWatcherFields(t *testing.T) {
 	if len(next.WatcherIDs) != 2 {
 		t.Fatalf("%v", next.WatcherIDs)
 	}
-	// non-empty next wins
 	next2 := sessionstore.Entry{WatcherIDs: []string{"c"}}
 	preserveWatcherFields(&next2, prev)
 	if len(next2.WatcherIDs) != 1 || next2.WatcherIDs[0] != "c" {
@@ -140,5 +162,107 @@ func TestHelpMentionsWatch(t *testing.T) {
 	h := HelpText()
 	if !strings.Contains(h, "/watch") || !strings.Contains(h, "/unwatch") {
 		t.Fatal(h)
+	}
+	if strings.Contains(h, "once") {
+		t.Fatalf("help must not promise one-shot: %s", h)
+	}
+	if !strings.Contains(h, "until") {
+		t.Fatalf("help should say until /unwatch: %s", h)
+	}
+}
+
+// TestNotifyRunDoneSend drives the real notifyRunDoneSend path with session
+// store + config and an injectable sender (no Discord network).
+func TestNotifyRunDoneSend(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{
+  "discordToken": "tok",
+  "projects": {"app": {"path": "`+filepath.ToSlash(dir)+`", "allowedUserIds": ["author","w1"]}},
+  "channels": {},
+  "grokBin": "grok",
+  "notifyOnDone": "errors"
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{}
+	if err := json.Unmarshal(raw, cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConfigPath = path
+	cfg.DataDir = dir
+
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := "123456789012345678" // Discord snowflake form, not web unit
+	if err := store.Set(threadID, sessionstore.Entry{
+		Project:    "app",
+		WatcherIDs: []string{"w1", "w2"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	b := &Bot{cfg: cfg, sessions: store}
+
+	var gotThread, gotContent string
+	var gotUsers []string
+	calls := 0
+	send := func(tid, content string, users []string) error {
+		calls++
+		gotThread, gotContent = tid, content
+		gotUsers = append([]string(nil), users...)
+		return nil
+	}
+
+	// Success + errors policy → watchers only (no author)
+	b.notifyRunDoneSend(threadID, "author", grokrun.Result{Code: 0}, time.Minute, send)
+	if calls != 1 {
+		t.Fatalf("calls=%d", calls)
+	}
+	if gotThread != threadID {
+		t.Fatalf("thread=%q", gotThread)
+	}
+	if !strings.Contains(gotContent, "<@w1>") || !strings.Contains(gotContent, "<@w2>") {
+		t.Fatalf("content=%s", gotContent)
+	}
+	if strings.Contains(gotContent, "<@author>") {
+		t.Fatalf("author should not be pinged on success under errors: %s", gotContent)
+	}
+	if len(gotUsers) != 2 {
+		t.Fatalf("users=%v", gotUsers)
+	}
+
+	// Failure → author + watchers
+	calls = 0
+	gotUsers = nil
+	b.notifyRunDoneSend(threadID, "author", grokrun.Result{Code: 1}, 5*time.Second, send)
+	if calls != 1 {
+		t.Fatalf("fail calls=%d", calls)
+	}
+	if !strings.Contains(gotContent, "<@author>") || !strings.Contains(gotContent, "**failed**") {
+		t.Fatalf("fail content=%s", gotContent)
+	}
+	if len(gotUsers) != 3 {
+		t.Fatalf("fail users=%v", gotUsers)
+	}
+
+	// Web unit → no send
+	calls = 0
+	b.notifyRunDoneSend("w_abc123def", "author", grokrun.Result{Code: 1}, time.Second, send)
+	if calls != 0 {
+		t.Fatal("web unit must not notify")
+	}
+
+	// Pre-run fail helper
+	calls = 0
+	b.notifyRunDoneSend(threadID, "author", grokrun.Result{Code: 1}, time.Second, send)
+	if calls != 1 || !strings.Contains(gotContent, "**failed**") {
+		t.Fatalf("synthetic fail: calls=%d content=%s", calls, gotContent)
 	}
 }
