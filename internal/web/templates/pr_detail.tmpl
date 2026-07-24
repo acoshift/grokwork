@@ -144,7 +144,7 @@
   <details class="action"{{if .PRShipReady}} open{{end}}>
     <summary><span class="action-title">Merge pull request</span>{{if .PRShipReady}}<span class="action-hint ok">ready</span>{{else}}<span class="action-hint">gates pending</span>{{end}}</summary>
     <div class="action-body">
-      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/merge" onsubmit="return confirm('Merge this pull request?');">
+      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/merge" data-confirm="Merge this pull request?" data-confirm-title="Merge pull request" data-confirm-ok="Merge">
         {{template "csrf" $}}
         <input type="hidden" name="project" value="{{.Project}}">
         <div class="field">
@@ -284,7 +284,7 @@
     <summary><span class="action-title">Close pull request</span></summary>
     <div class="action-body">
       <p class="rail-note">Closes without merging. Managed branches clean up on the next sweep.</p>
-      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/close" onsubmit="return confirm('Close this pull request?');">
+      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/close" data-confirm="Close this pull request?" data-confirm-title="Close pull request" data-confirm-ok="Close PR" data-confirm-danger>
         {{template "csrf" $}}
         <input type="hidden" name="project" value="{{.Project}}">
         <div class="form-actions"><button type="submit" class="btn-danger">Close pull request</button></div>

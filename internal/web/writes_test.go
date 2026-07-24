@@ -551,7 +551,7 @@ func TestIssueDetailShowsCommentAndClose(t *testing.T) {
 		`id="issue-comment-form"`,
 		`id="btn-issue-close"`,
 		`formaction="/projects/proj/issues/7/close"`,
-		`confirm('Post this comment and close the issue?')`,
+		`data-confirm="Post this comment and close the issue?"`,
 		"Post comment",
 		"Post comment &amp; close",
 	} {
@@ -579,8 +579,8 @@ func TestPRDetailShowsWriteFormsForAdmin(t *testing.T) {
 		`id="pr-comment-form"`,
 		`id="pr-close-form"`,
 		`id="pr-merge-form"`,
-		`confirm('Close this pull request?')`,
-		`confirm('Merge this pull request?')`,
+		`data-confirm="Close this pull request?"`,
+		`data-confirm="Merge this pull request?"`,
 		"squash",
 	} {
 		if !strings.Contains(body, want) {
@@ -607,8 +607,8 @@ func TestPRDetailShowsWriteFormsForMember(t *testing.T) {
 		`id="pr-comment-form"`,
 		`id="pr-close-form"`,
 		`id="pr-merge-form"`,
-		`confirm('Close this pull request?')`,
-		`confirm('Merge this pull request?')`,
+		`data-confirm="Close this pull request?"`,
+		`data-confirm="Merge this pull request?"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q", want)

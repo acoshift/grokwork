@@ -168,7 +168,7 @@
   <details class="action">
     <summary><span class="action-title">Close case</span></summary>
     <div class="action-body">
-      <form method="post" action="/sessions/{{.ThreadID}}/case/close" onsubmit="return confirm('Close this case? You can reopen later with Reopen case or @Grok /reopen.')">
+      <form method="post" action="/sessions/{{.ThreadID}}/case/close" data-confirm="Close this case? You can reopen later with Reopen case or @Grok /reopen." data-confirm-title="Close case" data-confirm-ok="Close case">
         {{template "csrf" $}}
         <div class="field">
           <label for="case-resolution">Resolution</label>
@@ -241,7 +241,7 @@
   {{/* Claim is for active lockout-breaking only — hide on terminal units. */}}
   {{$ownLab := .SessionEntry.EffectiveLabel}}
   {{if and (not (.SessionEntry.IsOwner .UserID)) (ne $ownLab "done") (ne $ownLab "abandoned")}}
-  <form method="post" action="/sessions/{{.ThreadID}}/claim"{{if .SessionEntry.HasOwner}} onsubmit="return confirm('Take over ownership? The current owner becomes a co-owner.')"{{end}}>
+  <form method="post" action="/sessions/{{.ThreadID}}/claim"{{if .SessionEntry.HasOwner}} data-confirm="Take over ownership? The current owner becomes a co-owner." data-confirm-title="Take over ownership" data-confirm-ok="Take over"{{end}}>
     {{template "csrf" $}}
     <div class="form-actions"><button type="submit" id="btn-claim" class="btn-secondary">Claim ownership</button></div>
   </form>
@@ -267,7 +267,7 @@
 {{if and (ne $lab "done") (ne $lab "abandoned")}}
 <div class="rail-group" id="session-danger">
   <div class="rail-group-title">Danger zone</div>
-  <form method="post" action="/sessions/{{.ThreadID}}/reset" onsubmit="return confirm('Abandon this session? Removes the worktree and managed branch, and clears the session. This cannot be undone.')">
+  <form method="post" action="/sessions/{{.ThreadID}}/reset" data-confirm="Abandon this session? Removes the worktree and managed branch, and clears the session. This cannot be undone." data-confirm-title="Abandon session" data-confirm-ok="Abandon" data-confirm-danger>
     {{template "csrf" $}}
     <div class="form-actions"><button type="submit" id="btn-abandon" class="btn-danger"{{if .RunBusy}} disabled title="Cancel the active run before abandoning"{{end}}>Abandon</button></div>
   </form>

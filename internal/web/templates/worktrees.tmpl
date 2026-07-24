@@ -12,7 +12,7 @@
 {{if not .Project}}
 <div class="section card">
   <h2>Idle cleanup</h2>
-  <form method="post" action="{{route "worktrees.pruneIdle"}}" class="inline" style="grid-template-columns: 1fr auto;" onsubmit="return confirm('Prune all worktrees idle longer than {{.IdleTTLDays}} day(s)?');">
+  <form method="post" action="{{route "worktrees.pruneIdle"}}" class="inline" style="grid-template-columns: 1fr auto;" data-confirm="Prune all worktrees idle longer than {{.IdleTTLDays}} day(s)?" data-confirm-title="Prune idle worktrees" data-confirm-ok="Prune" data-confirm-danger>
     {{template "csrf" $}}
     <p class="sub" style="margin:0">
       Configured TTL: <span class="mono">{{.IdleTTLDays}}</span> day(s)
@@ -51,7 +51,7 @@
       {{if .Busy}}
       <span class="badge live">busy</span>
       {{else}}
-      <form class="m-row-act" method="post" action="{{route "worktrees.prune"}}" onsubmit="return confirm('Prune worktree for thread {{.ThreadID}}? This removes the worktree, branch, and session.');">
+      <form class="m-row-act" method="post" action="{{route "worktrees.prune"}}" data-confirm="Prune worktree for thread {{.ThreadID}}? This removes the worktree, branch, and session." data-confirm-title="Prune worktree" data-confirm-ok="Prune" data-confirm-danger>
         {{template "csrf" $}}
         <input type="hidden" name="threadId" value="{{.ThreadID}}">
         {{if $.Project}}<input type="hidden" name="project" value="{{$.Project}}">{{end}}
@@ -91,7 +91,7 @@
           {{if .Busy}}
           <button type="button" class="btn-danger" disabled title="Thread is busy">Prune</button>
           {{else}}
-          <form method="post" action="{{route "worktrees.prune"}}" onsubmit="return confirm('Prune worktree for thread {{.ThreadID}}? This removes the worktree, branch, and session.');">
+          <form method="post" action="{{route "worktrees.prune"}}" data-confirm="Prune worktree for thread {{.ThreadID}}? This removes the worktree, branch, and session." data-confirm-title="Prune worktree" data-confirm-ok="Prune" data-confirm-danger>
             {{template "csrf" $}}
             <input type="hidden" name="threadId" value="{{.ThreadID}}">
             {{if $.Project}}<input type="hidden" name="project" value="{{$.Project}}">{{end}}

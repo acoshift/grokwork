@@ -100,14 +100,14 @@
       </span>
       {{end}}
       {{if .Inert}}
-      <form class="row-x-form" method="post" action="{{if .IsRole}}{{route "config.removeProjectCapabilityRole"}}{{else}}{{route "config.removeProjectCapabilityUser"}}{{end}}" onsubmit="return confirm('Remove role assignment for {{.ID}}?');">
+      <form class="row-x-form" method="post" action="{{if .IsRole}}{{route "config.removeProjectCapabilityRole"}}{{else}}{{route "config.removeProjectCapabilityUser"}}{{end}}" data-confirm="Remove role assignment for {{.ID}}?" data-confirm-title="Remove assignment" data-confirm-ok="Remove" data-confirm-danger>
         {{template "csrf" $}}
         <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
         <input type="hidden" name="id" value="{{.ID}}">
         <button type="submit" class="row-x" title="Remove role assignment">×</button>
       </form>
       {{else}}
-      <form class="row-x-form" method="post" action="{{if .IsRole}}{{route "config.removeProjectRole"}}{{else}}{{route "config.removeProjectUser"}}{{end}}" onsubmit="return confirm('Remove {{if .IsRole}}role{{else}}user{{end}} {{.ID}} from this project?');">
+      <form class="row-x-form" method="post" action="{{if .IsRole}}{{route "config.removeProjectRole"}}{{else}}{{route "config.removeProjectUser"}}{{end}}" data-confirm="Remove {{if .IsRole}}role{{else}}user{{end}} {{.ID}} from this project?" data-confirm-title="Remove member" data-confirm-ok="Remove" data-confirm-danger>
         {{template "csrf" $}}
         <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
         <input type="hidden" name="id" value="{{.ID}}">

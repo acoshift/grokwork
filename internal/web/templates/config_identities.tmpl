@@ -73,7 +73,7 @@
         <td>{{if .Name}}{{.Name}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono muted">{{if .Email}}{{.Email}}{{else}}noreply default{{end}}</td>
         <td class="row-actions">
-          <form method="post" action="{{route "config.removeGitHubIdentity"}}" onsubmit="return confirm('Remove map for Discord {{.DiscordUserID}}?');">
+          <form method="post" action="{{route "config.removeGitHubIdentity"}}" data-confirm="Remove map for Discord {{.DiscordUserID}}?" data-confirm-title="Remove identity map" data-confirm-ok="Remove" data-confirm-danger>
             {{template "csrf" $}}
             <input type="hidden" name="discordUserId" value="{{.DiscordUserID}}">
             <button type="submit" class="btn-danger">Remove</button>

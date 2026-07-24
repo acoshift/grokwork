@@ -1236,6 +1236,84 @@
       .gw-stream-caret { animation: none; opacity: 0.7; }
     }
 
+    /* ── Confirm / alert modal (window.confirm replacement) ────────────
+       Decision card: mono eyebrow, tight title, and a 2px intent rail on
+       the left edge — accent for neutral asks, red when destructive —
+       echoing the stream log's live wire. Lives outside #live-root so
+       boosted swaps never tear it down while open. */
+    .gw-confirm-modal {
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 0;
+      width: min(24rem, calc(100vw - 2rem));
+      background: var(--surface);
+      color: var(--text);
+      overflow: hidden;
+      box-shadow: var(--shadow-2), 0 24px 64px -28px hsl(var(--black) / 35%);
+    }
+    .gw-confirm-modal::backdrop {
+      background: hsl(0 0% 0% / 42%);
+      backdrop-filter: blur(2px);
+    }
+    .gw-confirm-modal[open] { animation: gw-confirm-in 0.18s cubic-bezier(0.22, 0.8, 0.36, 1); }
+    .gw-confirm-modal[open]::backdrop { animation: gw-confirm-fade 0.18s ease; }
+    @keyframes gw-confirm-in {
+      from { opacity: 0; transform: translateY(0.5rem) scale(0.97); }
+    }
+    @keyframes gw-confirm-fade {
+      from { opacity: 0; }
+    }
+    .gw-confirm-shell {
+      margin: 0;
+      padding: 1.1rem 1.25rem 1rem;
+      box-shadow: inset 2px 0 0 var(--accent);
+    }
+    .gw-confirm-modal.is-danger .gw-confirm-shell { box-shadow: inset 2px 0 0 var(--danger); }
+    .gw-confirm-eyebrow {
+      margin: 0 0 0.2rem;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .gw-confirm-modal.is-danger .gw-confirm-eyebrow { color: var(--danger); }
+    .gw-confirm-title {
+      margin: 0;
+      font-size: 1.02rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.3;
+    }
+    .gw-confirm-msg {
+      margin: 0.4rem 0 0;
+      font-size: 0.86rem;
+      color: var(--muted);
+      line-height: 1.5;
+      overflow-wrap: break-word;
+    }
+    .gw-confirm-foot {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-top: 1.1rem;
+    }
+    .gw-confirm-modal.is-alert #gw-confirm-cancel { display: none; }
+    /* Destructive OK: the app's only solid-red button — reserved for the
+       moment of highest consequence. Follows the primary button's dark-mode
+       inversion (light fill, near-black text). */
+    #gw-confirm-ok.is-danger { background: hsl(var(--red-500)); color: hsl(var(--white)); }
+    #gw-confirm-ok.is-danger:hover { background: hsl(355 63% 38%); }
+    @media (prefers-color-scheme: dark) {
+      #gw-confirm-ok.is-danger { background: hsl(0 68% 66%); color: hsl(0 0% 8%); }
+      #gw-confirm-ok.is-danger:hover { background: hsl(0 68% 74%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .gw-confirm-modal[open],
+      .gw-confirm-modal[open]::backdrop { animation: none; }
+    }
+
     /* ── PR team review card ─────────────────────────────────────────── */
     #pr-team-review .team-review-head {
       display: flex;
@@ -3321,6 +3399,23 @@
       </footer>
     </div>
   </dialog>
+  {{/* Confirm/alert modal replacing window.confirm/alert. htmx boost issues
+       the boosted request without checking event.defaultPrevented, so inline
+       onsubmit="return confirm(…)" cancelled only the native submit — the
+       boosted POST still fired and Cancel acted like OK. Forms opt in with
+       data-confirm; the shell script intercepts their submit in capture
+       phase and re-submits only after an explicit OK. */}}
+  <dialog id="gw-confirm-modal" class="gw-confirm-modal" aria-labelledby="gw-confirm-title" aria-describedby="gw-confirm-msg">
+    <form method="dialog" class="gw-confirm-shell">
+      <p class="gw-confirm-eyebrow" id="gw-confirm-eyebrow">Confirm</p>
+      <h2 class="gw-confirm-title" id="gw-confirm-title">Are you sure?</h2>
+      <p class="gw-confirm-msg" id="gw-confirm-msg"></p>
+      <footer class="gw-confirm-foot">
+        <button type="submit" value="cancel" class="btn-secondary" id="gw-confirm-cancel">Cancel</button>
+        <button type="submit" value="ok" id="gw-confirm-ok">Confirm</button>
+      </footer>
+    </form>
+  </dialog>
   <script>
   /* Reusable Grok one-shot stream modal.
      Open via window.GrokStream.open({...}) or a button with data-grok-stream.
@@ -3650,6 +3745,98 @@
   })();
 
   (function () {
+    // Confirm/alert modal (see the #gw-confirm-modal markup note for why
+    // window.confirm cannot be used under hx-boost). appConfirm/appAlert
+    // resolve a Promise; declaratively, forms (or a specific submit button,
+    // e.g. one of several actions) carry data-confirm plus optional
+    // data-confirm-title / data-confirm-ok / data-confirm-danger.
+    var dlg = document.getElementById("gw-confirm-modal");
+    if (!dlg) return;
+    var dlgForm = dlg.querySelector("form");
+    var eyebrowEl = document.getElementById("gw-confirm-eyebrow");
+    var titleEl = document.getElementById("gw-confirm-title");
+    var msgEl = document.getElementById("gw-confirm-msg");
+    var cancelBtn = document.getElementById("gw-confirm-cancel");
+    var okBtn = document.getElementById("gw-confirm-ok");
+    var pending = null; // resolver of the currently open dialog's Promise
+
+    function openModal(kind, opts) {
+      if (typeof opts === "string") opts = { message: opts };
+      opts = opts || {};
+      if (dlg.open) {
+        // Settle a stray open dialog as cancelled. close() only queues the
+        // close event, so settle its promise here — by the time the stale
+        // event fires the dialog is open again and the listener skips it.
+        var stray = pending;
+        pending = null;
+        dlg.close();
+        if (stray) stray(false);
+      }
+      var danger = !!opts.danger;
+      var isAlert = kind === "alert";
+      dlg.classList.toggle("is-danger", danger);
+      dlg.classList.toggle("is-alert", isAlert);
+      eyebrowEl.textContent = isAlert ? "Notice" : "Confirm";
+      titleEl.textContent = opts.title || (isAlert ? "Heads up" : "Are you sure?");
+      msgEl.textContent = opts.message || "";
+      okBtn.textContent = opts.ok || (isAlert ? "OK" : "Confirm");
+      okBtn.classList.toggle("is-danger", danger);
+      return new Promise(function (resolve) {
+        pending = resolve;
+        dlg.returnValue = "";
+        dlg.showModal();
+        // Safe default focus: Enter cancels destructive asks, confirms the rest.
+        (danger && !isAlert ? cancelBtn : okBtn).focus();
+      });
+    }
+
+    // method="dialog" buttons and Esc (native cancel) both land here.
+    dlg.addEventListener("close", function () {
+      if (dlg.open) return; // stale queued close from a superseded open
+      var resolve = pending;
+      pending = null;
+      if (resolve) resolve(dlg.classList.contains("is-alert") || dlg.returnValue === "ok");
+    });
+    // Click on the backdrop (the dialog element itself) = cancel.
+    dlg.addEventListener("click", function (e) {
+      if (e.target === dlg) dlg.close();
+    });
+
+    window.appConfirm = function (opts) { return openModal("confirm", opts); };
+    window.appAlert = function (opts) { return openModal("alert", opts); };
+
+    // Capture phase: runs before htmx's boost listener on the form, so
+    // stopPropagation keeps the boosted request from ever being issued for
+    // an unconfirmed submit. On OK the form is re-submitted with a one-shot
+    // flag and takes its normal (boosted or native) path.
+    document.addEventListener("submit", function (e) {
+      var form = e.target;
+      if (!form || form.tagName !== "FORM" || form === dlgForm) return;
+      var s = e.submitter;
+      var src = s && s.hasAttribute("data-confirm") ? s
+        : form.hasAttribute("data-confirm") ? form : null;
+      if (!src) return;
+      if (form.dataset.gwConfirmed) {
+        delete form.dataset.gwConfirmed;
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      openModal("confirm", {
+        title: src.dataset.confirmTitle,
+        message: src.dataset.confirm,
+        ok: src.dataset.confirmOk,
+        danger: src.hasAttribute("data-confirm-danger")
+      }).then(function (ok) {
+        if (!ok || !form.isConnected) return; // SSE swap may replace the form while open
+        form.dataset.gwConfirmed = "1";
+        if (s && s.isConnected) form.requestSubmit(s);
+        else form.requestSubmit();
+      });
+    }, true);
+  })();
+
+  (function () {
     // iOS Safari ignores user-scalable=no for pinch gestures; cancelling its
     // proprietary gesture events is the only way to keep the app at 1x like a
     // native shell. Touch-devices only: desktop Safari fires the same events
@@ -3890,11 +4077,15 @@
     // Non-htmx submissions (hx-boost="false": logout, commit review) unload
     // the page natively; disable on the next tick so the submit itself is
     // unaffected. Boosted forms are skipped here (htmx preventDefaults them
-    // and the htmx listeners above handle their lifecycle) — and so are
-    // confirm() dialogs the user cancelled.
+    // and the htmx listeners above handle their lifecycle). Unconfirmed
+    // data-confirm submits never reach this listener — the confirm-modal
+    // capture handler stops their propagation. method="dialog" submits
+    // (the confirm modal's own buttons) stay on the page, so disabling
+    // them would just dead-lock the modal.
     document.addEventListener("submit", function (e) {
       var form = e.target;
       if (!form || form.tagName !== "FORM" || e.defaultPrevented) return;
+      if (form.method === "dialog") return;
       setTimeout(function () { setFormLoading(form, true); }, 0);
     });
 

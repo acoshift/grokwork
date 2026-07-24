@@ -8,7 +8,7 @@
     Removing the project also removes its channel mappings. Existing worktrees,
     sessions, and history are not touched.
   </p>
-  <form method="post" action="{{route "config.removeProject"}}" onsubmit="return confirm('Remove project {{.ProjectItem.Name}}? Channel maps to this project will also be removed.');">
+  <form method="post" action="{{route "config.removeProject"}}" data-confirm="Remove project {{.ProjectItem.Name}}? Channel maps to this project will also be removed." data-confirm-title="Remove project" data-confirm-ok="Remove project" data-confirm-danger>
     {{template "csrf" $}}
     <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
     <button type="submit" class="btn-danger">Remove project</button>

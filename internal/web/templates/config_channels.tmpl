@@ -55,7 +55,7 @@
         <td class="mono">{{.ChannelID}}</td>
         <td>{{.Project}}</td>
         <td class="row-actions">
-          <form method="post" action="{{route "config.removeChannel"}}" onsubmit="return confirm('Remove channel {{.ChannelID}}?');">
+          <form method="post" action="{{route "config.removeChannel"}}" data-confirm="Remove channel {{.ChannelID}}?" data-confirm-title="Remove channel" data-confirm-ok="Remove" data-confirm-danger>
             {{template "csrf" $}}
             <input type="hidden" name="channelId" value="{{.ChannelID}}">
             <button type="submit" class="btn-danger">Remove</button>

@@ -13,7 +13,7 @@
     {{$pref := .ProjectItem.DiscordChannelID}}
     {{range .ProjectItem.ChannelOptions}}
     <span class="chip">{{.}}{{if eq . $pref}}<span class="pref">preferred</span>{{end}}
-      <form method="post" action="{{route "config.removeChannel"}}" onsubmit="return confirm('Unmap channel {{.}}?');">
+      <form method="post" action="{{route "config.removeChannel"}}" data-confirm="Unmap channel {{.}}?" data-confirm-title="Unmap channel" data-confirm-ok="Unmap" data-confirm-danger>
         {{template "csrf" $}}
         <input type="hidden" name="channelId" value="{{.}}">
         <input type="hidden" name="project" value="{{$.ProjectItem.Name}}">

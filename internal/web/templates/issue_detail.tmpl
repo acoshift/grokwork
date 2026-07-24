@@ -156,7 +156,7 @@
           {{if $open}}
           <button type="submit" class="btn-danger" id="btn-issue-close"
             formaction="/projects/{{.Project}}/issues/{{.Issue.Number}}/close"
-            onclick="return confirm('Post this comment and close the issue?');">Post comment &amp; close</button>
+            data-confirm="Post this comment and close the issue?" data-confirm-title="Close issue" data-confirm-ok="Post &amp; close">Post comment &amp; close</button>
           {{end}}
         </div>
       </form>

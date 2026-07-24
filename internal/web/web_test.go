@@ -213,7 +213,8 @@ func TestPagesRender(t *testing.T) {
 		{"/config/projects/proj/workflow", "Suggest with Grok"},
 		{"/config/projects/proj/workflow", "data-grok-stream"},
 		{"/config/projects/proj/workflow", "/config/projects/verify/generate"},
-		{"/config", `id="gw-stream-modal"`}, // reusable stream modal shell
+		{"/config", `id="gw-stream-modal"`},  // reusable stream modal shell
+		{"/config", `id="gw-confirm-modal"`}, // confirm/alert modal shell
 		{"/config/projects/proj/integrations", `id="page-project-config-integrations"`},
 		{"/config/projects/proj/integrations", "Discord guild ID"},
 		{"/config/projects/proj/integrations", "name=\"guildId\""},
