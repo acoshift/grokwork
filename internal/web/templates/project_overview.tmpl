@@ -23,6 +23,31 @@
   {{template "project_pulse" .}}
 </div>
 
+{{/* Phone-only: workspace sections without a bottom tab (the scoped footer
+     keeps Overview/Ship/Cases/Sessions/Settings; the rest drill in here). */}}
+<div class="section m-only" id="m-workspace-browse">
+  <h2>Browse</h2>
+  <div class="m-rows">
+    <a class="m-row" href="/projects/{{.Project}}/reviews">
+      <span class="m-row-main"><span class="m-row-t">Reviews</span><span class="m-row-s">team review queue for this project</span></span>
+    </a>
+    <a class="m-row" href="/projects/{{.Project}}/issues">
+      <span class="m-row-main"><span class="m-row-t">Issues</span><span class="m-row-s">GitHub issues across project repos</span></span>
+    </a>
+    {{if .NavLinearEnabled}}
+    <a class="m-row" href="/projects/{{.Project}}/linear">
+      <span class="m-row-main"><span class="m-row-t">Linear</span><span class="m-row-s">assigned Linear issues</span></span>
+    </a>
+    {{end}}
+    <a class="m-row" href="/projects/{{.Project}}/commits">
+      <span class="m-row-main"><span class="m-row-t">Commits</span><span class="m-row-s">history browser · request commit review</span></span>
+    </a>
+    <a class="m-row" href="/projects/{{.Project}}/worktrees">
+      <span class="m-row-main"><span class="m-row-t">Worktrees</span><span class="m-row-s">per-thread checkouts · prune</span></span>
+    </a>
+  </div>
+</div>
+
 <div class="section">
   <h2>Recent sessions <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Threads}} shown)</span></h2>
   {{if .Threads}}

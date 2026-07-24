@@ -698,8 +698,9 @@ func TestNavBrandChrome(t *testing.T) {
 			t.Fatalf("workspace chrome missing %q", want)
 		}
 	}
-	// The section pill strip (.nav-links) stays workspace-only; the global
-	// Projects entry lives solely in the phone tab bar that follows it.
+	// The desktop section list (.nav-links) stays workspace-only; the phone
+	// tab bar that follows it is scoped to the same project's sections, and
+	// the top-bar back chip is the only route to the global shell.
 	navStart := strings.Index(body, `id="nav-links"`)
 	tabStart := strings.Index(body, `id="tab-bar"`)
 	if navStart == -1 || tabStart == -1 || tabStart < navStart {
@@ -708,20 +709,25 @@ func TestNavBrandChrome(t *testing.T) {
 	if strings.Contains(body[navStart:tabStart], ">Projects<") {
 		t.Fatal("workspace section nav must not show the global Projects link")
 	}
-	// Phone tab bar: global targets, Projects active inside a workspace.
 	tabbar := body[tabStart:]
 	if end := strings.Index(tabbar, "</nav>"); end != -1 {
 		tabbar = tabbar[:end]
 	}
 	for _, want := range []string{
-		`data-icon="projects" class="active">Projects</a>`,
-		`data-icon="ship" class="">Ship</a>`,
-		`data-icon="sessions" class="">Sessions</a>`,
-		`data-icon="issues" class="">Reviews</a>`,
+		`data-icon="overview" class="active">Overview</a>`,
+		`href="/projects/proj/ship" data-icon="ship" class="">Ship</a>`,
+		`href="/projects/proj/cases" data-icon="cases" class="">Cases</a>`,
+		`href="/projects/proj/sessions" data-icon="sessions" class="">Sessions</a>`,
+		`href="/config/projects/proj" data-icon="config" class="">Settings</a>`,
+		`class="ws-back" href="/"`,
+		`class="ws-start" href="/projects/proj/start"`,
 	} {
 		if !strings.Contains(tabbar, want) {
-			t.Fatalf("tab bar missing %q", want)
+			t.Fatalf("workspace tab bar missing %q", want)
 		}
+	}
+	if strings.Contains(tabbar, ">Projects</a>") {
+		t.Fatal("workspace tab bar must not contain the global Projects tab")
 	}
 }
 
