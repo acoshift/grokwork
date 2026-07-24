@@ -1357,6 +1357,14 @@
     .pr-meta .mono { font-size: 0.8rem; }
     /* Long branch names (grokwork/<snowflake>) must wrap, not overflow. */
     .pr-meta > span { min-width: 0; overflow-wrap: anywhere; }
+    /* User-authored tokens with no break points (a URL pasted as a session
+       goal, long refs/branches) must wrap instead of dragging the page
+       sideways on phones. overflow-wrap inherits, so covering the session
+       live region + rail and page headings catches every card child; .md
+       bodies already carry break-word. */
+    #live-session,
+    .pr-rail,
+    #live-root h1 { overflow-wrap: anywhere; }
     .pr-meta .diff-add { color: var(--ok); }
     .pr-meta .diff-del { color: var(--danger); }
 
