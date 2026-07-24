@@ -190,6 +190,7 @@ func TestPagesRender(t *testing.T) {
 		{"/config/run", `name="maxTurns"`},
 		{"/config/worktrees", `id="page-config-worktrees"`},
 		{"/config/worktrees", `name="worktreeIdleTTLDays"`},
+		{"/config/worktrees", `name="terminalSessionTTLDays"`},
 		{"/config/board", `id="page-config-board"`},
 		{"/config/ci", `id="page-config-ci"`},
 		{"/config/pr-links", `id="page-config-prlinks"`},
@@ -1257,7 +1258,7 @@ func TestConfigAddsPersist(t *testing.T) {
 	// Settings: worktree dir + idle TTL
 	customWT := filepath.Join(t.TempDir(), "custom-worktrees")
 	reqTTL := httptest.NewRequest(http.MethodPost, "/config/worktrees", strings.NewReader(url.Values{
-		"worktreeIdleTTLDays": {"14"},
+		"worktreeIdleTTLDays": {"14"}, "terminalSessionTTLDays": {"0"},
 		"worktreeDir":         {customWT},
 	}.Encode()))
 	reqTTL.Header.Set("Content-Type", "application/x-www-form-urlencoded")

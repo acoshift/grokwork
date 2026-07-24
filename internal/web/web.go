@@ -1474,10 +1474,16 @@ func (s *Server) updateWorktreeSettings(ctx *hime.Context) error {
 		return s.configPageRedirect(ctx, "config.worktrees", "", err)
 	}
 	days, _ := strconv.Atoi(strings.TrimSpace(ctx.PostFormValue("worktreeIdleTTLDays")))
+	termDays, _ := strconv.Atoi(strings.TrimSpace(ctx.PostFormValue("terminalSessionTTLDays")))
 	worktreeDir := strings.TrimSpace(ctx.PostFormValue("worktreeDir"))
-	msg := fmt.Sprintf("Worktree idle TTL set to %d day(s)", days)
+	msg := fmt.Sprintf("Worktree idle TTL %d day(s)", days)
 	if days == 0 {
 		msg = "Worktree idle cleanup disabled"
+	}
+	if termDays == 0 {
+		msg += "; done/abandoned session cleanup disabled"
+	} else {
+		msg += fmt.Sprintf("; done/abandoned TTL %d day(s)", termDays)
 	}
 	if worktreeDir == "" {
 		msg += "; new worktrees use data/worktrees"
@@ -1634,8 +1640,16 @@ func (s *Server) updateWorktreeSettingsErr(ctx *hime.Context) error {
 	if err != nil {
 		return fmt.Errorf("worktreeIdleTTLDays must be an integer")
 	}
+	rawTerm := strings.TrimSpace(ctx.PostFormValue("terminalSessionTTLDays"))
+	if rawTerm == "" {
+		return fmt.Errorf("terminalSessionTTLDays is required")
+	}
+	termDays, err := strconv.Atoi(rawTerm)
+	if err != nil {
+		return fmt.Errorf("terminalSessionTTLDays must be an integer")
+	}
 	worktreeDir := strings.TrimSpace(ctx.PostFormValue("worktreeDir"))
-	return s.cfg.SetWorktreeSettings(days, worktreeDir)
+	return s.cfg.SetWorktreeSettings(days, worktreeDir, termDays)
 }
 
 func (s *Server) updateBoardSettingsErr(ctx *hime.Context) error {

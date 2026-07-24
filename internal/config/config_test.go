@@ -435,7 +435,7 @@ func TestWorktreesRoot(t *testing.T) {
 		t.Fatalf("rel root=%q want %q", got, wantRel)
 	}
 
-	if err := cfg.SetWorktreeSettings(10, ""); err != nil {
+	if err := cfg.SetWorktreeSettings(10, "", 0); err != nil {
 		t.Fatal(err)
 	}
 	if cfg.WorktreeIdleTTLDaysValue() != 10 {
@@ -623,4 +623,42 @@ func contains(ss []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestTerminalSessionTTLDays(t *testing.T) {
+	cfg := &Config{
+		Projects:   ProjectsMap{},
+		Channels:   map[string]string{},
+		ConfigPath: filepath.Join(t.TempDir(), "config.json"),
+	}
+	if cfg.TerminalSessionTTLDaysValue() != 0 {
+		t.Fatalf("default days=%d want 0 (disabled)", cfg.TerminalSessionTTLDaysValue())
+	}
+	if cfg.TerminalSessionTTL() != 0 {
+		t.Fatalf("default ttl=%v", cfg.TerminalSessionTTL())
+	}
+	if err := cfg.SetWorktreeSettings(7, "", 14); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WorktreeIdleTTLDaysValue() != 7 {
+		t.Fatalf("worktree days=%d", cfg.WorktreeIdleTTLDaysValue())
+	}
+	if cfg.TerminalSessionTTLDaysValue() != 14 {
+		t.Fatalf("terminal days=%d", cfg.TerminalSessionTTLDaysValue())
+	}
+	if cfg.TerminalSessionTTL() != 14*24*time.Hour {
+		t.Fatalf("ttl=%v", cfg.TerminalSessionTTL())
+	}
+	if cfg.Snapshot().TerminalSessionTTLDays != 14 {
+		t.Fatalf("snapshot=%d", cfg.Snapshot().TerminalSessionTTLDays)
+	}
+	if err := cfg.SetWorktreeSettings(7, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TerminalSessionTTL() != 0 {
+		t.Fatal("expected disabled")
+	}
+	if err := cfg.SetWorktreeSettings(7, "", -1); err == nil {
+		t.Fatal("expected reject negative")
+	}
 }

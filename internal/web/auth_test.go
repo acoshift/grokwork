@@ -89,7 +89,7 @@ func TestAuthOffPagesAndMutate(t *testing.T) {
 		t.Fatalf("GET / status=%d", w.Code)
 	}
 
-	form := url.Values{"worktreeIdleTTLDays": {"7"}}
+	form := url.Values{"worktreeIdleTTLDays": {"7"}, "terminalSessionTTLDays": {"0"}}
 	req = httptest.NewRequest(http.MethodPost, "/config/worktrees", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w = httptest.NewRecorder()
@@ -347,7 +347,7 @@ func TestAuthOnOAuthCallbackAndAdminMutate(t *testing.T) {
 	}
 
 	// Unauthenticated POST rejected.
-	form := url.Values{"worktreeIdleTTLDays": {"3"}}
+	form := url.Values{"worktreeIdleTTLDays": {"3"}, "terminalSessionTTLDays": {"0"}}
 	req = httptest.NewRequest(http.MethodPost, "/config/worktrees", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w = httptest.NewRecorder()
@@ -372,6 +372,7 @@ func TestAuthOnOAuthCallbackAndAdminMutate(t *testing.T) {
 	// Admin with CSRF succeeds.
 	form.Set("csrf", sess.CSRF)
 	form.Set("worktreeIdleTTLDays", "11")
+	form.Set("terminalSessionTTLDays", "0")
 	req = httptest.NewRequest(http.MethodPost, "/config/worktrees", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
@@ -435,7 +436,7 @@ func TestAuthOnMemberCannotMutate(t *testing.T) {
 		t.Fatal(err)
 	}
 	form := url.Values{
-		"worktreeIdleTTLDays": {"9"},
+		"worktreeIdleTTLDays": {"9"}, "terminalSessionTTLDays": {"0"},
 		"csrf":                {csrf},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/config/worktrees", strings.NewReader(form.Encode()))

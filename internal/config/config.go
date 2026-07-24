@@ -16,6 +16,8 @@ import (
 const (
 	defaultHTTPListen          = ":8787"
 	DefaultWorktreeIdleTTLDays = 30
+	// DefaultTerminalSessionTTLDays: unset config means disabled (0).
+	DefaultTerminalSessionTTLDays = 0
 	// DefaultRepoFetchIntervalMinutes is used when a project omits
 	// repoFetchIntervalMinutes. Idle background git fetch is throttled to at
 	// most once per this many minutes per main checkout. Worktree create uses
@@ -80,6 +82,9 @@ type Config struct {
 	// WorktreeIdleTTLDays is days of inactivity before pruning thread worktrees.
 	// nil/omitted → DefaultWorktreeIdleTTLDays (30). 0 disables idle cleanup.
 	WorktreeIdleTTLDays *int `json:"worktreeIdleTTLDays,omitempty"`
+	// TerminalSessionTTLDays is days since last update before deleting
+	// done/abandoned session tombstones. nil/omitted → 0 (disabled). 0 disables.
+	TerminalSessionTTLDays *int `json:"terminalSessionTTLDays,omitempty"`
 	// HTTPListen is the address for the private-network web UI (e.g. ":8787", "0.0.0.0:8787").
 	// Empty uses default ":8787". Override with GROK_WORK_HTTP_LISTEN.
 	HTTPListen string `json:"httpListen,omitempty"`
@@ -199,7 +204,9 @@ type Snapshot struct {
 	// WorktreesRoot is the effective absolute root for new worktrees.
 	WorktreesRoot       string
 	WorktreeIdleTTLDays int // effective value (default 30 when unset)
-	AutoFixCI           bool
+	// TerminalSessionTTLDays effective (0 = disabled when unset).
+	TerminalSessionTTLDays int
+	AutoFixCI              bool
 	AutoFixCIMax        int    // effective cap (default 2)
 	RiskyPathGlobsText  string // configured globs, one per line (empty if using defaults)
 	RiskyPathUseDefault bool   // true when riskyPathGlobs is unset (nil)
@@ -302,6 +309,26 @@ func (c *Config) WorktreeIdleTTLDaysValue() int {
 // WorktreeIdleTTL returns the idle prune duration, or 0 when cleanup is disabled.
 func (c *Config) WorktreeIdleTTL() time.Duration {
 	days := c.WorktreeIdleTTLDaysValue()
+	if days <= 0 {
+		return 0
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
+// TerminalSessionTTLDaysValue returns days before done/abandoned sessions are deleted.
+// Omitted config uses 0 (disabled). 0 means cleanup is disabled.
+func (c *Config) TerminalSessionTTLDaysValue() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.TerminalSessionTTLDays == nil {
+		return DefaultTerminalSessionTTLDays
+	}
+	return *c.TerminalSessionTTLDays
+}
+
+// TerminalSessionTTL returns the terminal-session prune duration, or 0 when disabled.
+func (c *Config) TerminalSessionTTL() time.Duration {
+	days := c.TerminalSessionTTLDaysValue()
 	if days <= 0 {
 		return 0
 	}
@@ -522,8 +549,9 @@ func (c *Config) saveLocked() error {
 		SummarizeTimeoutMs    int                       `json:"summarizeTimeoutMs"`
 		WorktreeIsolation     *bool                     `json:"worktreeIsolation"`
 		WorktreeDir           string                    `json:"worktreeDir,omitempty"`
-		WorktreeIdleTTLDays   *int                      `json:"worktreeIdleTTLDays,omitempty"`
-		HTTPListen            string                    `json:"httpListen,omitempty"`
+		WorktreeIdleTTLDays    *int                      `json:"worktreeIdleTTLDays,omitempty"`
+		TerminalSessionTTLDays *int                      `json:"terminalSessionTTLDays,omitempty"`
+		HTTPListen             string                    `json:"httpListen,omitempty"`
 		WebPublicBaseURL      string                    `json:"webPublicBaseURL,omitempty"`
 		DiscordGuildID        string                    `json:"discordGuildId,omitempty"`
 		WebMergeMethod        string                    `json:"webMergeMethod,omitempty"`
@@ -556,8 +584,9 @@ func (c *Config) saveLocked() error {
 		SummarizeTimeoutMs:    c.SummarizeTimeoutMs,
 		WorktreeIsolation:     c.WorktreeIsolation,
 		WorktreeDir:           strings.TrimSpace(c.WorktreeDir),
-		WorktreeIdleTTLDays:   cloneIntPtr(c.WorktreeIdleTTLDays),
-		HTTPListen:            c.HTTPListen,
+		WorktreeIdleTTLDays:    cloneIntPtr(c.WorktreeIdleTTLDays),
+		TerminalSessionTTLDays: cloneIntPtr(c.TerminalSessionTTLDays),
+		HTTPListen:             c.HTTPListen,
 		WebPublicBaseURL:      c.WebPublicBaseURL,
 		DiscordGuildID:        c.DiscordGuildID,
 		WebMergeMethod:        c.WebMergeMethod,
@@ -690,12 +719,15 @@ func (c *Config) SetWorktreeDir(dir string) error {
 	return c.saveLocked()
 }
 
-// SetWorktreeSettings sets idle TTL and worktree root together and persists.
-// days: 0 disables automatic idle cleanup; negative rejected.
+// SetWorktreeSettings sets worktree idle TTL, terminal session TTL, and worktree
+// root together and persists. Either TTL may be 0 to disable that cleanup.
 // worktreeDir: empty clears override (DataDir/worktrees).
-func (c *Config) SetWorktreeSettings(days int, worktreeDir string) error {
+func (c *Config) SetWorktreeSettings(days int, worktreeDir string, terminalSessionDays int) error {
 	if days < 0 {
 		return fmt.Errorf("worktreeIdleTTLDays must be >= 0 (0 disables cleanup)")
+	}
+	if terminalSessionDays < 0 {
+		return fmt.Errorf("terminalSessionTTLDays must be >= 0 (0 disables cleanup)")
 	}
 	worktreeDir = strings.TrimSpace(worktreeDir)
 	if strings.ContainsRune(worktreeDir, 0) {
@@ -705,6 +737,8 @@ func (c *Config) SetWorktreeSettings(days int, worktreeDir string) error {
 	defer c.mu.Unlock()
 	d := days
 	c.WorktreeIdleTTLDays = &d
+	td := terminalSessionDays
+	c.TerminalSessionTTLDays = &td
 	c.WorktreeDir = worktreeDir
 	return c.saveLocked()
 }
@@ -1053,6 +1087,10 @@ func (c *Config) Snapshot() Snapshot {
 	if c.WorktreeIdleTTLDays != nil {
 		idleDays = *c.WorktreeIdleTTLDays
 	}
+	termDays := DefaultTerminalSessionTTLDays
+	if c.TerminalSessionTTLDays != nil {
+		termDays = *c.TerminalSessionTTLDays
+	}
 	autoFixMax := DefaultAutoFixCIMax
 	if c.AutoFixCIMax > 0 {
 		autoFixMax = c.AutoFixCIMax
@@ -1092,8 +1130,9 @@ func (c *Config) Snapshot() Snapshot {
 		WorktreeIsolation:   c.WorktreeIsolationEnabled(),
 		WorktreeDir:         strings.TrimSpace(c.WorktreeDir),
 		WorktreesRoot:       c.worktreesRootLocked(),
-		WorktreeIdleTTLDays: idleDays,
-		AutoFixCI:           c.AutoFixCI != nil && *c.AutoFixCI,
+		WorktreeIdleTTLDays:    idleDays,
+		TerminalSessionTTLDays: termDays,
+		AutoFixCI:              c.AutoFixCI != nil && *c.AutoFixCI,
 		AutoFixCIMax:        autoFixMax,
 		RiskyPathGlobsText:  riskyText,
 		RiskyPathUseDefault: riskyDefault,

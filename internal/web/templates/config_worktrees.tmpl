@@ -7,17 +7,22 @@
   Leave the folder empty to use the default <span class="mono">data/worktrees</span> next to <span class="mono">config.json</span>.
   Absolute path recommended; relative paths resolve against the config file directory.
   Existing sessions keep their stored path until reset. Idle prune after this many days without activity (<span class="mono">0</span> disables; default <span class="mono">30</span>).
+  Terminal sessions (<span class="mono">done</span> / <span class="mono">abandoned</span>) can be deleted after this many days since last update (<span class="mono">0</span> disables; default off).
 </p>
 <div class="section card">
-  <form class="inline" method="post" action="{{route "config.worktrees"}}" style="grid-template-columns: 2fr 1fr auto;">
+  <form class="inline" method="post" action="{{route "config.worktrees"}}" style="grid-template-columns: 2fr 1fr 1fr auto;">
     {{template "csrf" $}}
     <div>
       <label for="worktree-dir">Worktree folder</label>
       <input id="worktree-dir" type="text" name="worktreeDir" value="{{.Config.WorktreeDir}}" placeholder="empty = data/worktrees" autocomplete="off" spellcheck="false">
     </div>
     <div>
-      <label for="worktree-idle-ttl">Idle TTL (days)</label>
+      <label for="worktree-idle-ttl">Worktree idle TTL (days)</label>
       <input id="worktree-idle-ttl" type="number" name="worktreeIdleTTLDays" min="0" step="1" required value="{{.Config.WorktreeIdleTTLDays}}" autocomplete="off">
+    </div>
+    <div>
+      <label for="terminal-session-ttl">Done/abandoned TTL (days)</label>
+      <input id="terminal-session-ttl" type="number" name="terminalSessionTTLDays" min="0" step="1" required value="{{.Config.TerminalSessionTTLDays}}" autocomplete="off">
     </div>
     <button type="submit">Save</button>
   </form>

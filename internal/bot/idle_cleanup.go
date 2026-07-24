@@ -22,8 +22,9 @@ var idleCleanupOnce sync.Once
 func (b *Bot) startIdleWorktreeCleanup() {
 	idleCleanupOnce.Do(func() {
 		ttl := b.cfg.WorktreeIdleTTL()
-		log.Printf("bg: starting idle-worktree sweeper interval=%s ttl=%s initial_delay=30s",
-			idleCleanupInterval, ttl)
+		termTTL := b.cfg.TerminalSessionTTL()
+		log.Printf("bg: starting idle-worktree sweeper interval=%s worktreeTTL=%s terminalSessionTTL=%s initial_delay=30s",
+			idleCleanupInterval, ttl, termTTL)
 		go b.runIdleWorktreeCleanup()
 	})
 }
@@ -43,11 +44,13 @@ func (b *Bot) runIdleWorktreeCleanup() {
 
 func (b *Bot) runIdleSweepCycle(reason string) {
 	ttl := b.cfg.WorktreeIdleTTL()
-	log.Printf("bg: idle-worktree sweep start reason=%s ttl=%s", reason, ttl)
+	termTTL := b.cfg.TerminalSessionTTL()
+	log.Printf("bg: idle sweep start reason=%s worktreeTTL=%s terminalSessionTTL=%s", reason, ttl, termTTL)
 	start := time.Now()
-	n := b.sweepIdleWorktrees()
-	log.Printf("bg: idle-worktree sweep done reason=%s removed=%d elapsed=%s",
-		reason, n, time.Since(start).Round(time.Millisecond))
+	nWT := b.sweepIdleWorktrees()
+	nSess := b.sweepTerminalSessions()
+	log.Printf("bg: idle sweep done reason=%s worktrees=%d terminalSessions=%d elapsed=%s",
+		reason, nWT, nSess, time.Since(start).Round(time.Millisecond))
 }
 
 // sweepIdleWorktrees applies the configured TTL (0 disables).
@@ -58,6 +61,71 @@ func (b *Bot) sweepIdleWorktrees() int {
 		return 0
 	}
 	return b.pruneIdleWorktrees(time.Now(), ttl)
+}
+
+// sweepTerminalSessions deletes done/abandoned session tombstones older than
+// TerminalSessionTTL (based on UpdatedAt). 0 / unset disables.
+func (b *Bot) sweepTerminalSessions() int {
+	ttl := b.cfg.TerminalSessionTTL()
+	if ttl <= 0 {
+		log.Printf("bg: terminal-session sweep skipped (ttl disabled)")
+		return 0
+	}
+	return b.pruneTerminalSessions(time.Now(), ttl)
+}
+
+// pruneTerminalSessions removes store entries whose effective label is done or
+// abandoned and whose UpdatedAt is at least ttl in the past. Busy threads are
+// skipped. Leftover worktrees are removed best-effort before Delete.
+func (b *Bot) pruneTerminalSessions(now time.Time, ttl time.Duration) int {
+	if b == nil || b.sessions == nil || ttl <= 0 {
+		return 0
+	}
+	cutoff := now.Add(-ttl)
+	removed := 0
+	for _, listed := range b.sessions.List() {
+		e := listed.Entry
+		if !sessionstore.IsTerminalLabel(e.EffectiveLabel()) {
+			continue
+		}
+		// Open cases keep their store row until /close even if mislabeled.
+		if e.IsCase() && !e.IsCaseClosed() {
+			continue
+		}
+		last := parseRFC3339(e.UpdatedAt)
+		if last.IsZero() || last.After(cutoff) {
+			continue
+		}
+		threadID := listed.ThreadID
+		if b.isThreadBusy(threadID) {
+			log.Printf("terminal-session: skip busy thread=%s", threadID)
+			continue
+		}
+		// Best-effort worktree cleanup before dropping the row.
+		mainCwd := e.MainCwd
+		if mainCwd == "" {
+			mainCwd, _ = b.resolveProjectRepo(e.Project, "")
+		}
+		branch := e.WorktreeBranch
+		if branch == "" {
+			branch = gitworktree.BranchNameForUnit(threadID)
+		}
+		path, _ := gitworktree.ResolveSessionWorktreePath(b.cfg.WorktreesRoot(), e.Project, threadID, e.Cwd, mainCwd)
+		if mainCwd != "" && (path != "" || branch != "") {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {
+				log.Printf("warn: terminal-session worktree remove thread=%s: %v", threadID, rmErr)
+			}
+			cancel()
+		}
+		if err := b.sessions.Delete(threadID); err != nil {
+			log.Printf("warn: terminal-session delete thread=%s: %v", threadID, err)
+			continue
+		}
+		log.Printf("terminal-session: deleted thread=%s label=%s last=%s", threadID, e.EffectiveLabel(), e.UpdatedAt)
+		removed++
+	}
+	return removed
 }
 
 // WorktreeInfo is a per-thread worktree row for the admin UI.

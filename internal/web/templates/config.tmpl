@@ -104,7 +104,7 @@
           <span class="drill-t">Folder &amp; idle cleanup</span>
           <span class="drill-s mono">{{.Config.WorktreesRoot}}</span>
         </span>
-        <span class="drill-v">{{if .Config.WorktreeIdleTTLDays}}TTL {{.Config.WorktreeIdleTTLDays}}d{{else}}TTL off{{end}}</span>
+        <span class="drill-v">{{if .Config.WorktreeIdleTTLDays}}wt {{.Config.WorktreeIdleTTLDays}}d{{else}}wt off{{end}}{{if .Config.TerminalSessionTTLDays}} · sess {{.Config.TerminalSessionTTLDays}}d{{else}} · sess off{{end}}</span>
       </a>
     </div>
   </div>

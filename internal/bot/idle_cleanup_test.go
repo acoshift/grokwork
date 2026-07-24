@@ -358,3 +358,66 @@ func initIdleTestRepo(t *testing.T) string {
 	run("commit", "-m", "init")
 	return dir
 }
+
+func TestPruneTerminalSessions(t *testing.T) {
+	data := t.TempDir()
+	oldAt := time.Now().Add(-40 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	newAt := time.Now().UTC().Format(time.RFC3339)
+	writeSessions(t, data, map[string]sessionstore.Entry{
+		"old-done": {
+			Project:   "app",
+			Label:     sessionstore.LabelDone,
+			UpdatedAt: oldAt,
+		},
+		"old-abandoned": {
+			Project:   "app",
+			Label:     sessionstore.LabelAbandoned,
+			LabelManual: true,
+			UpdatedAt: oldAt,
+		},
+		"fresh-done": {
+			Project:   "app",
+			Label:     sessionstore.LabelDone,
+			UpdatedAt: newAt,
+		},
+		"active": {
+			Project:   "app",
+			Label:     sessionstore.LabelInProgress,
+			UpdatedAt: oldAt,
+		},
+	})
+	sessions, err := sessionstore.New(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Projects: config.PathProjects(map[string]string{"app": t.TempDir()}),
+		DataDir:  data,
+	}
+	// enable 30d terminal TTL via pointer
+	days := 30
+	cfg.TerminalSessionTTLDays = &days
+	b := New(cfg, sessions, nil)
+
+	n := b.pruneTerminalSessions(time.Now(), 30*24*time.Hour)
+	if n != 2 {
+		t.Fatalf("removed=%d want 2 (old done + old abandoned)", n)
+	}
+	if _, ok := sessions.Get("old-done"); ok {
+		t.Fatal("old-done should be deleted")
+	}
+	if _, ok := sessions.Get("old-abandoned"); ok {
+		t.Fatal("old-abandoned should be deleted")
+	}
+	if _, ok := sessions.Get("fresh-done"); !ok {
+		t.Fatal("fresh-done should remain")
+	}
+	if _, ok := sessions.Get("active"); !ok {
+		t.Fatal("active should remain")
+	}
+
+	// disabled TTL
+	if n := b.pruneTerminalSessions(time.Now(), 0); n != 0 {
+		t.Fatalf("disabled n=%d", n)
+	}
+}
