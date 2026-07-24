@@ -56,7 +56,7 @@ func TestCaseActionsLifecycle(t *testing.T) {
 		t.Fatalf("answer on closed want ErrCaseClosed, got %v", err)
 	}
 
-	// Reopen default → investigate; clear resolution*; keep dossier.
+	// Reopen default → investigate; clear resolution*; keep dossier; stamp reopener.
 	if err := b.ReopenCase(tid, "u-inv", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +72,9 @@ func TestCaseActionsLifecycle(t *testing.T) {
 	}
 	if e.Resolution != "" || e.ResolutionNote != "" || e.ResolvedAt != "" || e.ResolvedBy != "" {
 		t.Fatalf("resolution fields not cleared: %+v", e)
+	}
+	if e.ReopenedBy != "u-inv" || e.ReopenedAt == "" {
+		t.Fatalf("reopen attribution: by=%q at=%q", e.ReopenedBy, e.ReopenedAt)
 	}
 	if e.Dossier == nil || e.Dossier.Summary != "timeout in payment gateway" {
 		t.Fatalf("dossier wiped: %+v", e.Dossier)
@@ -151,11 +154,19 @@ func TestReopenCaseRequiresClosedAndValidPhase(t *testing.T) {
 	if e.Resolution != "" || e.ResolvedBy != "" {
 		t.Fatalf("resolution not cleared: %+v", e)
 	}
+	if e.ReopenedBy != "u1" {
+		t.Fatalf("ReopenedBy=%q", e.ReopenedBy)
+	}
 	if e.Dossier == nil || e.Dossier.Summary != "keep me" || len(e.Dossier.NextActions) != 1 {
 		t.Fatalf("dossier: %+v", e.Dossier)
 	}
 	if e.IsCaseClosed() {
 		t.Fatal("still closed")
+	}
+	// Historical merged PR must not snap label to done after reopen fixing.
+	e.PRs = []sessionstore.TrackedPR{{Number: 1, State: "MERGED", URL: "https://example/pr/1"}}
+	if got := e.SuggestAutoLabel(false); got != sessionstore.LabelInProgress {
+		t.Fatalf("open fixing + terminal PR SuggestAutoLabel=%q", got)
 	}
 	// Already open (just reopened) → clear error, no clobber.
 	if err := b.ReopenCase(tid, "u1", "investigate"); err != ErrCaseNotClosed {

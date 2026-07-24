@@ -170,6 +170,7 @@ func TestPrViewSelectorPrefersURL(t *testing.T) {
 // and must run once the thread is idle (finishRun → tryCleanupTerminalPR).
 // Terminal cleanup free the worktree but always keep the session so PR links
 // and closed state stay on the sessions list/detail (cases and eng units).
+// Open (non-closed) cases skip cleanup so reopen-after-ship keeps the worktree.
 func TestCleanupWhenAllPRsDoneKeepsSessionAndPRs(t *testing.T) {
 	dir := t.TempDir()
 	store, err := sessionstore.New(dir)
@@ -183,7 +184,7 @@ func TestCleanupWhenAllPRsDoneKeepsSessionAndPRs(t *testing.T) {
 		SessionID:      "s-case",
 		Project:        "homeconnect",
 		Mode:           "case",
-		Phase:          sessionstore.PhaseShipping,
+		Phase:          sessionstore.PhaseClosed,
 		CustomerTitle:  "dashboard.stats timeout",
 		Cwd:            filepath.Join(dir, "wt"),
 		WorktreeBranch: "grokwork/" + threadID,
@@ -191,6 +192,7 @@ func TestCleanupWhenAllPRsDoneKeepsSessionAndPRs(t *testing.T) {
 		PRNumber:       99,
 		PRState:        "MERGED",
 		PRURL:          "https://github.com/o/r/pull/99",
+		Resolution:     "fixed",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +204,7 @@ func TestCleanupWhenAllPRsDoneKeepsSessionAndPRs(t *testing.T) {
 	if !ok {
 		t.Fatal("case session deleted after terminal PR cleanup")
 	}
-	if e.Mode != "case" || e.Phase != sessionstore.PhaseShipping {
+	if e.Mode != "case" || e.Phase != sessionstore.PhaseClosed {
 		t.Fatalf("case fields lost: mode=%q phase=%q", e.Mode, e.Phase)
 	}
 	if e.CustomerTitle != "dashboard.stats timeout" {
@@ -245,6 +247,52 @@ func TestCleanupWhenAllPRsDoneKeepsSessionAndPRs(t *testing.T) {
 	}
 	if fe.Label != sessionstore.LabelDone {
 		t.Fatalf("label lost: %q", fe.Label)
+	}
+}
+
+// Reopened (or otherwise open) cases keep worktrees even when historical PRs are terminal.
+func TestCleanupWhenAllPRsDoneSkipsOpenCase(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{DataDir: dir}
+	b := New(cfg, store, nil)
+	threadID := "reopened-case-1"
+	wt := filepath.Join(dir, "wt-reopen")
+	branch := "grokwork/" + threadID
+	if err := store.Set(threadID, sessionstore.Entry{
+		SessionID:      "s-reopen",
+		Project:        "homeconnect",
+		Mode:           "case",
+		Phase:          sessionstore.PhaseFixing,
+		CustomerTitle:  "bug returned",
+		Cwd:            wt,
+		WorktreeBranch: branch,
+		MainCwd:        dir,
+		Label:          sessionstore.LabelInProgress,
+		PRNumber:       99,
+		PRState:        "MERGED",
+		PRURL:          "https://github.com/o/r/pull/99",
+		PRs: []sessionstore.TrackedPR{{
+			URL: "https://github.com/o/r/pull/99", Number: 99, State: "MERGED",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.cleanupWhenAllPRsDone(threadID); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	e, ok := store.Get(threadID)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if e.Cwd != wt || e.WorktreeBranch != branch {
+		t.Fatalf("open case worktree must survive terminal cleanup: cwd=%q branch=%q", e.Cwd, e.WorktreeBranch)
+	}
+	if e.Phase != sessionstore.PhaseFixing {
+		t.Fatalf("phase=%q", e.Phase)
 	}
 }
 

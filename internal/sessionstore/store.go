@@ -100,6 +100,8 @@ type Entry struct {
 	ResolvedBy     string `json:"resolvedBy,omitempty"`
 	EscalatedAt    string `json:"escalatedAt,omitempty"`
 	EscalatedBy    string `json:"escalatedBy,omitempty"`
+	ReopenedAt     string `json:"reopenedAt,omitempty"`
+	ReopenedBy     string `json:"reopenedBy,omitempty"`
 
 	// Wave 2 IDE-free confidence.
 	Checkpoints   []CheckpointMeta `json:"checkpoints,omitempty"`

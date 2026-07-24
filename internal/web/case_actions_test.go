@@ -350,3 +350,39 @@ func TestPostCaseReopen(t *testing.T) {
 		t.Fatal("after reopen, reopen control should hide")
 	}
 }
+
+// Member with only draftCustomerReply (no investigate/fileEscalation/startSessions)
+// and not the case owner must not reopen.
+func TestPostCaseReopenForbiddenWithoutCaps(t *testing.T) {
+	srv, cfg, _ := fixEnabledServer(t)
+	_ = cfg.AddProjectAllowedUser("proj", "owner-1")
+	_ = cfg.AddProjectAllowedUser("proj", "viewer-1")
+	pc := cfg.Projects["proj"]
+	pc.CapabilityTemplates = map[string]config.Capabilities{
+		"support-view": {DraftCustomerReply: true},
+	}
+	pc.CapabilityByUser = map[string]string{"viewer-1": "support-view"}
+	cfg.Projects["proj"] = pc
+
+	if err := srv.sessions.Set("t-reopen-deny", sessionstore.Entry{
+		Project: "proj", Mode: "case", Phase: sessionstore.PhaseClosed,
+		CustomerTitle: "Owned by someone else", OwnerID: "owner-1", OwnerName: "Owner",
+		Resolution: "fixed", Label: sessionstore.LabelDone,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("viewer-1", "Viewer", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/sessions/t-reopen-deny/case/reopen", sid, csrf, url.Values{
+		"phase": {"investigate"},
+	})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s loc=%s", w.Code, w.Body.String(), w.Header().Get("Location"))
+	}
+	e, _ := srv.sessions.Get("t-reopen-deny")
+	if !e.IsCaseClosed() {
+		t.Fatalf("denied reopen must not mutate: %+v", e)
+	}
+}

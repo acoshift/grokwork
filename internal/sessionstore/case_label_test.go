@@ -59,6 +59,41 @@ func TestSuggestAutoLabelCaseFixingNeedsReview(t *testing.T) {
 	}
 }
 
+// Reopen to fixing with a historical merged PR must not snap label back to done.
+func TestSuggestAutoLabelOpenCaseTerminalPRKeepsActiveLabel(t *testing.T) {
+	for _, phase := range []string{PhaseInvestigate, PhaseFixing, PhaseShipping} {
+		e := Entry{
+			Mode:  "case",
+			Phase: phase,
+			Label: LabelInProgress,
+			PRs: []TrackedPR{{
+				Number: 1, State: "MERGED", URL: "https://example/pr/1",
+			}},
+		}
+		got := e.SuggestAutoLabel(false)
+		if got != LabelInProgress {
+			t.Fatalf("phase=%s: SuggestAutoLabel got %q want in_progress", phase, got)
+		}
+		if e.ApplyAutoLabel(e.SuggestAutoLabel(false)) {
+			t.Fatalf("phase=%s: ApplyAutoLabel should not change active open-case label", phase)
+		}
+		if e.Label != LabelInProgress {
+			t.Fatalf("phase=%s: label became %q", phase, e.Label)
+		}
+	}
+	// Non-case still honors terminal PR → done.
+	eng := Entry{
+		Mode:  "fix",
+		Label: LabelInProgress,
+		PRs: []TrackedPR{{
+			Number: 2, State: "MERGED", URL: "https://example/pr/2",
+		}},
+	}
+	if got := eng.SuggestAutoLabel(false); got != LabelDone {
+		t.Fatalf("eng terminal PR: got %q want done", got)
+	}
+}
+
 func TestClampCaseFields(t *testing.T) {
 	long := string(make([]byte, 3000))
 	for i := range long {

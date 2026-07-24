@@ -471,6 +471,9 @@ func (b *Bot) upsertPRStatusMessage(s *discordgo.Session, threadID, msgID, conte
 // The session entry is always kept so PR links/state remain visible in the web
 // sessions list and detail (and case lifecycle can still close after eng ship).
 // Redeploy re-runs the PR poller; deleting the entry would wipe that history.
+//
+// Open (non-closed) cases are skipped: historical terminal PRs must not keep
+// tearing down a reopened unit's worktree. Cleanup runs again after /close.
 func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 	if b.isThreadBusy(threadID) {
 		return fmt.Errorf("thread busy")
@@ -482,6 +485,9 @@ func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 	e.NormalizePRs()
 	if e.HasOpenPR() {
 		return fmt.Errorf("open PRs remain")
+	}
+	if e.IsCase() && !e.IsCaseClosed() {
+		return nil
 	}
 
 	mainCwd := e.MainCwd
@@ -738,6 +744,12 @@ func preserveModeFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	}
 	if next.EscalatedBy == "" {
 		next.EscalatedBy = prev.EscalatedBy
+	}
+	if next.ReopenedAt == "" {
+		next.ReopenedAt = prev.ReopenedAt
+	}
+	if next.ReopenedBy == "" {
+		next.ReopenedBy = prev.ReopenedBy
 	}
 	// Wave 2: never drop checkpoints / open questions / verify card id on Set rebuilds.
 	if len(next.Checkpoints) == 0 && len(prev.Checkpoints) > 0 {

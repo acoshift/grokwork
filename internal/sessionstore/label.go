@@ -117,9 +117,10 @@ func (e Entry) SuggestAutoLabel(running bool) string {
 
 	e.NormalizePRs()
 	if len(e.PRs) > 0 && e.AllPRsTerminal() {
-		// Case non-ship phases: do not flip to done/abandoned solely from leftover PRs
-		// while support is still investigating (K18). Ship phases and non-cases honor PR terminal.
-		if e.IsCase() && !e.IsCaseShipPhase() {
+		// Open cases (any phase): never force done/abandoned from leftover terminal
+		// PRs — reopen after a shipped fix must keep active board labels. Closed
+		// cases already returned above. Non-cases still honor PR terminal.
+		if e.IsCase() {
 			if running {
 				return LabelInProgress
 			}

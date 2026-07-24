@@ -158,8 +158,12 @@ func (s *Server) postCaseReopen(ctx *hime.Context) error {
 	if reopenErr != nil {
 		return s.sessionRedirect(ctx, threadID, "", reopenErr.Error())
 	}
-	if phase == "" {
+	if e, ok := s.sessions.Get(threadID); ok && e.Phase != "" {
+		phase = e.Phase
+	} else if phase == "" {
 		phase = sessionstore.PhaseInvestigate
+	} else {
+		phase = strings.ToLower(phase)
 	}
 	return s.sessionRedirect(ctx, threadID, "Case reopened · phase "+phase+".", "")
 }

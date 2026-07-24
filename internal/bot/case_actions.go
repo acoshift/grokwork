@@ -169,6 +169,8 @@ func (b *Bot) ReopenCase(threadID, actorID, phase string) error {
 	if phase == sessionstore.PhaseFixing {
 		label = sessionstore.LabelInProgress
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	actorID = strings.TrimSpace(actorID)
 	_, _, err := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
 		ent.Mode = ModeCase
 		ent.Phase = phase
@@ -176,6 +178,8 @@ func (b *Bot) ReopenCase(threadID, actorID, phase string) error {
 		ent.ResolutionNote = ""
 		ent.ResolvedAt = ""
 		ent.ResolvedBy = ""
+		ent.ReopenedAt = now
+		ent.ReopenedBy = actorID
 		ent.Label = label
 		// Leave LabelManual as-is so a prior manual label can still be cleared via /label auto.
 		_ = sessionstore.ClampCaseFields(ent)
