@@ -521,10 +521,12 @@ func (s *Server) sessionRedirect(ctx *hime.Context, threadID, ok, errMsg string)
 	if errMsg != "" {
 		q.Set("err", errMsg)
 	}
-	// Keep the workspace shell scoped after Fix/Continue redirects.
+	// Keep the workspace shell scoped after Fix/Continue/reset redirects.
+	// threadProject falls back to history when the session store entry is gone
+	// (e.g. right after a successful reset).
 	if q.Get("project") == "" {
-		if ent, ok := s.sessions.Get(threadID); ok && strings.TrimSpace(ent.Project) != "" {
-			q.Set("project", ent.Project)
+		if p := s.threadProject(threadID); p != "" {
+			q.Set("project", p)
 		}
 	}
 	loc := "/sessions/" + url.PathEscape(threadID)
@@ -603,6 +605,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 	d := s.basePage(ctx)
 	d.ThreadID = threadID
 	if ent, ok := s.sessions.Get(threadID); ok {
+		d.HasSession = true
 		ent.NormalizePRs()
 		d.SessionEntry = ent
 		d.Project = ent.Project

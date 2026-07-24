@@ -858,7 +858,7 @@ func (b *Bot) resetThreadCore(threadID string) (msg string, err error) {
 		log.Printf("error: session delete: %v", delErr)
 		return "Could not clear session: " + delErr.Error(), delErr
 	}
-	return "Session cleared for this thread (worktree removed if any).", nil
+	return "Session was reset.", nil
 }
 
 func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID string) (cwd, branch string, err error) {

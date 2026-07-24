@@ -549,6 +549,7 @@ type pageData struct {
 	ShowFixPicker bool
 	SessionEntry  sessionstore.Entry
 	DiscordURL    string
+	HasSession    bool // live sessionstore entry exists (false after reset)
 	HasWorktree   bool // session worktree still on disk (enables Worktree diff)
 	RunActivity   string
 	RunPhases     string
@@ -673,6 +674,10 @@ func (s *Server) sessionsList(ctx *hime.Context) error {
 	d.Title = "Sessions"
 	d.IsSessions = true
 	d.Threads = threads
+	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
+	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
+		d.Error = e
+	}
 	return s.viewPage(ctx, "sessions", d)
 }
 

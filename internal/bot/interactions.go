@@ -91,7 +91,8 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 	case actionResetOK:
 		b.interactionResetConfirm(s, i, threadID, user)
 	case actionResetNo:
-		respondEphemeral(s, i, "Reset cancelled.")
+		// Update the confirm prompt so Yes/Never mind cannot be re-clicked.
+		respondUpdateMessage(s, i, "Reset cancelled.")
 	case actionHistory:
 		base := ""
 		if b.cfg != nil {
@@ -194,15 +195,17 @@ func (b *Bot) interactionResetPrompt(s *discordgo.Session, i *discordgo.Interact
 
 func (b *Bot) interactionResetConfirm(s *discordgo.Session, i *discordgo.InteractionCreate, threadID string, user *discordgo.User) {
 	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(s, threadID, user.ID, e) {
-		respondEphemeral(s, i, denyControlText(e, "reset"))
+		// Replace the confirm prompt (drops Yes/Never mind).
+		respondUpdateMessage(s, i, denyControlText(e, "reset"))
 		return
 	}
 	msg, err := b.resetThreadCore(threadID)
 	if err != nil {
-		respondEphemeral(s, i, msg)
+		respondUpdateMessage(s, i, msg)
 		return
 	}
-	respondEphemeral(s, i, msg)
+	// Show result on the confirm message and strip buttons so Reset cannot re-fire.
+	respondUpdateMessage(s, i, msg)
 	if _, sendErr := discordSend(s, threadID, msg+" (via button · <@"+user.ID+">)"); sendErr != nil {
 		log.Printf("error: reset announce thread=%s: %v", threadID, sendErr)
 	}
@@ -249,6 +252,27 @@ func respondEphemeral(s *discordgo.Session, i *discordgo.InteractionCreate, cont
 		},
 	}); err != nil {
 		log.Printf("error: interaction respond: %v", err)
+	}
+}
+
+// respondUpdateMessage edits the interaction's source message (e.g. an
+// ephemeral confirm) and clears components so buttons cannot be re-clicked.
+func respondUpdateMessage(s *discordgo.Session, i *discordgo.InteractionCreate, content string) {
+	if s == nil || i == nil {
+		return
+	}
+	content = sanitizeDiscordContent(content)
+	if content == "" {
+		content = "(empty)"
+	}
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Content:    content,
+			Components: []discordgo.MessageComponent{},
+		},
+	}); err != nil {
+		log.Printf("error: interaction update: %v", err)
 	}
 }
 

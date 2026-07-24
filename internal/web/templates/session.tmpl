@@ -255,11 +255,16 @@
 {{if .CanControlSession}}
 <div class="rail-group" id="session-danger">
   <div class="rail-group-title">Danger zone</div>
+  {{if .HasSession}}
   <form method="post" action="/sessions/{{.ThreadID}}/reset" onsubmit="return confirm('Forget session, remove worktree and branch?')">
     {{template "csrf" $}}
     <div class="form-actions"><button type="submit" id="btn-reset" class="btn-danger"{{if .RunBusy}} disabled title="Cancel the active run before resetting"{{end}}>Reset session</button></div>
   </form>
   <p class="rail-note">Removes the worktree, deletes the managed branch, and clears the session. This cannot be undone.</p>
+  {{else}}
+  <div class="form-actions"><button type="button" id="btn-reset" class="btn-danger" disabled title="Session already reset">Reset session</button></div>
+  <p class="rail-note">Session was reset — worktree, managed branch, and session entry are gone.</p>
+  {{end}}
 </div>
 {{end}}
 

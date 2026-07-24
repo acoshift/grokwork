@@ -3,7 +3,6 @@ package web
 import (
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/moonrhythm/hime"
@@ -59,8 +58,9 @@ func (s *Server) postSessionCancel(ctx *hime.Context) error {
 }
 
 // postSessionReset forgets the session, worktree, and branch. On success the
-// unit no longer exists, so the redirect leaves the dead page for the project
-// sessions list; a busy refusal keeps the user on the session page.
+// unit is gone; stay on the session page with a flash so the user sees
+// confirmation and a disabled Reset control. A busy refusal keeps the same
+// page with an error flash.
 func (s *Server) postSessionReset(ctx *hime.Context) error {
 	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
 	if threadID == "" {
@@ -75,22 +75,24 @@ func (s *Server) postSessionReset(ctx *hime.Context) error {
 		s.auditAction(ctx, audit.ActionSessionReset, errControlForbidden, map[string]any{"threadId": threadID})
 		return ctx.Status(http.StatusForbidden).Error(errControlForbidden.Error())
 	}
-	// Capture the project before Reset deletes the entry (redirect target).
 	if project == "" {
 		project = strings.TrimSpace(ent.Project)
 	}
 	msg, resetErr := s.bot.ResetUnit(threadID)
 	s.auditAction(ctx, audit.ActionSessionReset, resetErr, map[string]any{"threadId": threadID, "project": project})
 	if resetErr != nil {
-		// Busy refusal: the unit still exists — stay on the session page.
 		return s.sessionRedirect(ctx, threadID, "", msg)
 	}
-	q := url.Values{}
-	q.Set("ok", msg)
-	if project != "" {
-		return ctx.Redirect("/projects/" + url.PathEscape(project) + "/sessions?" + q.Encode())
+	ok := strings.TrimSpace(msg)
+	if ok == "" {
+		ok = "Session was reset."
 	}
-	return ctx.Redirect("/sessions?" + q.Encode())
+	// Stamp project on the redirect: the store entry is gone and history may
+	// still be empty, so sessionRedirect cannot recover it from threadProject.
+	if project != "" {
+		ok = ok + "&project=" + project
+	}
+	return s.sessionRedirect(ctx, threadID, ok, "")
 }
 
 // postSessionQueueRemove drops one pending follow-up by taskID. Per-item

@@ -73,6 +73,11 @@ func (s *Server) ensureThreadAccess(ctx *hime.Context, threadID string) (project
 		return "", fmt.Errorf("thread id is required")
 	}
 	project = s.threadProject(threadID)
+	// After reset the store entry is gone and history may still be empty; the
+	// session page redirect stamps ?project= so workspace scope + ACL survive.
+	if project == "" {
+		project = strings.TrimSpace(ctx.FormValue("project"))
+	}
 	_, role := s.sessionIdentity(ctx)
 	if config.RoleAtLeast(role, config.WebRoleAdmin) {
 		return project, nil

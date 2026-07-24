@@ -189,9 +189,10 @@ func TestSessionResetOwnershipMatrix(t *testing.T) {
 	}
 }
 
-// TestSessionResetSuccessRedirectsToList pins the redirect target after a
-// successful reset: the dead unit page is left for the project sessions list.
-func TestSessionResetSuccessRedirectsToList(t *testing.T) {
+// TestSessionResetSuccessStaysOnPage pins the post-reset UX: redirect back to
+// the session page with an ok flash (so the user sees confirmation) and no
+// live session entry (so Reset is disabled on the next render).
+func TestSessionResetSuccessStaysOnPage(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	seedOwned(t, srv, "reset-ok", "member-1", "Member One")
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
@@ -203,17 +204,43 @@ func TestSessionResetSuccessRedirectsToList(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/projects/proj/sessions") {
-		t.Fatalf("Location=%q want /projects/proj/sessions", loc)
+	if !strings.HasPrefix(loc, "/sessions/reset-ok") {
+		t.Fatalf("Location=%q want /sessions/reset-ok", loc)
 	}
 	if !strings.Contains(loc, "ok=") {
 		t.Fatalf("Location=%q want ok flash", loc)
 	}
+	if !strings.Contains(loc, "was+reset") && !strings.Contains(loc, "was%20reset") {
+		t.Fatalf("Location=%q want Session was reset flash", loc)
+	}
+	if !strings.Contains(loc, "project=proj") {
+		t.Fatalf("Location=%q want project=proj for workspace scope", loc)
+	}
+	if _, ok := srv.sessions.Get("reset-ok"); ok {
+		t.Fatal("successful reset must delete the session")
+	}
 	assertAuditAction(t, srv, audit.ActionSessionReset, true)
+
+	// Render the dead session page: flash + disabled Reset button, no POST form.
+	req := httptest.NewRequest(http.MethodGet, loc, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	rw := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rw, req)
+	if rw.Code != http.StatusOK {
+		t.Fatalf("session page status=%d body=%s", rw.Code, rw.Body.String())
+	}
+	body := rw.Body.String()
+	if !strings.Contains(body, "Session was reset") {
+		t.Fatal("missing reset flash on session page")
+	}
+	if strings.Contains(body, `action="/sessions/reset-ok/reset"`) {
+		t.Fatal("reset form must not POST after session is gone")
+	}
+	if !strings.Contains(body, `disabled title="Session already reset"`) {
+		t.Fatal("reset button should be disabled after reset")
+	}
 }
 
-// TestSessionResetBusyStaysOnPage: a busy unit refuses reset and keeps the user
-// on the session page with an error.
 func TestSessionResetBusyStaysOnPage(t *testing.T) {
 	srv, _, b := fixEnabledServer(t)
 	seedOwned(t, srv, "reset-busy", "member-1", "Member One")
@@ -235,6 +262,31 @@ func TestSessionResetBusyStaysOnPage(t *testing.T) {
 	}
 	if _, ok := srv.sessions.Get("reset-busy"); !ok {
 		t.Fatal("busy reset must not delete the session")
+	}
+}
+
+// TestSessionResetDisabledWithoutLiveSession: a missing store entry still shows
+// the danger zone for controllers, but Reset is disabled (no POST form).
+func TestSessionResetDisabledWithoutLiveSession(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	// Admin: ensureThreadAccess allows empty project.
+	sid, _, err := srv.LoginAs("admin-1", "Admin", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions/no-live-session", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, `action="/sessions/no-live-session/reset"`) {
+		t.Fatal("must not offer reset POST without a live session")
+	}
+	if !strings.Contains(body, `disabled title="Session already reset"`) {
+		t.Fatal("reset button should be disabled when session is missing")
 	}
 }
 
