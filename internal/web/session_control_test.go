@@ -593,6 +593,64 @@ func TestSessionClaimShownForNonOwner(t *testing.T) {
 
 // TestSessionRailHiddenForViewer: a viewer gets the read-only fallback and none
 // of the control forms.
+// TestSessionClaimHiddenWhenDone: terminal sessions do not offer Claim.
+func TestSessionClaimHiddenWhenDone(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	seedOwned(t, srv, "claim-done", "member-1", "Member One")
+	if _, _, err := srv.sessions.Patch("claim-done", func(e *sessionstore.Entry) {
+		_ = e.SetLabelManual(sessionstore.LabelDone)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sid, _, err := srv.LoginAs("allow-user", "Allow", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions/claim-done", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, `id="btn-claim"`) {
+		t.Fatal("done session must not show Claim ownership")
+	}
+}
+
+// TestSessionClaimRefusedWhenDone: POST claim on a terminal unit is refused.
+func TestSessionClaimRefusedWhenDone(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	seedOwned(t, srv, "claim-done-post", "member-1", "Member One")
+	if _, _, err := srv.sessions.Patch("claim-done-post", func(e *sessionstore.Entry) {
+		_ = e.SetLabelManual(sessionstore.LabelDone)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("allow-user", "Allow", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/sessions/claim-done-post/claim", sid, csrf, nil)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "err=") {
+		t.Fatalf("Location=%q want err flash", loc)
+	}
+	e, ok := srv.sessions.Get("claim-done-post")
+	if !ok {
+		t.Fatal("session gone")
+	}
+	if e.OwnerID != "member-1" {
+		t.Fatalf("ownerID=%q want member-1 (claim refused)", e.OwnerID)
+	}
+	assertAuditAction(t, srv, audit.ActionSessionClaim, false)
+}
+
+
 func TestSessionRailHiddenForViewer(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	seedOwned(t, srv, "rail-viewer", "member-1", "Member One")

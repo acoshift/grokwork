@@ -238,7 +238,9 @@
 <div class="rail-group" id="session-ownership">
   <div class="rail-group-title">Ownership</div>
   <p class="rail-note">{{if .SessionEntry.OwnerName}}Owner: <strong>{{.SessionEntry.OwnerName}}</strong>{{else}}Unowned — any member may control it.{{end}}{{if .SessionEntry.CoOwnerIDs}} · {{len .SessionEntry.CoOwnerIDs}} co-owner(s){{end}}</p>
-  {{if not (.SessionEntry.IsOwner .UserID)}}
+  {{/* Claim is for active lockout-breaking only — hide on terminal units. */}}
+  {{$ownLab := .SessionEntry.EffectiveLabel}}
+  {{if and (not (.SessionEntry.IsOwner .UserID)) (ne $ownLab "done") (ne $ownLab "abandoned")}}
   <form method="post" action="/sessions/{{.ThreadID}}/claim"{{if .SessionEntry.HasOwner}} onsubmit="return confirm('Take over ownership? The current owner becomes a co-owner.')"{{end}}>
     {{template "csrf" $}}
     <div class="form-actions"><button type="submit" id="btn-claim" class="btn-secondary">Claim ownership</button></div>

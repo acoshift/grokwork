@@ -169,6 +169,7 @@ func (s *Server) postSessionGoal(ctx *hime.Context) error {
 // postSessionClaim takes over ownership. This is the lockout-breaker that makes
 // cancel/reset usable for web users on units they did not start; any member may
 // claim (feature+member gate), so it is deliberately not behind canControlSession.
+// Terminal units (done/abandoned) cannot be claimed — there is nothing to control.
 func (s *Server) postSessionClaim(ctx *hime.Context) error {
 	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
 	if threadID == "" {
@@ -183,6 +184,11 @@ func (s *Server) postSessionClaim(ctx *hime.Context) error {
 		err := errors.New("claim requires a signed-in identity")
 		s.auditAction(ctx, audit.ActionSessionClaim, err, map[string]any{"threadId": threadID})
 		return ctx.Status(http.StatusBadRequest).Error(err.Error())
+	}
+	if ent, ok := s.sessions.Get(threadID); ok && sessionstore.IsTerminalLabel(ent.EffectiveLabel()) {
+		err := errors.New("cannot claim a done or abandoned session")
+		s.auditAction(ctx, audit.ActionSessionClaim, err, map[string]any{"threadId": threadID})
+		return s.sessionRedirect(ctx, threadID, "", err.Error())
 	}
 	claimErr := s.bot.ClaimThread(threadID, actor)
 	s.auditAction(ctx, audit.ActionSessionClaim, claimErr, map[string]any{"threadId": threadID})
