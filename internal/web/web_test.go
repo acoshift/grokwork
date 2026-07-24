@@ -675,7 +675,8 @@ func TestSessionsFilter(t *testing.T) {
 		}
 	}
 
-	// Unfiltered hub: toolbar + every row.
+	// Default view is Active: in-flight rows plus freshly finished ones
+	// (both seeded terminal rows carry a just-stamped UpdatedAt from Set).
 	body := get("/sessions")
 	has(body, "/sessions", `id="sessions-filters"`)
 	has(body, "/sessions", `name="project"`)
@@ -692,11 +693,19 @@ func TestSessionsFilter(t *testing.T) {
 	hasNot(body, "/sessions?state=done", "/sessions/thread-99")
 	hasNot(body, "/sessions?state=done", "/sessions/thread-case-closed")
 
-	// Active excludes terminal labels and closed cases.
+	// Explicit Active matches the default view: terminal rows updated within
+	// the last 24h stay visible (recency itself is unit-tested with a fixed
+	// clock in TestSessionsActiveRecency).
 	body = get("/sessions?state=active")
 	has(body, "/sessions?state=active", "/sessions/thread-99")
-	hasNot(body, "/sessions?state=active", "/sessions/thread-done")
-	hasNot(body, "/sessions?state=active", "/sessions/thread-case-closed")
+	has(body, "/sessions?state=active", "/sessions/thread-done")
+	has(body, "/sessions?state=active", "/sessions/thread-case-closed")
+
+	// All states shows everything regardless of age.
+	body = get("/sessions?state=all")
+	has(body, "/sessions?state=all", "/sessions/thread-99")
+	has(body, "/sessions?state=all", "/sessions/thread-done")
+	has(body, "/sessions?state=all", "/sessions/thread-case-closed")
 
 	// Closed cases match only the dedicated closed option.
 	body = get("/sessions?state=closed")
@@ -712,7 +721,7 @@ func TestSessionsFilter(t *testing.T) {
 	has(body, "/sessions?q=beta", "/sessions/thread-case-closed")
 	hasNot(body, "/sessions?q=beta", "/sessions/thread-99")
 
-	// Unknown state values behave like All (no 4xx, nothing hidden).
+	// Unknown state values fall back to the default Active view (no 4xx).
 	body = get("/sessions?state=bogus")
 	has(body, "/sessions?state=bogus", "/sessions/thread-99")
 	has(body, "/sessions?state=bogus", "/sessions/thread-done")
@@ -728,6 +737,53 @@ func TestSessionsFilter(t *testing.T) {
 	hasNot(body, "/projects/proj/sessions?state=done", `name="project"`)
 	has(body, "/projects/proj/sessions?state=done", "/sessions/thread-done")
 	hasNot(body, "/projects/proj/sessions?state=done", "/sessions/thread-99")
+}
+
+func TestSessionsActiveRecency(t *testing.T) {
+	now := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	rows := []history.Summary{
+		{ThreadID: "open-old", Label: "open", UpdatedAt: "2026-06-01T00:00:00Z"},
+		{ThreadID: "done-fresh", Label: "done", UpdatedAt: "2026-07-24T02:00:00Z"},
+		{ThreadID: "done-stale", Label: "done", UpdatedAt: "2026-07-23T02:00:00Z"},
+		{ThreadID: "abandoned-fresh", Label: "abandoned", UpdatedAt: "2026-07-24T11:00:00Z"},
+		{ThreadID: "abandoned-stale", Label: "abandoned", UpdatedAt: "2026-07-20T00:00:00Z"},
+		{ThreadID: "case-fresh", Mode: "case", Phase: "closed", Label: "blocked", UpdatedAt: "2026-07-24T00:00:00Z"},
+		{ThreadID: "case-stale", Mode: "case", Phase: "closed", Label: "blocked", UpdatedAt: "2026-07-22T00:00:00Z"},
+		{ThreadID: "done-notime", Label: "done"},
+	}
+	ids := func(rows []history.Summary) string {
+		out := make([]string, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, r.ThreadID)
+		}
+		return strings.Join(out, " ")
+	}
+
+	// Active: in-flight regardless of age, terminal only within 24h.
+	// Terminal rows without a timestamp never qualify as recent.
+	got := ids(filterSessionRows(rows, sessionFilters{State: "active"}, now))
+	if want := "open-old done-fresh abandoned-fresh case-fresh"; got != want {
+		t.Fatalf("active: got %q want %q", got, want)
+	}
+	// All: everything, any age.
+	got = ids(filterSessionRows(rows, sessionFilters{State: "all"}, now))
+	if got != ids(rows) {
+		t.Fatalf("all: got %q want every row", got)
+	}
+	// Explicit label filters are age-independent…
+	got = ids(filterSessionRows(rows, sessionFilters{State: "done"}, now))
+	if want := "done-fresh done-stale done-notime"; got != want {
+		t.Fatalf("done: got %q want %q", got, want)
+	}
+	// …and closed cases match only "closed" (frozen label never leaks).
+	got = ids(filterSessionRows(rows, sessionFilters{State: "closed"}, now))
+	if want := "case-fresh case-stale"; got != want {
+		t.Fatalf("closed: got %q want %q", got, want)
+	}
+	got = ids(filterSessionRows(rows, sessionFilters{State: "blocked"}, now))
+	if got != "" {
+		t.Fatalf("blocked: got %q want no rows", got)
+	}
 }
 
 func TestSessionDetailStreamsLiveTurn(t *testing.T) {

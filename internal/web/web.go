@@ -678,7 +678,7 @@ func (s *Server) sessionsList(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Title = "Sessions"
 	d.IsSessions = true
-	d.Threads = filterSessionRows(threads, f)
+	d.Threads = filterSessionRows(threads, f, time.Now())
 	d.SessionFilters = f
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
