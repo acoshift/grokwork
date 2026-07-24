@@ -14,7 +14,7 @@
       {{else}}
       <span class="m-row-t mono">{{.ThreadID}}</span>
       {{end}}
-      <span class="m-row-s">{{if .LastPrompt}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{.UpdatedAt}}{{end}}</span>
+      <span class="m-row-s">{{if .LastPrompt}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{if .Label}}{{.Label}} · {{end}}{{if .PRNumber}}PR #{{.PRNumber}}{{if .PRState}} {{.PRState}}{{end}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{.UpdatedAt}}{{end}}</span>
     </span>
   </a>
   {{end}}
@@ -25,6 +25,8 @@
     <tr>
       <th>Thread</th>
       {{if not .Project}}<th>Project</th>{{end}}
+      <th>State</th>
+      <th>PR</th>
       <th>Turns</th>
       <th>Last user</th>
       <th>Updated</th>
@@ -36,6 +38,44 @@
     <tr>
       <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}{{if or $.Project .Project}}?project={{urlquery (or $.Project .Project)}}{{end}}">{{.ThreadID}}</a></td>
       {{if not $.Project}}<td>{{if .Project}}<a href="/projects/{{.Project}}">{{.Project}}</a>{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
+      <td>
+        {{if and (eq .Mode "case") (eq .Phase "closed")}}
+        <span class="badge status-cancelled">closed</span>
+        {{if .Resolution}}{{if or (eq .Resolution "answered") (eq .Resolution "fixed")}}<span class="badge status-done">{{.Resolution}}</span>{{else}}<span class="badge status-cancelled">{{.Resolution}}</span>{{end}}{{end}}
+        {{else if eq .Label "done"}}
+        <span class="badge status-done">done</span>
+        {{else if eq .Label "abandoned"}}
+        <span class="badge status-cancelled">abandoned</span>
+        {{else if eq .Label "needs_review"}}
+        <span class="badge status-warn">needs review</span>
+        {{else if eq .Label "in_progress"}}
+        <span class="badge live">in progress</span>
+        {{else if eq .Label "blocked"}}
+        <span class="badge status-warn">blocked</span>
+        {{else if .Label}}
+        <span class="badge">{{.Label}}</span>
+        {{else if .Phase}}
+        <span class="badge">{{.Phase}}</span>
+        {{else}}
+        <span class="muted">—</span>
+        {{end}}
+        {{if and (eq .Mode "case") (ne .Phase "closed") .Phase}}<span class="badge">{{.Phase}}</span>{{end}}
+      </td>
+      <td>
+        {{if .PRNumber}}
+          {{if and .PROwner .PRRepo}}
+          <a class="badge{{if eq .PRState "MERGED"}} status-merged{{else if eq .PRState "CLOSED"}} status-cancelled{{else if eq .PRState "OPEN"}} live{{end}}"
+             href="/prs/{{.PROwner}}/{{.PRRepo}}/{{.PRNumber}}{{if or $.Project .Project}}?project={{urlquery (or $.Project .Project)}}{{end}}">#{{.PRNumber}}{{if .PRState}} · {{.PRState}}{{end}}</a>
+          {{else if .PRURL}}
+          <a class="badge{{if eq .PRState "MERGED"}} status-merged{{else if eq .PRState "CLOSED"}} status-cancelled{{else if eq .PRState "OPEN"}} live{{end}}"
+             href="{{.PRURL}}" target="_blank" rel="noopener">#{{.PRNumber}}{{if .PRState}} · {{.PRState}}{{end}} ↗</a>
+          {{else}}
+          <span class="badge">#{{.PRNumber}}{{if .PRState}} · {{.PRState}}{{end}}</span>
+          {{end}}
+        {{else}}
+        <span class="muted">—</span>
+        {{end}}
+      </td>
       <td class="mono">{{.TurnCount}}</td>
       <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
       <td class="mono muted">{{if .UpdatedAt}}{{.UpdatedAt}}{{else}}—{{end}}</td>

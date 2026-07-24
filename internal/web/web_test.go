@@ -512,6 +512,20 @@ func TestSessionsHub(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Closed eng session with terminal PR must keep PR link + closed state on the list.
+	if err := srv.sessions.Set("thread-closed", sessionstore.Entry{
+		SessionID: "sess-closed",
+		Project:   "proj",
+		Label:     sessionstore.LabelDone,
+		LastUser:  "carol#2",
+		Goal:      "merged ship",
+		PRs: []sessionstore.TrackedPR{{
+			URL: "https://github.com/acme/app/pull/42", Number: 42, State: "MERGED",
+			Title: "ship feature", Owner: "acme", Repo: "app",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
 	w := httptest.NewRecorder()
@@ -533,7 +547,13 @@ func TestSessionsHub(t *testing.T) {
 		"/sessions/thread-only-sess",
 		"thread-only-sess",
 		"bob#1",
-		"no turns recorded yet",
+		"session without turns", // goal used as list preview when no turns
+		// Closed session: state + PR columns.
+		"/sessions/thread-closed",
+		`status-done">done</span>`,
+		`href="/prs/acme/app/42?project=proj">#42 · MERGED</a>`,
+		">State</th>",
+		">PR</th>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sessions hub missing %q in body (len=%d)", want, len(body))
@@ -579,6 +599,27 @@ func TestSessionsHub(t *testing.T) {
 	}
 	if strings.Contains(detail, "Grok Discord") {
 		t.Fatal("legacy brand on session detail")
+	}
+
+	// Closed session detail preserves PR link + done state.
+	req = httptest.NewRequest(http.MethodGet, "/sessions/thread-closed?project=proj", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("closed session status=%d", w.Code)
+	}
+	closed := w.Body.String()
+	for _, want := range []string{
+		`id="page-session"`,
+		`status-done">done</span>`,
+		`href="/prs/acme/app/42?project=proj">PR #42</a>`,
+		`href="/prs/acme/app/42?project=proj">acme/app#42</a>`,
+		`status-merged">MERGED</span>`,
+		"ship feature",
+	} {
+		if !strings.Contains(closed, want) {
+			t.Fatalf("closed session detail missing %q", want)
+		}
 	}
 }
 

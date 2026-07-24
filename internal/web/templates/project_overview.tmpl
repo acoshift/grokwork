@@ -60,7 +60,7 @@
         {{else}}
         <span class="m-row-t mono">{{.ThreadID}}</span>
         {{end}}
-        <span class="m-row-s">{{if .LastPrompt}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{.UpdatedAt}}{{end}}</span>
+        <span class="m-row-s">{{if .LastPrompt}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if .Label}}{{.Label}} · {{end}}{{if .PRNumber}}PR #{{.PRNumber}}{{if .PRState}} {{.PRState}}{{end}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{.UpdatedAt}}{{end}}</span>
       </span>
     </a>
     {{end}}
@@ -70,6 +70,8 @@
     <thead>
       <tr>
         <th>Thread</th>
+        <th>State</th>
+        <th>PR</th>
         <th>Turns</th>
         <th>Last user</th>
         <th>Updated</th>
@@ -80,6 +82,29 @@
       {{range .Threads}}
       <tr>
         <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}">{{.ThreadID}}</a></td>
+        <td>
+          {{if and (eq .Mode "case") (eq .Phase "closed")}}
+          <span class="badge status-cancelled">closed</span>
+          {{else if eq .Label "done"}}
+          <span class="badge status-done">done</span>
+          {{else if eq .Label "abandoned"}}
+          <span class="badge status-cancelled">abandoned</span>
+          {{else if .Label}}
+          <span class="badge">{{.Label}}</span>
+          {{else}}
+          <span class="muted">—</span>
+          {{end}}
+        </td>
+        <td>
+          {{if and .PRNumber .PROwner .PRRepo}}
+          <a class="badge{{if eq .PRState "MERGED"}} status-merged{{else if eq .PRState "CLOSED"}} status-cancelled{{else if eq .PRState "OPEN"}} live{{end}}"
+             href="/prs/{{.PROwner}}/{{.PRRepo}}/{{.PRNumber}}?project={{urlquery $.Project}}">#{{.PRNumber}}{{if .PRState}} · {{.PRState}}{{end}}</a>
+          {{else if .PRNumber}}
+          <span class="badge">#{{.PRNumber}}{{if .PRState}} · {{.PRState}}{{end}}</span>
+          {{else}}
+          <span class="muted">—</span>
+          {{end}}
+        </td>
         <td class="mono">{{.TurnCount}}</td>
         <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono muted">{{if .UpdatedAt}}{{.UpdatedAt}}{{else}}—{{end}}</td>

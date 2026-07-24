@@ -61,6 +61,7 @@ type Thread struct {
 }
 
 // Summary is a list-row view of a thread log.
+// Session* fields are filled by the web layer from sessionstore (not persisted here).
 type Summary struct {
 	ThreadID   string
 	Project    string
@@ -69,6 +70,20 @@ type Summary struct {
 	TurnCount  int
 	LastPrompt string
 	LastStatus string
+
+	// Optional sessionstore overlay for sessions list/detail chrome.
+	Label      string // effective lifecycle label (open, done, …)
+	Mode       string // case | fix | …
+	Phase      string // case phase (incl. closed)
+	Resolution string // case resolution when closed
+	// Primary tracked PR (if any) for list badges/links.
+	PRNumber int
+	PRState  string // OPEN | MERGED | CLOSED
+	PROwner  string
+	PRRepo   string
+	PRURL    string
+	PRTitle  string
+	HasPRs   bool
 }
 
 type Store struct {

@@ -1679,23 +1679,77 @@ func (s *Server) auditActor(ctx *hime.Context) (actor, role string) {
 	return actor, string(sess.Role)
 }
 
-// mergeSessionRows adds session-store threads that have no history turns yet.
+// mergeSessionRows adds session-store threads that have no history turns yet,
+// and overlays label/PR/case closed state onto every matching history row so
+// the sessions list still shows final state after worktree cleanup.
 func mergeSessionRows(hist []history.Summary, sessions []sessionstore.Listed) []history.Summary {
+	byID := make(map[string]sessionstore.Listed, len(sessions))
+	for _, se := range sessions {
+		byID[se.ThreadID] = se
+	}
 	seen := make(map[string]struct{}, len(hist))
-	for _, h := range hist {
-		seen[h.ThreadID] = struct{}{}
+	for i := range hist {
+		seen[hist[i].ThreadID] = struct{}{}
+		if se, ok := byID[hist[i].ThreadID]; ok {
+			applySessionOverlay(&hist[i], se)
+		}
 	}
 	for _, se := range sessions {
 		if _, ok := seen[se.ThreadID]; ok {
 			continue
 		}
-		hist = append(hist, history.Summary{
+		row := history.Summary{
 			ThreadID:  se.ThreadID,
 			Project:   se.Project,
 			LastUser:  se.LastUser,
 			UpdatedAt: se.UpdatedAt,
 			TurnCount: 0,
-		})
+		}
+		applySessionOverlay(&row, se)
+		// Prefer sticky goal as last-prompt preview when no turns exist.
+		if row.LastPrompt == "" {
+			if g := strings.TrimSpace(se.Goal); g != "" {
+				row.LastPrompt = g
+			} else if se.IsCase() {
+				if t := strings.TrimSpace(se.CustomerTitle); t != "" {
+					row.LastPrompt = t
+				}
+			}
+		}
+		hist = append(hist, row)
 	}
 	return hist
+}
+
+// applySessionOverlay copies lifecycle + primary PR fields from a session entry
+// onto a list row (history may already have turns / project).
+func applySessionOverlay(row *history.Summary, se sessionstore.Listed) {
+	if row == nil {
+		return
+	}
+	e := se.Entry
+	e.NormalizePRs()
+	if row.Project == "" {
+		row.Project = e.Project
+	}
+	if row.LastUser == "" {
+		row.LastUser = e.LastUser
+	}
+	// Prefer the more recent of history turn time vs session UpdatedAt.
+	if e.UpdatedAt != "" && (row.UpdatedAt == "" || e.UpdatedAt > row.UpdatedAt) {
+		row.UpdatedAt = e.UpdatedAt
+	}
+	row.Label = e.EffectiveLabel()
+	row.Mode = strings.TrimSpace(e.Mode)
+	row.Phase = e.CasePhase()
+	row.Resolution = strings.TrimSpace(e.Resolution)
+	row.HasPRs = e.HasAnyPR()
+	if pr, ok := e.PrimaryPR(); ok {
+		row.PRNumber = pr.Number
+		row.PRState = strings.ToUpper(strings.TrimSpace(pr.State))
+		row.PROwner = pr.Owner
+		row.PRRepo = pr.Repo
+		row.PRURL = pr.URL
+		row.PRTitle = pr.Title
+	}
 }

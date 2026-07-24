@@ -183,12 +183,20 @@ func TestPollPRStatusesNilSessionStillCleansTerminal(t *testing.T) {
 	if err := b.sessions.Set(webID, e); err != nil {
 		t.Fatal(err)
 	}
-	// s == nil must not early-return before terminal cleanup.
+	// s == nil must not early-return before terminal cleanup (worktree free + keep session).
 	stats := b.pollPRStatuses(nil)
 	if stats.Sessions < 1 {
 		t.Fatalf("stats=%+v", stats)
 	}
-	if _, ok := b.sessions.Get(webID); ok {
-		t.Fatal("expected terminal session cleanup without Discord")
+	got, ok := b.sessions.Get(webID)
+	if !ok {
+		t.Fatal("terminal cleanup must keep session (PR links + closed state)")
+	}
+	got.NormalizePRs()
+	if len(got.PRs) != 1 || got.PRs[0].State != "MERGED" || got.PRs[0].Number != 9 {
+		t.Fatalf("PR metadata lost after nil-session poll: %+v", got.PRs)
+	}
+	if got.Cwd != "" || got.WorktreeBranch != "" {
+		t.Fatalf("worktree fields should be cleared: cwd=%q branch=%q", got.Cwd, got.WorktreeBranch)
 	}
 }

@@ -168,8 +168,9 @@ func TestPrViewSelectorPrefersURL(t *testing.T) {
 
 // Regression: cleanup must not run while the job is still held (executeTask path),
 // and must run once the thread is idle (finishRun → tryCleanupTerminalPR).
-// Cases outlive eng PRs: terminal cleanup must not erase Mode=case (board + close path).
-func TestCleanupWhenAllPRsDoneKeepsCaseSession(t *testing.T) {
+// Terminal cleanup free the worktree but always keep the session so PR links
+// and closed state stay on the sessions list/detail (cases and eng units).
+func TestCleanupWhenAllPRsDoneKeepsSessionAndPRs(t *testing.T) {
 	dir := t.TempDir()
 	store, err := sessionstore.New(dir)
 	if err != nil {
@@ -179,17 +180,17 @@ func TestCleanupWhenAllPRsDoneKeepsCaseSession(t *testing.T) {
 	b := New(cfg, store, nil)
 	threadID := "case-thread-1"
 	if err := store.Set(threadID, sessionstore.Entry{
-		SessionID:     "s-case",
-		Project:       "homeconnect",
-		Mode:          "case",
-		Phase:         sessionstore.PhaseShipping,
-		CustomerTitle: "dashboard.stats timeout",
-		Cwd:           filepath.Join(dir, "wt"),
+		SessionID:      "s-case",
+		Project:        "homeconnect",
+		Mode:           "case",
+		Phase:          sessionstore.PhaseShipping,
+		CustomerTitle:  "dashboard.stats timeout",
+		Cwd:            filepath.Join(dir, "wt"),
 		WorktreeBranch: "grokwork/" + threadID,
-		MainCwd:       dir,
-		PRNumber:      99,
-		PRState:       "MERGED",
-		PRURL:         "https://github.com/o/r/pull/99",
+		MainCwd:        dir,
+		PRNumber:       99,
+		PRState:        "MERGED",
+		PRURL:          "https://github.com/o/r/pull/99",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -211,22 +212,39 @@ func TestCleanupWhenAllPRsDoneKeepsCaseSession(t *testing.T) {
 	if e.Cwd != "" || e.WorktreeBranch != "" {
 		t.Fatalf("want worktree cleared, got cwd=%q branch=%q", e.Cwd, e.WorktreeBranch)
 	}
-	// Non-case still deletes.
+	e.NormalizePRs()
+	if len(e.PRs) != 1 || e.PRs[0].Number != 99 || e.PRs[0].State != "MERGED" {
+		t.Fatalf("case PR not preserved: %+v", e.PRs)
+	}
+	// Eng (non-case) sessions are also kept with PR metadata.
 	fixID := "fix-thread-1"
 	if err := store.Set(fixID, sessionstore.Entry{
 		SessionID: "s-fix",
 		Project:   "p",
+		Label:     sessionstore.LabelDone,
 		PRNumber:  1,
 		PRState:   "MERGED",
 		PRURL:     "https://github.com/o/r/pull/1",
+		PRs: []sessionstore.TrackedPR{{
+			URL: "https://github.com/o/r/pull/1", Number: 1, State: "MERGED",
+			Title: "ship it", Owner: "o", Repo: "r",
+		}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.cleanupWhenAllPRsDone(fixID); err != nil {
 		t.Fatalf("fix cleanup: %v", err)
 	}
-	if _, ok := store.Get(fixID); ok {
-		t.Fatal("non-case session should still be deleted")
+	fe, ok := store.Get(fixID)
+	if !ok {
+		t.Fatal("eng session deleted after terminal PR cleanup")
+	}
+	fe.NormalizePRs()
+	if len(fe.PRs) != 1 || fe.PRs[0].Number != 1 || fe.PRs[0].State != "MERGED" {
+		t.Fatalf("eng PR not preserved: %+v", fe.PRs)
+	}
+	if fe.Label != sessionstore.LabelDone {
+		t.Fatalf("label lost: %q", fe.Label)
 	}
 }
 
@@ -264,7 +282,11 @@ func TestTryCleanupTerminalPRDefersWhenBusy(t *testing.T) {
 		t.Fatal("expected no queued next")
 	}
 	b.tryCleanupTerminalPR(threadID)
-	if _, ok := store.Get(threadID); ok {
-		t.Fatal("session should be deleted after idle terminal cleanup")
+	e, ok := store.Get(threadID)
+	if !ok {
+		t.Fatal("session should be kept after idle terminal cleanup")
+	}
+	if e.PRNumber != 7 || e.PRState != "MERGED" {
+		t.Fatalf("PR fields lost after cleanup: num=%d state=%q", e.PRNumber, e.PRState)
 	}
 }

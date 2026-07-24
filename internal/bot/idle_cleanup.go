@@ -204,17 +204,21 @@ func (b *Bot) pruneIdleWorktrees(now time.Time, ttl time.Duration) int {
 }
 
 func (b *Bot) removeWorktreeCandidate(c idleCandidate, reason string) error {
-	// Open cases stay on the board until /close (or reset). Idle TTL may still
-	// reclaim their worktree/branch, but must not erase the case session.
+	// Keep session metadata (PR links, closed/case state) when the unit still has
+	// audit value. Open cases stay until /close; any session with tracked PRs or
+	// a closed case keeps the entry so the sessions UI can show final state.
 	keepSession := false
 	if c.hasSession && b.sessions != nil {
-		if e, ok := b.sessions.Get(c.threadID); ok && e.IsCase() && !e.IsCaseClosed() {
-			keepSession = true
+		if e, ok := b.sessions.Get(c.threadID); ok {
+			e.NormalizePRs()
+			if e.IsCase() || e.HasAnyPR() || sessionstore.IsTerminalLabel(e.EffectiveLabel()) {
+				keepSession = true
+			}
 		}
 	}
 
 	if c.mainCwd == "" {
-		// Still drop session if present so the UI can clear the row (non-case only).
+		// Still drop session if present so the UI can clear the row (ephemeral only).
 		if c.hasSession && !keepSession {
 			_ = b.sessions.Delete(c.threadID)
 		} else if keepSession {
@@ -247,7 +251,7 @@ func (b *Bot) removeWorktreeCandidate(c idleCandidate, reason string) error {
 			ent.Cwd = ""
 			ent.WorktreeBranch = ""
 		})
-		log.Printf("idle-worktree: open case session kept thread=%s reason=%s", c.threadID, reason)
+		log.Printf("idle-worktree: session kept thread=%s reason=%s", c.threadID, reason)
 		return err
 	}
 	if delErr := b.sessions.Delete(c.threadID); delErr != nil {

@@ -300,11 +300,28 @@
 <div class="section card">
   <h2>Work unit</h2>
   <p class="sub" style="margin:0">
-    {{if .SessionEntry.Label}}<span class="badge">{{.SessionEntry.Label}}</span>{{else}}<span class="badge">open</span>{{end}}
+    {{$lab := .SessionEntry.EffectiveLabel}}
+    {{if .SessionEntry.IsCaseClosed}}
+    <span class="badge status-cancelled">closed</span>
+    {{if .SessionEntry.Resolution}}{{if or (eq .SessionEntry.Resolution "answered") (eq .SessionEntry.Resolution "fixed")}}<span class="badge status-done">{{.SessionEntry.Resolution}}</span>{{else}}<span class="badge status-cancelled">{{.SessionEntry.Resolution}}</span>{{end}}{{end}}
+    {{else if eq $lab "done"}}
+    <span class="badge status-done">done</span>
+    {{else if eq $lab "abandoned"}}
+    <span class="badge status-cancelled">abandoned</span>
+    {{else if eq $lab "needs_review"}}
+    <span class="badge status-warn">needs review</span>
+    {{else if eq $lab "in_progress"}}
+    <span class="badge live">in progress</span>
+    {{else if eq $lab "blocked"}}
+    <span class="badge status-warn">blocked</span>
+    {{else}}
+    <span class="badge">{{$lab}}</span>
+    {{end}}
     {{if .RunBusy}} <span class="badge live">running</span>{{if .RunElapsed}} <span class="mono muted">{{.RunElapsed}}</span>{{end}}{{end}}
     {{if .SessionEntry.Origin}} · origin <span class="mono">{{.SessionEntry.Origin}}</span>{{end}}
     {{if .SessionEntry.OwnerName}} · owner {{.SessionEntry.OwnerName}}{{end}}
     {{if .SessionEntry.WorktreeBranch}} · branch <span class="mono">{{.SessionEntry.WorktreeBranch}}</span>{{end}}
+    {{if and (not .HasWorktree) (or .SessionEntry.IsCaseClosed (eq $lab "done") (eq $lab "abandoned") .SessionEntry.AllPRsTerminal)}} · <span class="muted">worktree cleaned</span>{{end}}
   </p>
   {{if and .RunBusy .CanControlSession}}
   {{/* Button-only form is the sanctioned live-region exception: it holds no typed
