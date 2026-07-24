@@ -238,10 +238,14 @@ func TestClosedCaseHidesContinueAndRejectsPost(t *testing.T) {
 		}
 	}
 	// Reopen control is offered; open-case action buttons stay hidden.
-	for _, want := range []string{`id="btn-case-reopen"`, `id="session-case-actions"`, "session-ownership", "Reset session"} {
+	// Closed cases are labeled abandoned — web danger zone (Abandon) is hidden.
+	for _, want := range []string{`id="btn-case-reopen"`, `id="session-case-actions"`, "session-ownership"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("closed case page missing %q", want)
 		}
+	}
+	if strings.Contains(body, `id="session-danger"`) || strings.Contains(body, `id="btn-abandon"`) {
+		t.Fatal("closed/abandoned case must not show Abandon danger zone")
 	}
 	if strings.Contains(body, "Reopen is not implemented") {
 		t.Fatal("closed case page still claims reopen is not implemented")

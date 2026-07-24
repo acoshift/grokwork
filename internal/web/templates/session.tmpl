@@ -248,7 +248,7 @@
 {{else if .CanStartSession}}
 <div class="rail-group">
   <div class="rail-group-title">Actions</div>
-  <p class="rail-note">Session was reset — start a new task or open another work unit to continue.</p>
+  <p class="rail-note">This session is no longer active — start a new task or open another work unit to continue.</p>
 </div>
 {{else}}
 <div class="rail-group">
@@ -257,20 +257,21 @@
 </div>
 {{end}}
 
-{{if .CanControlSession}}
+{{/* Web-only: terminal units (done/abandoned) need no danger zone — worktree
+     cleanup is automatic after ship/PR close. Active units get Abandon, which
+     still hits the same /reset backend as Discord /reset. */}}
+{{if and .CanControlSession .HasSession}}
+{{$lab := .SessionEntry.EffectiveLabel}}
+{{if and (ne $lab "done") (ne $lab "abandoned")}}
 <div class="rail-group" id="session-danger">
   <div class="rail-group-title">Danger zone</div>
-  {{if .HasSession}}
-  <form method="post" action="/sessions/{{.ThreadID}}/reset" onsubmit="return confirm('Forget session, remove worktree and branch?')">
+  <form method="post" action="/sessions/{{.ThreadID}}/reset" onsubmit="return confirm('Abandon this session? Removes the worktree and managed branch, and clears the session. This cannot be undone.')">
     {{template "csrf" $}}
-    <div class="form-actions"><button type="submit" id="btn-reset" class="btn-danger"{{if .RunBusy}} disabled title="Cancel the active run before resetting"{{end}}>Reset session</button></div>
+    <div class="form-actions"><button type="submit" id="btn-abandon" class="btn-danger"{{if .RunBusy}} disabled title="Cancel the active run before abandoning"{{end}}>Abandon</button></div>
   </form>
-  <p class="rail-note">Removes the worktree, deletes the managed branch, and clears the session. This cannot be undone.</p>
-  {{else}}
-  <div class="form-actions"><button type="button" id="btn-reset" class="btn-danger" disabled title="Session already reset">Reset session</button></div>
-  <p class="rail-note">Session was reset — worktree, managed branch, and session entry are gone.</p>
-  {{end}}
+  <p class="rail-note">Give up on this unit: remove the worktree, delete the managed branch, and clear the session. History stays. Cannot be undone.</p>
 </div>
+{{end}}
 {{end}}
 
 </aside>

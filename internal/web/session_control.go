@@ -58,10 +58,11 @@ func (s *Server) postSessionCancel(ctx *hime.Context) error {
 	return s.sessionRedirect(ctx, threadID, msg, "")
 }
 
-// postSessionReset forgets the session, worktree, and branch. On success the
-// unit is gone; stay on the session page with a flash so the user sees
-// confirmation and a disabled Reset control. A busy refusal keeps the same
-// page with an error flash.
+// postSessionReset is the web Abandon action: forget session, worktree, and
+// branch (same ResetUnit core as Discord /reset). On success stay on the
+// session page with a flash; danger zone is hidden when the unit is already
+// terminal (done/abandoned) or the store entry is gone. Busy refusal keeps
+// the page with an error flash.
 func (s *Server) postSessionReset(ctx *hime.Context) error {
 	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
 	if threadID == "" {
@@ -71,7 +72,7 @@ func (s *Server) postSessionReset(ctx *hime.Context) error {
 	if err != nil {
 		return forbiddenProject(ctx, err)
 	}
-	ent, _ := s.sessions.Get(threadID)
+	ent, hasSession := s.sessions.Get(threadID)
 	if !s.canControlSession(ctx, ent) {
 		s.auditAction(ctx, audit.ActionSessionReset, errControlForbidden, map[string]any{"threadId": threadID})
 		return ctx.Status(http.StatusForbidden).Error(errControlForbidden.Error())
@@ -79,15 +80,17 @@ func (s *Server) postSessionReset(ctx *hime.Context) error {
 	if project == "" {
 		project = strings.TrimSpace(ent.Project)
 	}
+	// UI hides Abandon for terminal labels; refuse if POSTed anyway.
+	if hasSession && sessionstore.IsTerminalLabel(ent.EffectiveLabel()) {
+		return s.sessionRedirect(ctx, threadID, "", "Session is already done or abandoned — nothing to abandon.")
+	}
 	msg, resetErr := s.bot.ResetUnit(threadID)
 	s.auditAction(ctx, audit.ActionSessionReset, resetErr, map[string]any{"threadId": threadID, "project": project})
 	if resetErr != nil {
 		return s.sessionRedirect(ctx, threadID, "", msg)
 	}
-	ok := strings.TrimSpace(msg)
-	if ok == "" {
-		ok = "Session was reset."
-	}
+	// Web-facing flash (Discord still uses ResetUnit's "Session was reset.").
+	ok := "Session abandoned."
 	// Build the redirect explicitly: after Delete the store cannot supply
 	// project, and history may still be empty. Do not widen ensureThreadAccess
 	// for all handlers — only this landing URL carries ?project=.
