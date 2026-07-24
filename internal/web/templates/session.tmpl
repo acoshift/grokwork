@@ -55,7 +55,7 @@
   {{template "session_live" .}}
 </div>
 
-{{if and .CanStartSession (not .SessionEntry.IsCaseClosed)}}
+{{if and .HasSession .CanStartSession (not .SessionEntry.IsCaseClosed)}}
 {{/* Docked conversation composer. Closed cases hide it until reopen —
      the web continue endpoint rejects them. Lives OUTSIDE #live-session on purpose:
      SSE swaps must never wipe an in-progress prompt (the live-partial tests
@@ -192,7 +192,7 @@
 </div>
 {{end}}
 
-{{if .CanStartSession}}
+{{if and .CanStartSession .HasSession}}
 {{if not .SessionEntry.IsCaseClosed}}
 <div class="rail-group" id="session-lifecycle">
   <div class="rail-group-title">Lifecycle</div>
@@ -244,6 +244,11 @@
     <div class="form-actions"><button type="submit" id="btn-claim" class="btn-secondary">Claim ownership</button></div>
   </form>
   {{end}}
+</div>
+{{else if .CanStartSession}}
+<div class="rail-group">
+  <div class="rail-group-title">Actions</div>
+  <p class="rail-note">Session was reset — start a new task or open another work unit to continue.</p>
 </div>
 {{else}}
 <div class="rail-group">

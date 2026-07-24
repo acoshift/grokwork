@@ -570,7 +570,7 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 	if threadID == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
 	}
-	if _, err := s.ensureThreadAccess(ctx, threadID); err != nil {
+	if err := s.ensureSessionPageAccess(ctx, threadID); err != nil {
 		return forbiddenProject(ctx, err)
 	}
 	d := s.sessionPageData(ctx, threadID)
@@ -595,10 +595,31 @@ func (s *Server) partialSession(ctx *hime.Context) error {
 	if threadID == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
 	}
-	if _, err := s.ensureThreadAccess(ctx, threadID); err != nil {
+	if err := s.ensureSessionPageAccess(ctx, threadID); err != nil {
 		return forbiddenProject(ctx, err)
 	}
 	return s.viewFragment(ctx, "session", "session_live", s.sessionPageData(ctx, threadID))
+}
+
+
+// ensureSessionPageAccess is ensureThreadAccess plus a narrow fallback for the
+// post-reset landing page only. When the store entry is gone and history has
+// no project yet, a stamped ?project= that the caller may access is enough to
+// view the dead session shell. Mutation POSTs still use ensureThreadAccess and
+// refuse when the unit is unknown.
+func (s *Server) ensureSessionPageAccess(ctx *hime.Context, threadID string) error {
+	if _, err := s.ensureThreadAccess(ctx, threadID); err == nil {
+		return nil
+	} else if s.threadProject(threadID) != "" {
+		// Project known from store/history — denial is real, do not override.
+		return err
+	} else {
+		qp := strings.TrimSpace(ctx.FormValue("project"))
+		if qp == "" {
+			return err
+		}
+		return s.ensureProjectAccess(ctx, qp)
+	}
 }
 
 func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {

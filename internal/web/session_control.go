@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/moonrhythm/hime"
@@ -87,12 +88,15 @@ func (s *Server) postSessionReset(ctx *hime.Context) error {
 	if ok == "" {
 		ok = "Session was reset."
 	}
-	// Stamp project on the redirect: the store entry is gone and history may
-	// still be empty, so sessionRedirect cannot recover it from threadProject.
+	// Build the redirect explicitly: after Delete the store cannot supply
+	// project, and history may still be empty. Do not widen ensureThreadAccess
+	// for all handlers — only this landing URL carries ?project=.
+	q := url.Values{}
+	q.Set("ok", ok)
 	if project != "" {
-		ok = ok + "&project=" + project
+		q.Set("project", project)
 	}
-	return s.sessionRedirect(ctx, threadID, ok, "")
+	return ctx.Redirect("/sessions/" + url.PathEscape(threadID) + "?" + q.Encode())
 }
 
 // postSessionQueueRemove drops one pending follow-up by taskID. Per-item
