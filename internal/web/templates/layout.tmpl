@@ -3679,32 +3679,8 @@
         if (f) f.requestSubmit();
       }
     });
-    // Scroll pinning: jump to the latest turn on arrival; while a run
-    // streams, follow SSE re-renders only if the reader is already near the
-    // bottom (never yank someone who scrolled up to re-read).
-    function pinLatest() {
-      var dock = document.getElementById("session-continue-form") ||
-                 document.getElementById("turns");
-      if (dock) dock.scrollIntoView({ block: "end" });
-    }
-    var follow = false;
-    document.body.addEventListener("htmx:beforeSwap", function (e) {
-      if (e.target && e.target.id === "live-session") {
-        follow = window.innerHeight + window.scrollY >= document.body.scrollHeight - 240;
-      }
-    });
-    document.body.addEventListener("htmx:afterSettle", function (e) {
-      if (!document.getElementById("page-session")) return;
-      var id = e.target ? e.target.id : "";
-      if (id === "live-session") {
-        if (follow) pinLatest();
-      } else if (id === "live-root") {
-        pinLatest();
-      }
-    });
-    window.addEventListener("DOMContentLoaded", function () {
-      if (document.getElementById("page-session")) pinLatest();
-    });
+    // No scroll management: turns render newest-first, so the latest/live
+    // turn is already at the top and the composer is position-pinned.
   })();
   (function () {
     var statusEl = document.getElementById("sse-status");

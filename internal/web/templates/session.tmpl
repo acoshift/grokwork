@@ -409,29 +409,9 @@
   <h2>Turns <span class="muted" style="font-weight:500;font-size:0.9rem">({{if .RunBusy}}{{add $done 1}}{{else}}{{$done}}{{end}})</span></h2>
   {{if or .Thread.Turns .RunBusy}}
   <div class="turns" id="turns">
-    {{/* Chronological (latest at the bottom, next to the docked composer);
-         layout JS pins the viewport to the newest turn so it is never buried. */}}
-    {{range $i, $t := .Thread.Turns}}
-    <article class="turn">
-      <header class="turn-meta">
-        <span class="mono muted">#{{add $i 1}}</span>
-        <span class="badge status-{{$t.Status}}">{{$t.Status}}</span>
-        {{if $t.User}}<span>{{$t.User}}</span>{{end}}
-      </header>
-      <div class="bubble user">
-        <div class="bubble-label">User</div>
-        <div class="bubble-body md">{{markdown $t.Prompt}}</div>
-      </div>
-      <div class="bubble assistant">
-        <div class="bubble-label">Grok</div>
-        {{if $t.Response}}
-        <div class="bubble-body md">{{markdown $t.Response}}</div>
-        {{else}}
-        <div class="bubble-body muted">(no response text yet)</div>
-        {{end}}
-      </div>
-    </article>
-    {{end}}
+    {{/* Newest first: the live/latest turn sits at the top next to the page
+         header, so long histories never bury it. #N stays chronological.
+         The docked composer is position-pinned, so it needs no scrolling. */}}
     {{if .RunBusy}}
     <article class="turn turn-live" id="turn-live">
       <header class="turn-meta">
@@ -454,6 +434,32 @@
         {{end}}
       </div>
     </article>
+    {{end}}
+    {{$turns := .Thread.Turns}}
+    {{$n := len $turns}}
+    {{range $i, $_ := $turns}}
+    {{$ri := sub (sub $n 1) $i}}
+    {{with $t := index $turns $ri}}
+    <article class="turn">
+      <header class="turn-meta">
+        <span class="mono muted">#{{add $ri 1}}</span>
+        <span class="badge status-{{$t.Status}}">{{$t.Status}}</span>
+        {{if $t.User}}<span>{{$t.User}}</span>{{end}}
+      </header>
+      <div class="bubble user">
+        <div class="bubble-label">User</div>
+        <div class="bubble-body md">{{markdown $t.Prompt}}</div>
+      </div>
+      <div class="bubble assistant">
+        <div class="bubble-label">Grok</div>
+        {{if $t.Response}}
+        <div class="bubble-body md">{{markdown $t.Response}}</div>
+        {{else}}
+        <div class="bubble-body muted">(no response text yet)</div>
+        {{end}}
+      </div>
+    </article>
+    {{end}}
     {{end}}
   </div>
   {{else}}
