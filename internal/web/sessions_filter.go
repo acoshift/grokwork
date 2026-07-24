@@ -18,7 +18,7 @@ const activeRecency = 24 * time.Hour
 // sessionFilters is the sessions list filter state, parsed from query params.
 type sessionFilters struct {
 	State    string   // "active" (default), "all", "closed" (case closed), or a canonical label
-	Query    string   // free-text over thread id / prompt / user / project
+	Query    string   // free-text over thread id / goal / last prompt / user / project
 	Project  string   // global hub only ("" = all projects; workspace fixes it via path)
 	Projects []string // dropdown options on the global hub
 	Total    int      // row count before filtering (for "x of y" chrome)
@@ -117,9 +117,10 @@ func updatedWithin(rfc3339 string, now time.Time, d time.Duration) bool {
 }
 
 // sessionQueryMatches is a case-insensitive substring match over the fields a
-// user sees on a list row. q must already be lowercased.
+// user sees on a list row (plus last prompt for recency search). q must already
+// be lowercased.
 func sessionQueryMatches(t history.Summary, q string) bool {
-	for _, s := range []string{t.ThreadID, t.LastPrompt, t.LastUser, t.Project} {
+	for _, s := range []string{t.ThreadID, t.Goal, t.LastPrompt, t.LastUser, t.Project} {
 		if strings.Contains(strings.ToLower(s), q) {
 			return true
 		}

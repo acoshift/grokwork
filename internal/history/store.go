@@ -72,6 +72,7 @@ type Summary struct {
 	LastStatus string
 
 	// Optional sessionstore overlay for sessions list/detail chrome.
+	Goal       string // sticky session goal (list identity; not from history)
 	Label      string // effective lifecycle label (open, done, …)
 	Mode       string // case | fix | …
 	Phase      string // case phase (incl. closed)

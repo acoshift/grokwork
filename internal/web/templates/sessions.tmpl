@@ -32,7 +32,7 @@
   </div>
   <div class="field">
     <label for="q">Search</label>
-    <input id="q" type="text" name="q" value="{{.SessionFilters.Query}}" placeholder="thread, prompt, user">
+    <input id="q" type="text" name="q" value="{{.SessionFilters.Query}}" placeholder="thread, goal, user">
   </div>
   <button type="submit" class="btn-secondary">Apply</button>
 </form>
@@ -42,12 +42,12 @@
   {{range .Threads}}
   <a class="m-row" href="/sessions/{{.ThreadID}}{{if or $.Project .Project}}?project={{urlquery (or $.Project .Project)}}{{end}}">
     <span class="m-row-main">
-      {{if .LastPrompt}}
-      <span class="m-row-t">{{.LastPrompt}}</span>
+      {{if .Goal}}
+      <span class="m-row-t">{{.Goal}}</span>
       {{else}}
       <span class="m-row-t mono">{{.ThreadID}}</span>
       {{end}}
-      <span class="m-row-s">{{if .LastPrompt}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{if .Label}}{{.Label}} · {{end}}{{if .PRNumber}}PR #{{.PRNumber}}{{if .PRState}} {{.PRState}}{{end}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{.UpdatedAt}}{{end}}</span>
+      <span class="m-row-s">{{if .Goal}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{if .Label}}{{.Label}} · {{end}}{{if .PRNumber}}PR #{{.PRNumber}}{{if .PRState}} {{.PRState}}{{end}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{.UpdatedAt}}{{end}}</span>
     </span>
   </a>
   {{end}}
@@ -63,7 +63,7 @@
       <th>Turns</th>
       <th>Last user</th>
       <th>Updated</th>
-      <th>Last prompt</th>
+      <th>Goal</th>
     </tr>
   </thead>
   <tbody>
@@ -112,7 +112,7 @@
       <td class="mono">{{.TurnCount}}</td>
       <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
       <td class="mono muted">{{if .UpdatedAt}}{{.UpdatedAt}}{{else}}—{{end}}</td>
-      <td>{{if .LastPrompt}}<span class="clamp muted">{{.LastPrompt}}</span>{{else}}<span class="muted">{{if eq .TurnCount 0}}no turns recorded yet{{else}}—{{end}}</span>{{end}}</td>
+      <td>{{if .Goal}}<span class="clamp muted">{{.Goal}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
     </tr>
     {{end}}
   </tbody>

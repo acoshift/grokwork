@@ -55,6 +55,7 @@ func testServer(t *testing.T) (*Server, *config.Config, string) {
 		SessionID: "sess-99",
 		Project:   "proj",
 		LastUser:  "alice#0",
+		Goal:      "please fix the flaky test",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -550,11 +551,12 @@ func TestSessionsHub(t *testing.T) {
 		"thread-99",
 		"proj",
 		"alice#0",
-		"do a huge refactor",
+		"please fix the flaky test", // sticky goal, not last turn prompt
+		">Goal</th>",
 		"/sessions/thread-only-sess",
 		"thread-only-sess",
 		"bob#1",
-		"session without turns", // goal used as list preview when no turns
+		"session without turns",
 		// Closed session: state + PR columns.
 		"/sessions/thread-closed",
 		`status-done">done</span>`,
@@ -565,6 +567,9 @@ func TestSessionsHub(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sessions hub missing %q in body (len=%d)", want, len(body))
 		}
+	}
+	if strings.Contains(body, ">Last prompt</th>") {
+		t.Fatal("sessions hub must use Goal column, not Last prompt")
 	}
 	// Primary nav: Sessions active; History is not a top-nav work-unit tab.
 	if !strings.Contains(body, `>Sessions<`) {
@@ -716,10 +721,12 @@ func TestSessionsFilter(t *testing.T) {
 	hasNot(body, "/sessions?state=closed", "/sessions/thread-99")
 	hasNot(body, "/sessions?state=closed", "/sessions/thread-done")
 
-	// Free-text search over prompt/title.
-	body = get("/sessions?q=refactor")
+	// Free-text search over goal and last prompt.
+	body = get("/sessions?q=flaky")
+	has(body, "/sessions?q=flaky", "/sessions/thread-99")
+	hasNot(body, "/sessions?q=flaky", "/sessions/thread-done")
+	body = get("/sessions?q=refactor") // still matches last turn prompt
 	has(body, "/sessions?q=refactor", "/sessions/thread-99")
-	hasNot(body, "/sessions?q=refactor", "/sessions/thread-done")
 	body = get("/sessions?q=beta")
 	has(body, "/sessions?q=beta", "/sessions/thread-case-closed")
 	hasNot(body, "/sessions?q=beta", "/sessions/thread-99")

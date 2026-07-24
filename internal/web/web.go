@@ -1768,16 +1768,6 @@ func mergeSessionRows(hist []history.Summary, sessions []sessionstore.Listed) []
 			TurnCount: 0,
 		}
 		applySessionOverlay(&row, se)
-		// Prefer sticky goal as last-prompt preview when no turns exist.
-		if row.LastPrompt == "" {
-			if g := strings.TrimSpace(se.Goal); g != "" {
-				row.LastPrompt = g
-			} else if se.IsCase() {
-				if t := strings.TrimSpace(se.CustomerTitle); t != "" {
-					row.LastPrompt = t
-				}
-			}
-		}
 		hist = append(hist, row)
 	}
 	return hist
@@ -1801,6 +1791,12 @@ func applySessionOverlay(row *history.Summary, se sessionstore.Listed) {
 	if e.UpdatedAt != "" && (row.UpdatedAt == "" || e.UpdatedAt > row.UpdatedAt) {
 		row.UpdatedAt = e.UpdatedAt
 	}
+	// Sticky goal is list identity; cases fall back to customer title.
+	goal := strings.TrimSpace(e.Goal)
+	if goal == "" && e.IsCase() {
+		goal = strings.TrimSpace(e.CustomerTitle)
+	}
+	row.Goal = goal
 	row.Label = e.EffectiveLabel()
 	row.Mode = strings.TrimSpace(e.Mode)
 	row.Phase = e.CasePhase()
