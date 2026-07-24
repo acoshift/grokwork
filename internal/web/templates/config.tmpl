@@ -81,6 +81,13 @@
         </span>
         <span class="drill-v">stale {{.Config.BoardStaleDays}}d{{if .Config.BoardDigestChannel}} · digest on{{end}}</span>
       </a>
+      <a class="drill" href="{{route "config.notify"}}">
+        <span class="drill-main">
+          <span class="drill-t">Run notifications</span>
+          <span class="drill-s">author @mention · /watch</span>
+        </span>
+        <span class="drill-v">{{.Config.NotifyOnDone}}</span>
+      </a>
       <a class="drill" href="{{route "config.ci"}}">
         <span class="drill-main">
           <span class="drill-t">CI triage</span>

@@ -1,0 +1,33 @@
+{{define "content"}}
+<div class="config-sub" id="page-config-notify">
+{{template "config_sub_header" $}}
+<h1>Run notifications</h1>
+<p class="sub">
+  Controls when the run author is <span class="mono">@mentioned</span> after a Grok run finishes.
+  Anyone can still opt in per-thread with <span class="mono">@Grok /watch</span> (watchers are always mentioned on complete/fail).
+</p>
+<div class="section card">
+  <form class="inline" method="post" action="{{route "config.notify"}}" style="grid-template-columns: 1.4fr 1fr auto;">
+    {{template "csrf" $}}
+    <div>
+      <label for="notify-on-done">Author @mention policy</label>
+      <select id="notify-on-done" name="notifyOnDone" required>
+        <option value="never" {{if eq .Config.NotifyOnDone "never"}}selected{{end}}>never — no author pings</option>
+        <option value="errors" {{if eq .Config.NotifyOnDone "errors"}}selected{{end}}>errors — only fail / cancel / max-turns</option>
+        <option value="always" {{if eq .Config.NotifyOnDone "always"}}selected{{end}}>always — every finished run</option>
+        <option value="long_only" {{if eq .Config.NotifyOnDone "long_only"}}selected{{end}}>long_only — only when run exceeds threshold</option>
+      </select>
+    </div>
+    <div>
+      <label for="notify-long-ms">Long threshold (ms)</label>
+      <input id="notify-long-ms" type="number" name="notifyOnDoneLongMs" min="1000" step="1000" value="{{.Config.NotifyOnDoneLongMs}}" autocomplete="off" title="Used when policy is long_only (default 300000 = 5 min)">
+    </div>
+    <button type="submit">Save</button>
+  </form>
+  <p class="sub" style="margin:0.5rem 0 0">
+    Default is <span class="mono">errors</span>. Long threshold default is <span class="mono">300000</span> ms (5 minutes).
+    Thread status / completion cards still post either way — this only controls author pings.
+  </p>
+</div>
+</div>
+{{end}}

@@ -130,6 +130,11 @@ type Config struct {
 	// DiscordUserGitHub maps Discord user snowflake → GitHub identity for Tier A
 	// attribution (commit trailers / PR footer). Host remains the pusher; no tokens.
 	DiscordUserGitHub map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
+	// NotifyOnDone controls when the run author is @mentioned after a Grok run:
+	// never | errors | always | long_only. Empty/omitted → errors.
+	NotifyOnDone string `json:"notifyOnDone,omitempty"`
+	// NotifyOnDoneLongMs is the elapsed threshold for long_only (default 300000 = 5m).
+	NotifyOnDoneLongMs int `json:"notifyOnDoneLongMs,omitempty"`
 
 	mu         sync.RWMutex
 	DataDir    string `json:"-"`
@@ -207,17 +212,17 @@ type Snapshot struct {
 	// TerminalSessionTTLDays effective (0 = disabled when unset).
 	TerminalSessionTTLDays int
 	AutoFixCI              bool
-	AutoFixCIMax        int    // effective cap (default 2)
-	RiskyPathGlobsText  string // configured globs, one per line (empty if using defaults)
-	RiskyPathUseDefault bool   // true when riskyPathGlobs is unset (nil)
-	BoardStaleDays      int    // effective (default 3)
-	BoardDigestChannel  string // empty = digest disabled
-	ResumeActiveRuns    bool   // effective (default true)
-	ShutdownTimeoutMs   int    // effective (default 15000 when unset)
-	ClientID            string
-	InviteURL           string
-	InviteError         string
-	InvitePermissions   int64
+	AutoFixCIMax           int    // effective cap (default 2)
+	RiskyPathGlobsText     string // configured globs, one per line (empty if using defaults)
+	RiskyPathUseDefault    bool   // true when riskyPathGlobs is unset (nil)
+	BoardStaleDays         int    // effective (default 3)
+	BoardDigestChannel     string // empty = digest disabled
+	ResumeActiveRuns       bool   // effective (default true)
+	ShutdownTimeoutMs      int    // effective (default 15000 when unset)
+	ClientID               string
+	InviteURL              string
+	InviteError            string
+	InvitePermissions      int64
 	// Web auth (no secrets).
 	WebAuthEnabled bool
 	WebAuthRole    string // empty in snapshot; filled by web layer per-request
@@ -233,6 +238,10 @@ type Snapshot struct {
 	FeaturePRReviews    bool
 	// GitHubIdentities is the Tier A Discord→GitHub map (sorted by Discord id).
 	GitHubIdentities []GitHubIdentityItem
+	// NotifyOnDone effective: never | errors | always | long_only.
+	NotifyOnDone string
+	// NotifyOnDoneLongMs effective long_only threshold.
+	NotifyOnDoneLongMs int
 }
 
 // GitHubIdentityItem is one Discord user → GitHub profile row for the config UI.
@@ -534,75 +543,79 @@ func (c *Config) saveLocked() error {
 	// Re-read existing file so unknown/extra fields from other tools are not wiped
 	// for keys we don't own; we rewrite the full known schema.
 	out := struct {
-		DiscordToken          string                    `json:"discordToken"`
-		DiscordClientID       string                    `json:"discordClientId,omitempty"`
-		DiscordClientSecret   string                    `json:"discordClientSecret,omitempty"`
-		Projects              ProjectsMap               `json:"projects"`
-		Channels              map[string]string         `json:"channels"`
-		GrokBin               string                    `json:"grokBin"`
-		Yolo                  *bool                     `json:"yolo"`
-		Model                 string                    `json:"model"`
-		MaxTurns              int                       `json:"maxTurns"`
-		TimeoutMs             int                       `json:"timeoutMs"`
-		ExtraArgs             []string                  `json:"extraArgs"`
-		SummarizeThreadTitle  *bool                     `json:"summarizeThreadTitle"`
-		SummarizeTimeoutMs    int                       `json:"summarizeTimeoutMs"`
-		WorktreeIsolation     *bool                     `json:"worktreeIsolation"`
-		WorktreeDir           string                    `json:"worktreeDir,omitempty"`
+		DiscordToken           string                    `json:"discordToken"`
+		DiscordClientID        string                    `json:"discordClientId,omitempty"`
+		DiscordClientSecret    string                    `json:"discordClientSecret,omitempty"`
+		Projects               ProjectsMap               `json:"projects"`
+		Channels               map[string]string         `json:"channels"`
+		GrokBin                string                    `json:"grokBin"`
+		Yolo                   *bool                     `json:"yolo"`
+		Model                  string                    `json:"model"`
+		MaxTurns               int                       `json:"maxTurns"`
+		TimeoutMs              int                       `json:"timeoutMs"`
+		ExtraArgs              []string                  `json:"extraArgs"`
+		SummarizeThreadTitle   *bool                     `json:"summarizeThreadTitle"`
+		SummarizeTimeoutMs     int                       `json:"summarizeTimeoutMs"`
+		WorktreeIsolation      *bool                     `json:"worktreeIsolation"`
+		WorktreeDir            string                    `json:"worktreeDir,omitempty"`
 		WorktreeIdleTTLDays    *int                      `json:"worktreeIdleTTLDays,omitempty"`
 		TerminalSessionTTLDays *int                      `json:"terminalSessionTTLDays,omitempty"`
 		HTTPListen             string                    `json:"httpListen,omitempty"`
-		WebPublicBaseURL      string                    `json:"webPublicBaseURL,omitempty"`
-		DiscordGuildID        string                    `json:"discordGuildId,omitempty"`
-		WebMergeMethod        string                    `json:"webMergeMethod,omitempty"`
-		DiscordPRLink         string                    `json:"discordPRLink,omitempty"`
-		WebAuth               *WebAuthConfig            `json:"webAuth,omitempty"`
-		RiskyPathGlobs        []string                  `json:"riskyPathGlobs,omitempty"`
-		AutoFixCI             *bool                     `json:"autoFixCI,omitempty"`
-		AutoFixCIMax          int                       `json:"autoFixCIMax,omitempty"`
-		BoardStaleDays        *int                      `json:"boardStaleDays,omitempty"`
-		BoardDigestChannel    string                    `json:"boardDigestChannel,omitempty"`
-		ResumeActiveRuns      *bool                     `json:"resumeActiveRuns,omitempty"`
-		ShutdownTimeoutMs     int                       `json:"shutdownTimeoutMs,omitempty"`
-		MaxConcurrentRuns     *int                      `json:"maxConcurrentRuns,omitempty"`
-		MaxConcurrentRunsUser *int                      `json:"maxConcurrentRunsUser,omitempty"`
-		GrokEnvDenylist       []string                  `json:"grokEnvDenylist,omitempty"`
-		DiscordUserGitHub     map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
+		WebPublicBaseURL       string                    `json:"webPublicBaseURL,omitempty"`
+		DiscordGuildID         string                    `json:"discordGuildId,omitempty"`
+		WebMergeMethod         string                    `json:"webMergeMethod,omitempty"`
+		DiscordPRLink          string                    `json:"discordPRLink,omitempty"`
+		WebAuth                *WebAuthConfig            `json:"webAuth,omitempty"`
+		RiskyPathGlobs         []string                  `json:"riskyPathGlobs,omitempty"`
+		AutoFixCI              *bool                     `json:"autoFixCI,omitempty"`
+		AutoFixCIMax           int                       `json:"autoFixCIMax,omitempty"`
+		BoardStaleDays         *int                      `json:"boardStaleDays,omitempty"`
+		BoardDigestChannel     string                    `json:"boardDigestChannel,omitempty"`
+		ResumeActiveRuns       *bool                     `json:"resumeActiveRuns,omitempty"`
+		ShutdownTimeoutMs      int                       `json:"shutdownTimeoutMs,omitempty"`
+		MaxConcurrentRuns      *int                      `json:"maxConcurrentRuns,omitempty"`
+		MaxConcurrentRunsUser  *int                      `json:"maxConcurrentRunsUser,omitempty"`
+		GrokEnvDenylist        []string                  `json:"grokEnvDenylist,omitempty"`
+		DiscordUserGitHub      map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
+		NotifyOnDone           string                    `json:"notifyOnDone,omitempty"`
+		NotifyOnDoneLongMs     int                       `json:"notifyOnDoneLongMs,omitempty"`
 	}{
-		DiscordToken:          c.DiscordToken,
-		DiscordClientID:       c.DiscordClientID,
-		DiscordClientSecret:   c.DiscordClientSecret,
-		Projects:              cloneProjectsMap(c.Projects),
-		Channels:              cloneStringMap(c.Channels),
-		GrokBin:               c.GrokBin,
-		Yolo:                  c.Yolo,
-		Model:                 c.Model,
-		MaxTurns:              c.MaxTurns,
-		TimeoutMs:             c.TimeoutMs,
-		ExtraArgs:             slices.Clone(c.ExtraArgs),
-		SummarizeThreadTitle:  c.SummarizeThreadTitle,
-		SummarizeTimeoutMs:    c.SummarizeTimeoutMs,
-		WorktreeIsolation:     c.WorktreeIsolation,
-		WorktreeDir:           strings.TrimSpace(c.WorktreeDir),
+		DiscordToken:           c.DiscordToken,
+		DiscordClientID:        c.DiscordClientID,
+		DiscordClientSecret:    c.DiscordClientSecret,
+		Projects:               cloneProjectsMap(c.Projects),
+		Channels:               cloneStringMap(c.Channels),
+		GrokBin:                c.GrokBin,
+		Yolo:                   c.Yolo,
+		Model:                  c.Model,
+		MaxTurns:               c.MaxTurns,
+		TimeoutMs:              c.TimeoutMs,
+		ExtraArgs:              slices.Clone(c.ExtraArgs),
+		SummarizeThreadTitle:   c.SummarizeThreadTitle,
+		SummarizeTimeoutMs:     c.SummarizeTimeoutMs,
+		WorktreeIsolation:      c.WorktreeIsolation,
+		WorktreeDir:            strings.TrimSpace(c.WorktreeDir),
 		WorktreeIdleTTLDays:    cloneIntPtr(c.WorktreeIdleTTLDays),
 		TerminalSessionTTLDays: cloneIntPtr(c.TerminalSessionTTLDays),
 		HTTPListen:             c.HTTPListen,
-		WebPublicBaseURL:      c.WebPublicBaseURL,
-		DiscordGuildID:        c.DiscordGuildID,
-		WebMergeMethod:        c.WebMergeMethod,
-		DiscordPRLink:         c.DiscordPRLink,
-		WebAuth:               cloneWebAuth(c.WebAuth),
-		RiskyPathGlobs:        slices.Clone(c.RiskyPathGlobs),
-		AutoFixCI:             c.AutoFixCI,
-		AutoFixCIMax:          c.AutoFixCIMax,
-		BoardStaleDays:        cloneIntPtr(c.BoardStaleDays),
-		BoardDigestChannel:    c.BoardDigestChannel,
-		ResumeActiveRuns:      cloneBoolPtr(c.ResumeActiveRuns),
-		ShutdownTimeoutMs:     c.ShutdownTimeoutMs,
-		MaxConcurrentRuns:     cloneIntPtr(c.MaxConcurrentRuns),
-		MaxConcurrentRunsUser: cloneIntPtr(c.MaxConcurrentRunsUser),
-		GrokEnvDenylist:       slices.Clone(c.GrokEnvDenylist),
-		DiscordUserGitHub:     cloneGitHubIdentityMap(c.DiscordUserGitHub),
+		WebPublicBaseURL:       c.WebPublicBaseURL,
+		DiscordGuildID:         c.DiscordGuildID,
+		WebMergeMethod:         c.WebMergeMethod,
+		DiscordPRLink:          c.DiscordPRLink,
+		WebAuth:                cloneWebAuth(c.WebAuth),
+		RiskyPathGlobs:         slices.Clone(c.RiskyPathGlobs),
+		AutoFixCI:              c.AutoFixCI,
+		AutoFixCIMax:           c.AutoFixCIMax,
+		BoardStaleDays:         cloneIntPtr(c.BoardStaleDays),
+		BoardDigestChannel:     c.BoardDigestChannel,
+		ResumeActiveRuns:       cloneBoolPtr(c.ResumeActiveRuns),
+		ShutdownTimeoutMs:      c.ShutdownTimeoutMs,
+		MaxConcurrentRuns:      cloneIntPtr(c.MaxConcurrentRuns),
+		MaxConcurrentRunsUser:  cloneIntPtr(c.MaxConcurrentRunsUser),
+		GrokEnvDenylist:        slices.Clone(c.GrokEnvDenylist),
+		DiscordUserGitHub:      cloneGitHubIdentityMap(c.DiscordUserGitHub),
+		NotifyOnDone:           c.NotifyOnDone,
+		NotifyOnDoneLongMs:     c.NotifyOnDoneLongMs,
 	}
 	raw, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
@@ -1117,28 +1130,30 @@ func (c *Config) Snapshot() Snapshot {
 		timeoutMs = DefaultTimeoutMs
 	}
 	snap := Snapshot{
-		Projects:            projects,
-		Channels:            channels,
-		ProjectNames:        names,
-		GitHubIdentities:    githubIdentities,
-		HTTPListen:          c.HTTPListen,
-		GrokBin:             c.GrokBin,
-		Model:               c.Model,
-		MaxTurns:            maxTurns,
-		TimeoutMs:           timeoutMs,
-		Yolo:                c.YoloEnabled(),
-		WorktreeIsolation:   c.WorktreeIsolationEnabled(),
-		WorktreeDir:         strings.TrimSpace(c.WorktreeDir),
-		WorktreesRoot:       c.worktreesRootLocked(),
+		Projects:               projects,
+		Channels:               channels,
+		ProjectNames:           names,
+		GitHubIdentities:       githubIdentities,
+		HTTPListen:             c.HTTPListen,
+		GrokBin:                c.GrokBin,
+		Model:                  c.Model,
+		MaxTurns:               maxTurns,
+		TimeoutMs:              timeoutMs,
+		Yolo:                   c.YoloEnabled(),
+		WorktreeIsolation:      c.WorktreeIsolationEnabled(),
+		WorktreeDir:            strings.TrimSpace(c.WorktreeDir),
+		WorktreesRoot:          c.worktreesRootLocked(),
 		WorktreeIdleTTLDays:    idleDays,
 		TerminalSessionTTLDays: termDays,
 		AutoFixCI:              c.AutoFixCI != nil && *c.AutoFixCI,
-		AutoFixCIMax:        autoFixMax,
-		RiskyPathGlobsText:  riskyText,
-		RiskyPathUseDefault: riskyDefault,
-		BoardStaleDays:      boardStale,
-		BoardDigestChannel:  strings.TrimSpace(c.BoardDigestChannel),
-		ResumeActiveRuns:    c.ResumeActiveRuns == nil || *c.ResumeActiveRuns,
+		AutoFixCIMax:           autoFixMax,
+		RiskyPathGlobsText:     riskyText,
+		RiskyPathUseDefault:    riskyDefault,
+		BoardStaleDays:         boardStale,
+		BoardDigestChannel:     strings.TrimSpace(c.BoardDigestChannel),
+		NotifyOnDone:           notifyOnDoneEffectiveLocked(c.NotifyOnDone),
+		NotifyOnDoneLongMs:     notifyOnDoneLongMsEffectiveLocked(c.NotifyOnDoneLongMs),
+		ResumeActiveRuns:       c.ResumeActiveRuns == nil || *c.ResumeActiveRuns,
 		ShutdownTimeoutMs: func() int {
 			if c.ShutdownTimeoutMs <= 0 {
 				return DefaultShutdownTimeoutMs

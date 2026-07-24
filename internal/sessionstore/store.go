@@ -109,6 +109,10 @@ type Entry struct {
 	VerifyMsgID   string           `json:"verifyMsgId,omitempty"`
 	// LastVerify is the most recent @Grok /verify (or web verify) result for the session UI.
 	LastVerify *LastVerify `json:"lastVerify,omitempty"`
+
+	// WatcherIDs are Discord snowflakes who opted into a one-shot @mention when a
+	// Grok run on this thread completes or fails (@Grok /watch).
+	WatcherIDs []string `json:"watcherIds,omitempty"`
 }
 
 // LastVerify is a compact pass/fail snapshot for the web session panel.

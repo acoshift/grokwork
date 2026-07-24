@@ -59,6 +59,35 @@ func (e *Entry) HandOff(newOwnerID, newOwnerName string) {
 	}
 }
 
+// IsWatcher reports whether userID is watching this thread for run completion pings.
+func (e Entry) IsWatcher(userID string) bool {
+	if userID == "" {
+		return false
+	}
+	return slices.Contains(e.WatcherIDs, userID)
+}
+
+// AddWatcher opts userID into completion/fail mentions (deduped).
+func (e *Entry) AddWatcher(userID string) bool {
+	if e == nil || userID == "" {
+		return false
+	}
+	if slices.Contains(e.WatcherIDs, userID) {
+		return false
+	}
+	e.WatcherIDs = append(e.WatcherIDs, userID)
+	return true
+}
+
+// RemoveWatcher drops userID from the watch list.
+func (e *Entry) RemoveWatcher(userID string) bool {
+	if e == nil || userID == "" || !e.IsWatcher(userID) {
+		return false
+	}
+	e.WatcherIDs = removeID(e.WatcherIDs, userID)
+	return true
+}
+
 func removeID(ids []string, want string) []string {
 	if len(ids) == 0 {
 		return ids

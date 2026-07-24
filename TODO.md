@@ -76,18 +76,21 @@ Order is suggested priority, not a commitment. **Code on `main` wins** if this f
 
 ## Next (recommended order)
 
-### 1. Attribution trailers (Tier A) — **shipped** (prompt + config map)
+### 1. Attribution trailers (Tier A) — **shipped**
 
 See `docs/design-per-user-github-identity.md` Tier A. **Host still pushes/opens PRs.**
 
-- [x] Discord user → GitHub login map (`config.discordUserGitHub` + `SetGitHubIdentity` / `LookupGitHubIdentity`)
-- [x] Commit trailers + Co-authored-by / noreply email instructions in ship prompt (`BuildAttributionBlock`)
-- [x] PR body footer: Discord prompter, mapped `@login`, thread URL, session id
-- [x] Web comment prefix “On behalf of …” when map exists (`OnBehalfOfCommentBody` on PR/issue comment + issue close)
-- [x] Use map for `/review @user` → formal GitHub review request (`gh pr edit --add-reviewer`; unmapped stays team-store only)
-- [x] Web UI for editing the Discord→GitHub map (`/config` → GitHub map section)
+- [x] Discord user → GitHub login map (`config.discordUserGitHub` + web Config UI)
+- [x] Ship prompt trailers + Co-authored-by; PR footer: display name + optional `@login` + session id (no Discord snowflake / thread jump link in human-visible text)
+- [x] Web comment prefix “On behalf of @login …” when mapped
+- [x] `/review @user` → formal GitHub review request when mapped (`gh pr edit --add-reviewer`)
 
-### 2. Governance depth — **partial**
+### 2. Team DX — daily notifications — **shipped**
+
+- [x] **Watchers** — `@Grok /watch` / `/unwatch`; mention once on complete/fail
+- [x] **Notification hygiene** — `notifyOnDone: never | errors | always | long_only` (author @mention policy; Config → Run notifications)
+
+### 3. Governance depth — **partial**
 
 | Item | Status |
 |------|--------|
@@ -98,10 +101,8 @@ See `docs/design-per-user-github-identity.md` Tier A. **Host still pushes/opens 
 | Rate limits + concurrency caps | **Partial** — some start rate limits; host/user concurrent-run product incomplete |
 | OS sandbox for Grok children | **Design only** — `docs/design-agent-sandbox.md` |
 
-### 3. Team DX leftovers — **partial / open**
+### 4. Team DX leftovers — **partial / open**
 
-- [ ] **Watchers** — `@Grok /watch` or 👀; mention once on complete/fail
-- [ ] **Notification hygiene** — `notifyOnDone: never | errors | always | long_only`
 - [ ] **Discord `/review` depth** — optional `#code-review` radar (formal GH review-request via map is shipped)
 - [ ] **`/rerequest` / re-review** after address (if still desired)
 - [ ] **Path scope (monorepo)** — `/scope api/`; warn if diff escapes
@@ -109,20 +110,20 @@ See `docs/design-per-user-github-identity.md` Tier A. **Host still pushes/opens 
 - [ ] **Worktree fleet in Discord** — `/worktrees` list (web worktrees page already exists)
 - [ ] **autoCheckpoint** before fix runs (opt-in)
 
-### 4. Linear L2+ (still open)
+### 5. Linear L2+ (still open)
 
 - [ ] L2 — Discord thread attachment on Linear issue; refresh on run/PR; optional complete comment; `/linear comment`; optional `/linear new`
 - [ ] L3 — inbound Linear webhooks → Discord notify / brief refresh
 - [ ] L4 — Linear Agent (Developer Preview; later)
 
-### 5. Safety beyond minimum
+### 6. Safety beyond minimum
 
 - [ ] Tiered tool policy (safe auto / notify / Discord approve)
 - [ ] Secrets hygiene (redact stream/history; high-entropy pre-push warn)
 - [ ] Push/PR gate modes (`auto | propose | owner-only`)
 - [ ] Plan → approve → implement preset + buttons
 
-### 6. Wave 4 power (deferred)
+### 7. Wave 4 power (deferred)
 
 From `design-agentic-team-runtime.md` — only after gates proven:
 
@@ -168,8 +169,8 @@ From `design-agentic-team-runtime.md` — only after gates proven:
 | **A. Multi-person basics** | **Done** | Ownership, claim/hand-off, queue social |
 | **B. PR-aware thread** | **Done** | PR cards, completion, CI triage, timeline |
 | **C. Safe team mode** | **Mostly done** | Caps/modes/env Layer A + **attribution Tier A** shipped; audit depth + Layer B remain |
-| **D. Team artifacts** | **Mostly done** | Brief, labels, board, action bar; templates/watchers optional |
-| **E. Review loop** | **Mostly done** | Issue bind, `/comments`+`/address`; full `/review` radar optional |
+| **D. Team artifacts** | **Mostly done** | Brief, labels, board, action bar; watchers/notifyOnDone next |
+| **E. Review loop** | **Mostly done** | Issue bind, `/comments`+`/address`, map→GH review request; radar optional |
 | **F. Support / cases** | **Done** | Discord + web case lifecycle |
 | **G. IDE-free (Wave 2)** | **Done** | Checkpoint, verify, sync, decisions |
 | **H. Linear bridge** | **L1 done** | L2–L4 open |

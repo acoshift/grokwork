@@ -661,6 +661,7 @@ func preservePRFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	preserveWorkflowFields(next, prev)
 	preserveShipFields(next, prev)
 	preserveModeFields(next, prev)
+	preserveWatcherFields(next, prev)
 }
 
 // preserveShipFields copies direct-to-primary ship metadata across session Set rebuilds.

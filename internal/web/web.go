@@ -141,6 +141,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.run":                         "/config/run",
 		"config.worktrees":                   "/config/worktrees",
 		"config.board":                       "/config/board",
+		"config.notify":                      "/config/notify",
 		"config.ci":                          "/config/ci",
 		"config.prlinks":                     "/config/pr-links",
 		"config.risky":                       "/config/risky",
@@ -210,6 +211,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("config_run", "layout.tmpl", "config_run.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_worktrees", "layout.tmpl", "config_worktrees.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_board", "layout.tmpl", "config_board.tmpl", "config_shared.tmpl")
+	tp.ParseFiles("config_notify", "layout.tmpl", "config_notify.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_ci", "layout.tmpl", "config_ci.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_prlinks", "layout.tmpl", "config_prlinks.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_risky", "layout.tmpl", "config_risky.tmpl", "config_shared.tmpl")
@@ -407,12 +409,14 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/run", s.requireAdmin(hime.Handler(s.configSubPage("config_run", "Run limits", false))))
 	mux.Handle("GET /config/worktrees", s.requireAdmin(hime.Handler(s.configSubPage("config_worktrees", "Worktrees", false))))
 	mux.Handle("GET /config/board", s.requireAdmin(hime.Handler(s.configSubPage("config_board", "Team activity board", false))))
+	mux.Handle("GET /config/notify", s.requireAdmin(hime.Handler(s.configSubPage("config_notify", "Run notifications", false))))
 	mux.Handle("GET /config/ci", s.requireAdmin(hime.Handler(s.configSubPage("config_ci", "CI triage", false))))
 	mux.Handle("GET /config/pr-links", s.requireAdmin(hime.Handler(s.configSubPage("config_prlinks", "Discord PR links", false))))
 	mux.Handle("GET /config/risky", s.requireAdmin(hime.Handler(s.configSubPage("config_risky", "Completion risk paths", false))))
 	mux.Handle("POST /config/run", s.requireAdmin(hime.Handler(s.updateRunSettings)))
 	mux.Handle("POST /config/worktrees", s.requireAdmin(hime.Handler(s.updateWorktreeSettings)))
 	mux.Handle("POST /config/board", s.requireAdmin(hime.Handler(s.updateBoardSettings)))
+	mux.Handle("POST /config/notify", s.requireAdmin(hime.Handler(s.updateNotifySettings)))
 	mux.Handle("POST /config/ci", s.requireAdmin(hime.Handler(s.updateCISettings)))
 	mux.Handle("POST /config/pr-links", s.requireAdmin(hime.Handler(s.updateDiscordPRLinkSettings)))
 	mux.Handle("POST /config/risky", s.requireAdmin(hime.Handler(s.updateRiskyPathSettings)))
@@ -1514,6 +1518,32 @@ func (s *Server) updateBoardSettings(ctx *hime.Context) error {
 		msg += fmt.Sprintf("; digest channel %s", channel)
 	}
 	return s.configPageRedirect(ctx, "config.board", msg, nil)
+}
+
+func (s *Server) updateNotifySettings(ctx *hime.Context) error {
+	mode := strings.TrimSpace(ctx.PostFormValue("notifyOnDone"))
+	longMs := 0
+	if raw := strings.TrimSpace(ctx.PostFormValue("notifyOnDoneLongMs")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			err = fmt.Errorf("notifyOnDoneLongMs must be an integer")
+			s.auditAction(ctx, audit.ActionConfigSettings, err, map[string]any{"section": "notify"})
+			return s.configPageRedirect(ctx, "config.notify", "", err)
+		}
+		longMs = n
+	}
+	err := s.cfg.SetNotifyOnDone(mode, longMs)
+	s.auditAction(ctx, audit.ActionConfigSettings, err, map[string]any{
+		"section": "notify", "notifyOnDone": mode, "longMs": longMs,
+	})
+	if err != nil {
+		return s.configPageRedirect(ctx, "config.notify", "", err)
+	}
+	msg := fmt.Sprintf("Author notify policy: %s", s.cfg.NotifyOnDoneValue())
+	if s.cfg.NotifyOnDoneValue() == config.NotifyOnDoneLongOnly {
+		msg += fmt.Sprintf(" (threshold %d ms)", s.cfg.NotifyOnDoneLongMsValue())
+	}
+	return s.configPageRedirect(ctx, "config.notify", msg, nil)
 }
 
 func (s *Server) updateCISettings(ctx *hime.Context) error {

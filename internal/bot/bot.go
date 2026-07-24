@@ -648,6 +648,7 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		} else {
 			lines = append(lines, "**worktree:** (none — main project cwd)")
 		}
+		lines = append(lines, formatWatcherStatusLine(e))
 		if issLines := sessionstore.FormatIssueStatusLines(e.Issues); len(issLines) > 0 {
 			lines = append(lines, issLines...)
 		} else {
@@ -725,6 +726,10 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleComments(s, m, parsed)
 	case KindAddress:
 		b.handleAddress(s, m, parsed)
+	case KindWatch:
+		b.handleWatch(s, m)
+	case KindUnwatch:
+		b.handleUnwatch(s, m)
 	case KindStartInvestigate, KindStartFix, KindStartExplain, KindTask:
 		log.Printf("task: starting async for msg=%s kind=%d", m.ID, parsed.Kind)
 		// Immediate typing indicator while we open the thread / claim the queue.
@@ -1925,6 +1930,19 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		msgTag = item.source
 	}
 	log.Printf("task: finished msg=%s thread=%s source=%s present=%v", msgTag, threadID, item.source, present)
+
+	// Watchers + notifyOnDone author pings (Discord threads only).
+	if present && s != nil {
+		authorID := ""
+		if m != nil && m.Author != nil {
+			authorID = m.Author.ID
+		} else if item.actor.ID != "" {
+			authorID = item.actor.ID
+		} else if item.authorID != "" {
+			authorID = item.authorID
+		}
+		b.notifyRunDone(s, threadID, authorID, result, elapsed)
+	}
 }
 
 func (b *Bot) recordTurn(threadID string, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration) {
@@ -2416,6 +2434,10 @@ func kindName(k Kind) string {
 		return "comments"
 	case KindAddress:
 		return "address"
+	case KindWatch:
+		return "watch"
+	case KindUnwatch:
+		return "unwatch"
 	case KindTask:
 		return "task"
 	default:

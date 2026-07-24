@@ -67,5 +67,7 @@
   "autoFixCI": false,
   "autoFixCIMax": 2,
   "boardStaleDays": 3,
-  "boardDigestChannel": ""
+  "boardDigestChannel": "",
+  "notifyOnDone": "errors",
+  "notifyOnDoneLongMs": 300000
 }
