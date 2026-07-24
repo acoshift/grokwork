@@ -101,8 +101,15 @@ func TestPruneIdleWorktrees(t *testing.T) {
 	if _, err := os.Stat(tr.Path); !os.IsNotExist(err) {
 		t.Fatalf("old worktree still exists: %v", err)
 	}
-	if _, ok := sessions.Get(oldThread); ok {
-		t.Fatal("old session should be deleted")
+	oldEnt, ok := sessions.Get(oldThread)
+	if !ok {
+		t.Fatal("old session should be kept as abandoned tombstone")
+	}
+	if oldEnt.EffectiveLabel() != sessionstore.LabelAbandoned {
+		t.Fatalf("old label=%q want abandoned", oldEnt.EffectiveLabel())
+	}
+	if oldEnt.SessionID != "" || oldEnt.Cwd != "" || oldEnt.WorktreeBranch != "" {
+		t.Fatalf("old tombstone not cleared: %+v", oldEnt)
 	}
 	if _, err := os.Stat(trNew.Path); err != nil {
 		t.Fatalf("fresh worktree should remain: %v", err)
@@ -176,9 +183,17 @@ func TestListAndPruneWorktree(t *testing.T) {
 	if _, err := os.Stat(tr.Path); !os.IsNotExist(err) {
 		t.Fatalf("path still exists: %v", err)
 	}
-	if _, ok := sessions.Get(threadID); ok {
-		t.Fatal("session should be gone")
+	ent, ok := sessions.Get(threadID)
+	if !ok {
+		t.Fatal("session should be kept as abandoned tombstone")
 	}
+	if ent.EffectiveLabel() != sessionstore.LabelAbandoned {
+		t.Fatalf("label=%q want abandoned", ent.EffectiveLabel())
+	}
+	if ent.SessionID != "" || ent.Cwd != "" || ent.WorktreeBranch != "" {
+		t.Fatalf("tombstone not cleared: %+v", ent)
+	}
+	// No worktree fields / on-disk tree → not listed as a live worktree row.
 	if n := len(b.ListWorktrees()); n != 0 {
 		t.Fatalf("list after prune len=%d", n)
 	}

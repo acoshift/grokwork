@@ -141,7 +141,8 @@ func (b *Bot) ListWorktrees() []WorktreeInfo {
 	return out
 }
 
-// PruneWorktree removes one thread worktree (path + managed branch + session).
+// PruneWorktree removes one thread worktree (path + managed branch).
+// Ephemeral sessions become abandoned tombstones; terminal/PR/case sessions keep metadata.
 // Busy threads are refused.
 func (b *Bot) PruneWorktree(threadID string) error {
 	threadID = strings.TrimSpace(threadID)
@@ -177,8 +178,9 @@ func (b *Bot) PruneIdleNow() (int, error) {
 	return n, nil
 }
 
-// pruneIdleWorktrees removes per-thread worktrees (and their sessions/branches)
-// that have been inactive for at least ttl. Returns how many were removed.
+// pruneIdleWorktrees removes per-thread worktrees (and managed branches) that
+// have been inactive for at least ttl. Ephemeral sessions become abandoned
+// tombstones; terminal/PR/case sessions keep metadata. Returns how many removed.
 func (b *Bot) pruneIdleWorktrees(now time.Time, ttl time.Duration) int {
 	if ttl <= 0 {
 		return 0
@@ -195,7 +197,7 @@ func (b *Bot) pruneIdleWorktrees(now time.Time, ttl time.Duration) int {
 		}
 		if err := b.removeWorktreeCandidate(c, "idle"); err != nil {
 			log.Printf("warn: idle-worktree remove thread=%s: %v", c.threadID, err)
-			// removeWorktreeCandidate still drops session when possible
+			// removeWorktreeCandidate still finalizes the session (keep or abandon)
 			continue
 		}
 		removed++
@@ -204,28 +206,25 @@ func (b *Bot) pruneIdleWorktrees(now time.Time, ttl time.Duration) int {
 }
 
 func (b *Bot) removeWorktreeCandidate(c idleCandidate, reason string) error {
-	// Keep session metadata (PR links, closed/case state) when the unit still has
-	// audit value. Open cases stay until /close; any session with tracked PRs or
-	// a closed case keeps the entry so the sessions UI can show final state.
-	keepSession := false
+	// After worktree removal: cases / PR-linked / already-terminal units keep their
+	// existing label and metadata (clear worktree fields only). Everything else
+	// becomes an abandoned tombstone — never hard-delete the session row so the
+	// sessions list still shows final state (same shape as resetThreadCore).
+	preserveMeta := false
 	if c.hasSession && b.sessions != nil {
 		if e, ok := b.sessions.Get(c.threadID); ok {
 			e.NormalizePRs()
 			if e.IsCase() || e.HasAnyPR() || sessionstore.IsTerminalLabel(e.EffectiveLabel()) {
-				keepSession = true
+				preserveMeta = true
 			}
 		}
 	}
 
 	if c.mainCwd == "" {
-		// Still drop session if present so the UI can clear the row (ephemeral only).
-		if c.hasSession && !keepSession {
-			_ = b.sessions.Delete(c.threadID)
-		} else if keepSession {
-			_, _, _ = b.sessions.Patch(c.threadID, func(ent *sessionstore.Entry) {
-				ent.Cwd = ""
-				ent.WorktreeBranch = ""
-			})
+		if c.hasSession {
+			if patchErr := b.finalizeSessionAfterWorktreeGone(c.threadID, "", preserveMeta); patchErr != nil {
+				log.Printf("warn: session finalize after worktree gone thread=%s: %v", c.threadID, patchErr)
+			}
 		}
 		return fmt.Errorf("no main repo path for project %q", c.project)
 	}
@@ -246,20 +245,41 @@ func (b *Bot) removeWorktreeCandidate(c idleCandidate, reason string) error {
 		log.Printf("worktree: removed (%s) thread=%s project=%s branch=%s last=%s",
 			reason, c.threadID, c.project, c.branch, formatLast(c.last))
 	}
-	if keepSession {
-		_, _, _ = b.sessions.Patch(c.threadID, func(ent *sessionstore.Entry) {
-			ent.Cwd = ""
-			ent.WorktreeBranch = ""
-		})
-		log.Printf("idle-worktree: session kept thread=%s reason=%s", c.threadID, reason)
-		return err
-	}
-	if delErr := b.sessions.Delete(c.threadID); delErr != nil {
-		log.Printf("warn: worktree session delete thread=%s: %v", c.threadID, delErr)
-		if err == nil {
-			err = delErr
+	if c.hasSession {
+		if patchErr := b.finalizeSessionAfterWorktreeGone(c.threadID, c.mainCwd, preserveMeta); patchErr != nil {
+			log.Printf("warn: session finalize after worktree gone thread=%s: %v", c.threadID, patchErr)
+			if err == nil {
+				err = patchErr
+			}
+		} else if preserveMeta {
+			log.Printf("idle-worktree: session kept thread=%s reason=%s", c.threadID, reason)
+		} else {
+			log.Printf("idle-worktree: session abandoned thread=%s reason=%s", c.threadID, reason)
 		}
 	}
+	return err
+}
+
+// finalizeSessionAfterWorktreeGone clears worktree fields. When preserveMeta is
+// false (ephemeral unit with no PRs/case/terminal label), also drops the Grok
+// session id and sets label abandoned so the list shows a tombstone instead of
+// deleting the entry.
+func (b *Bot) finalizeSessionAfterWorktreeGone(threadID, mainCwd string, preserveMeta bool) error {
+	if b == nil || b.sessions == nil || strings.TrimSpace(threadID) == "" {
+		return nil
+	}
+	_, _, err := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+		ent.Cwd = ""
+		ent.WorktreeBranch = ""
+		if ent.MainCwd == "" && mainCwd != "" {
+			ent.MainCwd = mainCwd
+		}
+		if preserveMeta {
+			return
+		}
+		ent.SessionID = ""
+		_ = ent.SetLabelManual(sessionstore.LabelAbandoned)
+	})
 	return err
 }
 
