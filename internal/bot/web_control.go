@@ -19,9 +19,10 @@ func (b *Bot) CancelRun(threadID, who string) (string, bool) {
 	return b.cancelCurrentRun(threadID, who)
 }
 
-// ResetUnit clears the session, worktree, managed branch, and queue for a unit
-// (Discord-free export of resetThreadCore). It refuses while a run is busy: on
-// refusal err is non-nil and msg explains why. msg is always set.
+// ResetUnit abandons a unit: worktree, managed branch, Grok session id, and
+// queue are cleared; a tombstone entry labeled abandoned is kept (Discord-free
+// export of resetThreadCore). It refuses while a run is busy: on refusal err
+// is non-nil and msg explains why. msg is always set.
 func (b *Bot) ResetUnit(threadID string) (string, error) {
 	if b == nil {
 		return "", fmt.Errorf("bot is nil")

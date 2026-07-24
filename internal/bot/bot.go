@@ -824,7 +824,10 @@ func (b *Bot) resetThread(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
-// resetThreadCore clears session + worktree. msg is always set; err is non-nil on busy/failure.
+// resetThreadCore abandons a unit: removes worktree/managed branch, drops the
+// Grok session id, clears the queue, and keeps a tombstone entry labeled
+// abandoned so the sessions list still shows final state. msg is always set;
+// err is non-nil on busy/failure.
 func (b *Bot) resetThreadCore(threadID string) (msg string, err error) {
 	if _, busy := b.getJob(threadID); busy {
 		return "A run is in progress — Cancel first, then Reset.", fmt.Errorf("busy")
@@ -833,32 +836,50 @@ func (b *Bot) resetThreadCore(threadID string) (msg string, err error) {
 		log.Printf("reset: cleared %d queued follow-up(s) thread=%s", n, threadID)
 	}
 
-	if e, ok := b.sessions.Get(threadID); ok {
-		mainCwd := e.MainCwd
-		if mainCwd == "" {
-			mainCwd = e.Cwd
-		}
-		branch := e.WorktreeBranch
-		path, _ := gitworktree.ResolveSessionWorktreePath(b.cfg.WorktreesRoot(), e.Project, threadID, e.Cwd, mainCwd)
-		if branch == "" {
-			branch = gitworktree.BranchNameForUnit(threadID)
-		}
-		if mainCwd != "" && (path != "" || branch != "") {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {
-				log.Printf("warn: worktree cleanup on reset thread=%s: %v", threadID, rmErr)
-			} else {
-				log.Printf("reset: removed worktree thread=%s branch=%s", threadID, branch)
-			}
-			cancel()
-		}
+	e, ok := b.sessions.Get(threadID)
+	if !ok {
+		return "Session was abandoned.", nil
 	}
 
-	if delErr := b.sessions.Delete(threadID); delErr != nil {
-		log.Printf("error: session delete: %v", delErr)
-		return "Could not clear session: " + delErr.Error(), delErr
+	mainCwd := e.MainCwd
+	if mainCwd == "" {
+		mainCwd = e.Cwd
 	}
-	return "Session was reset.", nil
+	branch := e.WorktreeBranch
+	path, _ := gitworktree.ResolveSessionWorktreePath(b.cfg.WorktreesRoot(), e.Project, threadID, e.Cwd, mainCwd)
+	if branch == "" {
+		branch = gitworktree.BranchNameForUnit(threadID)
+	}
+	if mainCwd != "" && (path != "" || branch != "") {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {
+			log.Printf("warn: worktree cleanup on reset thread=%s: %v", threadID, rmErr)
+		} else {
+			log.Printf("reset: removed worktree thread=%s branch=%s", threadID, branch)
+		}
+		cancel()
+	}
+
+	if b.sessions == nil {
+		return "Session was abandoned.", nil
+	}
+	_, _, patchErr := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+		ent.SessionID = ""
+		ent.Cwd = ""
+		ent.WorktreeBranch = ""
+		if ent.MainCwd == "" && mainCwd != "" {
+			ent.MainCwd = mainCwd
+		}
+		// Terminal tombstone for list/UI; manual so auto-label does not revive it
+		// until a new run starts (direct mode may still revive on run start).
+		_ = ent.SetLabelManual(sessionstore.LabelAbandoned)
+	})
+	if patchErr != nil {
+		log.Printf("error: session abandon patch: %v", patchErr)
+		return "Could not abandon session: " + patchErr.Error(), patchErr
+	}
+	log.Printf("reset: abandoned session thread=%s (tombstone kept)", threadID)
+	return "Session was abandoned.", nil
 }
 
 func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID string) (cwd, branch string, err error) {

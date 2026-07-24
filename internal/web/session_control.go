@@ -58,11 +58,10 @@ func (s *Server) postSessionCancel(ctx *hime.Context) error {
 	return s.sessionRedirect(ctx, threadID, msg, "")
 }
 
-// postSessionReset is the web Abandon action: forget session, worktree, and
-// branch (same ResetUnit core as Discord /reset). On success stay on the
-// session page with a flash; danger zone is hidden when the unit is already
-// terminal (done/abandoned) or the store entry is gone. Busy refusal keeps
-// the page with an error flash.
+// postSessionReset is the web Abandon action (same ResetUnit core as Discord
+// /reset): clear worktree/branch/Grok id, keep a tombstone labeled abandoned.
+// On success stay on the session page with a flash; danger zone hides for
+// terminal labels. Busy refusal keeps the page with an error flash.
 func (s *Server) postSessionReset(ctx *hime.Context) error {
 	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
 	if threadID == "" {
@@ -91,9 +90,8 @@ func (s *Server) postSessionReset(ctx *hime.Context) error {
 	}
 	// Web-facing flash (Discord still uses ResetUnit's "Session was reset.").
 	ok := "Session abandoned."
-	// Build the redirect explicitly: after Delete the store cannot supply
-	// project, and history may still be empty. Do not widen ensureThreadAccess
-	// for all handlers — only this landing URL carries ?project=.
+	// Stamp project for workspace scope (entry still exists as tombstone, but
+	// keep the query for consistency with older clients).
 	q := url.Values{}
 	q.Set("ok", ok)
 	if project != "" {

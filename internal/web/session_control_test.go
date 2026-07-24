@@ -182,15 +182,19 @@ func TestSessionResetOwnershipMatrix(t *testing.T) {
 			if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 				t.Fatalf("reset status=%d want redirect body=%s", w.Code, w.Body.String())
 			}
-			if _, ok := srv.sessions.Get(tc.threadID); ok {
-				t.Fatal("authorized reset must delete the session")
+			e, ok := srv.sessions.Get(tc.threadID)
+			if !ok {
+				t.Fatal("authorized abandon must keep a tombstone session")
+			}
+			if e.EffectiveLabel() != sessionstore.LabelAbandoned {
+				t.Fatalf("label=%q want abandoned", e.EffectiveLabel())
 			}
 		})
 	}
 }
 
-// TestSessionAbandonSuccessStaysOnPage: web Abandon hits /reset, deletes the
-// store entry, flashes "Session abandoned.", and hides the danger zone.
+// TestSessionAbandonSuccessStaysOnPage: web Abandon keeps a tombstone labeled
+// abandoned, flashes success, and hides the danger zone.
 func TestSessionAbandonSuccessStaysOnPage(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	seedOwned(t, srv, "reset-ok", "member-1", "Member One")
@@ -206,17 +210,18 @@ func TestSessionAbandonSuccessStaysOnPage(t *testing.T) {
 	if !strings.HasPrefix(loc, "/sessions/reset-ok") {
 		t.Fatalf("Location=%q want /sessions/reset-ok", loc)
 	}
-	if !strings.Contains(loc, "ok=") {
-		t.Fatalf("Location=%q want ok flash", loc)
-	}
-	if !strings.Contains(loc, "abandoned") {
+	if !strings.Contains(loc, "ok=") || !strings.Contains(loc, "abandoned") {
 		t.Fatalf("Location=%q want Session abandoned flash", loc)
 	}
-	if !strings.Contains(loc, "project=proj") {
-		t.Fatalf("Location=%q want project=proj for workspace scope", loc)
+	e, ok := srv.sessions.Get("reset-ok")
+	if !ok {
+		t.Fatal("successful abandon must keep a tombstone session")
 	}
-	if _, ok := srv.sessions.Get("reset-ok"); ok {
-		t.Fatal("successful abandon must delete the session")
+	if e.EffectiveLabel() != sessionstore.LabelAbandoned {
+		t.Fatalf("label=%q want abandoned", e.EffectiveLabel())
+	}
+	if e.SessionID != "" {
+		t.Fatalf("SessionID should be cleared, got %q", e.SessionID)
 	}
 	assertAuditAction(t, srv, audit.ActionSessionReset, true)
 
@@ -232,7 +237,39 @@ func TestSessionAbandonSuccessStaysOnPage(t *testing.T) {
 		t.Fatal("missing abandon flash on session page")
 	}
 	if strings.Contains(body, `id="session-danger"`) || strings.Contains(body, `id="btn-abandon"`) {
-		t.Fatal("danger zone must be hidden after abandon (no live session)")
+		t.Fatal("danger zone must be hidden after abandon (terminal label)")
+	}
+	if !strings.Contains(body, "abandoned") {
+		t.Fatal("session page should show abandoned state")
+	}
+}
+
+// TestSessionAbandonShowsOnList: tombstone appears on the sessions list with
+// an abandoned badge (overlay from the session store).
+func TestSessionAbandonShowsOnList(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	seedOwned(t, srv, "list-abandon", "member-1", "Member One")
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/sessions/list-abandon/reset", sid, csrf, nil)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d", w.Code)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/sessions", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	rw := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rw, req)
+	if rw.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", rw.Code, rw.Body.String())
+	}
+	body := rw.Body.String()
+	if !strings.Contains(body, "list-abandon") {
+		t.Fatal("abandoned session missing from project sessions list")
+	}
+	if !strings.Contains(body, "abandoned") {
+		t.Fatal("list should show abandoned badge/label")
 	}
 }
 

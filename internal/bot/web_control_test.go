@@ -249,3 +249,50 @@ func TestClaimThreadAuthOffNoIdentity(t *testing.T) {
 		t.Fatal("claim without identity must error")
 	}
 }
+
+func TestResetUnitAbandonTombstone(t *testing.T) {
+	b, _ := testFixBot(t)
+	const threadID = "abandon-tomb"
+	if err := b.sessions.Set(threadID, sessionstore.Entry{
+		Project:        "app",
+		SessionID:      "sess-old",
+		Cwd:            "/tmp/wt",
+		MainCwd:        "/tmp/main",
+		WorktreeBranch: "grokwork/" + threadID,
+		OwnerID:        "u1",
+		OwnerName:      "User",
+		Label:          sessionstore.LabelInProgress,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := b.ResetUnit(threadID)
+	if err != nil {
+		t.Fatalf("ResetUnit: %v msg=%q", err, msg)
+	}
+	if msg == "" {
+		t.Fatal("expected abandon message")
+	}
+	e, ok := b.sessions.Get(threadID)
+	if !ok {
+		t.Fatal("session entry must be kept as tombstone")
+	}
+	if e.SessionID != "" {
+		t.Fatalf("SessionID=%q want cleared", e.SessionID)
+	}
+	if e.Cwd != "" || e.WorktreeBranch != "" {
+		t.Fatalf("worktree fields not cleared: cwd=%q branch=%q", e.Cwd, e.WorktreeBranch)
+	}
+	if e.MainCwd != "/tmp/main" {
+		t.Fatalf("MainCwd=%q want preserved", e.MainCwd)
+	}
+	if e.EffectiveLabel() != sessionstore.LabelAbandoned {
+		t.Fatalf("label=%q want abandoned", e.EffectiveLabel())
+	}
+	if !e.LabelManual {
+		t.Fatal("abandoned tombstone should be LabelManual")
+	}
+	if e.OwnerID != "u1" || e.Project != "app" {
+		t.Fatalf("ownership/project not kept: %+v", e)
+	}
+}
+
