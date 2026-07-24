@@ -459,12 +459,14 @@ type pageData struct {
 	Error       string
 	Status      bot.StatusSnapshot
 	Threads     []history.Summary
-	Thread      history.Thread
-	Ship        bot.ShipBoard
-	Cases       bot.CaseBoard
-	Worktrees   []bot.WorktreeInfo
-	IdleTTLDays int
-	Config      config.Snapshot
+	// Sessions list filters (global hub + workspace sessions pages).
+	SessionFilters sessionFilters
+	Thread         history.Thread
+	Ship           bot.ShipBoard
+	Cases          bot.CaseBoard
+	Worktrees      []bot.WorktreeInfo
+	IdleTTLDays    int
+	Config         config.Snapshot
 	// Per-project settings tabs (/config/projects/{name}[/tab]).
 	ProjectItem      config.ProjectItem
 	DiscordUserNames map[string]string // Discord user id → display name (best-effort)
@@ -670,10 +672,14 @@ func (s *Server) sessionsList(ctx *hime.Context) error {
 	}
 	threads = mergeSessionRows(threads, s.sessions.List())
 	threads = s.filterThreadsVisible(ctx, threads)
+	f := parseSessionFilters(ctx, true)
+	f.Projects = s.filterProjectNames(ctx)
+	f.Total = len(threads)
 	d := s.basePage(ctx)
 	d.Title = "Sessions"
 	d.IsSessions = true
-	d.Threads = threads
+	d.Threads = filterSessionRows(threads, f)
+	d.SessionFilters = f
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e

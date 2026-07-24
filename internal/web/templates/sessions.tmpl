@@ -1,8 +1,41 @@
 {{define "content"}}
 <h1 id="page-sessions">{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· sessions</span>{{else}}Sessions{{end}}</h1>
-<p class="sub">Work units (Discord threads / Grok sessions) with {{if .Project}}turn activity in this project{{else}}project and turn activity{{end}} ({{len .Threads}}).</p>
+<p class="sub">Work units (Discord threads / Grok sessions) with {{if .Project}}turn activity in this project{{else}}project and turn activity{{end}} ({{len .Threads}}{{if .SessionFilters.Filtered}} of {{.SessionFilters.Total}}{{end}}).</p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+<form method="get" action="{{if .Project}}/projects/{{.Project}}/sessions{{else}}{{route "sessions"}}{{end}}" class="toolbar" id="sessions-filters">
+  {{if not .Project}}
+  <div class="field">
+    <label for="project">Project</label>
+    <select id="project" name="project" data-autosubmit>
+      <option value="" {{if eq .SessionFilters.Project ""}}selected{{end}}>All projects</option>
+      {{range .SessionFilters.Projects}}
+      <option value="{{.}}" {{if eq $.SessionFilters.Project .}}selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
+  </div>
+  {{end}}
+  <div class="field">
+    <label for="state">State</label>
+    <select id="state" name="state" data-autosubmit>
+      <option value="" {{if eq .SessionFilters.State ""}}selected{{end}}>All states</option>
+      <option value="active" {{if eq .SessionFilters.State "active"}}selected{{end}}>Active (not done)</option>
+      <option value="open" {{if eq .SessionFilters.State "open"}}selected{{end}}>Open</option>
+      <option value="in_progress" {{if eq .SessionFilters.State "in_progress"}}selected{{end}}>In progress</option>
+      <option value="blocked" {{if eq .SessionFilters.State "blocked"}}selected{{end}}>Blocked</option>
+      <option value="needs_review" {{if eq .SessionFilters.State "needs_review"}}selected{{end}}>Needs review</option>
+      <option value="done" {{if eq .SessionFilters.State "done"}}selected{{end}}>Done</option>
+      <option value="abandoned" {{if eq .SessionFilters.State "abandoned"}}selected{{end}}>Abandoned</option>
+      <option value="closed" {{if eq .SessionFilters.State "closed"}}selected{{end}}>Case closed</option>
+    </select>
+  </div>
+  <div class="field">
+    <label for="q">Search</label>
+    <input id="q" type="text" name="q" value="{{.SessionFilters.Query}}" placeholder="thread, prompt, user">
+  </div>
+  <button type="submit" class="btn-secondary">Apply</button>
+</form>
 
 {{if .Threads}}
 <div class="m-rows">
@@ -86,6 +119,6 @@
 </table>
 </div>
 {{else}}
-<div class="empty" id="sessions-empty">No sessions {{if .Project}}in this project {{end}}yet. Work units appear after Discord or web starts a Grok task.</div>
+<div class="empty" id="sessions-empty">{{if .SessionFilters.Filtered}}No sessions match this filter ({{.SessionFilters.Total}} total).{{else}}No sessions {{if .Project}}in this project {{end}}yet. Work units appear after Discord or web starts a Grok task.{{end}}</div>
 {{end}}
 {{end}}

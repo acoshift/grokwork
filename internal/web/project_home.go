@@ -328,11 +328,15 @@ func (s *Server) sessionsScoped(ctx *hime.Context) error {
 	if err := s.ensureProjectAccess(ctx, project); err != nil {
 		return forbiddenProject(ctx, err)
 	}
+	f := parseSessionFilters(ctx, false)
+	threads := s.projectThreads(project)
+	f.Total = len(threads)
 	d := s.basePage(ctx)
 	d.Title = project + " · Sessions"
 	d.IsSessions = true
 	d.Project = project
-	d.Threads = s.projectThreads(project)
+	d.Threads = filterSessionRows(threads, f)
+	d.SessionFilters = f
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e

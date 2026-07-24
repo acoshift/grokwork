@@ -627,6 +627,109 @@ func TestSessionsHub(t *testing.T) {
 	}
 }
 
+func TestSessionsFilter(t *testing.T) {
+	srv, _, _ := testServer(t)
+	h := srv.Handler()
+
+	// thread-99 (from testServer) has no explicit label → effective open.
+	if err := srv.sessions.Set("thread-done", sessionstore.Entry{
+		SessionID: "sess-done",
+		Project:   "proj",
+		Label:     sessionstore.LabelDone,
+		LastUser:  "carol#2",
+		Goal:      "merged ship work",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.sessions.Set("thread-case-closed", sessionstore.Entry{
+		SessionID:     "sess-case",
+		Project:       "proj",
+		Mode:          "case",
+		Phase:         sessionstore.PhaseClosed,
+		Resolution:    "answered",
+		CustomerTitle: "login broken for beta users",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	get := func(path string) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s status=%d body=%s", path, w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+	has := func(body, path, frag string) {
+		t.Helper()
+		if !strings.Contains(body, frag) {
+			t.Fatalf("GET %s missing %q", path, frag)
+		}
+	}
+	hasNot := func(body, path, frag string) {
+		t.Helper()
+		if strings.Contains(body, frag) {
+			t.Fatalf("GET %s must not contain %q", path, frag)
+		}
+	}
+
+	// Unfiltered hub: toolbar + every row.
+	body := get("/sessions")
+	has(body, "/sessions", `id="sessions-filters"`)
+	has(body, "/sessions", `name="project"`)
+	has(body, "/sessions", `name="state"`)
+	has(body, "/sessions", `name="q"`)
+	has(body, "/sessions", `<option value="proj"`)
+	has(body, "/sessions", "/sessions/thread-99")
+	has(body, "/sessions", "/sessions/thread-done")
+	has(body, "/sessions", "/sessions/thread-case-closed")
+
+	// State filter matches the effective lifecycle label.
+	body = get("/sessions?state=done")
+	has(body, "/sessions?state=done", "/sessions/thread-done")
+	hasNot(body, "/sessions?state=done", "/sessions/thread-99")
+	hasNot(body, "/sessions?state=done", "/sessions/thread-case-closed")
+
+	// Active excludes terminal labels and closed cases.
+	body = get("/sessions?state=active")
+	has(body, "/sessions?state=active", "/sessions/thread-99")
+	hasNot(body, "/sessions?state=active", "/sessions/thread-done")
+	hasNot(body, "/sessions?state=active", "/sessions/thread-case-closed")
+
+	// Closed cases match only the dedicated closed option.
+	body = get("/sessions?state=closed")
+	has(body, "/sessions?state=closed", "/sessions/thread-case-closed")
+	hasNot(body, "/sessions?state=closed", "/sessions/thread-99")
+	hasNot(body, "/sessions?state=closed", "/sessions/thread-done")
+
+	// Free-text search over prompt/title.
+	body = get("/sessions?q=refactor")
+	has(body, "/sessions?q=refactor", "/sessions/thread-99")
+	hasNot(body, "/sessions?q=refactor", "/sessions/thread-done")
+	body = get("/sessions?q=beta")
+	has(body, "/sessions?q=beta", "/sessions/thread-case-closed")
+	hasNot(body, "/sessions?q=beta", "/sessions/thread-99")
+
+	// Unknown state values behave like All (no 4xx, nothing hidden).
+	body = get("/sessions?state=bogus")
+	has(body, "/sessions?state=bogus", "/sessions/thread-99")
+	has(body, "/sessions?state=bogus", "/sessions/thread-done")
+
+	// No-match search shows the filtered empty state, not the onboarding copy.
+	body = get("/sessions?q=zzz-no-match")
+	has(body, "/sessions?q=zzz-no-match", "No sessions match this filter")
+	hasNot(body, "/sessions?q=zzz-no-match", "Work units appear after")
+
+	// Workspace page: same filters, project fixed via path (no project select).
+	body = get("/projects/proj/sessions?state=done")
+	has(body, "/projects/proj/sessions?state=done", `id="sessions-filters"`)
+	hasNot(body, "/projects/proj/sessions?state=done", `name="project"`)
+	has(body, "/projects/proj/sessions?state=done", "/sessions/thread-done")
+	hasNot(body, "/projects/proj/sessions?state=done", "/sessions/thread-99")
+}
+
 func TestSessionDetailStreamsLiveTurn(t *testing.T) {
 	srv, _, _ := testServer(t)
 	h := srv.Handler()
