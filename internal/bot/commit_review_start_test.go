@@ -33,6 +33,10 @@ func TestBuildCommitReviewPromptContract(t *testing.T) {
 		"severity:",
 		"https://github.com/acme/app/commit/abcdef0123456789abcdef0123456789abcdef01",
 		"bot will not file issues",
+		"multi-agent",
+		"verifier",
+		"fan out",
+		"git show --stat",
 	} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("missing %q in\n%s", want, p)

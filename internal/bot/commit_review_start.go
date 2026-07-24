@@ -195,14 +195,25 @@ func BuildCommitReviewPrompt(opts CommitReviewOpts) string {
 	}
 
 	b.WriteString(`
-### How to review
-1. Inspect this commit: ` + "`git show " + sha + "`" + ` (and surrounding context with read tools as needed).
-2. Look for correctness bugs, security issues, missing tests for risky changes, broken contracts, data loss, concurrency hazards.
-3. Do not bikeshed style/naming/formatting unless it causes a real defect.
-4. Do not invent files or lines you did not see.
+### How to review (multi-agent)
+You are the orchestrator. Use subagents for depth and independent verification — do not do all review work alone when the change is large.
+
+1. Size the commit first: ` + "`git show --stat " + sha + "`" + ` and ` + "`git show --numstat " + sha + "`" + `.
+2. **Large change → fan out reviewers.** Treat as large if roughly any of:
+   - ~15+ files changed, or
+   - ~400+ lines added+deleted, or
+   - several unrelated areas (packages/modules) in one commit.
+   When large, spawn **multiple review subagents in parallel** (typically 2–6), split by directory/package/concern (e.g. auth vs API vs UI, or security-focused vs correctness-focused). Give each agent a clear file list / scope and the full SHA.
+   When small/medium, you may review yourself or use a single review subagent.
+3. Each review agent should: inspect its scoped diff (` + "`git show " + sha + " -- <paths>`" + `), look for correctness bugs, security issues, missing tests for risky changes, broken contracts, data loss, concurrency hazards; ignore style/naming/formatting unless it causes a real defect; never invent files or lines not seen.
+4. **Always verify findings with a separate verifier subagent** (new agent, not a reviewer re-reading its own notes):
+   - Pass candidate findings (claim, file:line, why it matters) plus the commit SHA.
+   - Instruct the verifier to re-check the diff/code and mark each finding: **confirmed**, **downgrade** (with reason), or **reject** (false positive / not in this commit).
+   - For large reviews with many candidates, you may spawn **multiple verifiers** in parallel (split by finding groups); still keep verification independent of the original reviewer.
+5. File issues only for **confirmed** findings (or clearly real findings after you yourself re-check if a verifier is unavailable). Drop rejects; apply downgrades to severity.
 
 ### Filing issues (agentic)
-For each real finding, open a GitHub issue yourself with ` + "`gh`" + `:
+For each confirmed finding, open a GitHub issue yourself with ` + "`gh`" + `:
 - Title: short, specific (prefix with ` + "`[review/" + short + "]`" + ` when helpful).
 - Body (markdown): problem, why it matters, suggested fix, file:line when known.
   Always reference the commit (link ` + commitURL + ` and mention SHA ` + "`" + short + "`" + `).
@@ -215,9 +226,9 @@ For each real finding, open a GitHub issue yourself with ` + "`gh`" + `:
 
 Rules:
 - Prefer highest-severity findings; skip nitpicks. Cap at ~15 issues.
-- If the commit looks fine, open zero issues and say so clearly.
+- If the commit looks fine after review+verify, open zero issues and say so clearly.
 - Do not merge anything. Code fixes are optional: only implement a fix in this worktree if it is clearly warranted; otherwise filing issues is enough.
-- In your final reply, list issue URLs (or state that none were filed) and a short overall assessment.
+- In your final reply: note how many review/verifier agents you used, list issue URLs (or state that none were filed), and give a short overall assessment.
 `)
 	return b.String()
 }
