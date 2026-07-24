@@ -458,12 +458,51 @@ func TestPRDetailAndDiff(t *testing.T) {
 		t.Fatalf("pr status=%d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	for _, want := range []string{`id="page-pr-detail"`, "Ship feature", "pr body", `class="md"`, "APPROVED", "MERGEABLE"} {
+	for _, want := range []string{
+		`id="page-pr-detail"`,
+		"Ship feature",
+		"pr body",
+		`class="md"`,
+		"APPROVED",
+		"MERGEABLE",
+		// Checks strip is an SSE live-region (sse:ship → partial re-view).
+		`id="live-pr-gates"`,
+		`hx-trigger="sse:ship"`,
+		`hx-get="/partials/prs/acme/app/9/gates?project=proj"`,
+		`hx-target="this"`,
+		`hx-select="unset"`,
+		`class="pr-gates"`,
+		"Checks",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("pr missing %q", want)
 		}
 	}
 	assertNavActive(t, body, "Ship")
+
+	// Gates partial: content-only fragment with live gh checks, no layout chrome.
+	req = httptest.NewRequest(http.MethodGet, "/partials/prs/acme/app/9/gates?project=proj", nil)
+	req.Header.Set("HX-Request", "true")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("gates partial status=%d body=%s", w.Code, w.Body.String())
+	}
+	partial := w.Body.String()
+	for _, want := range []string{`class="pr-gates"`, "Checks", "Team review", "GitHub review", "Mergeable", "✓ 1"} {
+		if !strings.Contains(partial, want) {
+			t.Fatalf("gates partial missing %q body=%s", want, partial)
+		}
+	}
+	if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Fatalf("gates partial Cache-Control=%q want no-store", cc)
+	}
+	for _, ban := range []string{`id="page-pr-detail"`, `id="sse-status"`, "<nav", "/static/htmx.min.js"} {
+		if strings.Contains(partial, ban) {
+			t.Fatalf("gates partial should not include %q (got full page?)", ban)
+		}
+	}
+
 	req = httptest.NewRequest(http.MethodGet, "/prs/acme/app/9/diff?project=proj", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)

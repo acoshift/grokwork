@@ -164,6 +164,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"partial.session":         "/partials/sessions/",
 		"partial.worktrees.table": "/partials/worktrees/table",
 		"partial.issues.table":    "/partials/issues/table",
+		"partial.pr.gates":        "/partials/prs/",
 		"partial.config.lists":    "/partials/config/lists",
 		"partial.config.channels": "/partials/config/channels",
 	})
@@ -362,6 +363,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/sessions/{threadID}", s.requireAuth(hime.Handler(s.partialSession)))
 	mux.Handle("GET /partials/worktrees/table", s.requireAuth(hime.Handler(s.partialWorktreesTable)))
 	mux.Handle("GET /partials/issues/table", s.requireAuth(hime.Handler(s.partialIssuesTable)))
+	mux.Handle("GET /partials/prs/{owner}/{repo}/{n}/gates", s.requireAuth(hime.Handler(s.partialPRGates)))
 	mux.Handle("GET /partials/config/lists", s.requireAdmin(hime.Handler(s.partialConfigLists)))
 	mux.Handle("GET /partials/config/channels", s.requireAdmin(hime.Handler(s.partialConfigChannels)))
 

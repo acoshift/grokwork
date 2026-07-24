@@ -22,17 +22,19 @@
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
-{{if .PRGates}}
-<div class="pr-gates">
-  {{range .PRGates}}
-  <div class="pr-gate{{if .Class}} {{.Class}}{{end}}">
-    <div class="gate-label">{{.Label}}</div>
-    <div class="gate-value">{{.Value}}</div>
-    {{if .Hint}}<div class="gate-hint">{{.Hint}}</div>{{end}}
-  </div>
-  {{end}}
+{{/* Checks / review / mergeable strip: re-fetch on sse:ship when the Discord PR
+     poller updates session store (CI green/fail, state flips). Live gh call on
+     each partial so the strip matches GitHub, not the poller cache alone. */}}
+<div class="live-region"
+     id="live-pr-gates"
+     hx-get="/partials/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/gates{{if .Project}}?project={{urlquery .Project}}{{end}}"
+     hx-trigger="sse:ship"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML"
+     hx-sync="this:queue last">
+  {{template "pr_gates" .}}
 </div>
-{{end}}
 
 <div class="pr-cols">
 <div class="pr-main">
@@ -302,4 +304,18 @@
 
 </aside>
 </div>{{/* /pr-cols */}}
+{{end}}
+
+{{define "pr_gates"}}
+{{if .PRGates}}
+<div class="pr-gates">
+  {{range .PRGates}}
+  <div class="pr-gate{{if .Class}} {{.Class}}{{end}}">
+    <div class="gate-label">{{.Label}}</div>
+    <div class="gate-value">{{.Value}}</div>
+    {{if .Hint}}<div class="gate-hint">{{.Hint}}</div>{{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
 {{end}}

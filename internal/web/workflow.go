@@ -459,17 +459,39 @@ func (s *Server) linearDetail(ctx *hime.Context) error {
 }
 
 func (s *Server) prDetail(ctx *hime.Context) error {
+	d, err := s.prDetailPageData(ctx, true)
+	if err != nil {
+		return err
+	}
+	return s.viewPage(ctx, "pr_detail", d)
+}
+
+// partialPRGates re-renders the shippability strip (Checks / reviews / mergeable)
+// after an sse:ship tick. The PR poller updates session store checks; this partial
+// re-views GitHub so the detail page reflects live CI without a full reload.
+func (s *Server) partialPRGates(ctx *hime.Context) error {
+	d, err := s.prDetailPageData(ctx, false)
+	if err != nil {
+		return err
+	}
+	return s.viewFragment(ctx, "pr_detail", "pr_gates", d)
+}
+
+// prDetailPageData loads PR detail for the full page or the gates partial.
+// full=true attaches flash/error query params, fix picker, team review table,
+// and reviewer options; the gates partial only needs the strip fields.
+func (s *Server) prDetailPageData(ctx *hime.Context, full bool) (pageData, error) {
 	owner := strings.TrimSpace(ctx.PathValue("owner"))
 	repo := strings.TrimSpace(ctx.PathValue("repo"))
 	nStr := strings.TrimSpace(ctx.PathValue("n"))
 	n, err := strconv.Atoi(nStr)
 	if err != nil || n <= 0 || owner == "" || repo == "" {
-		return ctx.Status(http.StatusBadRequest).Error("invalid PR path")
+		return pageData{}, ctx.Status(http.StatusBadRequest).Error("invalid PR path")
 	}
 	project := strings.TrimSpace(ctx.FormValue("project"))
 	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
-		return ctx.Status(http.StatusForbidden).Error(err.Error())
+		return pageData{}, ctx.Status(http.StatusForbidden).Error(err.Error())
 	}
 	owner, repo = ref.Owner, ref.Repo
 	selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
@@ -482,18 +504,22 @@ func (s *Server) prDetail(ctx *hime.Context) error {
 	d.ActiveRepo = repo
 	d.PR = detail
 	d.PRNumber = n
-	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
-	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
-		d.Error = e
+	if full {
+		d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
+		if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
+			d.Error = e
+		} else if viewErr != nil {
+			d.Error = viewErr.Error()
+		}
+		d.ShowFixPicker = ctx.FormValue("picker") == "1"
+		if s.bot != nil && project != "" {
+			d.FixHits = s.bot.FindByPR(project, owner, repo, n, false)
+			if d.ShowFixPicker || len(d.FixHits) > 1 {
+				d.ShowFixPicker = true
+			}
+		}
 	} else if viewErr != nil {
 		d.Error = viewErr.Error()
-	}
-	d.ShowFixPicker = ctx.FormValue("picker") == "1"
-	if s.bot != nil && project != "" {
-		d.FixHits = s.bot.FindByPR(project, owner, repo, n, false)
-		if d.ShowFixPicker || len(d.FixHits) > 1 {
-			d.ShowFixPicker = true
-		}
 	}
 	if store := s.reviewsStore(); store != nil {
 		bucket := store.ListForPR(owner, repo, n)
@@ -501,24 +527,26 @@ func (s *Server) prDetail(ctx *hime.Context) error {
 		if head == "" {
 			head = bucket.LastHeadSHA
 		}
-		d.TeamReviews = buildTeamReviewRows(bucket, head)
 		label, _, _ := reviewstore.TeamRollup(bucket, head)
 		d.TeamRollup = label
 		d.TeamRollupText = teamRollupText(label)
 		d.TeamRollupBadge = teamRollupBadge(label)
-		for _, req := range bucket.Requests {
-			if req.Status == reviewstore.StatusPending {
-				d.TeamPendingRequests = append(d.TeamPendingRequests, req)
+		if full {
+			d.TeamReviews = buildTeamReviewRows(bucket, head)
+			for _, req := range bucket.Requests {
+				if req.Status == reviewstore.StatusPending {
+					d.TeamPendingRequests = append(d.TeamPendingRequests, req)
+				}
 			}
 		}
 	}
-	if d.CanPRReview {
+	if full && d.CanPRReview {
 		d.ReviewerOptions = s.reviewerOptions(project)
 	}
 	if viewErr == nil {
 		d.PRGates, d.PRShipReady = buildPRGates(detail, d.TeamRollup)
 	}
-	return s.viewPage(ctx, "pr_detail", d)
+	return d, nil
 }
 
 // prGate is one fact on the PR detail shippability strip.
