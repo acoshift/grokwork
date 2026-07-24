@@ -41,7 +41,7 @@ Built-in: **no** `startSessions` / `githubWrites` — fix freeform is coerced to
 | `/start fix …` shipping run | Denied or coerced (no ship) |
 | Direct-ship to primary | Not available |
 | Merge GitHub PRs (bot never merges PRs; eng does via gh/UI) | N/A for this role |
-| Reopen a closed case in the same thread | Refused — open a **new** `/case` |
+| Reopen via `/case` on a closed thread | Refused — use `/reopen` (or open a **new** `/case`) |
 
 Escalate does **not** make the investigator a builder: eng with ship caps continues in the same case thread.
 
@@ -59,6 +59,7 @@ Always mention the bot first: `@Grok …`.
 | `/customer-update <text>` | Set sanitized customer-facing text |
 | `/escalate [note]` | Hand to eng → phase `fixing` |
 | `/close [answered\|fixed\|…]` | Close case (owner/co/mod) |
+| `/reopen [investigate\|fixing]` | Resume a closed case (default investigate; keeps dossier) |
 | `/board cases` | List open cases by phase |
 | `/status`, `/brief`, `/help` | Thread state and help |
 
@@ -76,7 +77,7 @@ Requires web OAuth **member+** (or admin) **and** host feature `startSessions` f
 |---------|-------------|
 | Project **Cases** board | Browse case pipeline |
 | **New case** (`/projects/{p}/cases/new`) | Web intake (same caps as Discord `/case`) |
-| Session page **case panel** | Investigate / answer / customer-update / escalate / close when allowed |
+| Session page **case panel** | Investigate / answer / customer-update / escalate / close / reopen when allowed |
 | Sessions / history | Read progress |
 | Ship board | Usually read-only for investigators (no ship caps) |
 

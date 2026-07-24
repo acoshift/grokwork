@@ -709,6 +709,8 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleCustomerUpdate(s, m, parsed)
 	case KindAnswer:
 		b.handleAnswer(s, m, parsed)
+	case KindReopenCase:
+		b.handleReopenCase(s, m, parsed)
 	case KindCheckpoint:
 		b.handleCheckpoint(s, m, parsed)
 	case KindUndo:
@@ -1170,10 +1172,10 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			}
 		}
 	}
-	// Closed case: reject freeform runs
+	// Closed case: reject freeform runs until /reopen
 	if e, ok := b.sessions.Get(threadID); ok && e.IsCaseClosed() {
 		b.postOrEditThreadStatus(s, threadID, statusMsgID,
-			"This case is **closed**. Open a new case or ask eng to continue outside case mode.",
+			"This case is **closed**. Use `@Grok /reopen` (or `/reopen fixing`) to resume, or open a new case.",
 			actionBarDone(threadID, b.sessionWebURL(threadID)))
 		if b.runs != nil {
 			b.runs.RemoveTaskFiles(threadID, taskID)
@@ -1379,7 +1381,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		}
 	}
 	if caseClosed || pol.PrefixKind == "none" {
-		msg := "This case is **closed**. Not starting a run."
+		msg := "This case is **closed**. Use `@Grok /reopen` first."
 		if present && item.statusMsgID != "" {
 			b.postOrEditThreadStatus(s, threadID, item.statusMsgID, msg, actionBarDone(threadID, b.sessionWebURL(threadID)))
 		} else if present && s != nil {

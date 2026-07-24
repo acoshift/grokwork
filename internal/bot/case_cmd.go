@@ -54,7 +54,7 @@ func (b *Bot) handleCase(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	// Refuse clobber: closed cases and non-case eng threads.
 	if e, ok := b.sessions.Get(threadID); ok {
 		if e.IsCaseClosed() {
-			replyText(s, m, "This case is **closed**. Open a new thread with `@Grok /case …` (reopen is not implemented).")
+			replyText(s, m, "This case is **closed**. Use `@Grok /reopen` (or `/reopen fixing`) to resume, or open a new thread with `@Grok /case …`.")
 			return
 		}
 		if e.Mode != "" && !e.IsCase() {
@@ -127,7 +127,7 @@ func (b *Bot) handleEscalate(s *discordgo.Session, m *discordgo.MessageCreate, p
 		return
 	}
 	if e.IsCaseClosed() {
-		replyText(s, m, "Case is closed. `@Grok /reopen` is not implemented — open a new case or ask eng to `/label`.")
+		replyText(s, m, "Case is closed. Use `@Grok /reopen` first.")
 		return
 	}
 	roleIDs := memberRoles(m)
@@ -269,6 +269,69 @@ func (b *Bot) handleCustomerUpdate(s *discordgo.Session, m *discordgo.MessageCre
 	replyText(s, m, msg)
 }
 
+func (b *Bot) handleReopenCase(s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed) {
+	if !isThread(s, m.ChannelID) {
+		replyText(s, m, "Use `@Grok /reopen` inside a case thread.")
+		return
+	}
+	e, ok := b.sessions.Get(m.ChannelID)
+	if !ok || !e.IsCase() {
+		replyText(s, m, "This thread is not a case.")
+		return
+	}
+	if !e.IsCaseClosed() {
+		replyText(s, m, "This case is already open (phase **"+e.CasePhase()+"**).")
+		return
+	}
+	roleIDs := memberRoles(m)
+	allowed := b.canControlThread(s, m, e) || b.isModerator(s, m)
+	if !allowed && b.cfg != nil && m.Author != nil {
+		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID, roleIDs)
+		allowed = CanReopenCaseCaps(caps)
+	}
+	if !allowed {
+		replyText(s, m, "You're not allowed to reopen cases (need investigate / fileEscalation / startSessions, or own the case).")
+		return
+	}
+	phase := parseReopenPhase(parsed.Prompt)
+	if phase == "" {
+		replyText(s, m, "Usage: `@Grok /reopen [investigate|fixing]` (default investigate).")
+		return
+	}
+	actorID := ""
+	if m.Author != nil {
+		actorID = m.Author.ID
+	}
+	if err := b.ReopenCase(m.ChannelID, actorID, phase); err != nil {
+		if err == ErrCaseBadPhase {
+			replyText(s, m, "Usage: `@Grok /reopen [investigate|fixing]` (default investigate).")
+			return
+		}
+		replyText(s, m, "Reopen failed: "+err.Error())
+		return
+	}
+	replyText(s, m, fmt.Sprintf("Case **reopened** · phase **%s** (Mode stays **case**; dossier preserved). Freeform and case actions work again.", phase))
+}
+
+func parseReopenPhase(prompt string) string {
+	text := strings.ToLower(strings.TrimSpace(stripCmdPrefix(prompt, "/reopen", "reopen")))
+	if text == "" {
+		return sessionstore.PhaseInvestigate
+	}
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return sessionstore.PhaseInvestigate
+	}
+	switch fields[0] {
+	case sessionstore.PhaseInvestigate, "inv":
+		return sessionstore.PhaseInvestigate
+	case sessionstore.PhaseFixing, "fix", "eng":
+		return sessionstore.PhaseFixing
+	default:
+		return "" // invalid
+	}
+}
+
 func (b *Bot) handleAnswer(s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed) {
 	if !isThread(s, m.ChannelID) {
 		replyText(s, m, "Use `@Grok /answer` inside a case thread.")
@@ -280,7 +343,7 @@ func (b *Bot) handleAnswer(s *discordgo.Session, m *discordgo.MessageCreate, par
 		return
 	}
 	if e.IsCaseClosed() {
-		replyText(s, m, "This case is **closed**. Reopen is not implemented.")
+		replyText(s, m, "This case is **closed**. Use `@Grok /reopen` first.")
 		return
 	}
 	if b.cfg != nil && m.Author != nil {

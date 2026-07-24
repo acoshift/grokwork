@@ -217,7 +217,7 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 	// Web path: refuse closed cases before enqueue (executeTask also checks live).
 	if b.sessions != nil {
 		if e, ok := b.sessions.Get(threadID); ok && e.IsCaseClosed() {
-			return 0, fmt.Errorf("case is closed")
+			return 0, fmt.Errorf("case is closed — use /reopen first")
 		}
 	}
 	// Defense in depth: explicit KindStartFix requires CanShip (web /start fix parity).

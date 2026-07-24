@@ -37,6 +37,7 @@ const (
 	KindCloseCase
 	KindCustomerUpdate
 	KindAnswer
+	KindReopenCase
 	// Wave 2 IDE-free
 	KindCheckpoint
 	KindUndo
@@ -107,6 +108,8 @@ func ParseMessage(content, botUserID string) Parsed {
 		return Parsed{Kind: KindEscalate, Prompt: text}
 	case "/answer", "answer":
 		return Parsed{Kind: KindAnswer, Prompt: text}
+	case "/reopen", "reopen":
+		return Parsed{Kind: KindReopenCase, Prompt: text}
 	case "/checkpoint", "checkpoint":
 		return Parsed{Kind: KindCheckpoint, Prompt: text}
 	case "/undo", "undo":
@@ -140,6 +143,9 @@ func ParseMessage(content, botUserID string) Parsed {
 	}
 	if isAnswerCommand(lower) {
 		return Parsed{Kind: KindAnswer, Prompt: text}
+	}
+	if isReopenCaseCommand(lower) {
+		return Parsed{Kind: KindReopenCase, Prompt: text}
 	}
 	if isCheckpointCommand(lower) {
 		return Parsed{Kind: KindCheckpoint, Prompt: text}
@@ -257,6 +263,11 @@ func isCustomerUpdateCommand(lower string) bool {
 
 func isAnswerCommand(lower string) bool {
 	return strings.HasPrefix(lower, "/answer ") || lower == "/answer"
+}
+
+func isReopenCaseCommand(lower string) bool {
+	// Only slash form so freeform "reopen the ticket" stays a task.
+	return strings.HasPrefix(lower, "/reopen ") || lower == "/reopen"
 }
 
 func isCheckpointCommand(lower string) bool {
@@ -421,6 +432,7 @@ func HelpText() string {
 		"• `/answer [note]` — case → answered (knowledge path)",
 		"• `/customer-update <text>` — set sanitized customer-facing text",
 		"• `/close [answered|fixed|…]` — close case (auto-label freeze; no LabelManual)",
+		"• `/reopen [investigate|fixing]` — reopen a closed case (default investigate; keeps dossier)",
 		"• `/board cases` — list Mode=case sessions by phase",
 		"• `/checkpoint [label]` — bot-owned git checkpoint (local ref)",
 		"• `/undo` / `/restore <id> [force]` — hard-reset worktree to a checkpoint (local only)",

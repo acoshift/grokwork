@@ -343,6 +343,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseAnswer))))
 	mux.Handle("POST /sessions/{threadID}/case/close",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseClose))))
+	mux.Handle("POST /sessions/{threadID}/case/reopen",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseReopen))))
 	mux.Handle("POST /sessions/{threadID}/case/customer-update",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseCustomerUpdate))))
 	mux.Handle("POST /sessions/{threadID}/case/investigate",
@@ -579,6 +581,7 @@ type pageData struct {
 	CanCaseAnswer      bool // knowledge-path answer; not shown on eng phases
 	CanCaseClose       bool // owner/co/admin
 	CanCaseInvestigate bool
+	CanCaseReopen      bool // closed cases only; investigator-class or session control
 }
 
 func (s *Server) basePage(ctx *hime.Context) pageData {

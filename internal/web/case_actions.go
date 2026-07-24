@@ -19,6 +19,17 @@ func (s *Server) resolveCaseCaps(ctx *hime.Context, project string) (canOpen, ca
 		bot.CanDraftCaseCaps(caps)
 }
 
+func (s *Server) canReopenCase(ctx *hime.Context, ent sessionstore.Entry) bool {
+	if !ent.IsCase() || !ent.IsCaseClosed() {
+		return false
+	}
+	if s.canControlSession(ctx, ent) {
+		return true
+	}
+	caps := s.cfg.ResolveCapabilities(ent.Project, s.fixActor(ctx).ID, nil)
+	return bot.CanReopenCaseCaps(caps)
+}
+
 func (s *Server) postCaseEscalate(ctx *hime.Context) error {
 	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
 	ent, err := s.loadCaseThread(ctx, threadID)
@@ -123,6 +134,34 @@ func (s *Server) postCaseCustomerUpdate(ctx *hime.Context) error {
 		msg += " (redacted: " + strings.Join(hits, ", ") + ")"
 	}
 	return s.sessionRedirect(ctx, threadID, msg, "")
+}
+
+func (s *Server) postCaseReopen(ctx *hime.Context) error {
+	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
+	ent, err := s.loadCaseThread(ctx, threadID)
+	if err != nil {
+		return err
+	}
+	if !ent.IsCaseClosed() {
+		return s.sessionRedirect(ctx, threadID, "", bot.ErrCaseNotClosed.Error())
+	}
+	if !s.canReopenCase(ctx, ent) {
+		s.auditAction(ctx, "case.reopen", bot.ErrCaseForbidden, map[string]any{"threadId": threadID})
+		return ctx.Status(http.StatusForbidden).Error("forbidden: not allowed to reopen cases")
+	}
+	phase := strings.TrimSpace(ctx.PostFormValue("phase"))
+	actor := s.fixActor(ctx)
+	reopenErr := s.bot.ReopenCase(threadID, actor.ID, phase)
+	s.auditAction(ctx, "case.reopen", reopenErr, map[string]any{
+		"threadId": threadID, "phase": phase, "project": ent.Project,
+	})
+	if reopenErr != nil {
+		return s.sessionRedirect(ctx, threadID, "", reopenErr.Error())
+	}
+	if phase == "" {
+		phase = sessionstore.PhaseInvestigate
+	}
+	return s.sessionRedirect(ctx, threadID, "Case reopened · phase "+phase+".", "")
 }
 
 func (s *Server) postCaseInvestigate(ctx *hime.Context) error {

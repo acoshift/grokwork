@@ -11,11 +11,13 @@ import (
 
 // Case action errors (web + tests).
 var (
-	ErrNotACase       = fmt.Errorf("not a case session")
-	ErrCaseClosed     = fmt.Errorf("case is closed")
-	ErrCaseForbidden  = fmt.Errorf("not allowed for this case action")
-	ErrCaseNoSession  = fmt.Errorf("unknown session")
-	ErrCaseEmptyTitle = fmt.Errorf("customer update empty after sanitizer")
+	ErrNotACase         = fmt.Errorf("not a case session")
+	ErrCaseClosed       = fmt.Errorf("case is closed")
+	ErrCaseNotClosed    = fmt.Errorf("case is not closed")
+	ErrCaseBadPhase     = fmt.Errorf("invalid reopen phase (use investigate or fixing)")
+	ErrCaseForbidden    = fmt.Errorf("not allowed for this case action")
+	ErrCaseNoSession    = fmt.Errorf("unknown session")
+	ErrCaseEmptyTitle   = fmt.Errorf("customer update empty after sanitizer")
 )
 
 // EscalateCase moves Mode=case → Phase=fixing (K17: Mode stays case).
@@ -134,6 +136,56 @@ func (b *Bot) CloseCase(threadID, actorID, resolution, note string) error {
 		_ = sessionstore.ClampCaseFields(ent)
 	})
 	return err
+}
+
+// ReopenCase reopens a closed Mode=case session.
+// phase is investigate (default) or fixing; clears resolution fields; preserves Dossier.
+// Caller enforces investigator-class capability (or session control).
+func (b *Bot) ReopenCase(threadID, actorID, phase string) error {
+	if b == nil || b.sessions == nil {
+		return fmt.Errorf("bot unavailable")
+	}
+	threadID = strings.TrimSpace(threadID)
+	e, ok := b.sessions.Get(threadID)
+	if !ok {
+		return ErrCaseNoSession
+	}
+	if !e.IsCase() {
+		return ErrNotACase
+	}
+	if !e.IsCaseClosed() {
+		return ErrCaseNotClosed
+	}
+	phase = strings.ToLower(strings.TrimSpace(phase))
+	if phase == "" {
+		phase = sessionstore.PhaseInvestigate
+	}
+	switch phase {
+	case sessionstore.PhaseInvestigate, sessionstore.PhaseFixing:
+	default:
+		return ErrCaseBadPhase
+	}
+	label := sessionstore.LabelOpen
+	if phase == sessionstore.PhaseFixing {
+		label = sessionstore.LabelInProgress
+	}
+	_, _, err := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+		ent.Mode = ModeCase
+		ent.Phase = phase
+		ent.Resolution = ""
+		ent.ResolutionNote = ""
+		ent.ResolvedAt = ""
+		ent.ResolvedBy = ""
+		ent.Label = label
+		// Leave LabelManual as-is so a prior manual label can still be cleared via /label auto.
+		_ = sessionstore.ClampCaseFields(ent)
+	})
+	return err
+}
+
+// CanReopenCaseCaps is the shared reopen gate (Discord + web): investigator-class.
+func CanReopenCaseCaps(caps config.Capabilities) bool {
+	return caps.Investigate || caps.FileEscalation || caps.StartSessions
 }
 
 // SetCaseCustomerUpdate sanitizes and stores customer-facing text.

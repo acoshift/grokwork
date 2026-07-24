@@ -206,9 +206,8 @@ func TestOverviewCaseCounts(t *testing.T) {
 	}
 }
 
-// TestClosedCaseHidesContinueAndRejectsPost: a closed case is terminal — the
-// session page drops the composer and lifecycle controls, and a direct POST
-// to /continue is refused.
+// TestClosedCaseHidesContinueAndRejectsPost: a closed case hides the composer
+// and open-case actions until reopen; continue is refused; reopen is offered.
 func TestClosedCaseHidesContinueAndRejectsPost(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	_ = srv.cfg.AddProjectAllowedUser("proj", "member-1")
@@ -238,10 +237,18 @@ func TestClosedCaseHidesContinueAndRejectsPost(t *testing.T) {
 			t.Fatalf("closed case page must not render %q", ban)
 		}
 	}
-	// Ownership and reset stay available for cleanup.
-	for _, want := range []string{"session-ownership", "Reset session"} {
+	// Reopen control is offered; open-case action buttons stay hidden.
+	for _, want := range []string{`id="btn-case-reopen"`, `id="session-case-actions"`, "session-ownership", "Reset session"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("closed case page missing %q", want)
+		}
+	}
+	if strings.Contains(body, "Reopen is not implemented") {
+		t.Fatal("closed case page still claims reopen is not implemented")
+	}
+	for _, hide := range []string{"btn-case-investigate", "btn-case-escalate", "btn-case-answer", "btn-case-close"} {
+		if strings.Contains(body, hide) {
+			t.Fatalf("closed case page should hide %q", hide)
 		}
 	}
 
@@ -254,5 +261,92 @@ func TestClosedCaseHidesContinueAndRejectsPost(t *testing.T) {
 	loc := w.Header().Get("Location")
 	if !strings.Contains(loc, "err=") || !strings.Contains(loc, "closed") {
 		t.Fatalf("continue on closed case must redirect with error, got %q", loc)
+	}
+}
+
+func TestPostCaseReopen(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	_ = srv.cfg.AddProjectAllowedUser("proj", "member-1")
+	if err := srv.sessions.Set("t-reopen", sessionstore.Entry{
+		Project: "proj", Mode: "case", Phase: sessionstore.PhaseClosed,
+		CustomerTitle: "Still broken checkout", Severity: "high",
+		OwnerID: "member-1", OwnerName: "Member", Origin: "web",
+		Resolution: "fixed", ResolutionNote: "thought it shipped",
+		ResolvedAt: "2026-01-01T00:00:00Z", ResolvedBy: "member-1",
+		Dossier: &sessionstore.Dossier{Summary: "payment race"},
+		Label:   sessionstore.LabelDone,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Non-closed reject
+	seedCaseSession(t, srv, "t-open-reopen", "member-1")
+	w := postFix(t, srv, "/sessions/t-open-reopen/case/reopen", sid, csrf, url.Values{
+		"phase": {"investigate"},
+	})
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("reopen open status=%d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "err=") {
+		t.Fatalf("reopen on open case must error, loc=%q", loc)
+	}
+	e, _ := srv.sessions.Get("t-open-reopen")
+	if e.Phase != sessionstore.PhaseIntake {
+		t.Fatalf("open phase clobbered: %q", e.Phase)
+	}
+
+	// Closed → investigate (default empty phase)
+	w = postFix(t, srv, "/sessions/t-reopen/case/reopen", sid, csrf, url.Values{})
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("reopen status=%d body=%s", w.Code, w.Body.String())
+	}
+	e, ok := srv.sessions.Get("t-reopen")
+	if !ok || e.IsCaseClosed() || e.Mode != "case" {
+		t.Fatalf("after reopen: ok=%v %+v", ok, e)
+	}
+	if e.Phase != sessionstore.PhaseInvestigate {
+		t.Fatalf("phase=%q", e.Phase)
+	}
+	if e.Resolution != "" || e.ResolvedBy != "" {
+		t.Fatalf("resolution not cleared: %+v", e)
+	}
+	if e.Dossier == nil || e.Dossier.Summary != "payment race" {
+		t.Fatalf("dossier: %+v", e.Dossier)
+	}
+
+	// Re-close and reopen as fixing
+	if err := srv.bot.CloseCase("t-reopen", "member-1", "fixed", "again"); err != nil {
+		t.Fatal(err)
+	}
+	w = postFix(t, srv, "/sessions/t-reopen/case/reopen", sid, csrf, url.Values{
+		"phase": {"fixing"},
+	})
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("reopen fixing status=%d", w.Code)
+	}
+	e, _ = srv.sessions.Get("t-reopen")
+	if e.Phase != sessionstore.PhaseFixing || e.IsCaseClosed() {
+		t.Fatalf("after reopen fixing: %+v", e)
+	}
+
+	// After reopen, page shows continue + open-case actions (not reopen-only).
+	req := httptest.NewRequest(http.MethodGet, "/sessions/t-reopen", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("session page status=%d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `id="btn-continue"`) {
+		t.Fatal("after reopen, continue composer should be back")
+	}
+	if strings.Contains(body, `id="btn-case-reopen"`) {
+		t.Fatal("after reopen, reopen control should hide")
 	}
 }

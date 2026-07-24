@@ -91,7 +91,7 @@ Every command requires `@Grok` first.
 - Opens a thread if you are in a parent channel.  
 - Sets **Mode=case**, phase **intake**.  
 - Do **not** run `/case` again in an engineering-only thread; start a new message in the parent channel.  
-- Closed cases cannot be reopened with `/case` — open a **new** case.
+- Closed cases cannot be reopened with `/case` — use `@Grok /reopen` (or `/reopen fixing`) in the same thread, or open a **new** case.
 
 ### `/investigate` — dig without shipping
 
@@ -150,7 +150,18 @@ Every command requires `@Grok` first.
 | `escalated_external` | handed outside the team | abandoned |
 
 - Only the case **owner**, co-owner, or a Discord **mod** can close (investigators who own the case can close).  
-- Closed cases are **frozen** (no more investigate/answer/customer-update). Open a new case if the customer returns.
+- Closed cases are **frozen** (no more investigate/answer/customer-update) until `@Grok /reopen` (or `/reopen fixing`).
+
+### `/reopen` — resume a closed case
+
+```text
+@Grok /reopen [investigate|fixing]
+```
+
+- Default phase is **investigate**; use `fixing` when eng work should continue.  
+- Clears resolution fields; **keeps Mode=case and dossier**.  
+- Investigators (investigate / fileEscalation / startSessions) or the case owner can reopen.  
+- Do **not** use `/case` on the same closed thread — that refuses clobber.
 
 ### `/board cases` — list open cases
 
@@ -176,6 +187,8 @@ Other board filters (`running`, `queued`, `waiting`, `stale`, labels, `all`) sti
     │                         │            │
     └──────── /close ─────────┴────────────┘
                          closed
+                            │
+                     /reopen [investigate|fixing]
 ```
 
 | Phase | You can… |
@@ -184,7 +197,7 @@ Other board filters (`running`, `queued`, `waiting`, `stale`, labels, `all`) sti
 | **investigate** | Keep investigating, escalate, answer, close |
 | **answered** | Refine `/customer-update`, close; freeform may re-open investigate |
 | **fixing** | Eng work in-thread; still set customer update and close when done |
-| **closed** | Read-only; start a **new** `/case` if needed |
+| **closed** | Read-only until `/reopen`; or start a **new** `/case` |
 
 ---
 
@@ -197,7 +210,7 @@ With the default **investigator** capability template under Safe Team Mode:
 | Freeform “please fix this in code and open a PR” | Blocked or coerced to investigate-only — **no PR** |
 | `/start fix …` without escalate rights | Denied |
 | Ship / merge | Not available to support templates |
-| Reopen a closed case with `/case` in the same thread | Refused — open a new case |
+| Reopen a closed case with `/case` in the same thread | Refused — use `/reopen` (or open a new case) |
 
 If you need a code change: **`/escalate`**, then ping eng in the thread.
 
@@ -236,7 +249,7 @@ Eng continues in the **same thread** (Mode stays **case**). Support can still dr
 |-----------|------------|
 | “You're not allowed to open cases…” | Ask admin to map your user/role (investigate caps / Safe Team template) |
 | “This thread is already a **fix** session…” | `/case` belongs in a **new** thread from the parent channel |
-| “This case is **closed**…” | Open a **new** `/case` for follow-up |
+| “This case is **closed**…” | `@Grok /reopen` (or open a **new** `/case`) |
 | “You're not allowed to escalate…” | Need escalate/fileEscalation or builder mapping — ask admin |
 | “Customer update empty after sanitizer” | Text was only secrets/paths; rewrite in plain language |
 | Silent / no reply | Confirm channel is mapped and you are on the project allowlist |

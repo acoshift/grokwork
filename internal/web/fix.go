@@ -665,6 +665,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 		d.CanCaseAnswer = !closed && !shipPhase && bot.CanDraftCaseCaps(caps)
 		d.CanCaseClose = !closed && d.CanControlSession
 		d.CanCaseInvestigate = !closed && !shipPhase && (caps.Investigate || caps.FileEscalation || caps.StartSessions || d.CanControlSession)
+		d.CanCaseReopen = closed && (bot.CanReopenCaseCaps(caps) || d.CanControlSession)
 	}
 	return d
 }

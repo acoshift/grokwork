@@ -56,8 +56,8 @@
 </div>
 
 {{if and .CanStartSession (not .SessionEntry.IsCaseClosed)}}
-{{/* Docked conversation composer. Closed cases hide it — the web continue
-     endpoint rejects them (close is terminal; open a new case instead). Lives OUTSIDE #live-session on purpose:
+{{/* Docked conversation composer. Closed cases hide it until reopen —
+     the web continue endpoint rejects them. Lives OUTSIDE #live-session on purpose:
      SSE swaps must never wipe an in-progress prompt (the live-partial tests
      pin session-continue-form out of the fragment). Desktop: sticky at the
      bottom of the conversation column. Phone: fixed bottom bar replacing the
@@ -79,10 +79,29 @@
 
 <aside class="pr-rail">
 
-{{if and .SessionEntry.IsCase (or .CanCaseInvestigate .CanCaseEscalate .CanCaseAnswer .CanCaseDraft .CanCaseClose)}}
+{{if and .SessionEntry.IsCase (or .CanCaseInvestigate .CanCaseEscalate .CanCaseAnswer .CanCaseDraft .CanCaseClose .CanCaseReopen)}}
 {{/* Case phase forms stay outside the live region so SSE swaps do not wipe typed notes. */}}
 <div class="rail-group" id="session-case-actions">
   <div class="rail-group-title">Case</div>
+  {{if .CanCaseReopen}}
+  <details class="action" open>
+    <summary><span class="action-title">Reopen case</span></summary>
+    <div class="action-body">
+      <form method="post" action="/sessions/{{.ThreadID}}/case/reopen">
+        {{template "csrf" $}}
+        <div class="field">
+          <label for="case-reopen-phase">Resume phase</label>
+          <select id="case-reopen-phase" name="phase">
+            <option value="investigate" selected>investigate</option>
+            <option value="fixing">fixing</option>
+          </select>
+        </div>
+        <div class="form-actions"><button type="submit" id="btn-case-reopen" class="btn-secondary">Reopen case</button></div>
+      </form>
+      <p class="rail-note" style="margin-top:0.55rem">Clears resolution; keeps dossier and Mode=case.</p>
+    </div>
+  </details>
+  {{end}}
   {{if .CanCaseInvestigate}}
   <details class="action" open>
     <summary><span class="action-title">Investigate</span></summary>
@@ -149,7 +168,7 @@
   <details class="action">
     <summary><span class="action-title">Close case</span></summary>
     <div class="action-body">
-      <form method="post" action="/sessions/{{.ThreadID}}/case/close" onsubmit="return confirm('Close this case? Reopen is not implemented.')">
+      <form method="post" action="/sessions/{{.ThreadID}}/case/close" onsubmit="return confirm('Close this case? You can reopen later with Reopen case or @Grok /reopen.')">
         {{template "csrf" $}}
         <div class="field">
           <label for="case-resolution">Resolution</label>

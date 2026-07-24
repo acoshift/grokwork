@@ -141,10 +141,32 @@ func TestParseCaseCommands(t *testing.T) {
 	if p.Kind != KindAnswer {
 		t.Fatalf("kind=%d", p.Kind)
 	}
+	p = ParseMessage("<@1> /reopen", "1")
+	if p.Kind != KindReopenCase {
+		t.Fatalf("kind=%d", p.Kind)
+	}
+	if got := parseReopenPhase(p.Prompt); got != sessionstore.PhaseInvestigate {
+		t.Fatalf("default phase=%q", got)
+	}
+	p = ParseMessage("<@1> /reopen fixing", "1")
+	if p.Kind != KindReopenCase {
+		t.Fatalf("kind=%d", p.Kind)
+	}
+	if got := parseReopenPhase(p.Prompt); got != sessionstore.PhaseFixing {
+		t.Fatalf("fixing phase=%q", got)
+	}
+	if got := parseReopenPhase("/reopen shipping"); got != "" {
+		t.Fatalf("invalid phase should be empty, got %q", got)
+	}
 	// freeform close stays task
 	p = ParseMessage("<@1> close the ticket in jira", "1")
 	if p.Kind != KindTask {
 		t.Fatalf("freeform close kind=%d", p.Kind)
+	}
+	// freeform reopen stays task
+	p = ParseMessage("<@1> reopen the ticket in jira", "1")
+	if p.Kind != KindTask {
+		t.Fatalf("freeform reopen kind=%d", p.Kind)
 	}
 }
 
