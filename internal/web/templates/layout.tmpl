@@ -3750,6 +3750,47 @@
       }
     });
 
+    // iOS-family WebKit (Safari, home-screen PWAs, every iOS browser skin —
+    // all WKWebView; iPadOS reports a "Macintosh" UA but multi-touch). Its
+    // native <select> pickers stay on screen while change fires — the wheel
+    // picker emits one per detent. Read navigator per call, not once at init,
+    // so tests can shadow the properties.
+    function iosNativePicker() {
+      return /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+        (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+    }
+
+    function autoSubmitForm(form) {
+      if (form.requestSubmit) form.requestSubmit();
+      else form.submit();
+    }
+
+    // Hold a select's autosubmit until its native picker dismisses. Submitting
+    // mid-change would boost-swap #live-root and tear the open picker off the
+    // control (page visibly "reloads" under the open dropdown). Dismissal
+    // blurs the control; a document-level pointerdown is the fallback for
+    // picker styles that keep focus after closing — while the picker is up,
+    // touches land on the native overlay and never reach the document.
+    // Repeat changes (wheel scrolling) collapse into one submit of the final
+    // value.
+    function deferAutoSubmit(el) {
+      if (el.__gwAutoSubmitArmed) return;
+      el.__gwAutoSubmitArmed = true;
+      function flush() {
+        el.removeEventListener("blur", flush);
+        document.removeEventListener("pointerdown", onDoc, true);
+        el.__gwAutoSubmitArmed = false;
+        if (el.isConnected && el.form) autoSubmitForm(el.form);
+      }
+      function onDoc(ev) {
+        // Tapping the select itself re-opens its picker — keep holding.
+        if (ev.target === el) return;
+        flush();
+      }
+      el.addEventListener("blur", flush);
+      document.addEventListener("pointerdown", onDoc, true);
+    }
+
     document.addEventListener("change", function (e) {
       if (e.target && e.target.id === "risky-use-default") {
         var ta = document.getElementById("risky-globs");
@@ -3762,8 +3803,11 @@
       var el = e.target;
       if (el && el.matches &&
           el.matches("select[data-autosubmit], input[type=radio][data-autosubmit], input[type=checkbox][data-autosubmit]") && el.form) {
-        if (el.form.requestSubmit) el.form.requestSubmit();
-        else el.form.submit();
+        if (el.tagName === "SELECT" && document.activeElement === el && iosNativePicker()) {
+          deferAutoSubmit(el);
+        } else {
+          autoSubmitForm(el.form);
+        }
       }
     });
 
