@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Design / decision plan (not implemented) |
+| **Status** | Partially implemented — see [Implementation status](#implementation-status) |
 | **Date** | 2026-07-25 |
 | **Repo** | `github.com/acoshift/grokwork` |
 | **Audience** | Operators and engineers familiar with this codebase |
@@ -341,6 +341,28 @@ Each phase ships independently and leaves Discord working. Ordered so the highes
 | **P5** | D5 — optional `discordChannelId`; uniform web-native fallback. | low | projects with no Discord presence |
 
 P0–P2 are worth doing even if the web-primary goal were abandoned: they fix real bugs (doomed API calls, lost output on cancel) and close a 10-item capability gap that already affects today's web-native units.
+
+---
+
+## Implementation status
+
+Code on `main` wins where this and the plan above disagree.
+
+| Phase | State | Notes |
+|---|---|---|
+| **P0** | **Done** | 92 raw `ChannelMessageSendReply` calls behind `discordReply`. The plan called this "risk: none" and was **wrong**: `discordSendReply` sets `Parse: []` + `SuppressEmbeds`, so converting to it would have silently stopped the `/review` reviewer ping (the mention still *renders*, so nothing looks broken) and stopped PR/issue links unfurling. Mention/embed policy is now an explicit choice at a pure payload layer. The "export the test seams" half was already done in the codebase — the `fix_test.go` comment cited as evidence was stale narration, since removed. |
+| **P1** | **Done** | `sessionstore.DiscordRef` + `Entry.HasDiscord()`; nine id-shape sniffs replaced by `bot.hasDiscordSurface`; `present` no longer derived from gateway liveness, so a web-native run with Discord up stops firing a doomed API call. `Origin` is unusable as the migration signal — `web_task_start.go` stamps `Origin=web` even when it *does* open a thread — so migration keys off the store key, in one documented function. Checked for lock reentrancy first: a static walk found no converted call inside any `Patch` closure. |
+| **P2** | **Partial** | Store + the data-loss fix + web rendering are done (`internal/timeline`, `recordRunTimeline`, session page shows recovered output labelled as such). **Not done:** the Discord-renderer refactor and 8 of the 10 lost capabilities (completion, brief, PR status, CI digest, decisions, artifacts, stderr, resume announcements) still render only via direct Discord calls, so they remain absent for web-native units. |
+| **P3** | **Partial** | Actor ids may be namespaced (`discord:`/`web:`/`local:`/`oidc:`), compared normalized, so a non-Discord person can now be *named and authorized* in config. **Not done:** the `Actor` struct, `AuthProvider` seam, a local login provider, group namespacing, and the `roleIDs=nil` enforcement bug — which needs the viewer's Discord roles, not stored in the web session today. **A non-Discord user still cannot log in.** |
+| **P4** | **Not started** | Notifier registry + web inbox. |
+| **P5** | **Done** | `config.ErrNoDiscordChannel` splits absent from broken. The plan only recorded `startFixCreate` erroring; in fact `StartWebTask`/`StartCase` had the *opposite* bug — falling back on any error, hiding real channel misconfiguration. All three now agree: absent → web-native, broken → surface. |
+
+**Deviations worth knowing about**
+
+- **One text block per run, not per sealed chunk.** The plan said blocks are appended "as chunks seal". Sealing happens under the stream poster's lock, so appending there puts a file write inside the streaming critical section — violating I2. Blocks are written once per run instead; a hard crash mid-run loses the in-flight text, which is also true today, and `runjournal` owns crash re-drive.
+- **Unknown actor namespaces pass through** rather than being rejected at config load, which keeps a live-edited config from gaining a new failure mode while preserving the same safety property (they match nothing).
+- **Card message-ids stayed flat on `Entry`.** Moving them into `DiscordRef` is organization, not capability, and touches far more read sites than it earns.
+- **Discord unit ids stay thread ids**, as amended — no reverse index on the message path.
 
 ---
 
