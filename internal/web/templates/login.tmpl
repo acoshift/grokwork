@@ -1,22 +1,18 @@
 {{define "content"}}
-<div class="section" id="page-login" style="max-width: 26rem; margin: 3rem auto 0;">
-  <div class="brand" style="margin-bottom:1.5rem; padding:0;">
-    <span class="brand-mark" aria-hidden="true"></span>
-    <span class="brand-name">Grok Work</span>
-  </div>
-  <h1>Log in</h1>
-  <p class="sub">Sign in with Discord to use this private Grok Work UI.</p>
+{{/* The gate: mark, nameplate, one action. All layout/CSS lives in layout.tmpl
+     ("Login gate" section) — this page is markup only. Deliberately no policy
+     copy: who may continue is answered by the error flash on the one attempt
+     where it matters. */}}
+<div class="login" id="page-login">
+  <span class="login-mark" aria-hidden="true"></span>
+  <h1>Grok Work</h1>
+  <span class="login-seam" aria-hidden="true"></span>
   {{if .Error}}
-  <div class="flash err">{{.Error}}</div>
+  <div class="flash err login-flash" role="alert">{{.Error}}</div>
   {{end}}
-  <div class="card" style="margin-top: 1rem;">
-    <p class="sub" style="margin-top:0">Only operators listed as web admins/members/viewers or on the bot allowlist can continue after Discord login.</p>
-    <p style="margin: 1rem 0 0;">
-      {{/* Full navigation: hx-boost would AJAX /auth/discord then follow the Discord
-           OAuth redirect with HX-Request, which Discord CORS rejects. */}}
-      <a class="btn" href="{{route "auth.discord"}}{{if .LoginNext}}?next={{urlquery .LoginNext}}{{end}}"
-         hx-boost="false" id="login-discord">Log in with Discord</a>
-    </p>
-  </div>
+  {{/* Full navigation: hx-boost would AJAX /auth/discord then follow the Discord
+       OAuth redirect with HX-Request, which Discord CORS rejects. */}}
+  <a class="btn login-cta" href="{{route "auth.discord"}}{{if .LoginNext}}?next={{urlquery .LoginNext}}{{end}}"
+     hx-boost="false" id="login-discord">Log in with Discord</a>
 </div>
 {{end}}
