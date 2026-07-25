@@ -6,7 +6,7 @@ Order is suggested priority, not a commitment. **Code on `main` wins** if this f
 
 **Command surface:** keep **@Grok + text commands** as the primary UX. Native Discord slash commands stay demoted (see Later) — registration is guild-wide by default and needs channel-permission sync to avoid showing in unmapped channels.
 
-**Related:** `docs/design-agentic-team-runtime.md` (rev 7 status), `docs/roles/`, `docs/support-case-guide.md`, `docs/design-per-user-github-identity.md`, `docs/design-agent-sandbox.md`.
+**Related:** `docs/design-agentic-team-runtime.md` (rev 7 status), `docs/roles/`, `docs/support-case-guide.md`, `docs/design-per-user-github-identity.md`, `docs/design-agent-sandbox.md`, `docs/design-web-primary.md`.
 
 ---
 
