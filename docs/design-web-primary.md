@@ -167,7 +167,13 @@ func (e *Entry) HasDiscord() bool // Discord != nil && Discord.ThreadID != ""
 
 `TrackedPR.StatusMsgID` (`internal/sessionstore/pr.go:24`) stays where it is — it is per-PR, not per-unit — but only written when `HasDiscord()`.
 
-**Migration is nearly free.** Keep the existing map key. On load, when the key is snowflake-shaped and `Discord == nil`, synthesize `Discord{ThreadID: key}` and fold the seven flat `*MsgID` fields into it; keep writing the legacy flat fields for one release, exactly as `NormalizePRs()` mirrors legacy single-PR fields (`internal/sessionstore/pr.go:110,338`). New units get an opaque id **regardless of surface** — a Discord unit's id stops being its thread id, and `Discord.ThreadID` carries that instead.
+**Migration is nearly free.** Keep the existing map key. On load, when the key is snowflake-shaped and `Discord == nil`, synthesize `Discord{ThreadID: key}` and fold the seven flat `*MsgID` fields into it; keep writing the legacy flat fields for one release, exactly as `NormalizePRs()` mirrors legacy single-PR fields (`internal/sessionstore/pr.go:110,338`).
+
+**A Discord unit stays keyed by its thread id — permanently.** An earlier draft of this decision had *all* new units get an opaque id, with `Discord.ThreadID` carrying the thread separately. That is conceptually tidier and operationally much worse: there are **98 non-test `sessions.Get()` and 45 `Patch()` call sites**, and the Discord path feeds the thread id in raw (`internal/bot/checkpoint.go:24,56,81` pass `m.ChannelID` straight as the key). Decoupling key from thread id puts a thread→unit reverse index — persisted, and maintained under concurrent `Patch` — on the path every Discord message takes, in exchange for no user-visible gain.
+
+So the id space stays deliberately heterogeneous, exactly as it is today: a Discord unit's id **is** its thread id, and a web unit's id is opaque (`w_<32 hex>`, already the case). `Entry.Discord` still delivers the whole point of D1 — it retires the 14 prefix-sniffing sites and gateway-derived `present`, and gives the card message-ids a home — with zero change to the hot path. `HasDiscord()` reads the ref, never the shape of the key, so the *predicate* is clean even though the key space is not.
+
+The corollary is a rule, not a preference: **no new code may infer a surface, or anything else, from the shape of a unit id.** `IsWebUnitID` survives only for the id *allocator* and the branch-prefix choice (`gitworktree.PrefixForUnitID`).
 
 `runjournal.TaskRecord` (`DiscordURL`, `TriggerMsgID`, `StatusMsgID`, `AuthorID`, `RoleIDs`) gets the same treatment, since crash re-drive reads it (`docs/design-crash-safe-active-runs.md`).
 
@@ -265,6 +271,12 @@ type Renderer interface {
 
 This retires ~10 of the ~20 `present`-gated blocks in `executeTask`, closes all 10 rows of the C3 table in one move, and fixes the cancelled-run data loss: `EventTextBlock` is appended as chunks seal, so output survives a run that never produces a final `result.Text`.
 
+Two constraints on the renderer that are **requirements, not implementation detail** — get either wrong and the Discord DX regresses:
+
+**The live tail does not go through the timeline.** `EventTextBlock` is a *sealed* chunk only. Per-delta events would be absurd for an append-only file (one write per token) and would wreck the streaming cadence: `stream.go` coalesces deltas behind a 100ms ticker plus a `lastEdit` debounce (`internal/bot/stream.go:285,314`) and edits one message in place. That stays exactly as it is, fed from in-memory `job.liveText` (`task_start.go:294-314`), for both surfaces. The timeline is the *durable* record, not the live transport. Web already reads `liveText` via `StatusSnapshot()` for its SSE tail and keeps doing so.
+
+**Rendering is best-effort and off the append path.** Today a failed Discord send logs and the run continues (`bot.go:1459-1467` is the pattern). A timeline append must never fail, block, or roll back because Discord returned 500 or the gateway is mid-reconnect — otherwise the new store makes runs *less* robust than the thread-only design it replaces. Renderer errors are logged against the unit and the event stays committed, which is also what makes replay-after-outage possible.
+
 **Retention:** timeline files are capped and swept by the same idle policy as worktrees (`internal/bot/idle_cleanup.go`), except for units that are cases or still have tracked PRs — matching the existing session-retention rule. `TODO.md`'s open “History retention TTL” item should be resolved for both stores together.
 
 **`DISCORD_UPLOAD:` becomes `ARTIFACT:`** in the prompt contract (`remoteWorkPromptPrefixMode`, `bot.go`), accepting the old keyword as an alias, since an artifact is now a timeline event that the web can serve and Discord can attach.
@@ -281,14 +293,22 @@ type Notification struct {
     URL      string   // web session page
 }
 
+// Notify takes the whole recipient SET, never one actor at a time — see below.
 type Notifier interface {
-    Name() string                                   // "discord-dm" | "web-inbox" | …
+    Name() string                                        // "discord-thread" | "discord-dm" | "web-inbox" | …
     CanReach(a Actor) bool
-    Notify(ctx context.Context, a Actor, n Notification) error
+    Notify(ctx context.Context, to []Actor, n Notification) error
 }
 ```
 
-Routing: for each recipient actor, try their preferred channels in order; **fall back to `web-inbox` rather than dropping**. `web-inbox` is a small per-actor append-only feed the shell can badge — which also gives the long-deferred `TODO.md` item “‘needs you’ personal feed” a home. `maxNotifyDMs = 10` stays a *Discord* concern, not a policy concern; the inbox has no cap.
+**The recipient set is the load-bearing part of that signature.** An earlier draft had `Notify(ctx, a Actor, n)` — per-actor — which structurally cannot express what Discord does today. `notifyRunDoneSend` builds **one** message via `formatNotifyDoneMessage(ids, …)` and sends it **once** with every recipient attached (`internal/bot/notify_done.go:172-188`). A per-actor interface turns three watchers on a thread into three DMs instead of one in-thread ping: a straight DX regression, invisible in review, and only noticed by the people getting spammed.
+
+So delivery is chosen per *unit*, then per recipient:
+
+1. Unit has a Discord thread and the gateway is live → `discord-thread` takes the **entire** set and posts one message mentioning all of them. Identical to today, byte for byte.
+2. Otherwise, route each remaining recipient to their best reachable channel, falling back to `web-inbox` **rather than dropping** — which is what fixes the silent loss of non-snowflake recipients (`notify_done.go:196-220`).
+
+`web-inbox` is a small per-actor append-only feed the shell can badge — which also gives the long-deferred `TODO.md` item “‘needs you’ personal feed” a home. `maxNotifyDMs = 10` stays a *Discord DM* concern, not a policy concern; the thread path never had a cap and the inbox does not need one.
 
 `notifyOnDone: never | errors | always | long_only` is unchanged — it is already surface-neutral policy. What changes is only *delivery*. `formatNotifyDoneDM`'s existing behaviour (name the project + goal, link the session page via `webPublicBaseURL`) becomes the shared formatter for every non-thread channel, since none of them have ambient context.
 
@@ -324,6 +344,28 @@ P0–P2 are worth doing even if the web-primary goal were abandoned: they fix re
 
 ---
 
+## Discord DX invariants
+
+Making web primary must not cost the Discord users anything. These are the things a reviewer should reject a PR over, not aspirations — each maps to a test in the next section.
+
+| # | Invariant | Why it is at risk |
+|---|---|---|
+| **I1** | **One finished run = one in-thread ping**, mentioning every recipient, for any unit with a live thread. Never N DMs. | The natural per-actor notifier shape breaks this silently (D4). |
+| **I2** | **Live streaming cadence is untouched**: one message edited in place, 100ms ticker + `lastEdit` debounce, sealed at 1900 chars. | Routing the live tail through an append-only store would destroy it (D3). |
+| **I3** | **A Discord API failure never fails a run or a timeline append.** Renderer errors log and continue. | Introducing a store *upstream* of Discord invites making the store depend on it (D3). |
+| **I4** | **No reverse index on the Discord message path.** A thread id remains a direct `sessions.Get` key. | 98 `Get` + 45 `Patch` sites; the tidier id scheme silently taxes all of them (D1). |
+| **I5** | **Cards still edit in place, never re-post.** Message ids survive restart. | Message ids move into `Entry.Discord`; a missed read path turns an edit into a new message every poll (D1/D3). |
+| **I6** | **Mention + text commands stay the whole Discord command surface.** No slash commands, no in-chat project switching, no new required syntax. | Already a `TODO.md` non-goal; restated because a web-primary train is exactly when someone proposes "just add a slash command". |
+| **I7** | **Bare snowflakes keep working everywhere** an id is accepted, with no operator migration step. | D2's namespacing. |
+| **I8** | **Local project paths still never reach Discord.** | The timeline stores host-absolute artifact paths; a renderer that echoes them leaks (existing rule, new exposure). |
+
+Two changes are **accepted** as visible, because they cannot be avoided and are small:
+
+- `DISCORD_UPLOAD:` → `ARTIFACT:` in the prompt contract. The old keyword is aliased, so no run breaks — but the prompt *text* changes, and prompt text changes model behaviour. Needs a golden test on `remoteWorkPromptPrefixMode` output, and it should ship in its own commit so a behaviour shift is attributable.
+- After D2, the first config save through the web UI rewrites `config.json` into the new key names. Back-compat rule #1 keeps legacy keys written for one release, so the file stays loadable by the previous binary — but operators should be told in the release note rather than discovering it in a diff.
+
+---
+
 ## Back-compat rules (how Discord stays unbroken)
 
 1. **Legacy JSON keys are read forever, written for one release.** Precedent: `NormalizePRs()` mirroring single-PR fields (`internal/sessionstore/pr.go:110,338`). Never require an operator to hand-edit `config.json` or `sessions.json`.
@@ -345,8 +387,13 @@ P0–P2 are worth doing even if the web-primary goal were abandoned: they fix re
 | D2 | A web viewer with a Discord role mapped in `capabilityByGroup` gets those caps — the C1 `roleIDs=nil` bug, pinned. |
 | D3 | A cancelled run whose agent produced streamed text but no `result.Text` leaves that text readable on the session page. |
 | D3 | Golden test: the same timeline replayed through the Discord renderer produces byte-identical embeds to today's `FormatCompletionEmbed` output. |
-| D3 | Card upserts still edit in place across a restart (message ids read from `Entry.Discord`). |
+| D3 | Card upserts still edit in place across a restart (message ids read from `Entry.Discord`). → **I5** |
 | D4 | A recipient with no reachable Discord channel lands in the web inbox instead of being dropped. |
+| **I1** | A thread unit with author + 2 watchers produces **exactly one** `discord-thread` delivery naming all three — and **zero** DM deliveries. Assert on delivery count, not just content; content-only assertions pass under the regressing per-actor shape. |
+| **I2** | Feeding a fixed delta sequence through the streamer yields the same edit count and the same sealed-chunk boundaries as today. Pin the count — it is the only thing that catches a per-delta timeline write. |
+| **I3** | With a renderer that always errors, a run still completes and every event is present in the timeline. |
+| **I4** | A Discord-created unit is retrievable by `sessions.Get(threadID)` with no index consulted (assert via a store that fails on secondary-index lookup). |
+| **I8** | An `ARTIFACT:` event with a host-absolute path renders to Discord with the path stripped/relativized — extends the existing no-local-paths rule to the new event type. |
 | D5 | Project with no `discordChannelId`: `StartFix`, `StartWebTask`, `StartCase` all allocate web-native; none error. |
 | Preview | `GROKWORK_WEB_PREVIEW=1 go test ./internal/web -run TestPreviewServer` seeds a timeline so the session page renders every event kind. |
 
