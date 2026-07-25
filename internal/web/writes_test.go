@@ -481,15 +481,120 @@ func TestMergePreflightConflict(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
-	// redirect with err
+	// redirect with err + alert so the PR page opens the modal
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d", w.Code)
 	}
 	loc := w.Header().Get("Location")
-	if !strings.Contains(loc, "err=") || !strings.Contains(loc, "conflict") && !strings.Contains(strings.ToLower(loc), "conflict") {
-		// query escaped
-		if !strings.Contains(loc, "err") {
-			t.Fatalf("Location=%q", loc)
+	if !strings.Contains(loc, "err=") {
+		t.Fatalf("Location=%q want err=", loc)
+	}
+	if !strings.Contains(strings.ToLower(loc), "conflict") {
+		t.Fatalf("Location=%q want conflict reason", loc)
+	}
+	if !strings.Contains(loc, "alert=") || !strings.Contains(loc, "Merge") {
+		t.Fatalf("Location=%q want alert=Merge failed", loc)
+	}
+}
+
+func TestMergeGHReviewRequiredShowsAlert(t *testing.T) {
+	srv, _, calls := writeEnabledServer(t)
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		*calls = append(*calls, joined)
+		if strings.HasPrefix(joined, "pr view") {
+			return []byte(`{
+				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
+				"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","headRefOid":"a","headRefName":"f",
+				"baseRefName":"main","body":"","mergeable":"MERGEABLE","author":{"login":"z"},
+				"additions":0,"deletions":0,"changedFiles":0
+			}`), nil
+		}
+		if strings.HasPrefix(joined, "pr checks") {
+			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil
+		}
+		if strings.Contains(joined, "pr merge") {
+			// Mirror execRunner wrapping of gh stderr.
+			return nil, &mergeGHError{msg: "gh pr merge 9 --squash --repo acme/app: GraphQL: At least 1 approving review is required by reviewers with write access. (mergePullRequest)"}
+		}
+		return nil, nil
+	}
+	sid, csrf, err := srv.LoginAs("admin-1", "A", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"project": {"proj"}, "csrf": {csrf}, "method": {"squash"}}
+	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/merge", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	// Modal title + stripped reason (no "gh pr merge …:" prefix).
+	if !strings.Contains(loc, "alert=Merge") {
+		t.Fatalf("Location=%q want alert=Merge failed", loc)
+	}
+	if !strings.Contains(loc, "approving+review") && !strings.Contains(loc, "approving%20review") &&
+		!strings.Contains(loc, "review+is+required") && !strings.Contains(loc, "review%20is%20required") {
+		// url.Values.Encode uses + for spaces
+		u, _ := url.Parse(loc)
+		errMsg := u.Query().Get("err")
+		if !strings.Contains(errMsg, "approving review") {
+			t.Fatalf("err=%q Location=%q want stripped review-required reason", errMsg, loc)
+		}
+		if strings.HasPrefix(errMsg, "gh ") {
+			t.Fatalf("err=%q still has gh command prefix", errMsg)
+		}
+	}
+}
+
+type mergeGHError struct{ msg string }
+
+func (e *mergeGHError) Error() string { return e.msg }
+
+func TestUserFacingErrStripsGHPrefix(t *testing.T) {
+	got := userFacingErr(&mergeGHError{msg: "gh pr merge 9 --squash --repo o/r: GraphQL: Review required"})
+	if got != "GraphQL: Review required" {
+		t.Fatalf("got %q", got)
+	}
+	if userFacingErr(nil) != "" {
+		t.Fatal("nil")
+	}
+	if userFacingErr(&mergeGHError{msg: "PR has merge conflicts"}) != "PR has merge conflicts" {
+		t.Fatal("passthrough")
+	}
+}
+
+func TestPRDetailMergeErrorOpensAlertMarkup(t *testing.T) {
+	srv, _, _ := writeEnabledServer(t)
+	sid, _, err := srv.LoginAs("admin-1", "A", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := url.Values{
+		"project": {"proj"},
+		"err":     {"At least 1 approving review is required by reviewers with write access."},
+		"alert":   {"Merge failed"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/prs/acme/app/9?"+q.Encode(), nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`data-app-alert`,
+		`data-app-alert-title="Merge failed"`,
+		`approving review is required`,
+		`presentAppAlerts`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in body", want)
 		}
 	}
 }

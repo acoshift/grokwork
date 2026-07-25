@@ -508,6 +508,9 @@ func (s *Server) prDetailPageData(ctx *hime.Context, full bool) (pageData, error
 		d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 		if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 			d.Error = e
+			// alert= title is set by action redirects (e.g. merge failed) so
+			// the shell opens appAlert with the error text.
+			d.ErrorAlertTitle = strings.TrimSpace(ctx.FormValue("alert"))
 		} else if viewErr != nil {
 			d.Error = viewErr.Error()
 		}

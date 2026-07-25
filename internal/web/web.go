@@ -462,7 +462,10 @@ type pageData struct {
 	IsStart     bool
 	Flash       string
 	Error       string
-	Status      bot.StatusSnapshot
+	// ErrorAlertTitle, when set with Error, opens the appAlert modal on the
+	// PR page (merge failures, etc.) instead of relying on the flash alone.
+	ErrorAlertTitle string
+	Status          bot.StatusSnapshot
 	Threads     []history.Summary
 	// Sessions list filters (global hub + workspace sessions pages).
 	SessionFilters sessionFilters

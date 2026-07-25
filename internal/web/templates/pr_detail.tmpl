@@ -20,7 +20,7 @@
   {{if .PR.ChangedFiles}}<span class="mono"><span class="diff-add">+{{.PR.Additions}}</span> <span class="diff-del">−{{.PR.Deletions}}</span> · {{.PR.ChangedFiles}} files</span>{{end}}
 </div>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
-{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+{{if .Error}}<div class="flash err"{{if .ErrorAlertTitle}} data-app-alert data-app-alert-title="{{.ErrorAlertTitle}}"{{end}}>{{.Error}}</div>{{end}}
 
 {{/* Checks / review / mergeable strip: re-fetch on sse:ship when the Discord PR
      poller updates session store (CI green/fail, state flips). Live gh call on

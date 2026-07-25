@@ -195,9 +195,15 @@ func (s *Server) postPRMerge(ctx *hime.Context) error {
 	attemptAnyway := ctx.PostFormValue("attemptAnyway") == "1" ||
 		strings.EqualFold(ctx.PostFormValue("attemptAnyway"), "on")
 
+	// Merge failures open the alert modal (required reviews, conflicts, gh
+	// branch protection, …) so the reason is not lost under a page flash.
+	mergeFail := func(err error) error {
+		return s.prRedirectAlert(ctx, owner, repo, n, project, userFacingErr(err), "Merge failed")
+	}
+
 	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
-		return s.prRedirect(ctx, owner, repo, n, project, "", err)
+		return mergeFail(err)
 	}
 	owner, repo = ref.Owner, ref.Repo
 	selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
@@ -206,7 +212,7 @@ func (s *Server) postPRMerge(ctx *hime.Context) error {
 		s.auditAction(ctx, audit.ActionPRMerge, viewErr, map[string]any{
 			"owner": owner, "repo": repo, "number": n, "phase": "view",
 		})
-		return s.prRedirect(ctx, owner, repo, n, project, "", viewErr)
+		return mergeFail(viewErr)
 	}
 	pre := ghpr.CheckMergePreflight(detail.State, detail.Mergeable, detail.Checks, attemptAnyway)
 	if !pre.Allow {
@@ -214,7 +220,7 @@ func (s *Server) postPRMerge(ctx *hime.Context) error {
 		s.auditAction(ctx, audit.ActionPRMerge, err, map[string]any{
 			"owner": owner, "repo": repo, "number": n, "phase": "preflight",
 		})
-		return s.prRedirect(ctx, owner, repo, n, project, "", err)
+		return mergeFail(err)
 	}
 	err = ghpr.MergePRWith(ctx.Context(), s.ghRun(), cwd, owner, repo, n, ghpr.MergeOpts{
 		Method:        method,
@@ -226,7 +232,7 @@ func (s *Server) postPRMerge(ctx *hime.Context) error {
 	}
 	if err != nil {
 		s.auditAction(ctx, audit.ActionPRMerge, err, detailMap)
-		return s.prRedirect(ctx, owner, repo, n, project, "", err)
+		return mergeFail(err)
 	}
 	var threads []string
 	if s.bot != nil {
@@ -254,12 +260,29 @@ func (s *Server) issueRedirect(ctx *hime.Context, project, owner, repo string, n
 }
 
 func (s *Server) prRedirect(ctx *hime.Context, owner, repo string, n int, project, okMsg string, err error) error {
+	errMsg := ""
+	if err != nil {
+		errMsg = err.Error()
+	}
+	return s.prRedirectTo(ctx, owner, repo, n, project, okMsg, errMsg, "")
+}
+
+// prRedirectAlert redirects with err + alert title so the PR page opens
+// appAlert (modal) instead of relying on the flash banner alone.
+func (s *Server) prRedirectAlert(ctx *hime.Context, owner, repo string, n int, project, errMsg, alertTitle string) error {
+	return s.prRedirectTo(ctx, owner, repo, n, project, "", errMsg, alertTitle)
+}
+
+func (s *Server) prRedirectTo(ctx *hime.Context, owner, repo string, n int, project, okMsg, errMsg, alertTitle string) error {
 	q := url.Values{}
 	if project != "" {
 		q.Set("project", project)
 	}
-	if err != nil {
-		q.Set("err", err.Error())
+	if errMsg != "" {
+		q.Set("err", errMsg)
+		if alertTitle != "" {
+			q.Set("alert", alertTitle)
+		}
 	} else if okMsg != "" {
 		q.Set("ok", okMsg)
 	}
@@ -268,4 +291,21 @@ func (s *Server) prRedirect(ctx *hime.Context, owner, repo string, n int, projec
 		u += "?" + enc
 	}
 	return ctx.Redirect(u)
+}
+
+// userFacingErr strips the "gh <args>: " prefix execRunner wraps around
+// stderr so the modal shows GitHub's reason (required reviews, etc.).
+func userFacingErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	s := err.Error()
+	if strings.HasPrefix(s, "gh ") {
+		if i := strings.Index(s, ": "); i >= 0 {
+			if rest := strings.TrimSpace(s[i+2:]); rest != "" {
+				return rest
+			}
+		}
+	}
+	return s
 }

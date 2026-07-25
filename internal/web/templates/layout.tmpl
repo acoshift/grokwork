@@ -1489,6 +1489,10 @@
       color: var(--muted);
       line-height: 1.5;
       overflow-wrap: break-word;
+      /* GitHub/gh errors can be long; keep the modal readable. */
+      max-height: min(40vh, 16rem);
+      overflow-y: auto;
+      white-space: pre-wrap;
     }
     .gw-confirm-field { margin-top: 0.9rem; }
     .gw-confirm-field > label {
@@ -4122,6 +4126,43 @@
     function flatten(r) { return r.ok; }
     window.appConfirm = function (opts) { return openModal("confirm", opts).then(flatten); };
     window.appAlert = function (opts) { return openModal("alert", opts).then(flatten); };
+
+    // Server-rendered action errors (merge failed, …) mark .flash.err with
+    // data-app-alert. Open the modal once so the reason is hard to miss —
+    // works on full load and after hx-boost redirect swaps of #live-root.
+    function presentAppAlerts(root) {
+      var scope = root && root.querySelector ? root : document;
+      var el = scope.querySelector(".flash.err[data-app-alert]");
+      if (!el || el.dataset.appAlertShown) return;
+      var msg = (el.textContent || "").trim();
+      if (!msg) return;
+      el.dataset.appAlertShown = "1";
+      openModal("alert", {
+        title: el.getAttribute("data-app-alert-title") || "Action failed",
+        message: msg,
+        danger: true
+      });
+      // Drop err/alert from the URL so a refresh does not re-pop the modal.
+      try {
+        var u = new URL(location.href);
+        if (u.searchParams.has("err") || u.searchParams.has("alert")) {
+          u.searchParams.delete("err");
+          u.searchParams.delete("alert");
+          var q = u.searchParams.toString();
+          history.replaceState(null, "", u.pathname + (q ? "?" + q : "") + u.hash);
+        }
+      } catch (e) {}
+    }
+    window.presentAppAlerts = presentAppAlerts;
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function () { presentAppAlerts(); });
+    } else {
+      presentAppAlerts();
+    }
+    document.body.addEventListener("htmx:afterSettle", function (e) {
+      var elt = e.detail && e.detail.elt;
+      presentAppAlerts(elt || document);
+    });
 
     // Capture phase: runs before htmx's boost listener on the form, so
     // stopPropagation keeps the boosted request from ever being issued for
