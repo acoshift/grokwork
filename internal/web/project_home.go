@@ -24,7 +24,8 @@ import (
 // /projects/{p}/… and /config/projects/{p}. Detail pages whose canonical URL
 // carries no project (/sessions/{id…}, /history/{id…}, /prs/…) may opt in via
 // ?project=. Global list pages that use ?project= as a data filter (/ship)
-// stay global. Mirror any change here in layout.tmpl's scopeFromLocation().
+// stay global. Mirror any change here in layout.tmpl's navScopeOf() (which
+// scopeFromLocation() wraps for the current URL).
 func navScopeFromURL(u *url.URL) string {
 	seg := strings.Split(strings.Trim(u.Path, "/"), "/")
 	switch {

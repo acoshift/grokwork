@@ -1014,7 +1014,7 @@ func TestNavBrandChrome(t *testing.T) {
 }
 
 // TestNavScopeRules pins the URL→shell-scope contract (mirrored by the layout
-// JS scopeFromLocation): path scopes /projects/… and /config/projects/…;
+// JS navScopeOf): path scopes /projects/… and /config/projects/…;
 // ?project= scopes only /sessions/{id…}, /history/{id…}, and /prs/… detail
 // pages; global list pages using ?project= as a data filter stay global;
 // unknown projects fall back to the global shell.

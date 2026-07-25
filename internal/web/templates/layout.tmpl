@@ -3524,6 +3524,75 @@
       .rv-filter {
         font-size: 16px;
       }
+
+      /* ── Page transitions: iOS push / pop ────────────────────────────
+         Boosted navigation replaces #live-root and history restore refills
+         it, so a View Transition can animate the change. VT rather than a
+         CSS animation on #live-root itself: an animated transform — and a
+         view-transition-name — apply containment, which makes the element
+         the containing block for its fixed descendants and is exactly what
+         trapped the session composer (see the pageIn note above). VT
+         animates snapshots in a separate tree, so no live element changes
+         its containing block. layout.tmpl's JS sets data-gw-nav on <html>
+         (push | pop | swap) before the swap and only ever arms this on a
+         phone with motion allowed. */
+
+      /* Lifted out of the root snapshot so the tab bar stays pinned while
+         the page slides under it — the one piece of chrome iOS never moves.
+         Naming it is safe: containment only affects descendants, and its
+         own <a>s are static. #live-root must never be named for that reason. */
+      #tab-bar { view-transition-name: gw-tabbar; }
+      /* Same treatment: loaderStop() runs from afterSettle, i.e. inside the
+         transition callback, so an in-flight loader is still .on when the
+         outgoing snapshot is taken and would slide away with the page. */
+      #page-loader { view-transition-name: gw-loader; }
+
+      /* The slide is the page-enter animation, so drop the fade rather than
+         stack the two. Scoped to data-gw-nav (only ever set when a transition
+         was armed) so first paint, reloads and any un-animated swap keep
+         pageIn, as does a browser with no View Transitions support. */
+      html[data-gw-nav] #live-root { animation: none; }
+
+      @keyframes gw-nav-in-right { from { transform: translateX(100%); } }
+      @keyframes gw-nav-out-left { to { transform: translateX(-24%); opacity: 0.5; } }
+      @keyframes gw-nav-in-left { from { transform: translateX(-24%); opacity: 0.5; } }
+      @keyframes gw-nav-out-right { to { transform: translateX(100%); } }
+      @keyframes gw-nav-fade-in { from { opacity: 0; } }
+
+      html[data-gw-nav]::view-transition-old(root),
+      html[data-gw-nav]::view-transition-new(root) {
+        /* body's background propagates to the canvas, so the root snapshots
+           are transparent — repaint it or the two screens show through each
+           other mid-slide. mix-blend-mode undoes the UA cross-fade blend. */
+        background: var(--bg);
+        mix-blend-mode: normal;
+      }
+      html[data-gw-nav="push"]::view-transition-old(root) {
+        animation: gw-nav-out-left 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
+      }
+      html[data-gw-nav="push"]::view-transition-new(root) {
+        animation: gw-nav-in-right 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
+      }
+      html[data-gw-nav="pop"]::view-transition-old(root) {
+        /* The leaving screen rides above the one it uncovers; without this the
+           new snapshot paints last and the pop reads as a push. */
+        z-index: 1;
+        animation: gw-nav-out-right 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
+      }
+      html[data-gw-nav="pop"]::view-transition-new(root) {
+        animation: gw-nav-in-left 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
+      }
+      /* Same-level moves (tab bar, filter re-renders) do not slide — iOS
+         switches tabs in place. Old holds still, new crossfades over it. */
+      html[data-gw-nav="swap"]::view-transition-old(root) { animation: none; }
+      html[data-gw-nav="swap"]::view-transition-new(root) {
+        animation: gw-nav-fade-in 0.16s ease both;
+      }
+      /* Tab bar: same box on both screens, so only the active tint changes. */
+      html[data-gw-nav]::view-transition-old(gw-tabbar),
+      html[data-gw-nav]::view-transition-new(gw-tabbar) {
+        animation-duration: 0.2s;
+      }
     }
   </style>
 </head>
@@ -4569,6 +4638,124 @@
     // How close to the page bottom counts as "following" growing content.
     var PAGE_PIN_PX = 48;
 
+    // ── iOS-style page transitions (phone only) ───────────────────────
+    // Arms a View Transition for a navigation and tells the <style> block
+    // which way to slide. Nothing here animates: it sets data-gw-nav and the
+    // caller opts the swap in (swapOverride "transition:true" for boosted
+    // navigation, swapSpec.transition for history restore). htmx only reads
+    // those per swap, so SSE live-region ticks never transition.
+    //
+    // Direction is a pure function of the two URLs, which is what makes
+    // back/forward mirror the forward move with no history bookkeeping.
+    // It is measured per nav scope (navScopeOf, the same derivation the
+    // sidebar uses) because depth alone cannot place "/": it is the parent of
+    // a workspace but a peer of the other global tabs. Within a scope every
+    // tab-bar destination is level 1 and anything else is 1 + its segment
+    // count, so a deeper URL is a deeper screen.
+    var TAB_SECTIONS = { ship: 1, cases: 1, sessions: 1, reviews: 1 };
+    // Detail families (same list as Go navScopeFromURL) are always leaf
+    // screens even though their URLs are short: /projects/{p}/start is four
+    // segments and redirects to a two-segment /sessions/{id}, so counting
+    // alone would call creating a session a *back* move. Pin them below every
+    // list and tab instead.
+    var DETAIL_ROOTS = { sessions: 1, history: 1, prs: 1 };
+    var LEAF_LEVEL = 99;
+    function navLevel(loc) {
+      var seg = loc.path.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+      if (!seg.length) return 1;                                   // "/" Projects tab
+      if (DETAIL_ROOTS[seg[0]] && seg.length >= 2) return LEAF_LEVEL;
+      if (loc.scope) {
+        if (seg[0] === "projects") {
+          if (seg.length === 2) return 1;                          // workspace home
+          if (seg.length === 3 && TAB_SECTIONS[seg[2]]) return 1;  // workspace tab
+        }
+      } else if (seg.length === 1 && TAB_SECTIONS[seg[0]]) {
+        return 1;                                                  // global tab
+      }
+      return 1 + seg.length;
+    }
+    function navLocOf(url) {
+      var u;
+      try {
+        u = new URL(url, location.href);
+      } catch (err) {
+        u = location;
+      }
+      return { path: u.pathname, scope: navScopeOf(u.pathname, u.search) };
+    }
+    // Where the last *committed* navigation left us. Tracked off the history
+    // events rather than advanced at swap time so an aborted or errored
+    // request cannot strand the next transition on an origin we never reached.
+    var navFrom = navLocOf(location.href);
+    function navCommitted() {
+      navFrom = navLocOf(location.href);
+    }
+    document.body.addEventListener("htmx:pushedIntoHistory", navCommitted);
+    document.body.addEventListener("htmx:replacedInHistory", navCommitted);
+    document.body.addEventListener("htmx:historyRestore", navCommitted);
+
+    function navDirection(from, to) {
+      // Crossing between the global shell and a project workspace is a
+      // drill-in either way round; a sideways hop between two projects is not.
+      if (from.scope !== to.scope) {
+        if (!from.scope) return "push";
+        if (!to.scope) return "pop";
+        return "swap";
+      }
+      var delta = navLevel(to) - navLevel(from);
+      return delta > 0 ? "push" : delta < 0 ? "pop" : "swap";
+    }
+    // htmx starts the transition and throws away the handle, so when one gets
+    // skipped — starting a second transition skips the first, which is what
+    // rapid tapping does — .ready rejects with nobody listening. Swallow that
+    // rather than let it surface as an unhandled rejection.
+    if (document.startViewTransition) {
+      var startViewTransition = document.startViewTransition.bind(document);
+      document.startViewTransition = function (cb) {
+        var t = startViewTransition(cb);
+        var quiet = function () {};
+        t.ready.catch(quiet);
+        t.finished.catch(quiet);
+        return t;
+      };
+    }
+    var reduceMotionMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
+    // Returns true when the caller should opt this swap into a transition.
+    function armNav(url) {
+      if (!document.startViewTransition) return false;
+      if (!narrowMQ.matches) return false;
+      // The global prefers-reduced-motion rule cannot reach the
+      // ::view-transition tree, so the opt-out has to happen here.
+      if (reduceMotionMQ.matches) return false;
+      document.documentElement.dataset.gwNav = navDirection(navFrom, navLocOf(url));
+      return true;
+    }
+
+    // Browser back/forward restores from htmx's history cache without a
+    // request, so it never reaches htmx:beforeSwap. detail.swapSpec is the
+    // very object htmx passes to the swap, so setting transition on it here
+    // is what gives back/forward its pop.
+    var navRestoreArmed = false;
+    document.body.addEventListener("htmx:historyCacheHit", function (e) {
+      var d = e.detail;
+      if (!d || !d.swapSpec) return;
+      if (d.historyElt && d.historyElt.id !== "live-root") return;
+      if (!armNav(d.path)) return;
+      d.swapSpec.transition = true;
+      navRestoreArmed = true;
+    });
+    // A transition makes htmx's restore asynchronous: it calls
+    // startViewTransition and returns, so htmx:historyRestore fires against
+    // the *outgoing* DOM. Consumers read that event to re-sync the restored
+    // page (nav active state, diff-review setup at the bottom of this file),
+    // so replay it from afterSettle, which runs inside the transition callback
+    // once the DOM really has been restored.
+    document.body.addEventListener("htmx:afterSettle", function () {
+      if (!navRestoreArmed) return;
+      navRestoreArmed = false;
+      htmx.trigger(document.body, "htmx:historyRestore", { gwReplay: true });
+    });
+
     // Boosted navigation must swap #live-root only. If live-region attrs leaked
     // onto a child link (disableInheritance not applied), htmx would target the
     // region with no select and nest a full layout — double sidebar/navbar.
@@ -4597,7 +4784,15 @@
       if (!root) return;
       d.target = root;
       d.selectOverride = "#live-root";
-      d.swapOverride = "outerHTML show:none focus-scroll:false";
+      // responseURL over pathInfo: a form POST that redirects (start a task →
+      // session page) must be measured against where it landed, not where it
+      // was sent.
+      var to =
+        (d.xhr && d.xhr.responseURL) ||
+        (d.pathInfo && (d.pathInfo.finalRequestPath || d.pathInfo.requestPath)) ||
+        location.href;
+      d.swapOverride = "outerHTML show:none focus-scroll:false" +
+        (armNav(to) ? " transition:true" : "");
     });
 
     document.body.addEventListener("htmx:afterSwap", function (e) {
@@ -4645,16 +4840,19 @@
     // only #live-root, so JS must (a) re-derive the workspace scope from the
     // URL — mirror of Go navScopeFromURL — and reload once on mismatch, and
     // (b) re-sync active classes when the scope matches.
-    function scopeFromLocation() {
-      var seg = location.pathname.replace(/^\/+|\/+$/g, "").split("/");
+    function navScopeOf(pathname, search) {
+      var seg = pathname.replace(/^\/+|\/+$/g, "").split("/");
       try {
         if (seg[0] === "projects" && seg.length >= 2) return decodeURIComponent(seg[1]);
         if (seg[0] === "config" && seg[1] === "projects" && seg.length >= 3) return decodeURIComponent(seg[2]);
       } catch (e) { return ""; }
       if ((seg[0] === "sessions" || seg[0] === "history" || seg[0] === "prs") && seg.length >= 2) {
-        return new URLSearchParams(location.search).get("project") || "";
+        return new URLSearchParams(search).get("project") || "";
       }
       return "";
+    }
+    function scopeFromLocation() {
+      return navScopeOf(location.pathname, location.search);
     }
     function navActiveFor(path, href) {
       if (href === "/") {

@@ -274,8 +274,8 @@ func TestIssuesListAndDetail(t *testing.T) {
 	}
 	assertNavActive(t, body, "Issues")
 	// History-restore sync must re-derive the workspace scope from the URL.
-	if !strings.Contains(body, "function navActiveFor") || !strings.Contains(body, "function scopeFromLocation") {
-		t.Fatal("layout missing navActiveFor/scopeFromLocation for workspace URLs")
+	if !strings.Contains(body, "function navActiveFor") || !strings.Contains(body, "function navScopeOf") {
+		t.Fatal("layout missing navActiveFor/navScopeOf for workspace URLs")
 	}
 }
 
@@ -1185,7 +1185,7 @@ func TestCommitsListAndDetail(t *testing.T) {
 		`path=foo.go`,
 		`owner=acme`,
 		`repo=app`,
-		"function scopeFromLocation",
+		"function navScopeOf",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("detail missing %q", want)
