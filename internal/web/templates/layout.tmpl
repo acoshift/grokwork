@@ -3424,9 +3424,11 @@
       .toolbar .field { flex: 1 1 100%; }
       .toolbar .field-sm { flex: 0 0 auto; }
       .card .value { font-size: 1.6rem; }
-      /* Case pipeline keeps the rail metaphor on phones: swipe the stages. */
+      /* Case pipeline keeps the rail metaphor on phones: swipe the stages.
+         Drop the plain-language sublabel — it overflows the compact stage cards. */
       a.case-stage { min-width: 6rem; padding: 0.55rem 0.7rem 0.5rem; }
       .case-pipeline .stage-count { font-size: 1.2rem; }
+      .case-pipeline .stage-plain { display: none; }
       a.case-archive { flex: 1 1 100%; }
       /* iOS Safari zooms focused form controls when computed font-size is <16px. */
       input[type=text],
