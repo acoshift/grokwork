@@ -628,15 +628,32 @@
       flex-direction: column;
       gap: 0.65rem;
     }
+    /* Desktop shape: avatar | name+role on row 1, Log out spanning row 2.
+       A grid (not a flex column) so .side-user-pop can be display:contents and
+       hand its two children straight to this grid — the same markup collapses
+       into an anchored menu on phones (see the max-width:920px block). */
     .side-user {
-      display: flex;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
       align-items: center;
-      gap: 0.55rem;
-      padding: 0.35rem 0.45rem;
+      column-gap: 0.55rem;
+      row-gap: 1rem;
+      padding: 0.85rem 0.45rem 0;
       border-top: 1px solid var(--border);
-      padding-top: 0.85rem;
       min-width: 0;
     }
+    .side-user-pop { display: contents; }
+    /* Bare circle on desktop — it only becomes a real trigger on phones. */
+    .side-user-btn {
+      padding: 0;
+      height: auto;
+      min-width: 0;
+      background: none;
+      border: 0;
+      border-radius: 50%;
+      cursor: default;
+    }
+    .side-user-btn:hover { background: none; }
     .side-user .avatar {
       flex-shrink: 0;
       width: 1.7rem;
@@ -672,7 +689,8 @@
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }
-    .logout-form { margin: 0; padding: 0 0.45rem; }
+    /* Row 2 of .side-user's grid (side padding comes from that box). */
+    .logout-form { grid-column: 1 / -1; margin: 0; padding: 0; }
     .logout-form button {
       width: 100%;
       height: 2rem;
@@ -3311,10 +3329,42 @@
         padding: 0 0.25rem;
         gap: 0.35rem;
       }
-      .side-user { border-top: none; padding: 0; }
-      .side-user-meta { display: none; }
-      .logout-form { padding: 0; flex-shrink: 0; }
-      .logout-form button { width: auto; padding: 0 0.65rem; }
+      /* No room for a Log out button in the bar: the avatar is the trigger and
+         everything else moves into a menu anchored under it. .side-user-pop
+         drops display:contents here, so meta + form become one panel. */
+      .side-user {
+        display: block;
+        position: relative;
+        border-top: none;
+        padding: 0;
+      }
+      /* 1.7rem avatar is a poor thumb target — ::after grows the hit box to
+         ~46px without moving anything in the bar (its neighbours are inert). */
+      .side-user-btn { cursor: pointer; position: relative; }
+      .side-user-btn::after { content: ""; position: absolute; inset: -0.6rem; }
+      .side-user.is-open .avatar { border-color: var(--focus-border); }
+      .side-user-pop {
+        display: none;
+        position: absolute;
+        right: 0;
+        top: calc(100% + 0.5rem);
+        z-index: 70;
+        min-width: 10.5rem;
+        padding: 0.35rem;
+        background: var(--surface);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-2);
+        animation: menu-in 0.14s ease;
+      }
+      .side-user.is-open .side-user-pop { display: block; }
+      .side-user-meta {
+        padding: 0.35rem 0.5rem 0.55rem;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 0.35rem;
+      }
+      .logout-form { padding: 0; }
+      .logout-form button { width: 100%; height: 2.2rem; }
       main.main {
         /* Bottom padding clears the fixed tab bar (+ iPhone home indicator). */
         padding: 1.1rem 1rem calc(5.2rem + env(safe-area-inset-bottom));
@@ -3569,22 +3619,32 @@
       <div class="side-foot">
         <span id="sse-status" title="Live updates via SSE">connecting…</span>
         {{if .AuthEnabled}}
+          {{/* One markup, two shapes. Desktop: a grid — avatar + name/role on
+               row 1, Log out spanning row 2 (.side-user-pop is display:contents
+               so its children join that grid). Phone: the top bar has no room
+               for a Log out button, so the avatar becomes the trigger and the
+               pop is an anchored menu carrying the identity + Log out. The JS
+               toggle only runs at phone widths (see the account-menu script). */}}
           {{if .UserName}}
-          <div class="side-user" title="{{.UserID}} · {{.UserRole}}">
-            {{if .UserAvatar}}
-            <img class="avatar" src="{{.UserAvatar}}" alt="" width="28" height="28" referrerpolicy="no-referrer" decoding="async">
-            {{else}}
-            <span class="avatar" aria-hidden="true">{{printf "%.1s" .UserName}}</span>
-            {{end}}
-            <span class="side-user-meta">
-              <span class="side-user-name">{{.UserName}}</span>
-              <span class="side-user-role">{{.UserRole}}</span>
-            </span>
+          <div class="side-user">
+            <button type="button" class="side-user-btn" id="user-menu-btn" title="{{.UserID}} · {{.UserRole}}" aria-label="Account" aria-controls="user-menu">
+              {{if .UserAvatar}}
+              <img class="avatar" src="{{.UserAvatar}}" alt="" width="28" height="28" referrerpolicy="no-referrer" decoding="async">
+              {{else}}
+              <span class="avatar" aria-hidden="true">{{printf "%.1s" .UserName}}</span>
+              {{end}}
+            </button>
+            <div class="side-user-pop" id="user-menu">
+              <span class="side-user-meta">
+                <span class="side-user-name">{{.UserName}}</span>
+                <span class="side-user-role">{{.UserRole}}</span>
+              </span>
+              <form method="post" action="{{route "logout"}}" class="logout-form" hx-boost="false">
+                {{if .CSRF}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}
+                <button type="submit">Log out</button>
+              </form>
+            </div>
           </div>
-          <form method="post" action="{{route "logout"}}" class="logout-form" hx-boost="false">
-            {{if .CSRF}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}
-            <button type="submit">Log out</button>
-          </form>
           {{end}}
         {{end}}
       </div>
@@ -4577,6 +4637,58 @@
         if (!d.contains(e.target)) d.removeAttribute("open");
       });
     });
+
+    // Account menu (phones only). The top bar has no room for a Log out
+    // button, so the avatar opens a menu holding it; the desktop sidebar keeps
+    // both visible and the avatar is decorative there — hence the width gate on
+    // both the toggle and the ARIA. .side-user sits outside #live-root and the
+    // #side-nav oob swap, so this wiring survives boosted navigation.
+    (function () {
+      var user = document.querySelector(".side-user");
+      var btn = document.getElementById("user-menu-btn");
+      if (!user || !btn) return;
+      var phone = window.matchMedia("(max-width: 920px)");
+      function close() {
+        user.classList.remove("is-open");
+        if (phone.matches) btn.setAttribute("aria-expanded", "false");
+      }
+      function syncMode() {
+        close();
+        if (phone.matches) {
+          btn.removeAttribute("aria-hidden");
+          btn.removeAttribute("tabindex");
+          btn.setAttribute("aria-expanded", "false");
+        } else {
+          btn.removeAttribute("aria-expanded");
+          btn.setAttribute("aria-hidden", "true");
+          btn.setAttribute("tabindex", "-1");
+        }
+      }
+      btn.addEventListener("click", function (e) {
+        if (!phone.matches) return;
+        e.stopPropagation();
+        var open = !user.classList.contains("is-open");
+        user.classList.toggle("is-open", open);
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+      document.addEventListener("click", function (e) {
+        if (user.classList.contains("is-open") && !user.contains(e.target)) close();
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && user.classList.contains("is-open")) {
+          close();
+          btn.focus();
+        }
+      });
+      // A tab tap navigates without unloading the shell — drop the menu too.
+      // Boosted only: SSE region refreshes also fire this and must not close it.
+      document.body.addEventListener("htmx:beforeRequest", function (e) {
+        if (e.detail && e.detail.boosted) close();
+      });
+      if (phone.addEventListener) phone.addEventListener("change", syncMode);
+      else phone.addListener(syncMode);
+      syncMode();
+    })();
 
 
     // Per-path scroll for boosted navigations (e.g. history detail → list via

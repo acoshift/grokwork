@@ -586,6 +586,42 @@ func TestAuthOnLogout(t *testing.T) {
 	}
 }
 
+// The phone top bar has no room for a Log out button, so the avatar is its
+// trigger and identity + Log out live in one pop (CSS shows the pop inline on
+// desktop, anchored on phones). Both halves of that contract are pinned here:
+// the id the layout script toggles, and the form living *inside* the pop —
+// hoist the form back out and the phone menu ships with no way to log out.
+func TestAccountMenuMarkup(t *testing.T) {
+	srv, _, _ := authOnServer(t)
+	sid, _, err := srv.LoginAs("admin-1", "Admin", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, `id="user-menu-btn"`) {
+		t.Fatal("avatar trigger missing (layout script toggles #user-menu-btn)")
+	}
+	start := strings.Index(body, `<div class="side-user-pop" id="user-menu">`)
+	if start < 0 {
+		t.Fatal("account pop missing")
+	}
+	end := strings.Index(body[start:], "</div>") // no nested div inside the pop
+	if end < 0 {
+		t.Fatal("account pop not closed")
+	}
+	pop := body[start : start+end]
+	if !strings.Contains(pop, `class="side-user-meta"`) {
+		t.Error("identity should live inside the account pop (hidden in the phone bar otherwise)")
+	}
+	if !strings.Contains(pop, `action="/logout"`) {
+		t.Error("logout form should live inside the account pop")
+	}
+}
+
 func TestUserStoreUpsertAndPersist(t *testing.T) {
 	dir := t.TempDir()
 	st, err := newUserStore(dir)
