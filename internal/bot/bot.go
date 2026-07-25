@@ -627,6 +627,18 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 			"**state:** " + state,
 			labelLine,
 		}
+		// Which CLI a thread runs on changes how it behaves, so it is worth showing —
+		// but only once the thread has actually run, since before that it is still
+		// whatever config says rather than a property of this thread. Read-only:
+		// there is no chat command to change it.
+		if e.SessionID != "" || strings.TrimSpace(e.Agent) != "" {
+			cli := b.threadCLI(m.ChannelID)
+			agentLine := "**agent:** " + cli.Agent.Label()
+			if cli.Model != "" {
+				agentLine += " (`" + cli.Model + "`)"
+			}
+			lines = append(lines, agentLine)
+		}
 		if e.HasOwner() {
 			ownerLine := fmt.Sprintf("**owner:** <@%s>", e.OwnerID)
 			if e.OwnerName != "" {
@@ -730,8 +742,6 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleWatch(s, m)
 	case KindUnwatch:
 		b.handleUnwatch(s, m)
-	case KindAgent:
-		b.handleAgent(s, m, parsed)
 	case KindStartInvestigate, KindStartFix, KindStartExplain, KindTask:
 		log.Printf("task: starting async for msg=%s kind=%d", m.ID, parsed.Kind)
 		// Immediate typing indicator while we open the thread / claim the queue.
@@ -1152,7 +1162,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 
 	// Non-blocking title improve: rename the thread later if Grok returns a better name.
 	if needTitle && b.cfg.SummarizeTitleEnabled() {
-		go b.improveThreadTitle(s, threadID, titlePrompt, username, proj.Cwd, titleIssues, parsed.Agent)
+		go b.improveThreadTitle(s, threadID, titlePrompt, username, proj.Cwd, titleIssues)
 	}
 
 	// Early ack so the user sees activity before materialize / worktree / Grok.
@@ -1197,22 +1207,6 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			parsed.Prompt = "Investigate the codebase for the issue described in this thread."
 			if parsed.Kind == KindStartFix {
 				parsed.Prompt = "Continue the task for this thread."
-			}
-		}
-	}
-	// Explicit "/claude <task>" on a thread already pinned to the other CLI:
-	// refuse rather than silently running on an agent the user did not ask for.
-	if want := strings.TrimSpace(parsed.Agent); want != "" {
-		if wantAgent, ok := grokrun.ParseAgent(want); ok {
-			if cur, pinned := b.pinnedAgent(threadID); pinned && cur.Resolve() != wantAgent.Resolve() {
-				b.postOrEditThreadStatus(s, threadID, statusMsgID, fmt.Sprintf(
-					"This thread runs on **%s** — its session cannot be resumed by %s. Start a new thread with `@Grok /%s <task>`.",
-					cur.Label(), wantAgent.Label(), wantAgent),
-					actionBarDone(threadID, b.sessionWebURL(threadID)))
-				if b.runs != nil {
-					b.runs.RemoveTaskFiles(threadID, taskID)
-				}
-				return
 			}
 		}
 	}
@@ -1333,10 +1327,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 }
 
 // improveThreadTitle runs SummarizeTitle off the critical path and renames the thread if useful.
-// requestedAgent is the "/agent <name>" selection from the message that opened
-// this thread. The session is not stamped until the run finishes, so without it
-// a new claude thread would summarize its title with grok.
-func (b *Bot) improveThreadTitle(s *discordgo.Session, threadID, titlePrompt, username, cwd string, issues []sessionstore.TrackedIssue, requestedAgent string) {
+func (b *Bot) improveThreadTitle(s *discordgo.Session, threadID, titlePrompt, username, cwd string, issues []sessionstore.TrackedIssue) {
 	if b == nil || s == nil || threadID == "" || b.cfg == nil {
 		return
 	}
@@ -1350,7 +1341,7 @@ func (b *Bot) improveThreadTitle(s *discordgo.Session, threadID, titlePrompt, us
 	log.Printf("task: summarizing title async thread=%s…", threadID)
 	sumCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cli := b.threadSummarizeCLI(threadID, requestedAgent).CLI()
+	cli := b.threadSummarizeCLI(threadID).CLI()
 	log.Printf("task: summarize agent=%s model=%q thread=%s", cli.Agent, cli.Model, threadID)
 	t, ok := grokrun.SummarizeTitle(sumCtx, cli, titlePrompt, cwd, timeout)
 	if !ok {
@@ -1421,18 +1412,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	// agent-specific vocabulary, and the stamp is what makes the choice survive a
 	// restart — a crash mid-first-run used to leave the thread unstamped, so the
 	// re-drive resolved the config default and could re-pin a /claude thread to grok.
-	agentCLI := b.threadCLI(threadID, item.parsed.Agent)
-	// threadCLI ignores the request once a thread is stamped, so a queued "/grok
-	// <task>" behind a running claude thread never runs on the wrong CLI — but it
-	// would run with no explanation. The enqueue-time refusal cannot catch this
-	// one: the follow-up was queued before the first run stamped the thread.
-	if want := strings.TrimSpace(item.parsed.Agent); want != "" && present {
-		if wantAgent, ok := grokrun.ParseAgent(want); ok && wantAgent.Resolve() != agentCLI.Agent.Resolve() {
-			sendChunks(s, threadID, fmt.Sprintf(
-				"Running on **%s**: this thread is pinned to it and its session cannot be resumed by %s. Start a new thread with `@Grok /%s <task>`.",
-				agentCLI.Agent.Label(), wantAgent.Label(), wantAgent))
-		}
-	}
+	agentCLI := b.threadCLI(threadID)
 	b.ensureSessionCLI(threadID, agentCLI)
 	// Resolve run policy (bot-enforced gates). Prefer snapshot from enqueue (K19).
 	pol := b.resolveRunPolicy(threadID, proj.Name, item, shipMode, actor, agentCLI.Agent)
@@ -2065,8 +2045,8 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 // resolveRunPolicy builds RunPolicy from snapshot and/or live session + capabilities.
 // resolveRunPolicy builds the bot-enforced gates for one run. agent is passed in
 // rather than read back from the session because on a thread's first run the
-// caller has already resolved it from the message ("@Grok /claude /investigate …")
-// and the session does not name it yet.
+// caller has already resolved it and the session does not name it yet — and the
+// investigate tool allowlist is agent-specific vocabulary.
 func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode string, actor Actor, agent grokrun.Agent) RunPolicy {
 	sessionMode := ""
 	sessionPhase := item.snapPhase

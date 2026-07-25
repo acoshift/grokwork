@@ -19,23 +19,22 @@ func pinBot(t *testing.T, cfg *config.Config) (*Bot, *sessionstore.Store) {
 	return New(cfg, store, nil), store
 }
 
-// An investigate run's tool allowlist is agent-specific vocabulary, so it has to
-// follow the agent the *message* chose, not the one the session will be stamped
-// with after the run. Reading it back from the session made the first run of
-// "@Grok /claude /investigate …" hand claude grok's tool names — an allowlist of
-// zero real tools, i.e. a confidently empty investigation.
-func TestFirstRunInvestigateToolsFollowRequestedAgent(t *testing.T) {
-	cfg := &config.Config{Agent: "grok", Model: "grok-4.5", GrokBin: "grok", ClaudeBin: "claude"}
+// An investigate run's tool allowlist is agent-specific vocabulary, so it must
+// follow the agent the run actually uses. Reading it back from the session instead
+// handed claude grok's tool names on a thread's first run — an allowlist of zero
+// real tools, i.e. a confidently empty investigation.
+func TestFirstRunInvestigateToolsFollowResolvedAgent(t *testing.T) {
+	cfg := &config.Config{Agent: "claude", GrokBin: "grok", ClaudeBin: "claude"}
 	b, _ := pinBot(t, cfg)
 	item := taskItem{
-		parsed:   Parsed{Kind: KindStartInvestigate, Agent: "claude", Prompt: "look around"},
+		parsed:   Parsed{Kind: KindStartInvestigate, Prompt: "look around"},
 		threadID: "fresh",
 		proj:     projectRef{Name: "app", Cwd: "/tmp"},
 		actor:    Actor{ID: "u1", DisplayName: "U"},
 	}
-	cli := b.threadCLI("fresh", item.parsed.Agent)
+	cli := b.threadCLI("fresh")
 	if cli.Agent != grokrun.AgentClaude {
-		t.Fatalf("agent=%q, want claude from the request", cli.Agent)
+		t.Fatalf("agent=%q, want claude from config", cli.Agent)
 	}
 	pol := b.resolveRunPolicy("fresh", "app", item, "pr", item.actor, cli.Agent)
 	if pol.Tools == nil {
@@ -59,7 +58,7 @@ func TestThreadCLIPinnedAgainstConfigChanges(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got := b.threadCLI("t1", "")
+	got := b.threadCLI("t1")
 	if got.Agent != grokrun.AgentClaude || got.Model != "sonnet" {
 		t.Fatalf("cli=%+v, want the pinned claude/sonnet", got)
 	}
@@ -67,15 +66,8 @@ func TestThreadCLIPinnedAgainstConfigChanges(t *testing.T) {
 	// Repoint global config entirely; the thread must not move.
 	cfg.Model = "grok-4.5"
 	cfg.Agent = "grok"
-	if got := b.threadCLI("t1", ""); got.Agent != grokrun.AgentClaude || got.Model != "sonnet" {
+	if got := b.threadCLI("t1"); got.Agent != grokrun.AgentClaude || got.Model != "sonnet" {
 		t.Fatalf("config change leaked into a live session: %+v", got)
-	}
-	// Nor may an explicit request on a later message move it.
-	if got := b.threadCLI("t1", "grok"); got.Agent != grokrun.AgentClaude {
-		t.Fatalf("a later /grok moved a pinned session: %+v", got)
-	}
-	if _, pinned := b.pinnedAgent("t1"); !pinned {
-		t.Fatal("session with a stamp must report as pinned")
 	}
 }
 
@@ -87,41 +79,56 @@ func TestThreadCLILegacySessionStaysGrok(t *testing.T) {
 	if err := store.Set("t2", sessionstore.Entry{SessionID: "sess-legacy"}); err != nil {
 		t.Fatal(err)
 	}
-	got := b.threadCLI("t2", "")
+	got := b.threadCLI("t2")
 	if got.Agent != grokrun.AgentGrok || got.Model != "grok-4.5" {
 		t.Fatalf("cli=%+v, want grok with the global model", got)
 	}
-	if _, pinned := b.pinnedAgent("t2"); !pinned {
-		t.Fatal("a session that already ran is pinned even without a stamp")
+	// Even with claude configured globally: an unstamped session that has already
+	// run is grok by history, and its transcript is not portable.
+	cfg.Model = "sonnet"
+	if got := b.threadCLI("t2"); got.Agent != grokrun.AgentGrok {
+		t.Fatalf("cli=%+v, a pre-existing session must not be moved by config", got)
 	}
 }
 
-// Before the first run there is nothing to protect, so config and an explicit
-// request still decide.
-func TestThreadCLIUnstartedSessionStillChoosable(t *testing.T) {
+// Before the first run there is nothing to protect, so global config decides —
+// and once stamped, it does not.
+func TestThreadCLIUnstartedSessionFollowsConfig(t *testing.T) {
 	cfg := &config.Config{Agent: "grok", Model: "grok-4.5", GrokBin: "grok", ClaudeBin: "claude"}
 	b, store := pinBot(t, cfg)
 	// An entry with no session id yet (e.g. a case opened before any run).
 	if err := store.Set("t3", sessionstore.Entry{Project: "p"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, pinned := b.pinnedAgent("t3"); pinned {
-		t.Fatal("a session that has not run must not be pinned")
+	if got := b.threadCLI("t3"); got.Agent != grokrun.AgentGrok {
+		t.Fatalf("cli=%+v, want the configured grok", got)
 	}
-	if got := b.threadCLI("t3", "claude"); got.Agent != grokrun.AgentClaude {
-		t.Fatalf("cli=%+v, want the requested claude", got)
-	}
-	if got := b.threadCLI("t3", ""); got.Agent != grokrun.AgentGrok {
-		t.Fatalf("cli=%+v, want the configured default", got)
+	cfg.Agent = "claude"
+	cfg.Model = ""
+	if got := b.threadCLI("t3"); got.Agent != grokrun.AgentClaude {
+		t.Fatalf("cli=%+v, want config to still decide before the first run", got)
 	}
 
-	// Stamping before the first run fixes it from then on.
-	b.stampSessionCLI("t3", cfg.ResolveAgentCLI("claude"))
-	if _, pinned := b.pinnedAgent("t3"); !pinned {
-		t.Fatal("stamped session should be pinned")
-	}
-	if got := b.threadCLI("t3", "grok"); got.Agent != grokrun.AgentClaude {
+	// Stamping fixes it from then on, even against a further config change.
+	b.ensureSessionCLI("t3", cfg.ResolveAgentCLI(""))
+	cfg.Agent = "grok"
+	if got := b.threadCLI("t3"); got.Agent != grokrun.AgentClaude {
 		t.Fatalf("stamp not honored: %+v", got)
+	}
+}
+
+// ensureSessionCLI must never move an already-stamped thread, whatever config now
+// says — the thread's session id belongs to the CLI it was created on.
+func TestEnsureSessionCLILeavesStampedThreadAlone(t *testing.T) {
+	cfg := &config.Config{Agent: "grok", GrokBin: "grok", ClaudeBin: "claude"}
+	b, store := pinBot(t, cfg)
+	if err := store.Set("t4", sessionstore.Entry{SessionID: "s", Agent: "claude", Model: "sonnet"}); err != nil {
+		t.Fatal(err)
+	}
+	b.ensureSessionCLI("t4", cfg.ResolveAgentCLI(""))
+	e, _ := store.Get("t4")
+	if e.Agent != "claude" || e.Model != "sonnet" {
+		t.Fatalf("stamp overwritten: agent=%q model=%q", e.Agent, e.Model)
 	}
 }
 
@@ -137,11 +144,11 @@ func TestThreadSummarizeCLICrossesAgentsForCheapTitles(t *testing.T) {
 	if err := store.Set("c1", sessionstore.Entry{SessionID: "s", Agent: "claude", Model: "sonnet"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := b.threadSummarizeCLI("c1", ""); got.Agent != grokrun.AgentClaude || got.Model != "haiku" {
+	if got := b.threadSummarizeCLI("c1"); got.Agent != grokrun.AgentClaude || got.Model != "haiku" {
 		t.Fatalf("cli=%+v, want claude/haiku", got)
 	}
 	// …and the run itself is untouched by the title model.
-	if got := b.threadCLI("c1", ""); got.Model != "sonnet" {
+	if got := b.threadCLI("c1"); got.Model != "sonnet" {
 		t.Fatalf("run cli=%+v, want the pinned sonnet", got)
 	}
 
@@ -151,98 +158,36 @@ func TestThreadSummarizeCLICrossesAgentsForCheapTitles(t *testing.T) {
 	if err := store.Set("g1", sessionstore.Entry{SessionID: "s", Agent: "grok", Model: "grok-4.5"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := b.threadSummarizeCLI("g1", ""); got.Agent != grokrun.AgentClaude || got.Model != "haiku" {
+	if got := b.threadSummarizeCLI("g1"); got.Agent != grokrun.AgentClaude || got.Model != "haiku" {
 		t.Fatalf("cli=%+v, want claude/haiku for the title", got)
 	}
-	if got := b.threadCLI("g1", ""); got.Agent != grokrun.AgentGrok || got.Model != "grok-4.5" {
+	if got := b.threadCLI("g1"); got.Agent != grokrun.AgentGrok || got.Model != "grok-4.5" {
 		t.Fatalf("run cli=%+v, want the pinned grok/grok-4.5", got)
 	}
 
 	// No title model configured: the title uses the thread's own agent.
 	cfg.SummarizeModel = ""
-	if got := b.threadSummarizeCLI("g1", ""); got.Agent != grokrun.AgentGrok {
+	if got := b.threadSummarizeCLI("g1"); got.Agent != grokrun.AgentGrok {
 		t.Fatalf("cli=%+v, want grok when no title model is set", got)
 	}
 }
 
-func TestParseAgentCommandBareForms(t *testing.T) {
-	cases := map[string]string{
-		"/agent":  "",
-		"/claude": "claude",
-		"/grok":   "grok",
-	}
-	for in, wantArg := range cases {
-		got := ParseMessage(in, "")
-		if got.Kind != KindAgent {
-			t.Errorf("ParseMessage(%q).Kind=%d want KindAgent", in, got.Kind)
-		}
-		if got.Arg != wantArg {
-			t.Errorf("ParseMessage(%q).Arg=%q want %q", in, got.Arg, wantArg)
-		}
-	}
-}
-
-func TestParseAgentCommandSetOnly(t *testing.T) {
-	got := ParseMessage("/agent claude", "")
-	if got.Kind != KindAgent || got.Arg != "claude" {
-		t.Fatalf("got kind=%d arg=%q", got.Kind, got.Arg)
-	}
-}
-
-// An unknown name must not fall through and silently run on the default agent.
-func TestParseAgentCommandUnknownNameDropsTask(t *testing.T) {
-	got := ParseMessage("/agent gpt do the thing", "")
-	if got.Kind != KindAgent || got.Arg != "gpt" {
-		t.Fatalf("got kind=%d arg=%q", got.Kind, got.Arg)
-	}
-	if got.Agent != "" {
-		t.Fatalf("unknown agent leaked into the run: %q", got.Agent)
-	}
-}
-
-func TestParseAgentCommandWithTask(t *testing.T) {
-	for _, in := range []string{"/agent claude fix the flaky test", "/claude fix the flaky test"} {
+// The agent/model selectors were removed from Discord: global config is the only
+// source. These forms must therefore be ordinary tasks, with the words reaching
+// the model verbatim rather than being eaten as commands.
+func TestAgentSelectorsAreNoLongerCommands(t *testing.T) {
+	for _, in := range []string{
+		"/claude", "/grok", "/agent",
+		"/agent claude", "/claude fix the flaky test", "/grok why is CI red",
+		"claude should look at this",
+	} {
 		got := ParseMessage(in, "")
 		if got.Kind != KindTask {
 			t.Errorf("ParseMessage(%q).Kind=%d want KindTask", in, got.Kind)
 		}
-		if got.Agent != "claude" {
-			t.Errorf("ParseMessage(%q).Agent=%q", in, got.Agent)
+		if got.Prompt != in {
+			t.Errorf("ParseMessage(%q).Prompt=%q want the text verbatim", in, got.Prompt)
 		}
-		if got.Prompt != "fix the flaky test" {
-			t.Errorf("ParseMessage(%q).Prompt=%q", in, got.Prompt)
-		}
-	}
-}
-
-// Agent selection is orthogonal to mode, so it composes with other commands.
-func TestParseAgentCommandComposesWithStart(t *testing.T) {
-	got := ParseMessage("/claude /start investigate why is CI red", "")
-	if got.Kind != KindStartInvestigate {
-		t.Fatalf("kind=%d want KindStartInvestigate", got.Kind)
-	}
-	if got.Agent != "claude" || got.Prompt != "why is CI red" {
-		t.Fatalf("agent=%q prompt=%q", got.Agent, got.Prompt)
-	}
-}
-
-// Free-form prose that merely mentions an agent stays a task.
-func TestParseAgentCommandRequiresSlash(t *testing.T) {
-	for _, in := range []string{"claude should look at this", "grok the logs for me", "agent claude"} {
-		got := ParseMessage(in, "")
-		if got.Kind != KindTask {
-			t.Errorf("ParseMessage(%q).Kind=%d want KindTask", in, got.Kind)
-		}
-		if got.Agent != "" {
-			t.Errorf("ParseMessage(%q) set Agent=%q", in, got.Agent)
-		}
-	}
-}
-
-func TestParseAgentCommandPreservesSpecialChars(t *testing.T) {
-	got := ParseMessage("/claude fix #42 at https://ex.com/a?x=1&b=2", "")
-	if got.Prompt != "fix #42 at https://ex.com/a?x=1&b=2" {
-		t.Fatalf("prompt=%q", got.Prompt)
 	}
 }
 
