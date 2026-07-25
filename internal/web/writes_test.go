@@ -524,30 +524,40 @@ func TestMergeGHReviewRequiredShowsAlert(t *testing.T) {
 		t.Fatal(err)
 	}
 	form := url.Values{"project": {"proj"}, "csrf": {csrf}, "method": {"squash"}}
+
+	// Boosted path (the real merge UI): 3xx + Location with alert=, not HX-Redirect.
+	// presentAppAlerts must then find the flash in #live-root after the swap.
 	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/merge", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Boosted", "true")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
+	if hx := w.Header().Get("HX-Redirect"); hx != "" {
+		t.Fatalf("boosted merge must not use HX-Redirect, got %q", hx)
+	}
 	loc := w.Header().Get("Location")
 	// Modal title + stripped reason (no "gh pr merge …:" prefix).
 	if !strings.Contains(loc, "alert=Merge") {
 		t.Fatalf("Location=%q want alert=Merge failed", loc)
 	}
-	if !strings.Contains(loc, "approving+review") && !strings.Contains(loc, "approving%20review") &&
-		!strings.Contains(loc, "review+is+required") && !strings.Contains(loc, "review%20is%20required") {
-		// url.Values.Encode uses + for spaces
-		u, _ := url.Parse(loc)
-		errMsg := u.Query().Get("err")
-		if !strings.Contains(errMsg, "approving review") {
-			t.Fatalf("err=%q Location=%q want stripped review-required reason", errMsg, loc)
-		}
-		if strings.HasPrefix(errMsg, "gh ") {
-			t.Fatalf("err=%q still has gh command prefix", errMsg)
-		}
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errMsg := u.Query().Get("err")
+	if !strings.Contains(errMsg, "approving review") {
+		t.Fatalf("err=%q Location=%q want stripped review-required reason", errMsg, loc)
+	}
+	if strings.HasPrefix(errMsg, "gh ") {
+		t.Fatalf("err=%q still has gh command prefix", errMsg)
+	}
+	if u.Query().Get("alert") != "Merge failed" {
+		t.Fatalf("alert=%q", u.Query().Get("alert"))
 	}
 }
 
@@ -592,10 +602,15 @@ func TestPRDetailMergeErrorOpensAlertMarkup(t *testing.T) {
 		`data-app-alert-title="Merge failed"`,
 		`approving review is required`,
 		`presentAppAlerts`,
+		// Must not scope the search to the htmx request elt (broken for boost).
+		`document.querySelector(".flash.err[data-app-alert]")`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in body", want)
 		}
+	}
+	if strings.Contains(body, "presentAppAlerts(elt") {
+		t.Fatal("presentAppAlerts must not take the htmx request elt as scope")
 	}
 }
 

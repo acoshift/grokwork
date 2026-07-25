@@ -4117,11 +4117,13 @@
     window.appAlert = function (opts) { return openModal("alert", opts).then(flatten); };
 
     // Server-rendered action errors (merge failed, …) mark .flash.err with
-    // data-app-alert. Open the modal once so the reason is hard to miss —
-    // works on full load and after hx-boost redirect swaps of #live-root.
-    function presentAppAlerts(root) {
-      var scope = root && root.querySelector ? root : document;
-      var el = scope.querySelector(".flash.err[data-app-alert]");
+    // data-app-alert. Open the modal once so the reason is hard to miss.
+    // Always search document — never the htmx request elt. Boosted form
+    // POSTs fire afterSettle with detail.elt = the form (often already
+    // detached after #live-root outerHTML swap); the flash is a sibling
+    // in the swapped page content, not inside the form.
+    function presentAppAlerts() {
+      var el = document.querySelector(".flash.err[data-app-alert]");
       if (!el || el.dataset.appAlertShown) return;
       var msg = (el.textContent || "").trim();
       if (!msg) return;
@@ -4148,9 +4150,10 @@
     } else {
       presentAppAlerts();
     }
-    document.body.addEventListener("htmx:afterSettle", function (e) {
-      var elt = e.detail && e.detail.elt;
-      presentAppAlerts(elt || document);
+    document.body.addEventListener("htmx:afterSettle", function () {
+      // Defer one tick so the swapped #live-root is connected and history
+      // has the post-redirect URL (with err/alert) before we strip them.
+      setTimeout(presentAppAlerts, 0);
     });
 
     // Capture phase: runs before htmx's boost listener on the form, so
