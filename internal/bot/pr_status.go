@@ -374,7 +374,7 @@ func (b *Bot) syncReviewStoreFromPR(info ghpr.Info) {
 // post-task refresh) detects a transition. Quiet on first seed except terminal.
 // Posts as a Discord rich embed (color-coded by event kind).
 func (b *Bot) announcePRTimeline(s *discordgo.Session, threadID string, prev ghpr.Snapshot, info ghpr.Info) {
-	if s == nil || threadID == "" || gitworktree.IsWebUnitID(threadID) {
+	if s == nil || threadID == "" || !b.hasDiscordSurface(threadID) {
 		return
 	}
 	events := ghpr.DiffTimeline(prev, ghpr.SnapshotFromInfo(info))
@@ -446,8 +446,8 @@ func (b *Bot) upsertPRStatusMessage(s *discordgo.Session, threadID, msgID, conte
 	if content == "" {
 		return msgID, fmt.Errorf("empty card content")
 	}
-	// Web-native units are not Discord channel snowflakes — never post cards there.
-	if gitworktree.IsWebUnitID(threadID) {
+	// Web-native units have no channel — never post cards there.
+	if !b.hasDiscordSurface(threadID) {
 		return msgID, nil
 	}
 	if s == nil {

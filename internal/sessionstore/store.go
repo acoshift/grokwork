@@ -26,10 +26,15 @@ type Entry struct {
 	CoOwnerIDs []string `json:"coOwnerIds,omitempty"`
 
 	// Dual-surface workflow metadata (web + Discord). Preserved across session Set rebuilds.
-	Origin        string `json:"origin,omitempty"`        // "discord" | "web"
+	Origin        string `json:"origin,omitempty"`        // "discord" | "web" — where the run was STARTED, not whether it has a thread
 	CreatedBy     string `json:"createdBy,omitempty"`     // Discord snowflake or web:<id>
 	CreatedByName string `json:"createdByName,omitempty"` // display name
-	DiscordURL    string `json:"discordUrl,omitempty"`    // jump link when known
+	DiscordURL    string `json:"discordUrl,omitempty"`    // legacy jump link; mirrored with Discord.URL
+
+	// Discord holds this unit's Discord coordinates, nil for a web-native unit.
+	// Its presence is the surface predicate — see HasDiscord. Populated by the
+	// store, so callers never derive a surface from the shape of a unit id.
+	Discord *DiscordRef `json:"discord,omitempty"`
 
 	// Continuity / brief card: one pinned message (goal, progress, branch, PR, files).
 	// Goal is sticky (first task prompt unless set via /brief goal …).
@@ -298,7 +303,16 @@ func (s *Store) load() error {
 		}
 		return err
 	}
-	return json.Unmarshal(raw, &s.entries)
+	if err := json.Unmarshal(raw, &s.entries); err != nil {
+		return err
+	}
+	// Migrate legacy entries in place: a key that is not a web unit id is a
+	// Discord thread id, so give it a DiscordRef. Idempotent.
+	for id, e := range s.entries {
+		ensureDiscordRef(id, &e)
+		s.entries[id] = e
+	}
+	return nil
 }
 
 func (s *Store) save() error {
@@ -320,6 +334,7 @@ func (s *Store) Set(threadID string, e Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	e.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	ensureDiscordRef(threadID, &e)
 	s.entries[threadID] = e
 	return s.save()
 }
@@ -335,6 +350,7 @@ func (s *Store) Patch(threadID string, fn func(*Entry)) (Entry, bool, error) {
 	}
 	fn(&e)
 	e.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	ensureDiscordRef(threadID, &e)
 	s.entries[threadID] = e
 	if err := s.save(); err != nil {
 		return Entry{}, true, err

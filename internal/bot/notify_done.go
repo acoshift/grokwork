@@ -10,7 +10,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grokwork/internal/config"
-	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -134,7 +133,7 @@ func discordNotifySend(s *discordgo.Session) notifySend {
 // "@you @someone-else — run done", and it carries no ambient context, so it has to
 // name the work and link to it.
 func (b *Bot) notifyRunDone(s *discordgo.Session, threadID, authorID string, result grokrun.Result, elapsed time.Duration) {
-	if gitworktree.IsWebUnitID(threadID) {
+	if !b.hasDiscordSurface(threadID) {
 		b.notifyRunDoneDM(threadID, authorID, result, elapsed, discordDMSend(s))
 		return
 	}
@@ -169,7 +168,7 @@ func (b *Bot) notifyRecipients(threadID, authorID string, outcome runOutcome, el
 // policy). Keeps refusing web-unit ids: those are not Discord channels, and posting
 // to one is a guaranteed 4xx every poll.
 func (b *Bot) notifyRunDoneSend(threadID, authorID string, result grokrun.Result, elapsed time.Duration, send notifySend) {
-	if b == nil || send == nil || threadID == "" || gitworktree.IsWebUnitID(threadID) {
+	if b == nil || send == nil || threadID == "" || !b.hasDiscordSurface(threadID) {
 		return
 	}
 	outcome := classifyRunOutcome(result)

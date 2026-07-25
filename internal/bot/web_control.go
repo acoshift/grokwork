@@ -5,7 +5,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -136,7 +135,7 @@ func (b *Bot) ClaimThread(threadID string, actor Actor) error {
 // label/goal write. Clean no-op for web-native (w_*) units and when the gateway
 // is down; Discord errors are logged, never returned to the caller.
 func (b *Bot) maybeRefreshBriefWeb(threadID string) {
-	if b == nil || strings.TrimSpace(threadID) == "" || gitworktree.IsWebUnitID(threadID) {
+	if b == nil || strings.TrimSpace(threadID) == "" || !b.hasDiscordSurface(threadID) {
 		return
 	}
 	s := b.Discord()

@@ -167,7 +167,7 @@ func (b *Bot) NotifyThread(threadID, content string) {
 	if b == nil || strings.TrimSpace(threadID) == "" || strings.TrimSpace(content) == "" {
 		return
 	}
-	if gitworktree.IsWebUnitID(threadID) {
+	if !b.hasDiscordSurface(threadID) {
 		return
 	}
 	b.discordMu.RLock()
@@ -1400,7 +1400,12 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	if s == nil {
 		s = b.Discord()
 	}
-	present := s != nil // Discord presentation available
+	// Discord presentation available: a live gateway AND a thread to render into.
+	// The unit check is not redundant — without it a web-native run with the
+	// gateway up would try to post its status card to a synthetic unit id, log a
+	// 4xx, and only then degrade. Degradation is a decision here, not a rejection
+	// from the Discord API.
+	present := s != nil && b.hasDiscordSurface(threadID)
 
 	// Bind owner before the run so /cancel is gated for multi-person threads
 	// even on the first task (session used to be written only after grok exits).
@@ -1973,7 +1978,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	// is false for those, which is why it is not the only gate. (A *degraded* Discord
 	// thread, where the status message failed to post, still skips: the thread exists
 	// but Discord was refusing writes.)
-	if s != nil && (present || gitworktree.IsWebUnitID(threadID)) {
+	if s != nil && (present || !b.hasDiscordSurface(threadID)) {
 		b.notifyRunDone(s, threadID, taskAuthorID(item, m), result, elapsed)
 	}
 }

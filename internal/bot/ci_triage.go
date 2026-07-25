@@ -10,7 +10,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grokwork/internal/ghpr"
-	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -21,7 +20,7 @@ const ciLogSnippetRunes = 1500
 // channel, so the send is skipped rather than attempted and logged as a failure —
 // the poller reaches this path every cycle.
 func (b *Bot) ciNotice(s *discordgo.Session, threadID, content string) {
-	if gitworktree.IsWebUnitID(threadID) {
+	if !b.hasDiscordSurface(threadID) {
 		return
 	}
 	if _, err := discordSend(s, threadID, content); err != nil {
@@ -114,7 +113,7 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 	// engaged and auto-fix was unreachable: the poller would re-derive the same
 	// failure every 90s forever. That is the common case now that the web PR
 	// dispatch is always web-native — i.e. exactly the sessions started to fix CI.
-	if gitworktree.IsWebUnitID(threadID) {
+	if !b.hasDiscordSurface(threadID) {
 		log.Printf("ci-triage: web-native unit thread=%s pr=%s sha=%s fails=%d — digest skipped, triage continues",
 			threadID, sel, shortSHA(headSHA), len(failed))
 	} else if _, err := discordSend(s, threadID, digest); err != nil {
