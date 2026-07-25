@@ -481,7 +481,7 @@ func TestMergePreflightConflict(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
-	// redirect with err + alert so the PR page opens the modal
+	// Preflight failure without HX-Request → classic redirect + flash.
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d", w.Code)
 	}
@@ -494,6 +494,48 @@ func TestMergePreflightConflict(t *testing.T) {
 	}
 	if !strings.Contains(loc, "alert=") || !strings.Contains(loc, "Merge") {
 		t.Fatalf("Location=%q want alert=Merge failed", loc)
+	}
+}
+
+func TestMergePreflightConflictHTMXTrigger(t *testing.T) {
+	srv, _, calls := writeEnabledServer(t)
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		*calls = append(*calls, joined)
+		if strings.HasPrefix(joined, "pr view") {
+			return []byte(`{
+				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
+				"isDraft":false,"reviewDecision":"","headRefOid":"a","headRefName":"f",
+				"baseRefName":"main","body":"","mergeable":"CONFLICTING","author":{"login":"z"},
+				"additions":0,"deletions":0,"changedFiles":0
+			}`), nil
+		}
+		if strings.HasPrefix(joined, "pr checks") {
+			return []byte(`[]`), nil
+		}
+		if strings.Contains(joined, "pr merge") {
+			t.Fatal("should not merge")
+		}
+		return nil, nil
+	}
+	sid, csrf, err := srv.LoginAs("admin-1", "A", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"project": {"proj"}, "csrf": {csrf}}
+	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/merge", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Boosted", "true")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d want 204", w.Code)
+	}
+	trig := w.Header().Get("HX-Trigger")
+	if !strings.Contains(trig, "app-alert") || !strings.Contains(strings.ToLower(trig), "conflict") {
+		t.Fatalf("HX-Trigger=%q", trig)
 	}
 }
 
@@ -525,8 +567,8 @@ func TestMergeGHReviewRequiredShowsAlert(t *testing.T) {
 	}
 	form := url.Values{"project": {"proj"}, "csrf": {csrf}, "method": {"squash"}}
 
-	// Boosted path (the real merge UI): 3xx + Location with alert=, not HX-Redirect.
-	// presentAppAlerts must then find the flash in #live-root after the swap.
+	// Boosted path (the real merge UI): 204 + HX-Trigger app-alert — no swap
+	// dance, so the modal opens even when a redirect follow would lose the flash.
 	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/merge", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("HX-Request", "true")
@@ -534,30 +576,24 @@ func TestMergeGHReviewRequiredShowsAlert(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
-		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s want 204", w.Code, w.Body.String())
 	}
-	if hx := w.Header().Get("HX-Redirect"); hx != "" {
-		t.Fatalf("boosted merge must not use HX-Redirect, got %q", hx)
+	trig := w.Header().Get("HX-Trigger")
+	if !strings.Contains(trig, `"app-alert"`) {
+		t.Fatalf("HX-Trigger=%q want app-alert", trig)
 	}
-	loc := w.Header().Get("Location")
-	// Modal title + stripped reason (no "gh pr merge …:" prefix).
-	if !strings.Contains(loc, "alert=Merge") {
-		t.Fatalf("Location=%q want alert=Merge failed", loc)
+	if !strings.Contains(trig, "Merge failed") {
+		t.Fatalf("HX-Trigger=%q want title Merge failed", trig)
 	}
-	u, err := url.Parse(loc)
-	if err != nil {
-		t.Fatal(err)
+	if !strings.Contains(trig, "approving review") {
+		t.Fatalf("HX-Trigger=%q want stripped review-required reason", trig)
 	}
-	errMsg := u.Query().Get("err")
-	if !strings.Contains(errMsg, "approving review") {
-		t.Fatalf("err=%q Location=%q want stripped review-required reason", errMsg, loc)
+	if strings.Contains(trig, "gh pr merge") {
+		t.Fatalf("HX-Trigger still has gh command prefix: %s", trig)
 	}
-	if strings.HasPrefix(errMsg, "gh ") {
-		t.Fatalf("err=%q still has gh command prefix", errMsg)
-	}
-	if u.Query().Get("alert") != "Merge failed" {
-		t.Fatalf("alert=%q", u.Query().Get("alert"))
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Fatalf("unexpected Location=%q on HX-Trigger path", loc)
 	}
 }
 
@@ -602,15 +638,12 @@ func TestPRDetailMergeErrorOpensAlertMarkup(t *testing.T) {
 		`data-app-alert-title="Merge failed"`,
 		`approving review is required`,
 		`presentAppAlerts`,
-		// Must not scope the search to the htmx request elt (broken for boost).
-		`document.querySelector(".flash.err[data-app-alert]")`,
+		`app-alert`, // HX-Trigger listener
+		`showAppAlert`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in body", want)
 		}
-	}
-	if strings.Contains(body, "presentAppAlerts(elt") {
-		t.Fatal("presentAppAlerts must not take the htmx request elt as scope")
 	}
 }
 

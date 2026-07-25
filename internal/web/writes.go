@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -267,9 +268,15 @@ func (s *Server) prRedirect(ctx *hime.Context, owner, repo string, n int, projec
 	return s.prRedirectTo(ctx, owner, repo, n, project, okMsg, errMsg, "")
 }
 
-// prRedirectAlert redirects with err + alert title so the PR page opens
-// appAlert (modal) instead of relying on the flash banner alone.
+// prRedirectAlert surfaces a failure to the PR page. For htmx (boosted merge
+// form), a 3xx→swap path is easy to lose (XHR redirect follow + select), so we
+// return 204 + HX-Trigger and open the modal from the response header instead.
+// Non-htmx keeps the classic redirect + flash/query-param path.
 func (s *Server) prRedirectAlert(ctx *hime.Context, owner, repo string, n int, project, errMsg, alertTitle string) error {
+	if ctx.IsHTMX() && setAppAlertTrigger(ctx, alertTitle, errMsg) == nil {
+		// 204: no swap. Layout listens for the app-alert event from HX-Trigger.
+		return ctx.NoContent()
+	}
 	return s.prRedirectTo(ctx, owner, repo, n, project, "", errMsg, alertTitle)
 }
 
@@ -291,6 +298,28 @@ func (s *Server) prRedirectTo(ctx *hime.Context, owner, repo string, n int, proj
 		u += "?" + enc
 	}
 	return ctx.Redirect(u)
+}
+
+// setAppAlertTrigger writes HX-Trigger so layout.tmpl's app-alert listener
+// opens the confirm/alert modal with title + message.
+func setAppAlertTrigger(ctx *hime.Context, title, message string) error {
+	if strings.TrimSpace(message) == "" {
+		return fmt.Errorf("empty alert message")
+	}
+	if strings.TrimSpace(title) == "" {
+		title = "Action failed"
+	}
+	payload, err := json.Marshal(map[string]any{
+		"app-alert": map[string]string{
+			"title":   title,
+			"message": message,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	ctx.SetHeader("HX-Trigger", string(payload))
+	return nil
 }
 
 // userFacingErr strips the "gh <args>: " prefix execRunner wraps around

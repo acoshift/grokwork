@@ -4116,24 +4116,38 @@
     window.appConfirm = function (opts) { return openModal("confirm", opts).then(flatten); };
     window.appAlert = function (opts) { return openModal("alert", opts).then(flatten); };
 
-    // Server-rendered action errors (merge failed, …) mark .flash.err with
-    // data-app-alert. Open the modal once so the reason is hard to miss.
-    // Always search document — never the htmx request elt. Boosted form
-    // POSTs fire afterSettle with detail.elt = the form (often already
-    // detached after #live-root outerHTML swap); the flash is a sibling
-    // in the swapped page content, not inside the form.
+    // Server → modal: HX-Trigger: {"app-alert":{"title":"…","message":"…"}}
+    // (merge failures use this on 204 so a boosted form never depends on a
+    // redirect+swap carrying a flash). Also honour a data-app-alert flash on
+    // full page loads / query-param redirects as a non-htmx fallback.
+    function showAppAlert(opts) {
+      opts = opts || {};
+      var msg = (opts.message || "").trim();
+      if (!msg) return;
+      openModal("alert", {
+        title: opts.title || "Action failed",
+        message: msg,
+        danger: true
+      });
+    }
+    document.body.addEventListener("app-alert", function (e) {
+      var d = (e && e.detail) || {};
+      // htmx may wrap the payload; accept either shape.
+      if (d.title == null && d.message == null && d.value && typeof d.value === "object") {
+        d = d.value;
+      }
+      showAppAlert({ title: d.title, message: d.message });
+    });
     function presentAppAlerts() {
       var el = document.querySelector(".flash.err[data-app-alert]");
       if (!el || el.dataset.appAlertShown) return;
       var msg = (el.textContent || "").trim();
       if (!msg) return;
       el.dataset.appAlertShown = "1";
-      openModal("alert", {
+      showAppAlert({
         title: el.getAttribute("data-app-alert-title") || "Action failed",
-        message: msg,
-        danger: true
+        message: msg
       });
-      // Drop err/alert from the URL so a refresh does not re-pop the modal.
       try {
         var u = new URL(location.href);
         if (u.searchParams.has("err") || u.searchParams.has("alert")) {
@@ -4151,8 +4165,6 @@
       presentAppAlerts();
     }
     document.body.addEventListener("htmx:afterSettle", function () {
-      // Defer one tick so the swapped #live-root is connected and history
-      // has the post-redirect URL (with err/alert) before we strip them.
       setTimeout(presentAppAlerts, 0);
     });
 
