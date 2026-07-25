@@ -241,7 +241,6 @@ func (s *Server) loginPage(ctx *hime.Context) error {
 		d.LoginNext = ""
 	}
 	d.Error = strings.TrimSpace(ctx.FormValue("err"))
-	d.LocalLoginEnabled = s.cfg.LocalAccountsEnabled()
 	if s.cfg.WebAuthEnabled() {
 		if sess := s.sessionFromRequest(ctx.Request); sess != nil {
 			return ctx.Redirect(safeLocalNext(rawNext))

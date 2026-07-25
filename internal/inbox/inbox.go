@@ -58,7 +58,7 @@ func New(dataDir string) (*Store, error) {
 }
 
 // actorFileName maps an actor id to a safe filename. Actor ids are namespaced
-// ("discord:123", "local:alice"), so ":" and any other separator must not reach
+// ("discord:123", "oidc:alice"), so ":" and any other separator must not reach
 // the filesystem.
 func actorFileName(actorID string) (string, error) {
 	id := strings.TrimSpace(actorID)
@@ -82,8 +82,8 @@ func actorFileName(actorID string) (string, error) {
 	if name == "" || name == "_" {
 		return "", fmt.Errorf("inbox: empty actor id after sanitize")
 	}
-	// Sanitizing alone is NOT injective: "local:a" and the literal id "local_a"
-	// both fold to "local_a", which would put two different people on one feed —
+	// Sanitizing alone is NOT injective: "oidc:a" and the literal id "oidc_a"
+	// both fold to "oidc_a", which would put two different people on one feed —
 	// each reading the other's notifications. A digest of the untouched id keeps
 	// the readable prefix while making the mapping one-to-one.
 	sum := sha256.Sum256([]byte(id))

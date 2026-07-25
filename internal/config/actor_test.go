@@ -12,14 +12,14 @@ func TestNormalizeActorID(t *testing.T) {
 		"Discord:1234":        "discord:1234", // kind case-folded
 		"DISCORD: 1234 ":      "discord:1234",
 		"web:abc":             "web:abc",
-		"local:alice":         "local:alice",
-		"local:Alice":         "local:Alice", // subject case preserved
+		"oidc:alice":          "oidc:alice",
+		"oidc:Alice":          "oidc:Alice", // subject case preserved
 		"oidc:sub-xyz":        "oidc:sub-xyz",
 		"weird:thing":         "weird:thing", // unknown kind passed through
 		"":                    "",
 		"   ":                 "",
 		"discord:":            "", // namespace with no subject is not an actor
-		"local:  ":            "",
+		"oidc:  ":             "",
 	}
 	for in, want := range cases {
 		if got := NormalizeActorID(in); got != want {
@@ -49,7 +49,7 @@ func TestSameActorAcrossSpellings(t *testing.T) {
 	if !SameActor("discord:1234", "1234") {
 		t.Error("match must be symmetric")
 	}
-	if SameActor("local:1234", "discord:1234") {
+	if SameActor("oidc:1234", "discord:1234") {
 		t.Error("same subject in different namespaces must not match")
 	}
 	if SameActor("", "") || SameActor("", "1234") {
@@ -59,12 +59,12 @@ func TestSameActorAcrossSpellings(t *testing.T) {
 
 func TestIsDiscordActor(t *testing.T) {
 	for id, want := range map[string]bool{
-		"1234":        true, // bare is Discord
-		"discord:1":   true,
-		"web:1":       false,
-		"local:alice": false,
-		"oidc:x":      false,
-		"":            false,
+		"1234":       true, // bare is Discord
+		"discord:1":  true,
+		"web:1":      false,
+		"oidc:alice": false,
+		"oidc:x":     false,
+		"":           false,
 	} {
 		if got := IsDiscordActor(id); got != want {
 			t.Errorf("IsDiscordActor(%q) = %v, want %v", id, got, want)
@@ -76,7 +76,7 @@ func TestIsDiscordActor(t *testing.T) {
 // a non-Discord person can now be named in a project allowlist.
 func TestAccessAllowedAcceptsNamespacedAllowlist(t *testing.T) {
 	c := &Config{Projects: ProjectsMap{
-		"p": {AllowedUserIDs: []string{"discord:111", "local:alice"}},
+		"p": {AllowedUserIDs: []string{"discord:111", "oidc:alice"}},
 	}}
 	if !c.AccessAllowed("p", "111", nil) {
 		t.Error("bare runtime id must match a discord:-namespaced allowlist entry")
@@ -84,13 +84,13 @@ func TestAccessAllowedAcceptsNamespacedAllowlist(t *testing.T) {
 	if !c.AccessAllowed("p", "discord:111", nil) {
 		t.Error("namespaced runtime id must match")
 	}
-	if !c.AccessAllowed("p", "local:alice", nil) {
+	if !c.AccessAllowed("p", "oidc:alice", nil) {
 		t.Error("a local (non-Discord) actor must be grantable — this was impossible before")
 	}
 	if c.AccessAllowed("p", "222", nil) {
 		t.Error("unrelated id allowed")
 	}
-	if c.AccessAllowed("p", "local:bob", nil) {
+	if c.AccessAllowed("p", "oidc:bob", nil) {
 		t.Error("unrelated local id allowed")
 	}
 	// Legacy config with bare snowflakes keeps working unchanged.
@@ -106,7 +106,7 @@ func TestAccessAllowedAcceptsNamespacedAllowlist(t *testing.T) {
 func TestResolveCapabilitiesAcceptsNamespacedKeys(t *testing.T) {
 	c := &Config{Projects: ProjectsMap{
 		"p": {
-			AllowedUserIDs:   []string{"discord:111", "local:alice"},
+			AllowedUserIDs:   []string{"discord:111", "oidc:alice"},
 			CapabilityByUser: map[string]string{"discord:111": "builder"},
 		},
 	}}
@@ -123,5 +123,46 @@ func TestResolveCapabilitiesAcceptsNamespacedKeys(t *testing.T) {
 	}}
 	if !c2.ResolveCapabilities("p", "discord:111", nil).CanShip() {
 		t.Error("namespaced runtime id must hit a bare capabilityByUser key")
+	}
+}
+
+// TestNonDiscordActorResolvesRoleFromAllowlist is the end of the identity chain:
+// an actor from a non-Discord provider, named in a project allowlist, gets a web
+// role — impossible while every id had to be a snowflake.
+func TestNonDiscordActorResolvesRoleFromAllowlist(t *testing.T) {
+	c := &Config{
+		WebAuth:  &WebAuthConfig{Enabled: true},
+		Projects: ProjectsMap{"p": {AllowedUserIDs: []string{"oidc:alice"}}},
+	}
+	role, ok := c.ResolveWebRoleForConfig("oidc:alice")
+	if !ok {
+		t.Fatal("non-Discord actor on a project allowlist must resolve a role")
+	}
+	if role != WebRoleMember {
+		t.Errorf("role = %q, want member", role)
+	}
+	if _, ok := c.ResolveWebRoleForConfig("oidc:bob"); ok {
+		t.Error("unlisted actor must be denied")
+	}
+}
+
+// TestDiscordRoleResolutionSurvivesNamespacing keeps the legacy path working: a
+// bare snowflake allowlist must still resolve for a bare snowflake login. Also
+// covers ProjectUserSet, which is a raw map probe and so the one place where the
+// two spellings could stop matching.
+func TestDiscordRoleResolutionSurvivesNamespacing(t *testing.T) {
+	c := &Config{
+		WebAuth:  &WebAuthConfig{Enabled: true, AdminDiscordIDs: []string{"111222333444555666"}},
+		Projects: ProjectsMap{"p": {AllowedUserIDs: []string{"777888999000111222"}}},
+	}
+	if role, ok := c.ResolveWebRoleForConfig("111222333444555666"); !ok || role != WebRoleAdmin {
+		t.Errorf("admin snowflake = (%q,%v), want (admin,true)", role, ok)
+	}
+	if role, ok := c.ResolveWebRoleForConfig("777888999000111222"); !ok || role != WebRoleMember {
+		t.Errorf("project member snowflake = (%q,%v), want (member,true)", role, ok)
+	}
+	// And the namespaced spelling of the same person.
+	if role, ok := c.ResolveWebRoleForConfig("discord:777888999000111222"); !ok || role != WebRoleMember {
+		t.Errorf("namespaced project member = (%q,%v), want (member,true)", role, ok)
 	}
 }

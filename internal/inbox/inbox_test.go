@@ -17,11 +17,11 @@ func newStore(t *testing.T) *Store {
 func TestAppendAndListNewestFirst(t *testing.T) {
 	st := newStore(t)
 	for _, s := range []string{"first", "second", "third"} {
-		if _, err := st.Append("local:alice", Item{Kind: "run.done", Subject: s}); err != nil {
+		if _, err := st.Append("oidc:alice", Item{Kind: "run.done", Subject: s}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	items, err := st.List("local:alice")
+	items, err := st.List("oidc:alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,20 +41,20 @@ func TestAppendAndListNewestFirst(t *testing.T) {
 
 func TestFeedsAreIsolatedPerActor(t *testing.T) {
 	st := newStore(t)
-	if _, err := st.Append("local:alice", Item{Subject: "for alice"}); err != nil {
+	if _, err := st.Append("oidc:alice", Item{Subject: "for alice"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.Append("discord:123", Item{Subject: "for bob"}); err != nil {
 		t.Fatal(err)
 	}
-	a, _ := st.List("local:alice")
+	a, _ := st.List("oidc:alice")
 	if len(a) != 1 || a[0].Subject != "for alice" {
 		t.Fatalf("alice feed = %+v", a)
 	}
 	if n := st.Count("discord:123"); n != 1 {
 		t.Errorf("bob count = %d, want 1", n)
 	}
-	if n := st.Count("local:nobody"); n != 0 {
+	if n := st.Count("oidc:nobody"); n != 0 {
 		t.Errorf("unknown actor count = %d, want 0", n)
 	}
 }
@@ -68,31 +68,31 @@ func TestActorIDsWithColonsDoNotEscape(t *testing.T) {
 		t.Fatalf("a normal namespaced id must be accepted: %v", err)
 	}
 	for _, bad := range []string{
-		"", "   ", "../escape", "a/b", "a\\b", "local:../x", strings.Repeat("x", 129),
+		"", "   ", "../escape", "a/b", "a\\b", "oidc:../x", strings.Repeat("x", 129),
 	} {
 		if _, err := st.Append(bad, Item{Subject: "x"}); err == nil {
 			t.Errorf("Append(%q) should be refused", bad)
 		}
 	}
 	// Two distinct ids must not collide onto one file just because of sanitizing.
-	if _, err := st.Append("local:a", Item{Subject: "one"}); err != nil {
+	if _, err := st.Append("oidc:a", Item{Subject: "one"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := st.Count("local_a"); got != 0 {
-		t.Errorf("local_a sees %d items from local:a — sanitize collision", got)
+	if got := st.Count("oidc_a"); got != 0 {
+		t.Errorf("oidc_a sees %d items from oidc:a — sanitize collision", got)
 	}
 }
 
 func TestEmptySubjectRejected(t *testing.T) {
 	st := newStore(t)
-	if _, err := st.Append("local:alice", Item{Body: "body only"}); err == nil {
+	if _, err := st.Append("oidc:alice", Item{Body: "body only"}); err == nil {
 		t.Error("an item with no subject is not readable in a list; reject it")
 	}
 }
 
 func TestOversizeBodyTruncated(t *testing.T) {
 	st := newStore(t)
-	it, err := st.Append("local:alice", Item{Subject: "s", Body: strings.Repeat("x", maxBodyBytes+100)})
+	it, err := st.Append("oidc:alice", Item{Subject: "s", Body: strings.Repeat("x", maxBodyBytes+100)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,14 +107,14 @@ func TestSeqSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.Append("local:alice", Item{Subject: "a"}); err != nil {
+	if _, err := st.Append("oidc:alice", Item{Subject: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	st2, err := New(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	it, err := st2.Append("local:alice", Item{Subject: "b"})
+	it, err := st2.Append("oidc:alice", Item{Subject: "b"})
 	if err != nil {
 		t.Fatal(err)
 	}

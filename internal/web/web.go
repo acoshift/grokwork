@@ -97,7 +97,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"home":                               "/",
 		"login":                              "/login",
 		"auth.discord":                       "/auth/discord",
-		"auth.local":                         "/auth/local",
 		"auth.discord.callback":              "/auth/discord/callback",
 		"logout":                             "/logout",
 		"history":                            "/history",
@@ -238,7 +237,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
 	registerPWA(mux)
 	mux.Handle("GET /login", hime.Handler(s.loginPage))
-	mux.Handle("POST /auth/local", hime.Handler(s.postLocalLogin))
 	mux.Handle("GET /auth/discord", hime.Handler(s.oauthDiscordStart))
 	mux.Handle("GET /auth/discord/callback", hime.Handler(s.oauthDiscordCallback))
 	mux.Handle("POST /logout", hime.Handler(s.logout))
@@ -503,8 +501,6 @@ type pageData struct {
 	UserID      string
 	UserAvatar  string // Discord CDN avatar URL; empty → letter fallback
 	LoginNext   string
-	// LocalLoginEnabled shows the password form only when accounts are provisioned.
-	LocalLoginEnabled bool
 	// Workflow read UI (PR4–7)
 	Project       string
 	RepoCatalog   []config.GitHubRepoRef

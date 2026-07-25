@@ -14,18 +14,5 @@
        OAuth redirect with HX-Request, which Discord CORS rejects. */}}
   <a class="btn login-cta" href="{{route "auth.discord"}}{{if .LoginNext}}?next={{urlquery .LoginNext}}{{end}}"
      hx-boost="false" id="login-discord">Log in with Discord</a>
-  {{/* Password form only when accounts are provisioned: offering it with none
-       configured would invite guesses at credentials that cannot exist. */}}
-  {{if .LocalLoginEnabled}}
-  <span class="login-seam" aria-hidden="true"></span>
-  <form class="login-local" method="post" action="{{route "auth.local"}}" hx-boost="false" id="login-local">
-    {{if .LoginNext}}<input type="hidden" name="next" value="{{.LoginNext}}">{{end}}
-    <label class="sr-only" for="login-username">Username</label>
-    <input id="login-username" name="username" autocomplete="username" placeholder="username" required>
-    <label class="sr-only" for="login-password">Password</label>
-    <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="password" required>
-    <button class="btn" type="submit">Log in</button>
-  </form>
-  {{end}}
 </div>
 {{end}}

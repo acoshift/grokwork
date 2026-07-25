@@ -35,9 +35,6 @@ type WebAuthConfig struct {
 	MemberDiscordIDs []string        `json:"memberDiscordIds,omitempty"`
 	ViewerDiscordIDs []string        `json:"viewerDiscordIds,omitempty"`
 	Features         WebAuthFeatures `json:"features,omitempty"`
-	// LocalAccounts are operator-provisioned logins that need no Discord account.
-	// Their actor ids are "local:<id>"; see localauth.go.
-	LocalAccounts []LocalAccount `json:"localAccounts,omitempty"`
 }
 
 // WebAuthEnabled reports whether Discord OAuth web auth is turned on.

@@ -30,19 +30,19 @@ func newRouteBot(t *testing.T) *Bot {
 func TestUnreachableRecipientGoesToInbox(t *testing.T) {
 	b := newRouteBot(t)
 	if err := b.sessions.Set("w_unit1", sessionstore.Entry{
-		Project: "proj", Goal: "fix the flaky test", WatcherIDs: []string{"local:alice"},
+		Project: "proj", Goal: "fix the flaky test", WatcherIDs: []string{"oidc:alice"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	var dmed []string
-	b.notifyRunDoneDM("w_unit1", "local:alice", grokrun.Result{}, 2*time.Second,
+	b.notifyRunDoneDM("w_unit1", "oidc:alice", grokrun.Result{}, 2*time.Second,
 		func(userID, content string) error { dmed = append(dmed, userID); return nil })
 
 	if len(dmed) != 0 {
 		t.Errorf("DMed %v — a non-Discord id has no DM channel", dmed)
 	}
-	items, err := b.inbox.List("local:alice")
+	items, err := b.inbox.List("oidc:alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestMixedRecipientsSplitByReachability(t *testing.T) {
 	b := newRouteBot(t)
 	if err := b.sessions.Set("w_unit1", sessionstore.Entry{
 		Project:    "proj",
-		WatcherIDs: []string{"123456789012345678", "local:alice", "web:bob"},
+		WatcherIDs: []string{"123456789012345678", "oidc:alice", "web:bob"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestMixedRecipientsSplitByReachability(t *testing.T) {
 	if len(dmed) != 1 || dmed[0] != "123456789012345678" {
 		t.Errorf("dmed = %v, want only the Discord id", dmed)
 	}
-	for _, id := range []string{"local:alice", "web:bob"} {
+	for _, id := range []string{"oidc:alice", "web:bob"} {
 		if n := b.inbox.Count(id); n != 1 {
 			t.Errorf("inbox count for %s = %d, want 1", id, n)
 		}
@@ -148,14 +148,14 @@ func TestInThreadPingStaysASingleMessage(t *testing.T) {
 
 func TestInboxFailureNeverPanics(t *testing.T) {
 	var b *Bot
-	b.deliverInbox([]string{"local:alice"}, "w_1", outcomeOK, time.Second)
+	b.deliverInbox([]string{"oidc:alice"}, "w_1", outcomeOK, time.Second)
 
 	b2 := &Bot{} // inbox == nil
-	b2.deliverInbox([]string{"local:alice"}, "w_1", outcomeOK, time.Second)
+	b2.deliverInbox([]string{"oidc:alice"}, "w_1", outcomeOK, time.Second)
 	if b2.Inbox() != nil {
 		t.Error("Inbox() should be nil when init failed")
 	}
-	if err := b2.QueueInbox("local:alice", "k", "s", "", "", "", ""); err != nil {
+	if err := b2.QueueInbox("oidc:alice", "k", "s", "", "", "", ""); err != nil {
 		t.Errorf("QueueInbox with no store should be a no-op, got %v", err)
 	}
 }

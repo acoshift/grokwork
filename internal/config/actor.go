@@ -15,7 +15,6 @@ import "strings"
 const (
 	ActorKindDiscord = "discord"
 	ActorKindWeb     = "web"
-	ActorKindLocal   = "local"
 	ActorKindOIDC    = "oidc"
 )
 
@@ -23,7 +22,6 @@ const (
 var knownActorKinds = map[string]struct{}{
 	ActorKindDiscord: {},
 	ActorKindWeb:     {},
-	ActorKindLocal:   {},
 	ActorKindOIDC:    {},
 }
 
@@ -31,7 +29,7 @@ var knownActorKinds = map[string]struct{}{
 //
 //	"1234567890"      → "discord:1234567890"   (bare == legacy snowflake)
 //	"discord:1234"    → "discord:1234"
-//	"Local:Alice"     → "local:Alice"          (kind case-folded, subject is not)
+//	"OIDC:Alice"      → "oidc:Alice"           (kind case-folded, subject is not)
 //	"weird:thing"     → "weird:thing"          (unknown kind passed through)
 //
 // An unknown namespace is deliberately passed through rather than coerced to
