@@ -158,6 +158,9 @@ func TestPagesRender(t *testing.T) {
 		{"/projects/proj/cases", `id="case-pipeline"`},
 		{"/projects/proj/sessions", `id="page-sessions"`},
 		{"/projects/proj/worktrees", `id="page-worktrees"`},
+		// Deploys renders its own chrome even when the project path is not a git
+		// checkout (this fixture is not): the page reports that inline.
+		{"/projects/proj/deploys", `id="page-deploys"`},
 		// Config hub: grouped drill-in rows; sections live on focused pages.
 		{"/cases", `id="page-cases"`},
 		{"/cases", `id="case-pipeline"`},
@@ -960,6 +963,7 @@ func TestNavBrandChrome(t *testing.T) {
 		">Cases<",
 		">Issues<",
 		">Commits<",
+		">Deploys<",
 		">Sessions<",
 		">Worktrees<",
 		">Settings<",
@@ -968,6 +972,7 @@ func TestNavBrandChrome(t *testing.T) {
 		`href="/projects/proj/cases"`,
 		`href="/projects/proj/issues"`,
 		`href="/projects/proj/commits"`,
+		`href="/projects/proj/deploys"`,
 		`href="/projects/proj/sessions"`,
 		`href="/projects/proj/worktrees"`,
 		`href="/config/projects/proj"`,

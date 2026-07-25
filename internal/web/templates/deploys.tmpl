@@ -1,0 +1,131 @@
+{{define "content"}}
+<h1 id="page-deploys">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· deploys</span></h1>
+<p class="sub">
+  {{if .ActiveRepo}}Repo: <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span> · {{end}}
+  {{if .DeployRef}}ref <span class="mono">{{.DeployRef}}</span>{{end}}
+  {{if .DeployShortSHA}} · <span class="mono">{{.DeployShortSHA}}</span>{{end}}
+  · <span class="mono">{{.DeployManifestPath}}</span>
+</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if gt (len .RepoCatalog) 1}}
+{{/* No sync script: the handler parses repo_full itself (pickedRepo), so the
+     picker works with scripting off. The commits browser mirrors its select
+     into hidden inputs from JS instead, which silently ignores the selection
+     when scripting is unavailable. */}}
+<div class="toolbar" id="deploys-toolbar">
+<form method="get" action="/projects/{{.Project}}/deploys" id="deploys-filter" style="display:contents">
+  <div class="field" style="flex-basis:18rem">
+    <label for="deploys-repo-pick">Repository</label>
+    <select id="deploys-repo-pick" name="repo_full" data-autosubmit>
+      {{range .RepoCatalog}}
+      <option value="{{.Owner}}/{{.Repo}}" {{if and (eq .Owner $.ActiveOwner) (eq .Repo $.ActiveRepo)}}selected{{end}}>{{.Owner}}/{{.Repo}}</option>
+      {{end}}
+    </select>
+  </div>
+  <button type="submit" class="btn-secondary">Apply</button>
+</form>
+</div>
+{{end}}
+
+{{if .DeployNotConfigured}}
+<div class="section">
+  <h2>No pipeline yet</h2>
+  <p class="sub">
+    This repo has no <span class="mono">{{.DeployManifestPath}}</span> at
+    <span class="mono">{{.DeployRef}}</span>. The pipeline lives in the repo so it
+    is versioned with the code it deploys and reviewed like any other change;
+    credentials and per-environment policy stay in project settings.
+  </p>
+  <p class="sub">Commit something like this to get started:</p>
+  <pre class="mono">version: 1
+environments: [dev, stag, prod]
+
+services:
+  api:
+    dir: services/api
+    steps:
+      - name: build
+        run: docker build -t $IMAGE_REPO/api:$GW_SHA .
+        timeout: 20m
+      - name: rollout
+        run: kubectl -n $K8S_NAMESPACE set image deploy/api api=$IMAGE_REPO/api:$GW_SHA
+    pipelines:
+      prod:
+        - name: verify-image
+          run: docker manifest inspect $IMAGE_REPO/api:$GW_SHA
+        - name: rollout
+          run: kubectl -n $K8S_NAMESPACE set image deploy/api api=$IMAGE_REPO/api:$GW_SHA</pre>
+  <p class="sub">
+    <span class="mono">steps</span> is the default pipeline; a
+    <span class="mono">pipelines.&lt;env&gt;</span> entry fully replaces it for that
+    environment, and a step may carry <span class="mono">envs: [prod]</span> to run
+    in some environments only.
+  </p>
+</div>
+{{else if .DeployRows}}
+<div class="section">
+  <h2>Pipeline</h2>
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Service</th>
+        <th>Dir</th>
+        {{range .DeployEnvs}}<th>{{.}}</th>{{end}}
+      </tr>
+    </thead>
+    <tbody>
+    {{range .DeployRows}}
+      <tr>
+        <td class="mono">{{.Service}}</td>
+        <td class="mono muted">{{.Dir}}</td>
+        {{range .Cells}}
+        <td>
+          {{if .Deployable}}<span class="flag ok">{{len .Steps}} step{{if ne (len .Steps) 1}}s{{end}}</span>
+          {{else}}<span class="muted" title="{{.Reason}}">—</span>{{end}}
+        </td>
+        {{end}}
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  <p class="sub">
+    Read-only for now: this is what a deploy would run, resolved from the manifest
+    at <span class="mono">{{.DeployRef}}</span>.
+  </p>
+</div>
+
+{{range .DeployRows}}
+<div class="section">
+  <h2><span class="mono">{{.Service}}</span></h2>
+  {{$svc := .Service}}
+  <div class="rail-group">
+  {{range .Cells}}
+    {{if .Deployable}}
+    <details class="action">
+      <summary>
+        <span class="action-title">{{$svc}} → {{.Env}}</span>
+        <span class="muted">{{len .Steps}} step{{if ne (len .Steps) 1}}s{{end}}</span>
+      </summary>
+      <div class="action-body">
+        <ol class="deploy-steps">
+        {{range .Steps}}
+          <li>
+            <span class="mono">{{.Name}}</span>
+            <span class="muted">· {{msDur .TimeoutMs}}</span>
+            <pre class="mono">{{.Command}}</pre>
+          </li>
+        {{end}}
+        </ol>
+      </div>
+    </details>
+    {{end}}
+  {{end}}
+  </div>
+</div>
+{{end}}
+{{end}}
+{{end}}

@@ -225,6 +225,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("session", "layout.tmpl", "session.tmpl")
 	tp.ParseFiles("start", "layout.tmpl", "start.tmpl")
 	tp.ParseFiles("commits", "layout.tmpl", "commits.tmpl")
+	tp.ParseFiles("deploys", "layout.tmpl", "deploys.tmpl")
 	tp.ParseFiles("commit_detail", "layout.tmpl", "commit_detail.tmpl", "diff_review.tmpl")
 
 	static, err := fs.Sub(staticFS, "static")
@@ -273,6 +274,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /projects/{project}/linear", s.requireAuth(hime.Handler(s.linearList)))
 	mux.Handle("GET /projects/{project}/linear/{identifier}", s.requireAuth(hime.Handler(s.linearDetail)))
 	mux.Handle("GET /commits", s.requireAuth(hime.Handler(s.redirectHome)))
+	mux.Handle("GET /projects/{project}/deploys", s.requireAuth(hime.Handler(s.deploysPage)))
 	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))
 	mux.Handle("POST /projects/{project}/commits/fetch", s.requireMember(hime.Handler(s.postCommitsFetch)))
 	mux.Handle("GET /projects/{project}/commits/{sha}", s.requireAuth(hime.Handler(s.commitDetail)))
@@ -462,6 +464,7 @@ type pageData struct {
 	IsCommits   bool
 	IsReviews   bool
 	IsStart     bool
+	IsDeploys   bool
 	Flash       string
 	Error       string
 	// ErrorAlertTitle, when set with Error, opens the appAlert modal on the
@@ -517,6 +520,16 @@ type pageData struct {
 	LinearTeam    string
 	LinearIssues  []linear.Issue
 	LinearIssue   linear.Issue
+	// Deploy pipeline (read surface). DeployNotConfigured distinguishes "this
+	// project has no .grokwork/deploy.yaml yet" from "the manifest is broken":
+	// the first is the normal state and gets instructions, not an error.
+	DeployNotConfigured bool
+	DeployManifestPath  string
+	DeployRef           string
+	DeploySHA           string
+	DeployShortSHA      string
+	DeployEnvs          []string
+	DeployRows          []deployRow
 	PR            ghpr.PRDetail
 	PRNumber      int
 	// PR detail shippability strip (nil when the PR snapshot failed to load).
