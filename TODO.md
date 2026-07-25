@@ -116,6 +116,18 @@ See `docs/design-per-user-github-identity.md` Tier A. **Host still pushes/opens 
 - [ ] L3 — inbound Linear webhooks → Discord notify / brief refresh
 - [ ] L4 — Linear Agent (Developer Preview; later)
 
+### 5b. Deploy pipeline (manual) — **shipped**
+
+Replaces GitHub Actions for **deploys only** (not CI). See `docs/design-deploy-pipeline.md`.
+
+- [x] In-repo `.grokwork/deploy.yaml`, read from the deployed SHA; per-env pipelines + step `envs` filter
+- [x] Per-project policy + per-environment credentials in `config.json` (masked, redacted in logs)
+- [x] Step runner: own process-group kill path, env allowlist, log redaction, head+tail log cap
+- [x] Trigger / cancel / run page / live log; `deploy` SSE domain
+- [x] FIFO queue per service+environment; restart recovery (never auto-resumed)
+- [x] Redeploy a past commit (the phase-1 rollback story); Discord notice with inbox fallback
+- [ ] Automatic triggers (push / cron / merge) — explicit non-goal for now
+
 ### 6. Safety beyond minimum
 
 - [ ] Tiered tool policy (safe auto / notify / Discord approve)

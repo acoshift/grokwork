@@ -29,6 +29,20 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}
+	// Deploy steps exec whatever a manifest names. A test that forgets a fake
+	// would otherwise reach the operator's real cluster or registry, which is
+	// silent and irreversible — so make it impossible rather than remembered.
+	// git and sh stay real: the deploy tests need both.
+	for _, name := range []string{"docker", "kubectl", "helm", "gcloud", "gsutil", "aws"} {
+		script := "#!/bin/sh\n" +
+			"echo 'TEST BUG: execed the real " + name + ". A deploy test must point its" +
+			" manifest at a fake script in t.TempDir().' >&2\n" +
+			"exit 97\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+			fmt.Fprintln(os.Stderr, "poison bin:", err)
+			os.Exit(1)
+		}
+	}
 	os.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	code := m.Run()
 	_ = os.RemoveAll(dir)

@@ -22,6 +22,21 @@
         "enabled": false,
         "apiKey": "",
         "teamKey": "ENG"
+      },
+      "deploy": {
+        "enabled": false,
+        "environments": {
+          "dev": {
+            "allowedRefs": ["*"],
+            "env": { "K8S_NAMESPACE": "app-dev" }
+          },
+          "prod": {
+            "requireCapability": "approve",
+            "allowedRefs": ["main"],
+            "env": { "K8S_NAMESPACE": "app-prod", "DB_URL": "" },
+            "secretKeys": ["DB_URL"]
+          }
+        }
       }
     },
     "api": {
@@ -72,6 +87,8 @@
   "autoFixCI": false,
   "autoFixCIMax": 2,
   "boardStaleDays": 3,
+  "maxConcurrentDeploys": 4,
+  "deployRunRetention": 50,
   "boardDigestChannel": "",
   "notifyOnDone": "errors",
   "notifyOnDoneLongMs": 300000
