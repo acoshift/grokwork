@@ -432,8 +432,19 @@ func TestSessionPageShowsContinue(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("%d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "btn-continue") {
+	body := w.Body.String()
+	if !strings.Contains(body, "btn-continue") {
 		t.Fatal("missing continue")
+	}
+	// Composer copy is agent-neutral: a session can run on claude, and this box
+	// is rendered before any run stamps an agent at all.
+	if !strings.Contains(body, `placeholder="What should happen next?"`) {
+		t.Fatalf("composer placeholder not agent-neutral: %s", body)
+	}
+	for _, banned := range []string{"What should Grok do next?", "Continue with Grok"} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("composer still hardcodes %q", banned)
+		}
 	}
 }
 

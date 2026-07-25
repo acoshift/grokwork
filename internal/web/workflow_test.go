@@ -526,6 +526,10 @@ func TestPRDetailAndDiff(t *testing.T) {
 			t.Fatalf("pr missing %q", want)
 		}
 	}
+	// No session binds this PR in the base fixture, so no jump target.
+	if strings.Contains(body, "Go to session") {
+		t.Fatal("unbound PR must not offer a session jump")
+	}
 	assertNavActive(t, body, "Ship")
 
 	// Gates partial: content-only fragment with live gh checks, no layout chrome.
@@ -604,6 +608,60 @@ func TestPRDetailAndDiff(t *testing.T) {
 	// Page + fragment share one cached gh pr diff fetch.
 	if prDiffCalls != 1 {
 		t.Fatalf("gh pr diff calls = %d, want 1 (patch cache)", prDiffCalls)
+	}
+}
+
+// TestPRDetailSessionLink pins the "Go to session" head link — the jump the
+// ship board's Thread column used to carry. It must survive a terminal label
+// (a merged PR still leads back to the work) and must name how many units
+// bind the PR when more than one does, since it can only link to one.
+func TestPRDetailSessionLink(t *testing.T) {
+	srv := workflowServer(t)
+	pr := sessionstore.TrackedPR{
+		URL: "https://github.com/acme/app/pull/9", Number: 9,
+		Owner: "acme", Repo: "app", State: "OPEN",
+	}
+	// Terminal (done) on purpose: the dispatch picker skips these, the link must not.
+	if err := srv.sessions.Set("thread-shipped", sessionstore.Entry{
+		SessionID: "sess-shipped", Project: "proj", Label: sessionstore.LabelDone,
+		UpdatedAt: "2026-07-20T00:00:00Z", PRs: []sessionstore.TrackedPR{pr},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	get := func() string {
+		req := httptest.NewRequest(http.MethodGet, "/prs/acme/app/9?project=proj", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("pr status=%d body=%s", w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+
+	body := get()
+	if !strings.Contains(body, `href="/sessions/thread-shipped?project=proj">Go to session</a>`) {
+		t.Fatalf("missing session jump in %s", body)
+	}
+
+	// A second binder with a live worktree: FindByPR ranks by activity
+	// (busy → has worktree → recency), so the link follows that, not recency
+	// alone — the tooltip must not promise something the sort does not give.
+	if err := srv.sessions.Set("thread-active", sessionstore.Entry{
+		SessionID: "sess-active", Project: "proj", WorktreeBranch: "grokwork/thread-active",
+		UpdatedAt: "2026-07-01T00:00:00Z", PRs: []sessionstore.TrackedPR{pr},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body = get()
+	for _, want := range []string{
+		`href="/sessions/thread-active?project=proj"`,
+		`title="2 sessions bind this PR — opens the most active"`,
+		"Go to session (2)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("multi-session link missing %q in %s", want, body)
+		}
 	}
 }
 

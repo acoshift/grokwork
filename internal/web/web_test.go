@@ -524,6 +524,54 @@ func TestPagesRender(t *testing.T) {
 	}
 }
 
+// TestTranscriptNamesSessionAgent pins that reply bubbles and the run-status
+// line name the CLI the session is stamped on. A thread stamped on claude
+// captioned "Grok" misattributes every answer in it, and the stamp is
+// immutable, so the whole transcript is wrong — not just the newest turn.
+func TestTranscriptNamesSessionAgent(t *testing.T) {
+	srv, _, _ := testServer(t)
+	h := srv.Handler()
+	paths := []string{"/sessions/thread-99", "/history/thread-99"}
+
+	// Unstamped: predates the feature, so it stays grok (threadCLI's rule).
+	for _, p := range paths {
+		body := getBody(t, h, p)
+		if !strings.Contains(body, `class="bubble-label">Grok`) {
+			t.Fatalf("%s: unstamped session should label bubbles Grok: %s", p, body)
+		}
+	}
+
+	if _, ok, err := srv.sessions.Patch("thread-99", func(e *sessionstore.Entry) {
+		e.Agent, e.Model = "claude", "sonnet"
+	}); err != nil || !ok {
+		t.Fatalf("stamp claude: ok=%v err=%v", ok, err)
+	}
+	for _, p := range paths {
+		body := getBody(t, h, p)
+		if !strings.Contains(body, `class="bubble-label">Claude`) {
+			t.Fatalf("%s: claude session missing Claude bubble label: %s", p, body)
+		}
+		if strings.Contains(body, `class="bubble-label">Grok`) {
+			t.Fatalf("%s: claude session still labels a bubble Grok: %s", p, body)
+		}
+	}
+	// Same resolution drives the idle run-status line on the session page.
+	if body := getBody(t, h, "/sessions/thread-99"); !strings.Contains(body, "No active Claude run on this thread.") {
+		t.Fatalf("session page run-status line not agent-aware: %s", body)
+	}
+}
+
+func getBody(t *testing.T, h http.Handler, path string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("%s status=%d body=%s", path, w.Code, w.Body.String())
+	}
+	return w.Body.String()
+}
+
 func TestSessionsHub(t *testing.T) {
 	srv, _, _ := testServer(t)
 	h := srv.Handler()
@@ -1195,11 +1243,18 @@ func TestShipBoardRendersPRs(t *testing.T) {
 		"CHANGES_REQUESTED",
 		"✗ 1",
 		"alice",
-		"thread-99",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("ship page missing %q in %s", want, body)
 		}
+	}
+	// The board is PR-first: rows lead to PR detail, which carries the jump
+	// to the session. No Thread column, so no raw unit ids on the board.
+	if strings.Contains(body, "<th>Thread</th>") {
+		t.Fatal("ship board still renders the Thread column")
+	}
+	if strings.Contains(body, "thread-99") {
+		t.Fatalf("ship board still leaks the unit id in %s", body)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/ship?project=proj&state=failing", nil)

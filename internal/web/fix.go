@@ -16,6 +16,7 @@ import (
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 	"github.com/acoshift/grokwork/internal/timeline"
 )
@@ -622,6 +623,17 @@ func (s *Server) ensureSessionPageAccess(ctx *hime.Context, threadID string) err
 	}
 }
 
+// agentLabel names the CLI a thread's runs use ("Grok" / "Claude") for reply
+// bubbles and run-status copy. It resolves through the bot so the caption
+// matches what actually answers there — a thread stamped on claude must not
+// have its transcript labelled "Grok". No bot wired means the default agent.
+func (s *Server) agentLabel(threadID string) string {
+	if s.bot == nil {
+		return grokrun.AgentGrok.Label()
+	}
+	return s.bot.ThreadAgent(threadID).Label()
+}
+
 func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 	d := s.basePage(ctx)
 	d.ThreadID = threadID
@@ -637,6 +649,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 		cwd, _ := s.resolveSessionDiffCwd(ent, threadID)
 		d.HasWorktree = cwd != ""
 	}
+	d.AgentLabel = s.agentLabel(threadID)
 	// Live run chips + streaming reply from bot snapshot.
 	if s.bot != nil {
 		snap := s.bot.StatusSnapshot()

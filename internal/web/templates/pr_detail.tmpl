@@ -9,6 +9,7 @@
   <h1 id="page-pr-detail">{{if .PR.Title}}{{.PR.Title}}{{else}}{{.ActiveOwner}}/{{.ActiveRepo}}#{{.PRNumber}}{{end}}</h1>
   <div class="pr-head-links">
     <a class="btn btn-compact" href="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/diff{{if .Project}}?project={{urlquery .Project}}{{end}}">View diff</a>
+    {{if .PRSessionThreadID}}<a class="btn btn-compact" href="/sessions/{{.PRSessionThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}"{{if gt .PRSessionCount 1}} title="{{.PRSessionCount}} sessions bind this PR — opens the most active"{{end}}>Go to session{{if gt .PRSessionCount 1}} ({{.PRSessionCount}}){{end}}</a>{{end}}
     {{if .PR.URL}}<a class="btn btn-compact" href="{{.PR.URL}}" target="_blank" rel="noopener">GitHub ↗</a>{{end}}
   </div>
 </div>

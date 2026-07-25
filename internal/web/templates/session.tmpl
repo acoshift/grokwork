@@ -69,8 +69,8 @@
   <form method="post" action="/sessions/{{.ThreadID}}/continue" class="composer">
     {{template "csrf" $}}
     <label for="continue-prompt" class="sr-only">Prompt</label>
-    <textarea id="continue-prompt" name="prompt" rows="1" required placeholder="What should Grok do next?"></textarea>
-    <button type="submit" id="btn-continue" class="composer-send" title="Continue with Grok" aria-label="Continue with Grok">
+    <textarea id="continue-prompt" name="prompt" rows="1" required placeholder="What should happen next?"></textarea>
+    <button type="submit" id="btn-continue" class="composer-send" title="Send follow-up" aria-label="Send follow-up">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
     </button>
   </form>
@@ -113,7 +113,7 @@
         {{template "csrf" $}}
         <div class="field">
           <label for="case-investigate-notes">Notes</label>
-          <textarea id="case-investigate-notes" name="notes" rows="3" placeholder="What should Grok look into?"></textarea>
+          <textarea id="case-investigate-notes" name="notes" rows="3" placeholder="What should the agent look into?"></textarea>
         </div>
         <div class="form-actions"><button type="submit" id="btn-case-investigate">Run investigate</button></div>
       </form>
@@ -454,7 +454,7 @@
   {{if .RunPhases}}<p class="mono" style="margin:0.85rem 0 0">{{.RunPhases}}</p>{{end}}
   {{if .RunActivity}}<p class="muted" style="margin:0.35rem 0 0"><em>{{.RunActivity}}</em></p>{{end}}
   {{else}}
-  <p class="muted" style="margin:0.85rem 0 0">No active Grok run on this thread.</p>
+  <p class="muted" style="margin:0.85rem 0 0">No active {{.AgentLabel}} run on this thread.</p>
   {{end}}
 </div>
 
@@ -480,7 +480,7 @@
       </div>
       {{end}}
       <div class="bubble assistant">
-        <div class="bubble-label">Grok <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">(live)</span></div>
+        <div class="bubble-label">{{.AgentLabel}} <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">(live)</span></div>
         {{if .RunLiveText}}
         <div class="bubble-body md" id="live-stream-body">{{markdown .RunLiveText}}</div>
         {{else}}
@@ -505,7 +505,7 @@
         <div class="bubble-body md">{{markdown $t.Prompt}}</div>
       </div>
       <div class="bubble assistant">
-        <div class="bubble-label">Grok</div>
+        <div class="bubble-label">{{$.AgentLabel}}</div>
         {{if $t.Response}}
         <div class="bubble-body md">{{markdown $t.Response}}</div>
         {{else if and (eq $ri (sub $n 1)) $.RunTranscript}}

@@ -559,8 +559,15 @@ type pageData struct {
 	// Fix-with-Grok / session view
 	FixHits       []bot.IssueSessionHit
 	ShowFixPicker bool
+	// PR detail "Session" head link: the unit to jump to from a PR, and how
+	// many bind it (>1 means the link is the most recent, not the only one).
+	PRSessionThreadID string
+	PRSessionCount    int
 	SessionEntry  sessionstore.Entry
-	DiscordURL    string
+	// AgentLabel names the CLI a session runs on ("Grok" / "Claude"), for the
+	// session page's reply bubbles and run-status line.
+	AgentLabel string
+	DiscordURL string
 	HasSession    bool // live sessionstore entry exists (false after reset)
 	HasWorktree   bool // session worktree still on disk (enables Worktree diff)
 	RunActivity   string
@@ -743,6 +750,7 @@ func (s *Server) historyDetail(ctx *hime.Context) error {
 		d.Project = th.Project
 	}
 	d.Thread = th
+	d.AgentLabel = s.agentLabel(threadID)
 	return s.viewPage(ctx, "history_detail", d)
 }
 
@@ -909,6 +917,7 @@ func (s *Server) partialHistoryTurns(ctx *hime.Context) error {
 	} else if th.Project != "" {
 		d.Project = th.Project
 	}
+	d.AgentLabel = s.agentLabel(threadID)
 	return s.viewFragment(ctx, "history_detail", "history_turns", d)
 }
 

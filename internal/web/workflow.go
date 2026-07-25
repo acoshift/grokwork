@@ -520,6 +520,14 @@ func (s *Server) prDetailPageData(ctx *hime.Context, full bool) (pageData, error
 			if d.ShowFixPicker || len(d.FixHits) > 1 {
 				d.ShowFixPicker = true
 			}
+			// The "Session" head link counts terminal units too, unlike the
+			// dispatch picker above: a merged PR must still lead back to the
+			// work that produced it — that jump used to be the ship board's
+			// Thread column. Same ordering, so the link is the freshest unit.
+			if bound := s.bot.FindByPR(project, owner, repo, n, true); len(bound) > 0 {
+				d.PRSessionThreadID = bound[0].ThreadID
+				d.PRSessionCount = len(bound)
+			}
 		}
 		s.attachModelPicker(&d, project, s.cfg.EffectiveReviewModel())
 	} else if viewErr != nil {

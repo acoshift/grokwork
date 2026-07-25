@@ -32,6 +32,17 @@ func (b *Bot) threadCLI(threadID string) config.AgentCLI {
 	}
 }
 
+// ThreadAgent names the CLI this thread's runs use, for surfaces that only need
+// the name — the web session page labels reply bubbles and the composer with it.
+// It resolves through threadCLI so the label can never disagree with what runs:
+// a thread stamped on claude must not have its history captioned "Grok".
+func (b *Bot) ThreadAgent(threadID string) grokrun.Agent {
+	if b == nil || b.cfg == nil {
+		return grokrun.AgentGrok
+	}
+	return b.threadCLI(threadID).Agent.Resolve()
+}
+
 // threadSummarizeCLI is threadCLI for thread-title summarization.
 //
 // Naming a thread is one tools-off turn whose session id is discarded, so it is
