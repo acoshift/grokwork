@@ -77,6 +77,10 @@ func main() {
 
 	addr := cfg.ListenAddr()
 	webSrv := web.New(cfg, sessions, hist, b)
+	// Reconcile deploy records before the server accepts triggers, so a lane
+	// left behind by a crash cannot race a fresh deploy. Nothing is auto-resumed:
+	// shell steps are not idempotent, so recovery is an explicit human redeploy.
+	webSrv.Deploys().RecoverAtStartup()
 	go func() {
 		log.Printf("bg: web UI listening on http://%s (dashboard, ship, sessions, worktrees, config)", addr)
 		if err := webSrv.ListenAndServe(); err != nil {

@@ -28,8 +28,6 @@ const dedupeWindow = 10 * time.Second
 var (
 	// ErrShuttingDown mirrors the bot's claim gate.
 	ErrShuttingDown = errors.New("deploy: shutting down")
-	// ErrLaneBusy reports an active run on the same service+environment.
-	ErrLaneBusy = errors.New("deploy: a deploy is already running for this service and environment")
 	// ErrNotEnabled reports deploys off for the project.
 	ErrNotEnabled = errors.New("deploy: deploys are not enabled for this project")
 	// ErrForbidden reports a failed capability gate.
@@ -44,10 +42,22 @@ type Actor struct {
 	Name string
 }
 
+// MaxQueuePerLane bounds pending deploys behind an active one, mirroring the
+// bot's per-thread follow-up cap.
+const MaxQueuePerLane = 5
+
+// ErrQueueFull reports the per-lane pending cap.
+var ErrQueueFull = errors.New("deploy: too many deploys are already queued for this service and environment")
+
 // laneState is one service+environment's in-memory claim.
+//
+// queued holds run ids waiting behind activeID, FIFO. Unlike the bot's social
+// queue this never replaces an entry by author: two deploys of one service at
+// different commits are not interchangeable.
 type laneState struct {
 	activeID string
 	cancel   context.CancelFunc
+	queued   []string
 }
 
 // Engine owns deploy execution: policy, lane claims, and the run goroutines.
@@ -60,6 +70,9 @@ type Engine struct {
 
 	mu    sync.Mutex
 	lanes map[string]*laneState
+	// laneRepo remembers the checkout a lane deploys from, so a promoted run
+	// does not have to re-resolve it.
+	laneRepo map[string]string
 
 	// rev advances on every durable transition so the SSE fingerprint changes
 	// even when a run starts and finishes inside one 2s tick — otherwise a
@@ -77,11 +90,12 @@ func NewEngine(cfg *config.Config, dataDir string) (*Engine, error) {
 	}
 	host, _ := os.Hostname()
 	return &Engine{
-		cfg:   cfg,
-		store: store,
-		root:  filepath.Join(dataDir, "deploys"),
-		host:  host,
-		lanes: map[string]*laneState{},
+		cfg:      cfg,
+		store:    store,
+		root:     filepath.Join(dataDir, "deploys"),
+		host:     host,
+		lanes:    map[string]*laneState{},
+		laneRepo: map[string]string{},
 	}, nil
 }
 
@@ -233,14 +247,16 @@ func (e *Engine) Trigger(ctx context.Context, req TriggerRequest) (Run, error) {
 	}
 
 	runCtx, cancel := context.WithCancel(context.Background())
-	claimed, err := e.claim(lane, run, cancel)
+	claimed, err := e.claimOrQueue(lane, run, cancel, req.RepoPath)
 	if err != nil {
 		cancel()
 		return Run{}, err
 	}
 	if !claimed {
+		// Queued: it will be promoted when the active run finishes. The cancel
+		// belongs to the promotion, not to this call.
 		cancel()
-		return Run{}, ErrLaneBusy
+		return run, nil
 	}
 
 	e.wg.Add(1)
@@ -253,13 +269,25 @@ func (e *Engine) Trigger(ctx context.Context, req TriggerRequest) (Run, error) {
 // The durable write happens inside the RAM lock and a failed write rolls the
 // RAM change back, so a claim fails rather than leaving memory and disk
 // disagreeing — the same discipline as bot.claimOrEnqueueInternal.
-func (e *Engine) claim(lane string, run Run, cancel context.CancelFunc) (bool, error) {
+func (e *Engine) claimOrQueue(lane string, run Run, cancel context.CancelFunc, repoPath string) (bool, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.stopping.Load() {
 		return false, ErrShuttingDown
 	}
 	if st, ok := e.lanes[lane]; ok && st.activeID != "" {
+		if len(st.queued) >= MaxQueuePerLane {
+			return false, ErrQueueFull
+		}
+		st.queued = append(st.queued, run.ID)
+		if err := e.store.Create(run); err != nil {
+			// Roll the RAM change back so a failed write cannot leave memory and
+			// disk disagreeing about what is queued.
+			st.queued = st.queued[:len(st.queued)-1]
+			return false, err
+		}
+		e.laneRepo[lane] = repoPath
+		e.bump()
 		return false, nil
 	}
 	if cap := e.cfg.MaxConcurrentDeploysValue(); cap > 0 {
@@ -273,20 +301,56 @@ func (e *Engine) claim(lane string, run Run, cancel context.CancelFunc) (bool, e
 			return false, ErrTooManyRunning
 		}
 	}
-	e.lanes[lane] = &laneState{activeID: run.ID, cancel: cancel}
+	prev := e.lanes[lane]
+	st := &laneState{activeID: run.ID, cancel: cancel}
+	if prev != nil {
+		st.queued = prev.queued
+	}
+	e.lanes[lane] = st
 	if err := e.store.Create(run); err != nil {
-		delete(e.lanes, lane)
+		if prev != nil {
+			e.lanes[lane] = prev
+		} else {
+			delete(e.lanes, lane)
+		}
 		return false, err
 	}
+	e.laneRepo[lane] = repoPath
 	e.bump()
 	return true, nil
 }
 
-func (e *Engine) releaseLane(lane, runID string) {
+// promoteNext starts the queue head, if any. Called when a run finishes.
+func (e *Engine) promoteNext(lane, finishedID string) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if st, ok := e.lanes[lane]; ok && st.activeID == runID {
-		delete(e.lanes, lane)
+	st, ok := e.lanes[lane]
+	if !ok || st.activeID != finishedID {
+		e.mu.Unlock()
+		return
+	}
+	repoPath := e.laneRepo[lane]
+	for {
+		if len(st.queued) == 0 || e.stopping.Load() {
+			delete(e.lanes, lane)
+			delete(e.laneRepo, lane)
+			e.mu.Unlock()
+			return
+		}
+		nextID := st.queued[0]
+		st.queued = st.queued[1:]
+		next, found, err := e.store.Get(nextID)
+		if err != nil || !found || next.Status != StatusPending {
+			// A queued run cancelled while waiting is simply skipped.
+			continue
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		st.activeID = nextID
+		st.cancel = cancel
+		e.mu.Unlock()
+		e.wg.Add(1)
+		go e.execute(ctx, next, lane, repoPath)
+		e.bump()
+		return
 	}
 }
 
@@ -389,9 +453,28 @@ func (e *Engine) Cancel(runID string) error {
 		return err
 	}
 	e.mu.Lock()
-	for _, st := range e.lanes {
+	for lane, st := range e.lanes {
 		if st.activeID == runID && st.cancel != nil {
 			st.cancel()
+		}
+		// A queued run has no goroutine to cancel: drop it from the lane and
+		// mark it terminal, or promoteNext would later start something the
+		// operator already stopped.
+		if i := slices.Index(st.queued, runID); i >= 0 {
+			st.queued = slices.Delete(st.queued, i, i+1)
+			e.lanes[lane] = st
+			e.mu.Unlock()
+			_ = e.store.Update(runID, func(r *Run) error {
+				if r.Status.Terminal() {
+					return ErrSkipUpdate
+				}
+				r.Status = StatusCancelled
+				r.Error = "cancelled before it started"
+				r.EndedAt = nowStamp()
+				return nil
+			})
+			e.bump()
+			return nil
 		}
 	}
 	e.mu.Unlock()
@@ -402,7 +485,7 @@ func (e *Engine) Cancel(runID string) error {
 // execute runs every step of a deploy, then cleans up.
 func (e *Engine) execute(ctx context.Context, run Run, lane, repoPath string) {
 	defer e.wg.Done()
-	defer e.releaseLane(lane, run.ID)
+	defer e.promoteNext(lane, run.ID)
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("error: panic in deploy %s: %v", run.ID, r)
@@ -674,6 +757,16 @@ func (e *Engine) ActiveRun(lane string) (string, bool) {
 		return "", false
 	}
 	return st.activeID, true
+}
+
+// QueueLen reports how many runs are waiting on a lane.
+func (e *Engine) QueueLen(lane string) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if st, ok := e.lanes[lane]; ok {
+		return len(st.queued)
+	}
+	return 0
 }
 
 // ActiveCount reports how many deploys are running.

@@ -205,7 +205,9 @@ services:
 	}
 }
 
-func TestEngineRejectsSecondRunOnSameLane(t *testing.T) {
+// TestEngineSecondRunOnBusyLaneQueues: a busy lane queues rather than refusing.
+// Slice 4 rejected here; queueing is the designed behaviour.
+func TestEngineSecondRunOnBusyLaneQueues(t *testing.T) {
 	skipOnWindows(t)
 	manifest := `version: 1
 environments: [dev]
@@ -222,11 +224,17 @@ services:
 	}
 	waitRunning(t, eng, first.ID)
 	// A second trigger of the SAME commit is deduped by design, so move the
-	// branch on: this must be refused for the lane, not merged into the first.
+	// branch on: this one must queue behind the active run, not merge into it.
 	mustEmptyCommit(t, repo)
-	_, err = eng.Trigger(context.Background(), req)
-	if !errors.Is(err, ErrLaneBusy) {
-		t.Fatalf("second trigger err = %v, want ErrLaneBusy", err)
+	second, err := eng.Trigger(context.Background(), req)
+	if err != nil {
+		t.Fatalf("second trigger err = %v, want it queued", err)
+	}
+	if second.ID == first.ID {
+		t.Fatal("second trigger merged into the first")
+	}
+	if second.Status != StatusPending {
+		t.Fatalf("second status = %q, want pending", second.Status)
 	}
 	_ = eng.Cancel(first.ID)
 	waitTerminal(t, eng, first.ID)
@@ -492,5 +500,233 @@ func TestCapabilityAllows(t *testing.T) {
 	// An unknown requirement must fail closed rather than degrade to builder.
 	if CapabilityAllows(approver, "wizard") {
 		t.Error("unknown capability did not fail closed")
+	}
+}
+
+func TestEngineQueuesSecondRun(t *testing.T) {
+	skipOnWindows(t)
+	manifest := `version: 1
+environments: [dev]
+services:
+  api:
+    steps:
+      - { name: slow, run: "sleep 2" }
+`
+	eng, _, repo := testEngine(t, manifest)
+	req := TriggerRequest{Project: "app", RepoPath: repo, Service: "api", Env: "dev", Ref: "main", Caps: builderCaps()}
+	first, err := eng.Trigger(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitRunning(t, eng, first.ID)
+	mustEmptyCommit(t, repo)
+
+	second, err := eng.Trigger(context.Background(), req)
+	if err != nil {
+		t.Fatalf("second Trigger: %v", err)
+	}
+	if second.ID == first.ID {
+		t.Fatal("second trigger was deduped into the first")
+	}
+	if second.Status != StatusPending {
+		t.Fatalf("second status = %q, want pending", second.Status)
+	}
+	lane := LaneKey("app", "", "api", "dev")
+	if n := eng.QueueLen(lane); n != 1 {
+		t.Fatalf("QueueLen = %d, want 1", n)
+	}
+	// The queued run is promoted once the active one finishes.
+	waitTerminal(t, eng, first.ID)
+	got := waitTerminal(t, eng, second.ID)
+	if got.Status != StatusSucceeded {
+		t.Fatalf("promoted run status = %q err=%q", got.Status, got.Error)
+	}
+}
+
+func TestEngineQueueCapRejects(t *testing.T) {
+	skipOnWindows(t)
+	manifest := `version: 1
+environments: [dev]
+services:
+  api:
+    steps:
+      - { name: slow, run: "sleep 20" }
+`
+	eng, _, repo := testEngine(t, manifest)
+	req := TriggerRequest{Project: "app", RepoPath: repo, Service: "api", Env: "dev", Ref: "main", Caps: builderCaps()}
+	first, err := eng.Trigger(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitRunning(t, eng, first.ID)
+	for i := range MaxQueuePerLane {
+		mustEmptyCommit(t, repo)
+		if _, err := eng.Trigger(context.Background(), req); err != nil {
+			t.Fatalf("queue %d: %v", i, err)
+		}
+	}
+	mustEmptyCommit(t, repo)
+	if _, err := eng.Trigger(context.Background(), req); !errors.Is(err, ErrQueueFull) {
+		t.Fatalf("err = %v, want ErrQueueFull past the cap", err)
+	}
+	_ = eng.Cancel(first.ID)
+}
+
+// TestEngineCancelQueuedRun: a queued run has no goroutine, so cancelling it
+// must mark it terminal and drop it from the lane, or promotion would later
+// start something the operator already stopped.
+func TestEngineCancelQueuedRun(t *testing.T) {
+	skipOnWindows(t)
+	manifest := `version: 1
+environments: [dev]
+services:
+  api:
+    steps:
+      - { name: slow, run: "sleep 3" }
+`
+	eng, _, repo := testEngine(t, manifest)
+	req := TriggerRequest{Project: "app", RepoPath: repo, Service: "api", Env: "dev", Ref: "main", Caps: builderCaps()}
+	first, _ := eng.Trigger(context.Background(), req)
+	waitRunning(t, eng, first.ID)
+	mustEmptyCommit(t, repo)
+	second, err := eng.Trigger(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Cancel(second.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ := eng.Store().Get(second.ID)
+	if got.Status != StatusCancelled {
+		t.Fatalf("queued run status = %q, want cancelled", got.Status)
+	}
+	lane := LaneKey("app", "", "api", "dev")
+	if n := eng.QueueLen(lane); n != 0 {
+		t.Fatalf("QueueLen = %d after cancelling the queued run", n)
+	}
+	_ = eng.Cancel(first.ID)
+	waitTerminal(t, eng, first.ID)
+	// The cancelled run must stay cancelled, not be promoted.
+	again, _, _ := eng.Store().Get(second.ID)
+	if again.Status != StatusCancelled {
+		t.Fatalf("cancelled run was promoted: %q", again.Status)
+	}
+}
+
+func TestRecoverAtStartupMarksInterrupted(t *testing.T) {
+	eng, _, _ := testEngine(t, twoStepManifest)
+	running, err := eng.SeedRunForTest(Run{
+		Project: "app", Service: "api", Env: "dev", Status: StatusRunning,
+		Steps: []StepRecord{{Name: "a", Status: StatusRunning}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := eng.SeedRunForTest(Run{
+		Project: "app", Service: "api", Env: "prod", Status: StatusPending,
+		Steps: []StepRecord{{Name: "a", Status: StatusPending}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	interrupted, cancelled, blocked := eng.RecoverAtStartup()
+	if interrupted != 1 || cancelled != 1 || blocked != 0 {
+		t.Fatalf("recovered i=%d c=%d b=%d, want 1/1/0", interrupted, cancelled, blocked)
+	}
+	got, _, _ := eng.Store().Get(running.ID)
+	if got.Status != StatusInterrupted {
+		t.Fatalf("running run = %q, want interrupted (never auto-resumed)", got.Status)
+	}
+	got, _, _ = eng.Store().Get(pending.ID)
+	if got.Status != StatusCancelled {
+		t.Fatalf("pending run = %q, want cancelled", got.Status)
+	}
+}
+
+// TestRecoverAtStartupBlocksLiveGroup: a run whose process group outlived the
+// restart must block the lane rather than be marked interrupted, and the pid
+// must NOT be signalled — it may have been recycled.
+func TestRecoverAtStartupBlocksLiveGroup(t *testing.T) {
+	skipOnWindows(t)
+	// A real child in its own process group — the actual orphan shape. Our own
+	// pid would not do: it is not a process-group leader, so there is no group
+	// with that id and the probe correctly finds nothing.
+	child := exec.Command("sh", "-c", "sleep 30")
+	setProcessGroup(child)
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pgid := child.Process.Pid
+	t.Cleanup(func() {
+		killProcessGroupHard(pgid, 100*time.Millisecond)
+		_ = child.Wait()
+	})
+	if !processGroupAlive(pgid) {
+		t.Fatal("child group is not alive; the test cannot exercise the branch")
+	}
+
+	eng, _, _ := testEngine(t, twoStepManifest)
+	run, err := eng.SeedRunForTest(Run{
+		Project: "app", Service: "api", Env: "dev", Status: StatusRunning, PID: pgid,
+		Steps: []StepRecord{{Name: "a", Status: StatusRunning}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, blocked := eng.RecoverAtStartup()
+	if blocked != 1 {
+		t.Fatalf("blocked = %d, want 1", blocked)
+	}
+	got, _, _ := eng.Store().Get(run.ID)
+	if got.Status != StatusBlocked {
+		t.Fatalf("status = %q, want blocked", got.Status)
+	}
+	if !strings.Contains(got.Error, "not killed") {
+		t.Fatalf("error does not explain the no-kill policy: %q", got.Error)
+	}
+}
+
+func TestRecoverAtStartupSkipsOtherHosts(t *testing.T) {
+	eng, _, _ := testEngine(t, twoStepManifest)
+	run, err := eng.SeedRunForTest(Run{
+		Project: "app", Service: "api", Env: "dev", Status: StatusRunning,
+		Host:  "some-other-machine",
+		Steps: []StepRecord{{Name: "a", Status: StatusRunning}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng.RecoverAtStartup()
+	got, _, _ := eng.Store().Get(run.ID)
+	if got.Status != StatusRunning {
+		t.Fatalf("status = %q; another host's run must not be touched", got.Status)
+	}
+}
+
+func TestSweepOrphanCheckouts(t *testing.T) {
+	eng, _, _ := testEngine(t, twoStepManifest)
+	orphan := filepath.Join(eng.root, "checkouts", "app", "d_"+strings.Repeat("a", 32))
+	if err := os.MkdirAll(orphan, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	live, err := eng.SeedRunForTest(Run{
+		Project: "app", Service: "api", Env: "dev", Status: StatusRunning,
+		Host:  "some-other-machine", // survives recovery so its checkout is "live"
+		Steps: []StepRecord{{Name: "a", Status: StatusRunning}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveDir := filepath.Join(eng.root, "checkouts", "app", live.ID)
+	if err := os.MkdirAll(liveDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	eng.RecoverAtStartup()
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Fatal("orphan checkout survived; nothing else ever cleans these up")
+	}
+	if _, err := os.Stat(liveDir); err != nil {
+		t.Fatal("a live run's checkout was swept")
 	}
 }

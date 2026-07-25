@@ -40,7 +40,7 @@ const (
 // Terminal reports whether a status is final.
 func (s Status) Terminal() bool {
 	switch s {
-	case StatusSucceeded, StatusFailed, StatusCancelled, StatusInterrupted:
+	case StatusSucceeded, StatusFailed, StatusCancelled, StatusInterrupted, StatusBlocked:
 		return true
 	}
 	return false
