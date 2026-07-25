@@ -12,6 +12,7 @@ import (
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/timeline"
 )
 
 const ciLogSnippetRunes = 1500
@@ -20,6 +21,8 @@ const ciLogSnippetRunes = 1500
 // channel, so the send is skipped rather than attempted and logged as a failure —
 // the poller reaches this path every cycle.
 func (b *Bot) ciNotice(s *discordgo.Session, threadID, content string) {
+	// Recorded for every unit; posted only where there is a thread.
+	b.appendTimeline(threadID, timeline.KindNotice, timeline.Notice{Level: "info", Text: content})
 	if !b.hasDiscordSurface(threadID) {
 		return
 	}
@@ -107,14 +110,18 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 		}
 	}
 
-	// Web-native units have no Discord channel to post into, so the digest is
-	// skipped — but everything after it must still run. Returning early here (which
-	// a failed send used to do) left CINotifiedSHA unwritten, so the debounce never
-	// engaged and auto-fix was unreachable: the poller would re-derive the same
-	// failure every 90s forever. That is the common case now that the web PR
-	// dispatch is always web-native — i.e. exactly the sessions started to fix CI.
+	// The digest is recorded for every unit before any surface sees it. It used to
+	// exist only as a Discord message, so a web-native unit got nothing but a log
+	// line — and the web PR dispatch is always web-native, i.e. exactly the
+	// sessions started to fix CI.
+	b.appendTimeline(threadID, timeline.KindCIDigest, timeline.Notice{Level: "warn", Text: digest})
+
+	// Everything after this must still run even with no surface. Returning early
+	// here (which a failed send used to do) left CINotifiedSHA unwritten, so the
+	// debounce never engaged and auto-fix was unreachable: the poller would
+	// re-derive the same failure every 90s forever.
 	if !b.hasDiscordSurface(threadID) {
-		log.Printf("ci-triage: web-native unit thread=%s pr=%s sha=%s fails=%d — digest skipped, triage continues",
+		log.Printf("ci-triage: web-native unit thread=%s pr=%s sha=%s fails=%d — recorded, no Discord post",
 			threadID, sel, shortSHA(headSHA), len(failed))
 	} else if _, err := discordSend(s, threadID, digest); err != nil {
 		log.Printf("ci-triage: digest thread=%s: %v", threadID, err)

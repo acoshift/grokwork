@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/acoshift/grokwork/internal/grokrun"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 	"github.com/acoshift/grokwork/internal/timeline"
 )
 
@@ -131,5 +132,42 @@ func TestOneBlockPerRunNotPerMessageCap(t *testing.T) {
 	}
 	if blocks != 1 {
 		t.Errorf("text blocks = %d, want 1 — Discord's message cap must not leak into the store", blocks)
+	}
+}
+
+// TestCINoticeRecordedWithoutDiscord: a web-native unit had no record of CI
+// notices at all — ciNotice returned before doing anything. The note is now
+// recorded for every unit and only posted where there is a thread.
+func TestCINoticeRecordedWithoutDiscord(t *testing.T) {
+	dir := t.TempDir()
+	events, err := timeline.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sessions.Set("w_ci1", sessionstore.Entry{Project: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	b := &Bot{events: events, sessions: sessions}
+
+	// Nil session and a web-native unit: the old code was a total no-op here.
+	b.ciNotice(nil, "w_ci1", "queued auto CI fix")
+
+	evs, err := b.events.Read("w_ci1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 1 || evs[0].Kind != timeline.KindNotice {
+		t.Fatalf("events = %+v, want one notice", evs)
+	}
+	var n timeline.Notice
+	if err := evs[0].DecodeData(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n.Text != "queued auto CI fix" {
+		t.Errorf("text = %q", n.Text)
 	}
 }
