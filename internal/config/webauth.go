@@ -29,12 +29,15 @@ type WebAuthFeatures struct {
 // WebAuthConfig is optional private-web authentication (Discord OAuth).
 // When Enabled is false or WebAuth is nil, the web UI stays open LAN mode (legacy).
 type WebAuthConfig struct {
-	Enabled          bool           `json:"enabled"`
-	SessionSecret    string         `json:"sessionSecret,omitempty"`
-	AdminDiscordIDs  []string       `json:"adminDiscordIds,omitempty"`
-	MemberDiscordIDs []string       `json:"memberDiscordIds,omitempty"`
-	ViewerDiscordIDs []string       `json:"viewerDiscordIds,omitempty"`
+	Enabled          bool            `json:"enabled"`
+	SessionSecret    string          `json:"sessionSecret,omitempty"`
+	AdminDiscordIDs  []string        `json:"adminDiscordIds,omitempty"`
+	MemberDiscordIDs []string        `json:"memberDiscordIds,omitempty"`
+	ViewerDiscordIDs []string        `json:"viewerDiscordIds,omitempty"`
 	Features         WebAuthFeatures `json:"features,omitempty"`
+	// LocalAccounts are operator-provisioned logins that need no Discord account.
+	// Their actor ids are "local:<id>"; see localauth.go.
+	LocalAccounts []LocalAccount `json:"localAccounts,omitempty"`
 }
 
 // WebAuthEnabled reports whether Discord OAuth web auth is turned on.
@@ -190,7 +193,13 @@ func ResolveWebRole(discordUserID string, in RoleResolveInput) (WebRole, bool) {
 		return WebRoleViewer, true
 	}
 	if in.ProjectUserSet != nil {
+		// Normalized probe: the three lists above go through containsID, so this
+		// raw map lookup would otherwise be the one place where "discord:123" and
+		// "123" stop matching.
 		if _, ok := in.ProjectUserSet[id]; ok {
+			return WebRoleMember, true
+		}
+		if _, ok := in.ProjectUserSet[NormalizeActorID(id)]; ok {
 			return WebRoleMember, true
 		}
 	} else if containsID(in.ProjectUserIDs, id) {
@@ -215,9 +224,8 @@ func (c *Config) ResolveWebRoleForConfig(discordUserID string) (WebRole, bool) {
 	set := map[string]struct{}{}
 	for _, pc := range c.Projects {
 		for _, uid := range pc.AllowedUserIDs {
-			uid = strings.TrimSpace(uid)
-			if uid != "" {
-				set[uid] = struct{}{}
+			if n := NormalizeActorID(uid); n != "" {
+				set[n] = struct{}{}
 			}
 		}
 	}
