@@ -4070,6 +4070,14 @@
     var fieldSelect = document.getElementById("gw-confirm-select");
     var pending = null; // resolver of the currently open dialog's Promise
 
+    // quietSelectFocus reports whether focusing a <select> merely focuses it.
+    // Evaluated per call, not once: a media query result can change under the
+    // page (an iPad gaining a trackpad, a window moving to another display).
+    function quietSelectFocus() {
+      if (!window.matchMedia) return true; // no way to ask — keep old behavior
+      return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    }
+
     // openModal resolves {ok, value} — value is the picked option when the caller
     // passed opts.select, "" otherwise. appConfirm/appAlert flatten it to a bool.
     function openModal(kind, opts) {
@@ -4109,8 +4117,13 @@
         dlg.returnValue = "";
         dlg.showModal();
         // Safe default focus: Enter cancels destructive asks, confirms the rest.
-        // A picker focuses the choice instead — it is what the modal is asking.
-        if (pick && !danger) fieldSelect.focus();
+        // A picker focuses the choice instead — it is what the modal is asking —
+        // but only where focusing a <select> is inert. iOS Safari opens the
+        // picker wheel on focus(), so the wheel would cover the modal the instant
+        // it appeared, hiding the very question being confirmed. Gated on a fine
+        // hovering pointer rather than sniffing iOS: any touch UI that expands a
+        // select on focus has the same problem, and a mouse/keyboard one does not.
+        if (pick && !danger && quietSelectFocus()) fieldSelect.focus();
         else (danger && !isAlert ? cancelBtn : okBtn).focus();
       });
     }
