@@ -201,9 +201,20 @@ func (b *Bot) notifyRunDoneDM(threadID, authorID string, result grokrun.Result, 
 	outcome := classifyRunOutcome(result)
 	ids := b.notifyRecipients(threadID, authorID, outcome, elapsed)
 	// A web session's actor id is a Discord snowflake only when the viewer logged in
-	// through Discord OAuth. Anything else cannot be DMed, so drop it here rather
-	// than letting the API reject it per recipient.
-	ids = slices.DeleteFunc(ids, func(id string) bool { return !looksLikeDiscordUserID(id) })
+	// through Discord OAuth. Anyone else cannot be DMed — but "cannot push to them"
+	// must not mean "never tell them", which is what dropping the id did. They get
+	// an inbox entry instead, and only Discord-shaped ids go on to the DM fan-out.
+	var unreachable []string
+	ids = slices.DeleteFunc(ids, func(id string) bool {
+		if looksLikeDiscordUserID(id) {
+			return false
+		}
+		unreachable = append(unreachable, id)
+		return true
+	})
+	if len(unreachable) > 0 {
+		b.deliverInbox(unreachable, threadID, outcome, elapsed)
+	}
 	if len(ids) == 0 {
 		return
 	}

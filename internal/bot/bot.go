@@ -19,6 +19,7 @@ import (
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/inbox"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -95,6 +96,7 @@ type Bot struct {
 	states   sync.Map // threadID → *threadState
 	runs     *runjournal.Store
 	events   *timeline.Store
+	inbox    *inbox.Store
 
 	ready     atomic.Bool
 	gateReady atomic.Bool
@@ -140,6 +142,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) 
 			log.Printf("warn: timeline: %v", err)
 		} else {
 			b.events = tl
+		}
+		if ib, err := inbox.New(cfg.DataDir); err != nil {
+			log.Printf("warn: inbox: %v", err)
+		} else {
+			b.inbox = ib
 		}
 	}
 	if host, err := os.Hostname(); err == nil {
