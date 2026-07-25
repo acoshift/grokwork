@@ -175,9 +175,10 @@ func (c *Config) ResolveCapabilities(project, userID string, roleIDs []string) C
 
 	var caps Capabilities
 	var any bool
-	uid := strings.TrimSpace(userID)
+	uid := NormalizeActorID(userID)
 	if uid != "" && byUser != nil {
-		if name, hit := byUser[uid]; hit {
+		// Keys may be written bare or namespaced; normalize both sides.
+		if name, hit := normalizeActorKeys(byUser)[uid]; hit {
 			if t, ok := lookupTemplate(name, overlays); ok {
 				caps = caps.Or(t)
 				any = true

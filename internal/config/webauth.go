@@ -328,9 +328,16 @@ func cleanIDList(ids []string) []string {
 	return out
 }
 
+// containsID reports whether want is in ids, comparing actor ids by their
+// normalized form so an allowlist written as "discord:123" matches a runtime id
+// of "123" (and vice versa). Every caller here compares actor ids.
 func containsID(ids []string, want string) bool {
+	want = strings.TrimSpace(want)
+	if want == "" {
+		return false
+	}
 	for _, id := range ids {
-		if strings.TrimSpace(id) == want {
+		if SameActor(id, want) {
 			return true
 		}
 	}
