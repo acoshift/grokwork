@@ -17,6 +17,7 @@ import (
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/timeline"
 )
 
 // Default Fix-with-Grok rate limit: max starts per actor per window.
@@ -601,7 +602,6 @@ func (s *Server) partialSession(ctx *hime.Context) error {
 	return s.viewFragment(ctx, "session", "session_live", s.sessionPageData(ctx, threadID))
 }
 
-
 // ensureSessionPageAccess is ensureThreadAccess plus a narrow fallback for the
 // post-reset landing page only. When the store entry is gone and history has
 // no project yet, a stamped ?project= that the caller may access is enough to
@@ -650,6 +650,17 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 				d.RunPrompt = r.Prompt
 				d.RunLiveText = r.LiveText
 				break
+			}
+		}
+	}
+	// Durable output for the newest run. history.Turn.Response is result.Text
+	// only, so a run that ended without a final reply (cancelled, max turns)
+	// records nothing there — on Discord the sealed chunks were still in the
+	// thread, but a web-native unit had no other copy. The timeline is that copy.
+	if s.bot != nil {
+		if events := s.bot.Events(); events != nil {
+			if evs, err := events.Read(threadID); err == nil {
+				d.RunTranscript = timeline.LastRunTranscript(evs)
 			}
 		}
 	}

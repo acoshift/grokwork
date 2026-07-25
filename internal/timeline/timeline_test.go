@@ -199,3 +199,60 @@ func TestReadMissingUnitIsEmptyNotError(t *testing.T) {
 		t.Errorf("events = %d, want 0", len(events))
 	}
 }
+
+func TestLastRunTranscriptIsolatesTheNewestRun(t *testing.T) {
+	st, _ := newStore(t)
+	seq := []struct {
+		kind Kind
+		data any
+	}{
+		{KindTextBlock, TextBlock{Text: "run one output"}},
+		{KindRunDone, RunDone{Status: "done"}},
+		{KindTextBlock, TextBlock{Text: "run two output"}},
+		{KindRunDone, RunDone{Status: "cancelled"}},
+	}
+	for _, s := range seq {
+		if _, err := st.Append("123", s.kind, s.data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, _ := st.Read("123")
+	if got := LastRunTranscript(events); got != "run two output" {
+		t.Errorf("LastRunTranscript = %q, want only the newest run's output", got)
+	}
+	if got := Transcript(events); got != "run one output\n\nrun two output" {
+		t.Errorf("Transcript = %q, want the whole unit history", got)
+	}
+}
+
+func TestLastRunTranscriptWhileRunInFlight(t *testing.T) {
+	st, _ := newStore(t)
+	// No run.done yet: the blocks belong to the run currently going.
+	if _, err := st.Append("123", KindTextBlock, TextBlock{Text: "in flight"}); err != nil {
+		t.Fatal(err)
+	}
+	events, _ := st.Read("123")
+	if got := LastRunTranscript(events); got != "in flight" {
+		t.Errorf("LastRunTranscript = %q, want the in-flight block", got)
+	}
+}
+
+func TestLastRunTranscriptEmptyWhenNewestRunSaidNothing(t *testing.T) {
+	st, _ := newStore(t)
+	for _, s := range []struct {
+		kind Kind
+		data any
+	}{
+		{KindTextBlock, TextBlock{Text: "old"}},
+		{KindRunDone, RunDone{Status: "done"}},
+		{KindRunDone, RunDone{Status: "error"}},
+	} {
+		if _, err := st.Append("123", s.kind, s.data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, _ := st.Read("123")
+	if got := LastRunTranscript(events); got != "" {
+		t.Errorf("LastRunTranscript = %q, want empty (newest run produced nothing)", got)
+	}
+}

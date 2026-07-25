@@ -294,6 +294,34 @@ func (e Event) Text() string {
 	return tb.Text
 }
 
+// LastRunTranscript returns the output of the most recent run only.
+//
+// A unit's timeline spans every run in the thread, so the whole transcript must
+// not be attributed to one turn. Runs are delimited by run.done, so the last
+// run's blocks are the ones after the second-to-last run.done. With no run.done
+// at all (a run still in flight) every block belongs to the current run.
+func LastRunTranscript(events []Event) string {
+	lastDone, prevDone := -1, -1
+	for i, e := range events {
+		if e.Kind != KindRunDone {
+			continue
+		}
+		prevDone, lastDone = lastDone, i
+	}
+	start := 0
+	if prevDone >= 0 {
+		start = prevDone + 1
+	}
+	end := len(events)
+	if lastDone >= 0 {
+		end = lastDone
+	}
+	if start > end {
+		return ""
+	}
+	return Transcript(events[start:end])
+}
+
 // Transcript joins every sealed text block for a unit, in order. This is what
 // makes a cancelled run's output readable: the blocks were committed as they
 // sealed, before any final result existed.

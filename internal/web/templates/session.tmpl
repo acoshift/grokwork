@@ -489,6 +489,9 @@
         <div class="bubble-label">Grok</div>
         {{if $t.Response}}
         <div class="bubble-body md">{{markdown $t.Response}}</div>
+        {{else if and (eq $ri (sub $n 1)) $.RunTranscript}}
+        <div class="bubble-body md">{{markdown $.RunTranscript}}</div>
+        <div class="bubble-note muted">Recovered from the run record — this run ended without a final reply.</div>
         {{else}}
         <div class="bubble-body muted">(no response text yet)</div>
         {{end}}
