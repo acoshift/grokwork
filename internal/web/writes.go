@@ -215,7 +215,7 @@ func (s *Server) postPRMerge(ctx *hime.Context) error {
 		})
 		return mergeFail(viewErr)
 	}
-	pre := ghpr.CheckMergePreflight(detail.State, detail.Mergeable, detail.Checks, attemptAnyway)
+	pre := ghpr.CheckMergePreflight(detail, attemptAnyway)
 	if !pre.Allow {
 		err := fmt.Errorf("%s", pre.Reason)
 		s.auditAction(ctx, audit.ActionPRMerge, err, map[string]any{

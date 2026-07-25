@@ -563,6 +563,7 @@ type prGate struct {
 
 // buildPRGates turns the PR snapshot + team rollup into the header gate strip
 // and reports whether every gate is green (drives the merge affordance).
+// Merge status prefers GitHub mergeStateStatus (BLOCKED/DIRTY/…) over mergeable.
 func buildPRGates(pr ghpr.PRDetail, teamRollup string) ([]prGate, bool) {
 	checks := strings.TrimSpace(pr.Checks)
 	cg := prGate{Label: "Checks", Value: checks}
@@ -603,21 +604,51 @@ func buildPRGates(pr ghpr.PRDetail, teamRollup string) ([]prGate, bool) {
 		gg.Hint = "not required"
 	}
 
-	mg := prGate{Label: "Mergeable", Value: pr.Mergeable}
-	switch pr.Mergeable {
-	case "MERGEABLE":
+	// Prefer mergeStateStatus (protection-aware) over mergeable (git trees only).
+	status := strings.ToUpper(strings.TrimSpace(pr.MergeStateStatus))
+	mg := prGate{Label: "Merge status", Value: status}
+	switch status {
+	case "CLEAN":
 		mg.Class = "ok"
-	case "CONFLICTING":
+	case "UNSTABLE":
+		mg.Class = "warn"
+		mg.Hint = "non-required checks"
+	case "BLOCKED":
+		mg.Class = "err"
+		mg.Hint = "protection or reviews"
+	case "DIRTY":
 		mg.Class = "err"
 		mg.Hint = "resolve conflicts"
+	case "BEHIND":
+		mg.Class = "err"
+		mg.Hint = "update branch"
+	case "HAS_HOOKS":
+		mg.Class = "warn"
+		mg.Hint = "hooks/checks pending"
+	case "UNKNOWN":
+		mg.Hint = "computing"
 	case "":
-		mg.Value = "—"
+		// Older fixtures / gh without the field — fall back to mergeable.
+		mg.Label = "Mergeable"
+		mg.Value = pr.Mergeable
+		switch pr.Mergeable {
+		case "MERGEABLE":
+			mg.Class = "ok"
+		case "CONFLICTING":
+			mg.Class = "err"
+			mg.Hint = "resolve conflicts"
+		case "":
+			mg.Value = "—"
+		}
 	}
 
 	checksOK := cg.Class == "ok" || checks == ""
 	approved := teamRollup == reviewstore.RollupApproved || pr.ReviewDecision == "APPROVED"
-	ready := pr.State == "OPEN" && !pr.IsDraft && checksOK &&
-		pr.Mergeable == "MERGEABLE" && approved
+	mergeOK := pr.Mergeable != "CONFLICTING" && ghpr.MergeStateAllowsShip(status)
+	if status == "" {
+		mergeOK = pr.Mergeable == "MERGEABLE"
+	}
+	ready := pr.State == "OPEN" && !pr.IsDraft && checksOK && mergeOK && approved
 	return []prGate{cg, tg, gg, mg}, ready
 }
 

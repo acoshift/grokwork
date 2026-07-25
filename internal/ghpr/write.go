@@ -306,16 +306,30 @@ type MergePreflight struct {
 
 // CheckMergePreflight decides whether a merge may proceed.
 // Never authorizes bypass of GitHub branch protection; only gates our call.
-func CheckMergePreflight(state, mergeable, checks string, attemptAnyway bool) MergePreflight {
-	st := strings.ToUpper(strings.TrimSpace(state))
+// Prefer MergeStateStatus (protection-aware) over Mergeable (git trees only).
+func CheckMergePreflight(d PRDetail, attemptAnyway bool) MergePreflight {
+	st := strings.ToUpper(strings.TrimSpace(d.State))
 	if st != "OPEN" {
 		return MergePreflight{Allow: false, Reason: "PR is not OPEN (state=" + st + ")"}
 	}
-	m := strings.ToUpper(strings.TrimSpace(mergeable))
+	if d.IsDraft {
+		return MergePreflight{Allow: false, Reason: "PR is a draft"}
+	}
+	switch strings.ToUpper(strings.TrimSpace(d.MergeStateStatus)) {
+	case "BLOCKED":
+		return MergePreflight{Allow: false, Reason: "GitHub merge is blocked (branch protection or required reviews)"}
+	case "DIRTY":
+		return MergePreflight{Allow: false, Reason: "PR has merge conflicts"}
+	case "BEHIND":
+		return MergePreflight{Allow: false, Reason: "branch is behind the base; update required"}
+	case "HAS_HOOKS":
+		return MergePreflight{Allow: false, Reason: "required status checks or hooks not satisfied"}
+	}
+	m := strings.ToUpper(strings.TrimSpace(d.Mergeable))
 	if m == "CONFLICTING" {
 		return MergePreflight{Allow: false, Reason: "PR has merge conflicts"}
 	}
-	if ChecksFailing(checks) && !attemptAnyway {
+	if ChecksFailing(d.Checks) && !attemptAnyway {
 		return MergePreflight{Allow: false, Reason: "checks failing; enable attempt anyway to retry plain merge"}
 	}
 	return MergePreflight{Allow: true}

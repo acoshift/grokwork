@@ -96,7 +96,7 @@ func workflowServer(t *testing.T) *Server {
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"Ship feature",
 				"state":"OPEN","isDraft":false,"reviewDecision":"APPROVED","headRefOid":"abc",
 				"headRefName":"feat","baseRefName":"main","body":"pr body",
-				"mergeable":"MERGEABLE","author":{"login":"zoe"},
+				"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","author":{"login":"zoe"},
 				"additions":1,"deletions":0,"changedFiles":1
 			}`), nil
 		case strings.HasPrefix(joined, "pr checks"):
@@ -390,8 +390,9 @@ func TestLinearListAndDetail(t *testing.T) {
 
 func TestBuildPRGates(t *testing.T) {
 	green := ghpr.PRDetail{
-		Info:      ghpr.Info{State: "OPEN", ReviewDecision: "APPROVED", Checks: "✓ 5"},
-		Mergeable: "MERGEABLE",
+		Info:             ghpr.Info{State: "OPEN", ReviewDecision: "APPROVED", Checks: "✓ 5"},
+		Mergeable:        "MERGEABLE",
+		MergeStateStatus: "CLEAN",
 	}
 	gates, ready := buildPRGates(green, reviewstore.RollupApproved)
 	if !ready {
@@ -404,6 +405,9 @@ func TestBuildPRGates(t *testing.T) {
 		if g.Class != "ok" {
 			t.Fatalf("gate %s class=%q want ok", g.Label, g.Class)
 		}
+	}
+	if gates[3].Label != "Merge status" || gates[3].Value != "CLEAN" {
+		t.Fatalf("merge gate=%+v", gates[3])
 	}
 
 	failing := green
@@ -434,9 +438,34 @@ func TestBuildPRGates(t *testing.T) {
 	}
 	conflicting := green
 	conflicting.Mergeable = "CONFLICTING"
+	conflicting.MergeStateStatus = "DIRTY"
 	gates, ready = buildPRGates(conflicting, reviewstore.RollupApproved)
 	if ready || gates[3].Class != "err" {
 		t.Fatalf("conflicting ready=%v gates=%+v", ready, gates)
+	}
+
+	// Team-approved but GitHub branch protection still blocks.
+	blocked := green
+	blocked.MergeStateStatus = "BLOCKED"
+	gates, ready = buildPRGates(blocked, reviewstore.RollupApproved)
+	if ready {
+		t.Fatal("BLOCKED must not be ship-ready even with team approval")
+	}
+	if gates[3].Class != "err" || gates[3].Value != "BLOCKED" {
+		t.Fatalf("blocked gate=%+v", gates[3])
+	}
+
+	// Legacy fixture without mergeStateStatus still uses mergeable.
+	legacy := ghpr.PRDetail{
+		Info:      ghpr.Info{State: "OPEN", ReviewDecision: "APPROVED", Checks: "✓ 1"},
+		Mergeable: "MERGEABLE",
+	}
+	gates, ready = buildPRGates(legacy, reviewstore.RollupApproved)
+	if !ready {
+		t.Fatal("legacy MERGEABLE without status should be ready")
+	}
+	if gates[3].Label != "Mergeable" {
+		t.Fatalf("legacy gate label=%q", gates[3].Label)
 	}
 }
 
@@ -464,7 +493,7 @@ func TestPRDetailAndDiff(t *testing.T) {
 		"pr body",
 		`class="md"`,
 		"APPROVED",
-		"MERGEABLE",
+		"CLEAN",
 		// Checks strip is an SSE live-region (sse:ship → partial re-view).
 		`id="live-pr-gates"`,
 		`hx-trigger="sse:ship"`,
@@ -473,6 +502,7 @@ func TestPRDetailAndDiff(t *testing.T) {
 		`hx-select="unset"`,
 		`class="pr-gates"`,
 		"Checks",
+		"Merge status",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("pr missing %q", want)
@@ -489,7 +519,7 @@ func TestPRDetailAndDiff(t *testing.T) {
 		t.Fatalf("gates partial status=%d body=%s", w.Code, w.Body.String())
 	}
 	partial := w.Body.String()
-	for _, want := range []string{`class="pr-gates"`, "Checks", "Team review", "GitHub review", "Mergeable", "✓ 1"} {
+	for _, want := range []string{`class="pr-gates"`, "Checks", "Team review", "GitHub review", "Merge status", "CLEAN", "✓ 1"} {
 		if !strings.Contains(partial, want) {
 			t.Fatalf("gates partial missing %q body=%s", want, partial)
 		}

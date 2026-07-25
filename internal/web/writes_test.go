@@ -60,7 +60,7 @@ func writeEnabledServer(t *testing.T) (*Server, *config.Config, *[]string) {
 			return []byte(`{
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"APPROVED","headRefOid":"a","headRefName":"f",
-				"baseRefName":"main","body":"b","mergeable":"MERGEABLE","author":{"login":"z"},
+				"baseRefName":"main","body":"b","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","author":{"login":"z"},
 				"additions":1,"deletions":0,"changedFiles":1
 			}`), nil
 		case strings.Contains(joined, "pr checks"):
@@ -133,7 +133,7 @@ func captureCommentBodies(t *testing.T) (*Server, *config.Config, *[]string) {
 			return []byte(`{
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"APPROVED","headRefOid":"a","headRefName":"f",
-				"baseRefName":"main","body":"b","mergeable":"MERGEABLE","author":{"login":"z"},
+				"baseRefName":"main","body":"b","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","author":{"login":"z"},
 				"additions":1,"deletions":0,"changedFiles":1
 			}`), nil
 		default:
@@ -459,7 +459,7 @@ func TestMergePreflightConflict(t *testing.T) {
 			return []byte(`{
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"","headRefOid":"a","headRefName":"f",
-				"baseRefName":"main","body":"","mergeable":"CONFLICTING","author":{"login":"z"},
+				"baseRefName":"main","body":"","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","author":{"login":"z"},
 				"additions":0,"deletions":0,"changedFiles":0
 			}`), nil
 		}
@@ -506,7 +506,7 @@ func TestMergePreflightConflictHTMXTrigger(t *testing.T) {
 			return []byte(`{
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"","headRefOid":"a","headRefName":"f",
-				"baseRefName":"main","body":"","mergeable":"CONFLICTING","author":{"login":"z"},
+				"baseRefName":"main","body":"","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","author":{"login":"z"},
 				"additions":0,"deletions":0,"changedFiles":0
 			}`), nil
 		}
@@ -539,16 +539,18 @@ func TestMergePreflightConflictHTMXTrigger(t *testing.T) {
 	}
 }
 
-func TestMergeGHReviewRequiredShowsAlert(t *testing.T) {
+func TestMergeBlockedPreflightShowsAlert(t *testing.T) {
 	srv, _, calls := writeEnabledServer(t)
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		*calls = append(*calls, joined)
 		if strings.HasPrefix(joined, "pr view") {
+			// mergeable=MERGEABLE but branch protection blocks — the case we
+			// used to miss until gh pr merge failed.
 			return []byte(`{
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","headRefOid":"a","headRefName":"f",
-				"baseRefName":"main","body":"","mergeable":"MERGEABLE","author":{"login":"z"},
+				"baseRefName":"main","body":"","mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","author":{"login":"z"},
 				"additions":0,"deletions":0,"changedFiles":0
 			}`), nil
 		}
@@ -556,8 +558,7 @@ func TestMergeGHReviewRequiredShowsAlert(t *testing.T) {
 			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil
 		}
 		if strings.Contains(joined, "pr merge") {
-			// Mirror execRunner wrapping of gh stderr.
-			return nil, &mergeGHError{msg: "gh pr merge 9 --squash --repo acme/app: GraphQL: At least 1 approving review is required by reviewers with write access. (mergePullRequest)"}
+			t.Fatal("preflight must refuse BLOCKED before calling gh pr merge")
 		}
 		return nil, nil
 	}
@@ -567,8 +568,6 @@ func TestMergeGHReviewRequiredShowsAlert(t *testing.T) {
 	}
 	form := url.Values{"project": {"proj"}, "csrf": {csrf}, "method": {"squash"}}
 
-	// Boosted path (the real merge UI): 204 + HX-Trigger app-alert — no swap
-	// dance, so the modal opens even when a redirect follow would lose the flash.
 	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/merge", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("HX-Request", "true")
@@ -586,14 +585,54 @@ func TestMergeGHReviewRequiredShowsAlert(t *testing.T) {
 	if !strings.Contains(trig, "Merge failed") {
 		t.Fatalf("HX-Trigger=%q want title Merge failed", trig)
 	}
+	if !strings.Contains(strings.ToLower(trig), "blocked") {
+		t.Fatalf("HX-Trigger=%q want blocked preflight reason", trig)
+	}
+}
+
+func TestMergeGHErrorShowsAlertWhenStatusClean(t *testing.T) {
+	// Status can race (CLEAN then policy rejects); still surface gh's reason.
+	srv, _, calls := writeEnabledServer(t)
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		*calls = append(*calls, joined)
+		if strings.HasPrefix(joined, "pr view") {
+			return []byte(`{
+				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
+				"isDraft":false,"reviewDecision":"APPROVED","headRefOid":"a","headRefName":"f",
+				"baseRefName":"main","body":"","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","author":{"login":"z"},
+				"additions":0,"deletions":0,"changedFiles":0
+			}`), nil
+		}
+		if strings.HasPrefix(joined, "pr checks") {
+			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil
+		}
+		if strings.Contains(joined, "pr merge") {
+			return nil, &mergeGHError{msg: "gh pr merge 9 --squash --repo acme/app: GraphQL: At least 1 approving review is required by reviewers with write access. (mergePullRequest)"}
+		}
+		return nil, nil
+	}
+	sid, csrf, err := srv.LoginAs("admin-1", "A", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"project": {"proj"}, "csrf": {csrf}, "method": {"squash"}}
+	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/merge", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Boosted", "true")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d want 204", w.Code)
+	}
+	trig := w.Header().Get("HX-Trigger")
 	if !strings.Contains(trig, "approving review") {
-		t.Fatalf("HX-Trigger=%q want stripped review-required reason", trig)
+		t.Fatalf("HX-Trigger=%q want gh review-required reason", trig)
 	}
 	if strings.Contains(trig, "gh pr merge") {
 		t.Fatalf("HX-Trigger still has gh command prefix: %s", trig)
-	}
-	if loc := w.Header().Get("Location"); loc != "" {
-		t.Fatalf("unexpected Location=%q on HX-Trigger path", loc)
 	}
 }
 

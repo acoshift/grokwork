@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+
 func TestCreateIssueWithURL(t *testing.T) {
 	var saw []string
 	var bodyPath string
@@ -224,23 +225,83 @@ func TestCloseIssueNoComment(t *testing.T) {
 }
 
 func TestCheckMergePreflight(t *testing.T) {
-	ok := CheckMergePreflight("OPEN", "MERGEABLE", "✓ 1", false)
+	base := PRDetail{
+		Info:      Info{State: "OPEN"},
+		Mergeable: "MERGEABLE",
+	}
+	base.Checks = "✓ 1"
+
+	ok := CheckMergePreflight(base, false)
 	if !ok.Allow {
 		t.Fatalf("%+v", ok)
 	}
-	if CheckMergePreflight("MERGED", "MERGEABLE", "✓ 1", false).Allow {
+
+	merged := base
+	merged.State = "MERGED"
+	if CheckMergePreflight(merged, false).Allow {
 		t.Fatal("merged should refuse")
 	}
-	if CheckMergePreflight("OPEN", "CONFLICTING", "✓ 1", false).Allow {
+
+	conflict := base
+	conflict.Mergeable = "CONFLICTING"
+	if CheckMergePreflight(conflict, false).Allow {
 		t.Fatal("conflict should refuse")
 	}
-	fail := CheckMergePreflight("OPEN", "MERGEABLE", "✓ 1 · ✗ 1", false)
-	if fail.Allow {
+
+	fail := base
+	fail.Checks = "✓ 1 · ✗ 1"
+	if CheckMergePreflight(fail, false).Allow {
 		t.Fatal("failing checks should refuse")
 	}
-	anyway := CheckMergePreflight("OPEN", "MERGEABLE", "✓ 1 · ✗ 1", true)
-	if !anyway.Allow {
-		t.Fatal("attempt anyway should allow")
+	if !CheckMergePreflight(fail, true).Allow {
+		t.Fatal("attempt anyway should allow failing checks")
+	}
+
+	draft := base
+	draft.IsDraft = true
+	if pre := CheckMergePreflight(draft, false); pre.Allow || !strings.Contains(pre.Reason, "draft") {
+		t.Fatalf("draft: %+v", pre)
+	}
+
+	blocked := base
+	blocked.MergeStateStatus = "BLOCKED"
+	// mergeable can still be MERGEABLE under branch protection
+	if pre := CheckMergePreflight(blocked, false); pre.Allow || !strings.Contains(pre.Reason, "blocked") {
+		t.Fatalf("blocked: %+v", pre)
+	}
+	// attemptAnyway must not bypass protection
+	if CheckMergePreflight(blocked, true).Allow {
+		t.Fatal("attempt anyway must not allow BLOCKED")
+	}
+
+	dirty := base
+	dirty.MergeStateStatus = "DIRTY"
+	if pre := CheckMergePreflight(dirty, false); pre.Allow || !strings.Contains(pre.Reason, "conflict") {
+		t.Fatalf("dirty: %+v", pre)
+	}
+
+	behind := base
+	behind.MergeStateStatus = "BEHIND"
+	if pre := CheckMergePreflight(behind, false); pre.Allow || !strings.Contains(pre.Reason, "behind") {
+		t.Fatalf("behind: %+v", pre)
+	}
+
+	hooks := base
+	hooks.MergeStateStatus = "HAS_HOOKS"
+	if CheckMergePreflight(hooks, false).Allow {
+		t.Fatal("HAS_HOOKS should refuse")
+	}
+
+	clean := base
+	clean.MergeStateStatus = "CLEAN"
+	if !CheckMergePreflight(clean, false).Allow {
+		t.Fatal("CLEAN should allow")
+	}
+
+	unstable := base
+	unstable.MergeStateStatus = "UNSTABLE"
+	if !CheckMergePreflight(unstable, false).Allow {
+		t.Fatal("UNSTABLE alone should allow (non-required checks)")
 	}
 }
 

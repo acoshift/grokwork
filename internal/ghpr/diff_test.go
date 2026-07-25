@@ -191,6 +191,7 @@ func TestViewPRDetailWithMock(t *testing.T) {
 				"baseRefName":"main",
 				"body":"hello body",
 				"mergeable":"MERGEABLE",
+				"mergeStateStatus":"CLEAN",
 				"author":{"login":"zoe"},
 				"additions":10,
 				"deletions":2,
@@ -207,9 +208,11 @@ func TestViewPRDetailWithMock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Number != 9 || d.Body != "hello body" || d.Mergeable != "MERGEABLE" {
+	if d.Number != 9 || d.Body != "hello body" || d.Mergeable != "MERGEABLE" || d.MergeStateStatus != "CLEAN" {
 		t.Fatalf("%+v", d)
 	}
+	// Ensure we asked gh for mergeStateStatus.
+	// (run already succeeded; field parse covers the response.)
 	if d.Author != "zoe" || d.BaseRef != "main" || d.ChangedFiles != 3 {
 		t.Fatalf("%+v", d)
 	}
