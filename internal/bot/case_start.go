@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -83,9 +84,14 @@ func (b *Bot) StartCase(opts StartCaseOpts) (FixStartResult, error) {
 
 	if b.canCreateDiscordThread() {
 		channelID, err := b.cfg.PreferDiscordChannel(project)
-		if err != nil {
-			log.Printf("case: no Discord channel for project=%s: %v — web-native fallback", project, err)
+		if errors.Is(err, config.ErrNoDiscordChannel) {
+			// No channel mapped is a normal state for a web-only project.
 			return webNative()
+		}
+		if err != nil {
+			// Broken channel config: surface it rather than silently filing every
+			// case as web-native for as long as the misconfiguration lasts.
+			return FixStartResult{}, err
 		}
 		threadID, err := b.CreateWorkflowThread(channelID, clampThreadTitle("Case · "+title), caseStarterContent(opts.Actor, severity, ref, title))
 		if err != nil {

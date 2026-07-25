@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -230,7 +231,16 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 	// non-nil after Register even when Discord API is down — see DiscordReady).
 	if b.canCreateDiscordThread() {
 		channelID, err := b.cfg.PreferDiscordChannel(project)
+		if errors.Is(err, config.ErrNoDiscordChannel) {
+			// A project with no mapped channel is a normal state, not a failure:
+			// go web-native, matching StartWebTask and StartCase.
+			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
+				return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
+			})
+		}
 		if err != nil {
+			// Broken channel config (ambiguous map, or discordChannelId not in it)
+			// is an operator error — surface it rather than degrade silently.
 			return FixStartResult{}, err
 		}
 		title := fixThreadTitle(tracked, opts)

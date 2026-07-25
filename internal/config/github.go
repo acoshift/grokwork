@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -28,7 +29,7 @@ func (r GitHubRepoRef) Valid() bool {
 // ProjectGitHubConfig is optional multi-repo catalog for a project.
 // Prefer Repos[]; legacy Owner/Repo is accepted as a single-entry catalog.
 type ProjectGitHubConfig struct {
-	Repos  []GitHubRepoRef `json:"repos,omitempty"`
+	Repos []GitHubRepoRef `json:"repos,omitempty"`
 	Owner string          `json:"owner,omitempty"`
 	Repo  string          `json:"repo,omitempty"`
 }
@@ -220,6 +221,16 @@ func ResolveRepoPicker(catalog []GitHubRepoRef, owner, repo string) (GitHubRepoR
 	return GitHubRepoRef{}, fmt.Errorf("repo %s/%s not in project catalog", owner, repo)
 }
 
+// ErrNoDiscordChannel means the project has no Discord channel mapped at all.
+//
+// Callers distinguish this from a *broken* channel configuration: having no
+// channel is a legitimate state (a project that lives only on the web), so a
+// start falls back to a web-native unit. A misconfigured channel — ambiguous
+// mapping, or a discordChannelId not in the map — is an operator error with an
+// actionable message, and silently degrading every session started for that
+// project would hide it indefinitely.
+var ErrNoDiscordChannel = errors.New("no Discord channel mapped")
+
 // PreferDiscordChannel returns the channel ID for web-started threads for project.
 func (c *Config) PreferDiscordChannel(project string) (string, error) {
 	project = strings.TrimSpace(project)
@@ -251,7 +262,7 @@ func (c *Config) PreferDiscordChannel(project string) (string, error) {
 	}
 	switch len(hits) {
 	case 0:
-		return "", fmt.Errorf("no Discord channel mapped for project %q", project)
+		return "", fmt.Errorf("%w for project %q", ErrNoDiscordChannel, project)
 	case 1:
 		return hits[0], nil
 	default:
@@ -458,4 +469,3 @@ func (c *Config) ChannelsForProject(project string) []string {
 	}
 	return out
 }
-

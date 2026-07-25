@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -90,15 +91,19 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 
 	if b.canCreateDiscordThread() {
 		channelID, err := b.cfg.PreferDiscordChannel(project)
-		if err != nil {
+		if errors.Is(err, config.ErrNoDiscordChannel) {
 			// Freeform web starts must not require a mapped Discord channel: fall back
 			// to a web-native unit. (A freeform start is the one web path that still
 			// prefers a Discord thread at all — the commit-review and PR dispatch cards
 			// are always web-native.)
-			log.Printf("web-task: no Discord channel for project=%s: %v — web-native fallback", project, err)
 			return b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, func(unitID string) error {
 				return bind(unitID, "")
 			})
+		}
+		if err != nil {
+			// Broken channel config, not an absent one: surface it instead of
+			// quietly making every session for this project web-native.
+			return FixStartResult{}, err
 		}
 		title := threadNameFromPrompt(titleSrc, opts.Actor.DisplayName)
 		starter := webTaskStarter(opts.Actor)

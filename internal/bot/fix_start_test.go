@@ -323,7 +323,12 @@ func TestStartFixLinearCreate(t *testing.T) {
 	}
 }
 
-func TestStartFixChannelMissing(t *testing.T) {
+// TestStartFixNoChannelGoesWebNative pins the D5 behavior change: a project with
+// no mapped Discord channel is a normal state, not a failure. StartFix used to be
+// the odd one out here — StartWebTask and StartCase already fell back in exactly
+// this situation, so a project that lives only on the web could open a case or a
+// freeform task but not a fix.
+func TestStartFixNoChannelGoesWebNative(t *testing.T) {
 	b, _ := testFixBot(t)
 	b.threadAPI = &fakeThreadAPI{nextTh: "x"}
 	// Remove channel mapping
@@ -331,13 +336,45 @@ func TestStartFixChannelMissing(t *testing.T) {
 	pc := b.cfg.Projects["app"]
 	pc.DiscordChannelID = ""
 	b.cfg.Projects["app"] = pc
-	_, err := b.StartFix(FixStartOpts{
+	res, err := b.StartFix(FixStartOpts{
+		Kind: FixKindGitHub, Project: "app",
+		Owner: "a", Repo: "b", Number: 1,
+		Title: "t", Actor: Actor{ID: "u", DisplayName: "U"},
+	})
+	if err != nil {
+		t.Fatalf("no mapped channel must fall back web-native, got error: %v", err)
+	}
+	if !gitworktree.IsWebUnitID(res.ThreadID) {
+		t.Fatalf("unit = %q, want a web-native w_* unit", res.ThreadID)
+	}
+	// The fallback actually queues a run, which this test did not do while
+	// StartFix still errored here. Let it settle so the async runjournal write
+	// does not race t.TempDir() cleanup.
+	waitHistory(t, b, res.ThreadID, 1)
+}
+
+// TestStartFixBrokenChannelConfigErrors is the other half of the split: an
+// *absent* channel is fine, a *broken* one is an operator error. Two channels
+// mapped to one project with no discordChannelId to disambiguate is ambiguous,
+// and silently making every session web-native would hide the misconfiguration
+// for as long as it lasted.
+func TestStartFixBrokenChannelConfigErrors(t *testing.T) {
+	b, _ := testFixBot(t)
+	b.threadAPI = &fakeThreadAPI{nextTh: "x"}
+	b.cfg.Channels = map[string]string{"ch1": "app", "ch2": "app"}
+	pc := b.cfg.Projects["app"]
+	pc.DiscordChannelID = ""
+	b.cfg.Projects["app"] = pc
+	res, err := b.StartFix(FixStartOpts{
 		Kind: FixKindGitHub, Project: "app",
 		Owner: "a", Repo: "b", Number: 1,
 		Title: "t", Actor: Actor{ID: "u", DisplayName: "U"},
 	})
 	if err == nil {
-		t.Fatal("expected channel error")
+		t.Fatalf("ambiguous channel mapping must surface, got unit %q", res.ThreadID)
+	}
+	if errors.Is(err, config.ErrNoDiscordChannel) {
+		t.Error("ambiguous mapping must not be reported as an absent channel")
 	}
 }
 
