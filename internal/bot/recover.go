@@ -10,6 +10,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/runjournal"
+	"github.com/acoshift/grokwork/internal/timeline"
 )
 
 // RecoverActiveRuns rehydrates durable journals after process start.
@@ -317,13 +318,17 @@ func (b *Bot) healInterruptedStatus(threadID, statusMsgID, project string) {
 }
 
 func (b *Bot) announceResume(threadID, project string, attempt int) {
-	s := b.Discord()
-	if s == nil {
-		return
-	}
 	msg := fmt.Sprintf("%s · **%s**", resumeAnnouncePrefix, project)
 	if attempt > 1 {
 		msg = fmt.Sprintf("%s · **%s** · attempt %d", resumeAnnouncePrefix, project, attempt)
+	}
+	// Recorded for every unit: after a restart, "was this re-driven?" is the first
+	// question asked, and a web-native unit had no answer. The Discord post below
+	// was also issued blindly for web units, guaranteeing a 4xx.
+	b.appendTimeline(threadID, timeline.KindNotice, timeline.Notice{Text: msg})
+	s := b.Discord()
+	if s == nil || !b.hasDiscordSurface(threadID) {
+		return
 	}
 	if _, err := s.ChannelMessageSend(threadID, msg); err != nil {
 		log.Printf("warn: resume announce thread=%s: %v", threadID, err)

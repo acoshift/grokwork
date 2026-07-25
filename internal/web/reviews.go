@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -253,13 +254,27 @@ func (s *Server) postPRReviewRequest(ctx *hime.Context) error {
 		return s.prRedirect(ctx, owner, repo, n, project, "", err)
 	}
 
-	if threadID != "" && !gitworktree.IsWebUnitID(threadID) && s.bot != nil {
-		msg := fmt.Sprintf("<@%s> please review **%s/%s#%d**", reviewerID, owner, repo, n)
-		if note != "" {
-			msg += "\n> " + note
+	if s.bot != nil {
+		prURL := s.cfg.DiscordPRDisplayURL(owner, repo, n, "")
+		if threadID != "" && !gitworktree.IsWebUnitID(threadID) {
+			msg := fmt.Sprintf("<@%s> please review **%s/%s#%d**", reviewerID, owner, repo, n)
+			if note != "" {
+				msg += "\n> " + note
+			}
+			msg += "\n" + prURL
+			s.bot.NotifyThread(threadID, msg)
 		}
-		msg += "\n" + s.cfg.DiscordPRDisplayURL(owner, repo, n, "")
-		s.bot.NotifyThread(threadID, msg)
+		// A reviewer who signed in without Discord cannot be mentioned or DMed, and
+		// a web-native unit has no thread to mention them in — so the request used
+		// to reach them nowhere. Queue it either way; the thread mention above is
+		// ambient, this is addressed.
+		if !config.IsDiscordActor(reviewerID) || threadID == "" || gitworktree.IsWebUnitID(threadID) {
+			if err := s.bot.QueueInbox(reviewerID, "review.requested",
+				fmt.Sprintf("Review requested · %s/%s#%d", owner, repo, n),
+				note, prURL, threadID, project); err != nil {
+				log.Printf("warn: inbox review request reviewer=%s: %v", reviewerID, err)
+			}
+		}
 	}
 
 	return s.prRedirect(ctx, owner, repo, n, project, "Review requested", nil)

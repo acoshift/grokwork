@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 	"github.com/acoshift/grokwork/internal/timeline"
@@ -169,5 +170,93 @@ func TestCINoticeRecordedWithoutDiscord(t *testing.T) {
 	}
 	if n.Text != "queued auto CI fix" {
 		t.Errorf("text = %q", n.Text)
+	}
+}
+
+// timelineKinds returns the event kinds recorded for a unit, for coverage checks.
+func timelineKinds(t *testing.T, b *Bot, unit string) []timeline.Kind {
+	t.Helper()
+	evs, err := b.events.Read(unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []timeline.Kind
+	for _, e := range evs {
+		out = append(out, e.Kind)
+	}
+	return out
+}
+
+func hasKind(kinds []timeline.Kind, want timeline.Kind) bool {
+	for _, k := range kinds {
+		if k == want {
+			return true
+		}
+	}
+	return false
+}
+
+func newC3Bot(t *testing.T, unit string) *Bot {
+	t.Helper()
+	dir := t.TempDir()
+	events, err := timeline.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sessions.Set(unit, sessionstore.Entry{Project: "p", Goal: "g"}); err != nil {
+		t.Fatal(err)
+	}
+	return &Bot{events: events, sessions: sessions}
+}
+
+// TestBriefRecordedWithoutDiscord — C3 row 2. refreshBriefCard used to fail fast
+// on a nil session, so the brief content (the work summary) existed only as a
+// pinned Discord message.
+func TestBriefRecordedWithoutDiscord(t *testing.T) {
+	b := newC3Bot(t, "w_brief")
+	// Nil session: pinning fails, recording must not.
+	_, err := b.refreshBriefCard(nil, "w_brief", "")
+	if err == nil {
+		t.Error("expected an error for the missing session (pinning cannot happen)")
+	}
+	if !hasKind(timelineKinds(t, b, "w_brief"), timeline.KindBrief) {
+		t.Error("brief content not recorded for a unit with no Discord surface")
+	}
+}
+
+// TestResumeAnnouncementRecorded — C3 row 9. announceResume posted blindly to any
+// unit id, so a web-native unit got a guaranteed 4xx and no record.
+func TestResumeAnnouncementRecorded(t *testing.T) {
+	b := newC3Bot(t, "w_resume")
+	b.announceResume("w_resume", "proj", 2)
+	kinds := timelineKinds(t, b, "w_resume")
+	if !hasKind(kinds, timeline.KindNotice) {
+		t.Fatalf("resume not recorded, kinds = %v", kinds)
+	}
+	evs, _ := b.events.Read("w_resume")
+	var n timeline.Notice
+	if err := evs[0].DecodeData(&n); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(n.Text, "proj") || !strings.Contains(n.Text, "attempt 2") {
+		t.Errorf("resume text = %q, want project and attempt", n.Text)
+	}
+}
+
+// TestPRTimelineRecordedWithoutDiscord — C3 row 3. State was tracked in
+// sessionstore, but how the PR got there was Discord-embed-only.
+func TestPRTimelineRecordedWithoutDiscord(t *testing.T) {
+	b := newC3Bot(t, "w_pr")
+	// A review-decision transition: prev is not the first seed (it has checks), and
+	// the decision changed, which is one of the cases DiffTimeline reports.
+	prev := ghpr.Snapshot{State: "OPEN", Checks: "1 pending"}
+	info := ghpr.Info{State: "OPEN", ReviewDecision: "APPROVED", Checks: "1 pending"}
+	b.announcePRTimeline(nil, "w_pr", prev, info)
+	if !hasKind(timelineKinds(t, b, "w_pr"), timeline.KindPRStatus) {
+		t.Error("PR transition not recorded for a web-native unit")
 	}
 }

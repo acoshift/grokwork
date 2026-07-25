@@ -14,6 +14,7 @@ import (
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/timeline"
 )
 
 const (
@@ -289,13 +290,22 @@ func (b *Bot) ensureThreadGoal(threadID, prompt string) {
 // cwd is optional; when empty, session Cwd / MainCwd is used for git.
 // Returns whether the message was successfully pinned.
 func (b *Bot) refreshBriefCard(s *discordgo.Session, threadID, cwd string) (pinned bool, err error) {
-	if s == nil || threadID == "" {
-		return false, fmt.Errorf("missing session or thread")
+	if threadID == "" {
+		return false, fmt.Errorf("missing thread")
 	}
 
 	e, _ := b.sessions.Get(threadID)
 	in := b.collectBriefInput(threadID, e, cwd)
 	card := FormatBriefCard(in)
+	if card != "" {
+		// Recorded for every unit. Pinning is Discord-specific, but the brief
+		// content itself is a summary of the work and a web-native unit had no
+		// copy of it anywhere.
+		b.appendTimeline(threadID, timeline.KindBrief, timeline.Notice{Text: card})
+	}
+	if s == nil {
+		return false, fmt.Errorf("missing session")
+	}
 	if card == "" {
 		return false, fmt.Errorf("empty brief card")
 	}

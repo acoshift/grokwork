@@ -15,6 +15,7 @@ import (
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/timeline"
 )
 
 // prStatusPollInterval is how often open-PR sessions are refreshed via gh.
@@ -374,11 +375,24 @@ func (b *Bot) syncReviewStoreFromPR(info ghpr.Info) {
 // post-task refresh) detects a transition. Quiet on first seed except terminal.
 // Posts as a Discord rich embed (color-coded by event kind).
 func (b *Bot) announcePRTimeline(s *discordgo.Session, threadID string, prev ghpr.Snapshot, info ghpr.Info) {
-	if s == nil || threadID == "" || !b.hasDiscordSurface(threadID) {
+	if threadID == "" {
 		return
 	}
 	events := ghpr.DiffTimeline(prev, ghpr.SnapshotFromInfo(info))
 	if len(events) == 0 {
+		return
+	}
+	// PR lifecycle transitions are recorded for every unit; only the embeds below
+	// need a thread. A web-native unit tracked PR *state* but had no history of
+	// how it got there.
+	for _, ev := range events {
+		text := string(ev.Kind)
+		if ev.Detail != "" {
+			text += " · " + ev.Detail
+		}
+		b.appendTimeline(threadID, timeline.KindPRStatus, timeline.Notice{Text: text})
+	}
+	if s == nil || !b.hasDiscordSurface(threadID) {
 		return
 	}
 	// Display URL only (GitHub for gh/session stays on info).
@@ -453,6 +467,7 @@ func (b *Bot) upsertPRStatusMessage(s *discordgo.Session, threadID, msgID, conte
 	if s == nil {
 		return msgID, fmt.Errorf("discord session nil")
 	}
+	b.appendTimeline(threadID, timeline.KindPRStatus, timeline.Notice{Text: content})
 	if msgID != "" {
 		if err := discordEdit(s, threadID, msgID, content); err == nil {
 			return msgID, nil

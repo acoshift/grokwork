@@ -1888,6 +1888,8 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			if len(errText) > 1500 {
 				errText = errText[:1500]
 			}
+			// Recorded regardless: a web-native unit's stderr had nowhere to go.
+			b.appendTimeline(threadID, timeline.KindNotice, timeline.Notice{Level: "warn", Text: "stderr:\n" + errText})
 			sendChunks(s, threadID, "stderr:\n```\n"+errText+"\n```")
 		}
 
@@ -1896,6 +1898,14 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			uploadText := result.Text
 			if uploadText == "" {
 				uploadText = streamer.Text()
+			}
+			// Record what was requested before attempting delivery: on a
+			// web-native unit the upload is a no-op, so the artifact list was the
+			// only thing lost.
+			if paths := parseUploadPaths(uploadText); len(paths) > 0 {
+				b.appendTimeline(threadID, timeline.KindArtifact, timeline.Notice{
+					Text: "artifacts requested: " + strings.Join(paths, ", "),
+				})
 			}
 			uploadWorktreeFiles(s, threadID, runCwd, uploadText)
 		}
@@ -1925,8 +1935,16 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			}
 		}
 		// Wave 2 decision cards from DECISION: blocks
-		if present {
-			if specs := parseDecisionBlocks(replyText); len(specs) > 0 {
+		if specs := parseDecisionBlocks(replyText); len(specs) > 0 {
+			for _, sp := range specs {
+				text := sp.Prompt
+				if len(sp.Options) > 0 {
+					text += " (" + strings.Join(sp.Options, " / ") + ")"
+				}
+				b.appendTimeline(threadID, timeline.KindDecision, timeline.Notice{Text: text})
+			}
+			// Buttons are Discord-only; the questions themselves are not.
+			if present {
 				b.postDecisionCards(s, threadID, specs)
 			}
 		}
