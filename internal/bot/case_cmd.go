@@ -478,7 +478,7 @@ func memberRoles(m *discordgo.MessageCreate) []string {
 }
 
 func replyText(s *discordgo.Session, m *discordgo.MessageCreate, text string) {
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, sanitizeDiscordContent(text), ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, sanitizeDiscordContent(text), ref(m)); err != nil {
 		log.Printf("error: reply: %v", err)
 	}
 }

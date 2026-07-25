@@ -13,7 +13,7 @@ import (
 // handleWatch implements @Grok /watch — opt into @mention when runs on this thread finish.
 func (b *Bot) handleWatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /watch` inside a Grok thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /watch` inside a Grok thread.", ref(m)); err != nil {
 			log.Printf("error: reply watch-not-thread: %v", err)
 		}
 		return
@@ -22,7 +22,7 @@ func (b *Bot) handleWatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 	if _, ok := b.sessions.Get(m.ChannelID); !ok {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "No session for this thread yet. Start a task first, then `/watch`.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "No session for this thread yet. Start a task first, then `/watch`.", ref(m)); err != nil {
 			log.Printf("error: reply watch-no-session: %v", err)
 		}
 		return
@@ -36,13 +36,13 @@ func (b *Bot) handleWatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 		added = ent.AddWatcher(m.Author.ID)
 	})
 	if err != nil {
-		if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, "Could not update watch list: "+err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, m.ChannelID, "Could not update watch list: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply watch-save: %v", sendErr)
 		}
 		return
 	}
 	if !ok {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "No session for this thread yet.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "No session for this thread yet.", ref(m)); err != nil {
 			log.Printf("error: reply watch-missing: %v", err)
 		}
 		return
@@ -62,7 +62,7 @@ func (b *Bot) handleWatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 			sessionstore.MaxWatchers,
 		)
 	}
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply watch-ok: %v", err)
 	}
 }
@@ -70,7 +70,7 @@ func (b *Bot) handleWatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 // handleUnwatch implements @Grok /unwatch.
 func (b *Bot) handleUnwatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /unwatch` inside a Grok thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /unwatch` inside a Grok thread.", ref(m)); err != nil {
 			log.Printf("error: reply unwatch-not-thread: %v", err)
 		}
 		return
@@ -79,7 +79,7 @@ func (b *Bot) handleUnwatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 	if _, ok := b.sessions.Get(m.ChannelID); !ok {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "No session for this thread yet.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "No session for this thread yet.", ref(m)); err != nil {
 			log.Printf("error: reply unwatch-no-session: %v", err)
 		}
 		return
@@ -89,13 +89,13 @@ func (b *Bot) handleUnwatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 		removed = ent.RemoveWatcher(m.Author.ID)
 	})
 	if err != nil {
-		if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, "Could not update watch list: "+err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, m.ChannelID, "Could not update watch list: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply unwatch-save: %v", sendErr)
 		}
 		return
 	}
 	if !ok {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "No session for this thread yet.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "No session for this thread yet.", ref(m)); err != nil {
 			log.Printf("error: reply unwatch-missing: %v", err)
 		}
 		return
@@ -104,7 +104,7 @@ func (b *Bot) handleUnwatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if removed {
 		msg = "Stopped watching. You will no longer be @mentioned when runs finish."
 	}
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply unwatch-ok: %v", err)
 	}
 }

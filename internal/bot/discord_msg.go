@@ -161,19 +161,51 @@ func discordEditComponents(s *discordgo.Session, channelID, msgID, content strin
 	return err
 }
 
-func discordSendReply(s *discordgo.Session, channelID, content string, reference *discordgo.MessageReference) (*discordgo.Message, error) {
-	if s == nil {
-		return nil, fmt.Errorf("discord session is nil")
+// replyPayload builds a command reply that keeps Discord's default mention
+// parsing and link unfurling — the exact semantics of a raw
+// ChannelMessageSendReply, which is what the bot's command replies used before
+// they were routed through this file.
+//
+// Keeping the default is load-bearing, not laziness: some command replies are
+// *supposed* to ping (a `/review @user` reply notifies the reviewer —
+// formatReviewRequestReply), and some carry a PR/issue URL whose unfurl is part
+// of the reply. Suppressing either would be a silent DX regression.
+//
+// Model-generated text must use strictReplyPayload instead.
+func replyPayload(content string, reference *discordgo.MessageReference) *discordgo.MessageSend {
+	return &discordgo.MessageSend{
+		Content:   sanitizeDiscordContent(content),
+		Reference: reference,
 	}
-	content = sanitizeDiscordContent(content)
-	return s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-		Content:   content,
+}
+
+// strictReplyPayload pings nobody and suppresses link unfurls. Use for anything
+// derived from model output or user-supplied text.
+func strictReplyPayload(content string, reference *discordgo.MessageReference) *discordgo.MessageSend {
+	return &discordgo.MessageSend{
+		Content:   sanitizeDiscordContent(content),
 		Reference: reference,
 		Flags:     discordgo.MessageFlagsSuppressEmbeds,
 		AllowedMentions: &discordgo.MessageAllowedMentions{
 			Parse: []discordgo.AllowedMentionType{},
 		},
-	})
+	}
+}
+
+// discordReply posts a bot command reply with Discord's default mention and
+// unfurl behavior. See replyPayload for why that default is preserved.
+func discordReply(s *discordgo.Session, channelID, content string, reference *discordgo.MessageReference) (*discordgo.Message, error) {
+	if s == nil {
+		return nil, fmt.Errorf("discord session is nil")
+	}
+	return s.ChannelMessageSendComplex(channelID, replyPayload(content, reference))
+}
+
+func discordSendReply(s *discordgo.Session, channelID, content string, reference *discordgo.MessageReference) (*discordgo.Message, error) {
+	if s == nil {
+		return nil, fmt.Errorf("discord session is nil")
+	}
+	return s.ChannelMessageSendComplex(channelID, strictReplyPayload(content, reference))
 }
 
 // discordSendEmbed posts a rich embed. Unlike discordSend, it does not set
@@ -213,4 +245,3 @@ func discordSendEmbed(s *discordgo.Session, channelID string, embeds ...*discord
 		},
 	})
 }
-

@@ -32,14 +32,14 @@ func (b *Bot) isModerator(s *discordgo.Session, m *discordgo.MessageCreate) bool
 
 func (b *Bot) denyControl(s *discordgo.Session, m *discordgo.MessageCreate, e sessionstore.Entry, action string) {
 	msg := denyControlText(e, action)
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply deny-%s: %v", action, err)
 	}
 }
 
 func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /claim` inside a Grok thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /claim` inside a Grok thread.", ref(m)); err != nil {
 			log.Printf("error: reply claim-not-thread: %v", err)
 		}
 		return
@@ -61,12 +61,12 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 		e.SetOwner(m.Author.ID, m.Author.String())
 		if err := b.sessions.Set(m.ChannelID, e); err != nil {
 			log.Printf("error: claim save thread=%s: %v", m.ChannelID, err)
-			if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
+			if _, sendErr := discordReply(s, m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply claim-save: %v", sendErr)
 			}
 			return
 		}
-		if _, err := s.ChannelMessageSendReply(m.ChannelID,
+		if _, err := discordReply(s, m.ChannelID,
 			fmt.Sprintf("You own this thread now (<@%s>). Cancel/reset are restricted to you and Discord mods.", m.Author.ID),
 			ref(m)); err != nil {
 			log.Printf("error: reply claim-new: %v", err)
@@ -75,7 +75,7 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if e.IsOwner(m.Author.ID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "You already own this thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "You already own this thread.", ref(m)); err != nil {
 			log.Printf("error: reply claim-already: %v", err)
 		}
 		return
@@ -91,7 +91,7 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	if err := b.sessions.Set(m.ChannelID, e); err != nil {
 		log.Printf("error: claim save thread=%s: %v", m.ChannelID, err)
-		if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply claim-save: %v", sendErr)
 		}
 		return
@@ -108,14 +108,14 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 			label, prevID, m.Author.ID,
 		)
 	}
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply claim: %v", err)
 	}
 }
 
 func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /hand-off @user` inside a Grok thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /hand-off @user` inside a Grok thread.", ref(m)); err != nil {
 			log.Printf("error: reply handoff-not-thread: %v", err)
 		}
 		return
@@ -126,13 +126,13 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	target := firstMentionedUser(s, m)
 	if target == nil {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Mention who should take ownership: `@Grok /hand-off @user`.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Mention who should take ownership: `@Grok /hand-off @user`.", ref(m)); err != nil {
 			log.Printf("error: reply handoff-need-user: %v", err)
 		}
 		return
 	}
 	if target.ID == m.Author.ID {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "You already have the thread — no hand-off needed.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "You already have the thread — no hand-off needed.", ref(m)); err != nil {
 			log.Printf("error: reply handoff-self: %v", err)
 		}
 		return
@@ -151,13 +151,13 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 		e.HandOff(target.ID, target.String())
 		if err := b.sessions.Set(m.ChannelID, e); err != nil {
 			log.Printf("error: handoff save thread=%s: %v", m.ChannelID, err)
-			if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
+			if _, sendErr := discordReply(s, m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply handoff-save: %v", sendErr)
 			}
 			return
 		}
 		card := b.formatHandOffCard(m.ChannelID, e, m.Author, target)
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, card, ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, card, ref(m)); err != nil {
 			log.Printf("error: reply handoff-card: %v", err)
 		}
 		if _, err := b.refreshBriefCard(s, m.ChannelID, e.Cwd); err != nil {
@@ -178,7 +178,7 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 	e.HandOff(target.ID, target.String())
 	if err := b.sessions.Set(m.ChannelID, e); err != nil {
 		log.Printf("error: handoff save thread=%s: %v", m.ChannelID, err)
-		if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply handoff-save: %v", sendErr)
 		}
 		return
@@ -189,7 +189,7 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 		e = fresh
 	}
 	card := b.formatHandOffCard(m.ChannelID, e, m.Author, target)
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, card, ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, card, ref(m)); err != nil {
 		log.Printf("error: reply handoff-card: %v", err)
 	}
 	if _, err := b.refreshBriefCard(s, m.ChannelID, e.Cwd); err != nil {

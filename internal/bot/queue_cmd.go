@@ -11,7 +11,7 @@ import (
 
 func (b *Bot) handleQueue(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /queue` inside a Grok thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /queue` inside a Grok thread.", ref(m)); err != nil {
 			log.Printf("error: reply queue-not-thread: %v", err)
 		}
 		return
@@ -33,21 +33,21 @@ func (b *Bot) handleQueue(s *discordgo.Session, m *discordgo.MessageCreate) {
 			lines = append(lines, fmt.Sprintf("%d. **%s** · `%s` · %s", i+1, queueItemAuthor(it), queueItemMode(it), queueItemIntent(it)))
 		}
 	}
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, strings.Join(lines, "\n"), ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, strings.Join(lines, "\n"), ref(m)); err != nil {
 		log.Printf("error: reply queue: %v", err)
 	}
 }
 
 func (b *Bot) handleDequeue(s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /dequeue N` inside a Grok thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /dequeue N` inside a Grok thread.", ref(m)); err != nil {
 			log.Printf("error: reply dequeue-not-thread: %v", err)
 		}
 		return
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(parsed.Arg))
 	if err != nil || n < 1 {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Usage: `@Grok /dequeue N` (1-based index from `/queue`).", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Usage: `@Grok /dequeue N` (1-based index from `/queue`).", ref(m)); err != nil {
 			log.Printf("error: reply dequeue-usage: %v", err)
 		}
 		return
@@ -60,7 +60,7 @@ func (b *Bot) handleDequeue(s *discordgo.Session, m *discordgo.MessageCreate, pa
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if n > len(st.queue) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("No queue item **%d** (queue len %d).", n, len(st.queue)), ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, fmt.Sprintf("No queue item **%d** (queue len %d).", n, len(st.queue)), ref(m)); err != nil {
 			log.Printf("error: reply dequeue-miss: %v", err)
 		}
 		return
@@ -77,7 +77,7 @@ func (b *Bot) handleDequeue(s *discordgo.Session, m *discordgo.MessageCreate, pa
 		}
 	}
 	if !can {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "You can only dequeue your own items (or owner/mod).", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "You can only dequeue your own items (or owner/mod).", ref(m)); err != nil {
 			log.Printf("error: reply dequeue-deny: %v", err)
 		}
 		return
@@ -90,14 +90,14 @@ func (b *Bot) handleDequeue(s *discordgo.Session, m *discordgo.MessageCreate, pa
 	if b.runs != nil && oldID != "" {
 		b.runs.RemoveTaskFiles(m.ChannelID, oldID)
 	}
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("Removed queue item **%d**.", n), ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, fmt.Sprintf("Removed queue item **%d**.", n), ref(m)); err != nil {
 		log.Printf("error: reply dequeue-ok: %v", err)
 	}
 }
 
 func (b *Bot) handleCancelMine(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /cancel-mine` inside a Grok thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /cancel-mine` inside a Grok thread.", ref(m)); err != nil {
 			log.Printf("error: reply cancel-mine-not-thread: %v", err)
 		}
 		return
@@ -130,7 +130,7 @@ func (b *Bot) handleCancelMine(s *discordgo.Session, m *discordgo.MessageCreate)
 			log.Printf("warn: journal cancel-mine: %v", err)
 		}
 	}
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("Removed **%d** of your queued item(s).", removed), ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, fmt.Sprintf("Removed **%d** of your queued item(s).", removed), ref(m)); err != nil {
 		log.Printf("error: reply cancel-mine: %v", err)
 	}
 }

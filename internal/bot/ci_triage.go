@@ -200,7 +200,7 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 
 func (b *Bot) handleFixCI(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /fix-ci` inside a Grok thread with an open PR.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /fix-ci` inside a Grok thread with an open PR.", ref(m)); err != nil {
 			log.Printf("error: reply fix-ci-not-thread: %v", err)
 		}
 		return
@@ -208,13 +208,13 @@ func (b *Bot) handleFixCI(s *discordgo.Session, m *discordgo.MessageCreate) {
 	threadID := m.ChannelID
 	e, ok := b.sessions.Get(threadID)
 	if !ok {
-		if _, err := s.ChannelMessageSendReply(threadID, "No PR linked to this thread yet. Run a task that opens a PR first.", ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, "No PR linked to this thread yet. Run a task that opens a PR first.", ref(m)); err != nil {
 			log.Printf("error: reply fix-ci-no-pr: %v", err)
 		}
 		return
 	}
 	if e.IsDirectShip() {
-		if _, err := s.ChannelMessageSendReply(threadID,
+		if _, err := discordReply(s, threadID,
 			"This thread is in direct-to-primary mode (no PR). `/fix-ci` needs a tracked PR. Start a new task to fix from the current primary tip.",
 			ref(m)); err != nil {
 			log.Printf("error: reply fix-ci-direct: %v", err)
@@ -223,7 +223,7 @@ func (b *Bot) handleFixCI(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	e.NormalizePRs()
 	if !e.HasAnyPR() {
-		if _, err := s.ChannelMessageSendReply(threadID, "No PR linked to this thread yet. Run a task that opens a PR first.", ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, "No PR linked to this thread yet. Run a task that opens a PR first.", ref(m)); err != nil {
 			log.Printf("error: reply fix-ci-no-pr: %v", err)
 		}
 		return
@@ -231,7 +231,7 @@ func (b *Bot) handleFixCI(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	repoDir := prRepoDir(e)
 	if repoDir == "" {
-		if _, err := s.ChannelMessageSendReply(threadID, "No git worktree/repo for this thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, "No git worktree/repo for this thread.", ref(m)); err != nil {
 			log.Printf("error: reply fix-ci-no-repo: %v", err)
 		}
 		return
@@ -305,7 +305,7 @@ func (b *Bot) handleFixCI(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if len(targets) == 0 {
-		if _, err := s.ChannelMessageSendReply(threadID, "No failing checks right now (or checks still pending). Nothing to fix.", ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, "No failing checks right now (or checks still pending). Nothing to fix.", ref(m)); err != nil {
 			log.Printf("error: reply fix-ci-clean: %v", err)
 		}
 		return

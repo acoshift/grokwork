@@ -204,7 +204,7 @@ func defaultIssueRepo(e sessionstore.Entry) (owner, repo string) {
 
 func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /link` inside a Grok thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /link` inside a Grok thread.", ref(m)); err != nil {
 			log.Printf("error: reply link-not-thread: %v", err)
 		}
 		return
@@ -228,12 +228,12 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	switch {
 	case arg == "" || arg == "list" || arg == "show":
 		msg := formatLinkStatus(e)
-		if _, err := s.ChannelMessageSendReply(threadID, msg, ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, msg, ref(m)); err != nil {
 			log.Printf("error: reply link-status: %v", err)
 		}
 		return
 	case arg == "help" || arg == "?":
-		if _, err := s.ChannelMessageSendReply(threadID, linkHelpText(), ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, linkHelpText(), ref(m)); err != nil {
 			log.Printf("error: reply link-help: %v", err)
 		}
 		return
@@ -249,12 +249,12 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			}
 		}
 		if err := b.sessions.Set(threadID, e); err != nil {
-			if _, sendErr := s.ChannelMessageSendReply(threadID, "Could not clear issues: "+err.Error(), ref(m)); sendErr != nil {
+			if _, sendErr := discordReply(s, threadID, "Could not clear issues: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply link-clear: %v", sendErr)
 			}
 			return
 		}
-		if _, err := s.ChannelMessageSendReply(threadID, "Cleared linked issues for this thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, "Cleared linked issues for this thread.", ref(m)); err != nil {
 			log.Printf("error: reply link-cleared: %v", err)
 		}
 		b.maybeRefreshBriefIssues(s, threadID)
@@ -265,24 +265,24 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	unlinkArg, isUnlink := parseUnlinkArg(arg)
 	if isUnlink {
 		if unlinkArg == "" {
-			if _, err := s.ChannelMessageSendReply(threadID, "Usage: `@Grok /unlink #42` or `@Grok /link unlink #42`", ref(m)); err != nil {
+			if _, err := discordReply(s, threadID, "Usage: `@Grok /unlink #42` or `@Grok /link unlink #42`", ref(m)); err != nil {
 				log.Printf("error: reply unlink-usage: %v", err)
 			}
 			return
 		}
 		if !e.RemoveIssue(unlinkArg) {
-			if _, err := s.ChannelMessageSendReply(threadID, fmt.Sprintf("No linked issue matching `%s`.", unlinkArg), ref(m)); err != nil {
+			if _, err := discordReply(s, threadID, fmt.Sprintf("No linked issue matching `%s`.", unlinkArg), ref(m)); err != nil {
 				log.Printf("error: reply unlink-miss: %v", err)
 			}
 			return
 		}
 		if err := b.sessions.Set(threadID, e); err != nil {
-			if _, sendErr := s.ChannelMessageSendReply(threadID, "Could not save: "+err.Error(), ref(m)); sendErr != nil {
+			if _, sendErr := discordReply(s, threadID, "Could not save: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply unlink-save: %v", sendErr)
 			}
 			return
 		}
-		if _, err := s.ChannelMessageSendReply(threadID, fmt.Sprintf("Unlinked `%s`.", unlinkArg), ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, fmt.Sprintf("Unlinked `%s`.", unlinkArg), ref(m)); err != nil {
 			log.Printf("error: reply unlink-ok: %v", err)
 		}
 		b.maybeRefreshBriefIssues(s, threadID)
@@ -309,7 +309,7 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			b.resolveLinearIssues(projName, refs)
 		}
 	} else if looksLikeLinearRef(rest) {
-		if _, err := s.ChannelMessageSendReply(threadID,
+		if _, err := discordReply(s, threadID,
 			fmt.Sprintf("Linear is not enabled for project **%s**. Enable it in config (`projects.*.linear.enabled`) with a per-project API key.",
 				displayProjectName(projName)), ref(m)); err != nil {
 			log.Printf("error: reply link-linear-off: %v", err)
@@ -327,7 +327,7 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		sessionstore.FillIssueOwnerRepo(refs, owner, repo)
 	}
 	if len(refs) == 0 {
-		if _, err := s.ChannelMessageSendReply(threadID,
+		if _, err := discordReply(s, threadID,
 			fmt.Sprintf("Could not parse issue from `%s`. %s", arg, linkHelpText()), ref(m)); err != nil {
 			log.Printf("error: reply link-parse: %v", err)
 		}
@@ -350,7 +350,7 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		e.Project = projName
 	}
 	if err := b.sessions.Set(threadID, e); err != nil {
-		if _, sendErr := s.ChannelMessageSendReply(threadID, "Could not save issues: "+err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, threadID, "Could not save issues: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply link-save: %v", sendErr)
 		}
 		return
@@ -372,7 +372,7 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		parts = append(parts, part)
 	}
 	msg := "Linked " + strings.Join(parts, ", ") + "."
-	if _, err := s.ChannelMessageSendReply(threadID, msg, ref(m)); err != nil {
+	if _, err := discordReply(s, threadID, msg, ref(m)); err != nil {
 		log.Printf("error: reply link-ok: %v", err)
 	}
 	b.maybeRefreshBriefIssues(s, threadID)

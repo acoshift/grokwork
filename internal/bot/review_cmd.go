@@ -23,7 +23,7 @@ var mentionUserRE = regexp.MustCompile(`<@!?(\d+)>`)
 // Gated by project allowlist (not web prReviews flag).
 func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /review @user` inside a Grok thread that has a PR.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /review @user` inside a Grok thread that has a PR.", ref(m)); err != nil {
 			log.Printf("error: reply review-not-thread: %v", err)
 		}
 		return
@@ -32,7 +32,7 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		return
 	}
 	if b.reviews == nil {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Review store is unavailable.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Review store is unavailable.", ref(m)); err != nil {
 			log.Printf("error: reply review-store: %v", err)
 		}
 		return
@@ -40,14 +40,14 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 
 	e, ok := b.sessions.Get(m.ChannelID)
 	if !ok {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "No session for this thread yet.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "No session for this thread yet.", ref(m)); err != nil {
 			log.Printf("error: reply review-no-session: %v", err)
 		}
 		return
 	}
 	e.NormalizePRs()
 	if !e.HasAnyPR() {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "This thread has no tracked PR. Open or link one first.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "This thread has no tracked PR. Open or link one first.", ref(m)); err != nil {
 			log.Printf("error: reply review-no-pr: %v", err)
 		}
 		return
@@ -55,7 +55,7 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 
 	reviewerID, rest := parseReviewArgs(parsed.Prompt)
 	if reviewerID == "" {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, reviewHelpText(), ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, reviewHelpText(), ref(m)); err != nil {
 			log.Printf("error: reply review-help: %v", err)
 		}
 		return
@@ -63,14 +63,14 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 
 	pr, ok := resolveReviewPR(e, rest)
 	if !ok {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Could not resolve that PR on this thread. Try `/review @user #42` or a full PR URL.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Could not resolve that PR on this thread. Try `/review @user #42` or a full PR URL.", ref(m)); err != nil {
 			log.Printf("error: reply review-pr: %v", err)
 		}
 		return
 	}
 	pr.FillOwnerRepoFromURL()
 	if pr.Owner == "" || pr.Repo == "" || pr.Number <= 0 {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Tracked PR is missing owner/repo/number.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Tracked PR is missing owner/repo/number.", ref(m)); err != nil {
 			log.Printf("error: reply review-pr-id: %v", err)
 		}
 		return
@@ -81,7 +81,7 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		// Soft allow if allowlist is role-only (we don't have their roles here) — still request.
 		// Fail only when project has user list and reviewer is not on it AND no roles configured.
 		// AccessAllowed with empty roles fails closed for users not on list — that's intended.
-		if _, err := s.ChannelMessageSendReply(m.ChannelID,
+		if _, err := discordReply(s, m.ChannelID,
 			fmt.Sprintf("<@%s> is not on this project's allowlist.", reviewerID), ref(m)); err != nil {
 			log.Printf("error: reply review-allow: %v", err)
 		}
@@ -105,7 +105,7 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		Note:          note,
 	})
 	if err != nil {
-		if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, "Could not request review: "+err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, m.ChannelID, "Could not request review: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply review-save: %v", sendErr)
 		}
 		return
@@ -130,7 +130,7 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		GitHubLogin: ghLogin,
 		GitHubErr:   ghErr,
 	})
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply review-ok: %v", err)
 	}
 }

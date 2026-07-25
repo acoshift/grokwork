@@ -548,7 +548,7 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	if allowed, denyMsg := b.checkMessageAccess(s, m); !allowed {
 		log.Printf("deny: user %s(%s) project access: %s", m.Author.String(), m.Author.ID, denyMsg)
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, denyMsg, ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, denyMsg, ref(m)); err != nil {
 			log.Printf("error: reply allowlist deny: %v", err)
 		}
 		return
@@ -580,12 +580,12 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	case KindProjects:
 		parentID := parentChannelID(s, m.ChannelID)
 		msg := b.channelProjectHelp(parentID)
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 			log.Printf("error: reply projects: %v", err)
 		}
 	case KindReset:
 		if !isThread(s, m.ChannelID) {
-			if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /reset` inside a Grok thread.", ref(m)); err != nil {
+			if _, err := discordReply(s, m.ChannelID, "Use `@Grok /reset` inside a Grok thread.", ref(m)); err != nil {
 				log.Printf("error: reply reset-not-thread: %v", err)
 			}
 			return
@@ -593,14 +593,14 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.resetThread(s, m)
 	case KindStatus:
 		if !isThread(s, m.ChannelID) {
-			if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /status` inside a Grok thread.", ref(m)); err != nil {
+			if _, err := discordReply(s, m.ChannelID, "Use `@Grok /status` inside a Grok thread.", ref(m)); err != nil {
 				log.Printf("error: reply status-not-thread: %v", err)
 			}
 			return
 		}
 		e, ok := b.sessions.Get(m.ChannelID)
 		if !ok {
-			if _, err := s.ChannelMessageSendReply(m.ChannelID, "No session for this thread yet.", ref(m)); err != nil {
+			if _, err := discordReply(s, m.ChannelID, "No session for this thread yet.", ref(m)); err != nil {
 				log.Printf("error: reply status-empty: %v", err)
 			}
 			return
@@ -770,7 +770,7 @@ func (b *Bot) getJob(threadID string) (*runJob, bool) {
 
 func (b *Bot) handleCancel(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /cancel` inside a Grok thread that is running.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /cancel` inside a Grok thread that is running.", ref(m)); err != nil {
 			log.Printf("error: reply cancel-not-thread: %v", err)
 		}
 		return
@@ -785,12 +785,12 @@ func (b *Bot) handleCancel(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	msg, ok := b.cancelCurrentRun(m.ChannelID, who)
 	if !ok {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 			log.Printf("error: reply cancel-idle: %v", err)
 		}
 		return
 	}
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply cancel: %v", err)
 	}
 }
@@ -831,12 +831,12 @@ func (b *Bot) resetThread(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	msg, err := b.resetThreadCore(m.ChannelID)
 	if err != nil {
-		if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, m.ChannelID, msg, ref(m)); sendErr != nil {
 			log.Printf("error: reply reset: %v", sendErr)
 		}
 		return
 	}
-	if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, msg, ref(m)); sendErr != nil {
+	if _, sendErr := discordReply(s, m.ChannelID, msg, ref(m)); sendErr != nil {
 		log.Printf("error: reply reset: %v", sendErr)
 	}
 }
@@ -1116,7 +1116,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	proj, err := b.resolveProject(parentID)
 	if err != nil {
 		log.Printf("error: resolve project parent=%s: %v", parentID, err)
-		if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, m.ChannelID, err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply resolve-project: %v", sendErr)
 		}
 		return
@@ -1153,7 +1153,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	threadID, err := b.ensureThread(s, m, title)
 	if err != nil {
 		log.Printf("error: ensure thread: %v", err)
-		if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, "Could not open thread: "+err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, m.ChannelID, "Could not open thread: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply ensure-thread: %v", sendErr)
 		}
 		return

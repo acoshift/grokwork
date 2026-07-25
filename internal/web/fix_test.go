@@ -44,18 +44,8 @@ func fixEnabledServer(t *testing.T) (*Server, *config.Config, *bot.Bot) {
 	f := false
 	cfg.WorktreeIsolation = &f
 
-	// Inject thread API on bot
-	// bot.New was already created — use srv.bot
-	// re-create bot with updated cfg? cfg is pointer so GrokBin is live.
-	// threadAPI is unexported — use CreateWorkflowThread via exported StartFix which uses threadAPI field... unexported.
-
-	// We need to inject threadAPI. It's unexported on Bot. Options:
-	// 1) Export a TestSetThreadAPI method
-	// 2) Use Register with nil and only test reuse path without create
-	// 3) Add bot.SetThreadAPIForTest
-	// Cleanest for PR11a: exported SetThreadAPI for tests / inject via StartFix create with DiscordReady false only for create fail.
-
-	// For create path tests, add a package-level test helper on bot.
+	// Bot.threadAPI is unexported, so the thread-create path is driven through the
+	// exported SetThreadAPIForTest seam rather than a real gateway.
 	bot.SetThreadAPIForTest(srv.bot, &bot.FakeThreadAPI{NextMsg: "m1", NextTh: "th-web-1"})
 
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {

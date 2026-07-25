@@ -23,7 +23,7 @@ func preserveLabelFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 
 func (b *Bot) handleLabel(s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /label` inside a Grok thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /label` inside a Grok thread.", ref(m)); err != nil {
 			log.Printf("error: reply label-not-thread: %v", err)
 		}
 		return
@@ -48,26 +48,26 @@ func (b *Bot) handleLabel(s *discordgo.Session, m *discordgo.MessageCreate, pars
 	switch {
 	case arg == "":
 		msg := formatLabelStatus(e)
-		if _, err := s.ChannelMessageSendReply(threadID, msg, ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, msg, ref(m)); err != nil {
 			log.Printf("error: reply label-status: %v", err)
 		}
 		return
 	case arg == "auto":
 		e.ClearLabelManual()
 		if err := b.sessions.Set(threadID, e); err != nil {
-			if _, sendErr := s.ChannelMessageSendReply(threadID, "Could not save label: "+err.Error(), ref(m)); sendErr != nil {
+			if _, sendErr := discordReply(s, threadID, "Could not save label: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply label-save: %v", sendErr)
 			}
 			return
 		}
 		msg := fmt.Sprintf("Label auto-enabled → **%s**.", sessionstore.DisplayLabel(e.EffectiveLabel()))
-		if _, err := s.ChannelMessageSendReply(threadID, msg, ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, msg, ref(m)); err != nil {
 			log.Printf("error: reply label-auto: %v", err)
 		}
 		b.maybeRefreshBriefLabel(s, threadID)
 		return
 	case arg == "help" || arg == "?":
-		if _, err := s.ChannelMessageSendReply(threadID, labelHelpText(), ref(m)); err != nil {
+		if _, err := discordReply(s, threadID, labelHelpText(), ref(m)); err != nil {
 			log.Printf("error: reply label-help: %v", err)
 		}
 		return
@@ -75,14 +75,14 @@ func (b *Bot) handleLabel(s *discordgo.Session, m *discordgo.MessageCreate, pars
 
 	lab, okLab := sessionstore.ParseLabel(arg)
 	if !okLab {
-		if _, err := s.ChannelMessageSendReply(threadID,
+		if _, err := discordReply(s, threadID,
 			fmt.Sprintf("Unknown label `%s`. %s", arg, labelHelpText()), ref(m)); err != nil {
 			log.Printf("error: reply label-unknown: %v", err)
 		}
 		return
 	}
 	if err := e.SetLabelManual(lab); err != nil {
-		if _, sendErr := s.ChannelMessageSendReply(threadID, err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, threadID, err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply label-set: %v", sendErr)
 		}
 		return
@@ -97,13 +97,13 @@ func (b *Bot) handleLabel(s *discordgo.Session, m *discordgo.MessageCreate, pars
 		}
 	}
 	if err := b.sessions.Set(threadID, e); err != nil {
-		if _, sendErr := s.ChannelMessageSendReply(threadID, "Could not save label: "+err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, threadID, "Could not save label: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply label-save: %v", sendErr)
 		}
 		return
 	}
 	msg := fmt.Sprintf("Label set to **%s** (manual — auto paused until `@Grok /label auto`).", sessionstore.DisplayLabel(lab))
-	if _, err := s.ChannelMessageSendReply(threadID, msg, ref(m)); err != nil {
+	if _, err := discordReply(s, threadID, msg, ref(m)); err != nil {
 		log.Printf("error: reply label-ok: %v", err)
 	}
 	b.maybeRefreshBriefLabel(s, threadID)

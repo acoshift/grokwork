@@ -148,7 +148,7 @@ func FormatBriefCard(in BriefCardInput) string {
 
 func (b *Bot) handleBrief(s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed) {
 	if !isThread(s, m.ChannelID) {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, "Use `@Grok /brief` inside a Grok thread.", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "Use `@Grok /brief` inside a Grok thread.", ref(m)); err != nil {
 			log.Printf("error: reply brief-not-thread: %v", err)
 		}
 		return
@@ -158,7 +158,7 @@ func (b *Bot) handleBrief(s *discordgo.Session, m *discordgo.MessageCreate, pars
 	// Optional: /brief goal <text> sets sticky goal then refreshes.
 	if goal, ok := parseBriefGoalArg(parsed.Prompt); ok {
 		if err := b.setThreadGoal(s, threadID, goal, m); err != nil {
-			if _, sendErr := s.ChannelMessageSendReply(threadID, "Could not save goal: "+err.Error(), ref(m)); sendErr != nil {
+			if _, sendErr := discordReply(s, threadID, "Could not save goal: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply brief-goal: %v", sendErr)
 			}
 			return
@@ -168,7 +168,7 @@ func (b *Bot) handleBrief(s *discordgo.Session, m *discordgo.MessageCreate, pars
 	pinned, err := b.refreshBriefCard(s, threadID, "")
 	if err != nil {
 		log.Printf("brief: refresh thread=%s: %v", threadID, err)
-		if _, sendErr := s.ChannelMessageSendReply(threadID, "Could not update brief: "+err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, threadID, "Could not update brief: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply brief-fail: %v", sendErr)
 		}
 		return
@@ -181,7 +181,7 @@ func (b *Bot) handleBrief(s *discordgo.Session, m *discordgo.MessageCreate, pars
 		// Pin needs Pin Messages (1<<51); Manage Messages alone is not enough.
 		ack = "Brief card updated (not pinned — bot needs **Pin Messages**; re-authorize via the admin Config page install URL, or enable Pin Messages on the bot role)."
 	}
-	if _, err := s.ChannelMessageSendReply(threadID, ack, ref(m)); err != nil {
+	if _, err := discordReply(s, threadID, ack, ref(m)); err != nil {
 		log.Printf("error: reply brief-ok: %v", err)
 	}
 }

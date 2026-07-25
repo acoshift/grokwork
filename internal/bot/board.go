@@ -45,7 +45,7 @@ func (b *Bot) handleBoard(s *discordgo.Session, m *discordgo.MessageCreate, pars
 	parentID := parentChannelID(s, m.ChannelID)
 	proj, err := b.resolveProject(parentID)
 	if err != nil {
-		if _, sendErr := s.ChannelMessageSendReply(m.ChannelID, err.Error(), ref(m)); sendErr != nil {
+		if _, sendErr := discordReply(s, m.ChannelID, err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply board-resolve: %v", sendErr)
 		}
 		return
@@ -53,7 +53,7 @@ func (b *Bot) handleBoard(s *discordgo.Session, m *discordgo.MessageCreate, pars
 
 	labelFilter, activityFilter, includeTerminal, casesOnly, errMsg := parseBoardArgs(parsed.Prompt)
 	if errMsg != "" {
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, errMsg, ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, errMsg, ref(m)); err != nil {
 			log.Printf("error: reply board-usage: %v", err)
 		}
 		return
@@ -63,14 +63,14 @@ func (b *Bot) handleBoard(s *discordgo.Session, m *discordgo.MessageCreate, pars
 	staleDays := b.boardStaleDays()
 	if casesOnly {
 		body := b.formatCasesBoard(projectFilter)
-		if _, err := s.ChannelMessageSendReply(m.ChannelID, body, ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, body, ref(m)); err != nil {
 			log.Printf("error: reply board-cases: %v", err)
 		}
 		return
 	}
 	rows := b.collectBoardRows(projectFilter, labelFilter, activityFilter, includeTerminal, staleDays, time.Now())
 	body := formatBoardCard(rows, projectFilter, labelFilter, activityFilter, includeTerminal, staleDays)
-	if _, err := s.ChannelMessageSendReply(m.ChannelID, body, ref(m)); err != nil {
+	if _, err := discordReply(s, m.ChannelID, body, ref(m)); err != nil {
 		log.Printf("error: reply board: %v", err)
 	}
 }
