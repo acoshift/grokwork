@@ -4497,7 +4497,19 @@
     // Pause domain partial swaps while a field is focused (e.g. ship digest select).
     document.body.addEventListener("htmx:beforeRequest", function (e) {
       var elt = e.detail && e.detail.elt;
-      if (elt && elt.classList && elt.classList.contains("live-region") && isEditing()) {
+      if (!elt || !elt.classList || !elt.classList.contains("live-region")) return;
+      // A swap while the confirm modal is open detaches the form behind it, and
+      // the confirm handler then bails on !form.isConnected, losing the click
+      // silently. isEditing() does not cover this: focus is on a dialog button,
+      // not an INPUT. Belt and braces — trigger forms also live outside live
+      // regions, so the common case never reaches here.
+      var confirmDlg = document.getElementById("gw-confirm-modal");
+      if (confirmDlg && confirmDlg.open) {
+        e.preventDefault();
+        setStatus("live · paused while confirming", "ok");
+        return;
+      }
+      if (isEditing()) {
         e.preventDefault();
         setStatus("live · paused while editing", "ok");
       }
@@ -4577,7 +4589,7 @@
     // (revs). First open stores them (page HTML is already current). Later hellos
     // (reconnect) re-fetch only live-regions whose rev changed while offline.
     var lastLiveRevs = null;
-    var liveDomains = ["dashboard", "ship", "cases", "history", "worktrees", "config"];
+    var liveDomains = ["dashboard", "ship", "cases", "history", "worktrees", "config", "deploy"];
 
     function applyLiveRevs(revs) {
       if (!revs) return;

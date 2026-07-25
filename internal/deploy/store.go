@@ -81,6 +81,9 @@ type Run struct {
 	SHA           string `json:"sha"`
 	ShortSHA      string `json:"shortSha"`
 	Subject       string `json:"subject,omitempty"`
+	// ServiceDir is the service working directory relative to the checkout,
+	// frozen with the steps so a redeploy uses the same one.
+	ServiceDir string `json:"serviceDir,omitempty"`
 
 	Status      Status       `json:"status"`
 	Steps       []StepRecord `json:"steps"`
@@ -108,6 +111,14 @@ type Run struct {
 	SupersededBy string `json:"supersededBy,omitempty"`
 
 	Error string `json:"error,omitempty"`
+}
+
+// serviceDir returns the frozen working directory, defaulting to the root.
+func (r Run) serviceDir() string {
+	if r.ServiceDir == "" {
+		return "."
+	}
+	return r.ServiceDir
 }
 
 // Lane returns the concurrency key: one active run per service+environment.
@@ -355,6 +366,52 @@ func (s *Store) CreateStepLog(id string, idx int, stepName string) (*os.File, er
 	}
 	return os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }
+
+// ReadStepLogTail returns the last maxBytes of a step's log, plus whether it
+// was clipped.
+//
+// The live fragment re-renders whole rather than appending deltas: htmx bakes a
+// live region's hx-get URL at render time, so an "after=N" baked into it would
+// be replayed unchanged on every SSE tick — the same bytes forever. Re-reading a
+// bounded tail each tick is what the session page does too, and it is correct by
+// construction.
+func (s *Store) ReadStepLogTail(id string, idx int, stepName string, maxBytes int64) ([]byte, bool, error) {
+	p, err := s.StepLogPath(id, idx, stepName)
+	if err != nil {
+		return nil, false, err
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	size := st.Size()
+	start := int64(0)
+	clipped := false
+	if maxBytes > 0 && size > maxBytes {
+		start = size - maxBytes
+		clipped = true
+	}
+	if _, err := f.Seek(start, 0); err != nil {
+		return nil, false, err
+	}
+	buf := make([]byte, size-start)
+	n, err := f.Read(buf)
+	if err != nil && n == 0 {
+		return nil, clipped, nil
+	}
+	return buf[:n], clipped, nil
+}
+
+// LiveLogTailBytes bounds what the live fragment re-sends each tick.
+const LiveLogTailBytes = 64 << 10
 
 // ReadStepLog returns bytes after the given offset plus the new offset.
 //

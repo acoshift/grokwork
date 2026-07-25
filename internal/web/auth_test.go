@@ -437,7 +437,7 @@ func TestAuthOnMemberCannotMutate(t *testing.T) {
 	}
 	form := url.Values{
 		"worktreeIdleTTLDays": {"9"}, "terminalSessionTTLDays": {"0"},
-		"csrf":                {csrf},
+		"csrf": {csrf},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/config/worktrees", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

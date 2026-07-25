@@ -17,6 +17,7 @@ import (
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/deploy"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
@@ -45,6 +46,7 @@ type Server struct {
 	audit       *audit.Logger
 	// Test injectables (nil → production defaults).
 	ghRunner  ghpr.Runner
+	deploys   *deploy.Engine
 	linearNew func(apiKey string) *linear.Client
 	// Fix-with-Grok rate limit (lazy init).
 	startLimit *startRateLimiter
@@ -79,7 +81,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	if err != nil {
 		panic("web: audit: " + err.Error())
 	}
-	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, webUsers: webUsers, audit: auditLog}
+	deployEngine, err := deploy.NewEngine(cfg, cfg.DataDir)
+	if err != nil {
+		panic("web: deploy engine: " + err.Error())
+	}
+	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, webUsers: webUsers, audit: auditLog, deploys: deployEngine}
 	app := hime.New()
 	app.Address(cfg.ListenAddr())
 	// POST forms under hx-boost still use 3xx; non-boosted htmx posts get HX-Redirect.
@@ -232,6 +238,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("start", "layout.tmpl", "start.tmpl")
 	tp.ParseFiles("commits", "layout.tmpl", "commits.tmpl")
 	tp.ParseFiles("deploys", "layout.tmpl", "deploys.tmpl")
+	tp.ParseFiles("deploy_run", "layout.tmpl", "deploy_run.tmpl")
 	tp.ParseFiles("commit_detail", "layout.tmpl", "commit_detail.tmpl", "diff_review.tmpl")
 
 	static, err := fs.Sub(staticFS, "static")
@@ -288,6 +295,13 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /projects/{project}/linear/{identifier}", s.requireAuth(hime.Handler(s.linearDetail)))
 	mux.Handle("GET /commits", s.requireAuth(hime.Handler(s.redirectHome)))
 	mux.Handle("GET /projects/{project}/deploys", s.requireAuth(hime.Handler(s.deploysPage)))
+	mux.Handle("GET /projects/{project}/deploys/{runID}", s.requireAuth(hime.Handler(s.deployRunPage)))
+	mux.Handle("GET /projects/{project}/deploys/{runID}/log", s.requireAuth(hime.Handler(s.deployRunLog)))
+	mux.Handle("GET /projects/{project}/deploys/{runID}/log.txt", s.requireAuth(hime.Handler(s.deployRunLogRaw)))
+	mux.Handle("POST /projects/{project}/deploys",
+		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeploy))))
+	mux.Handle("POST /projects/{project}/deploys/{runID}/cancel",
+		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeployCancel))))
 	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))
 	mux.Handle("POST /projects/{project}/commits/fetch", s.requireMember(hime.Handler(s.postCommitsFetch)))
 	mux.Handle("GET /projects/{project}/commits/{sha}", s.requireAuth(hime.Handler(s.commitDetail)))
@@ -484,7 +498,7 @@ type pageData struct {
 	// PR page (merge failures, etc.) instead of relying on the flash alone.
 	ErrorAlertTitle string
 	Status          bot.StatusSnapshot
-	Threads     []history.Summary
+	Threads         []history.Summary
 	// Sessions list filters (global hub + workspace sessions pages).
 	SessionFilters sessionFilters
 	Thread         history.Thread
@@ -543,11 +557,22 @@ type pageData struct {
 	DeployShortSHA      string
 	DeployEnvs          []string
 	DeployRows          []deployRow
+	DeployEnabled       bool
+	// DeployEnvGated marks environments whose gate is stronger than builder, so
+	// the confirm modal can read as dangerous for those and not for dev.
+	DeployEnvGated map[string]bool
+	DeployRecent   []deploy.Run
 	// Deploy settings tab.
 	DeployCapabilityNames []string
 	DeployFeatureOn       bool
-	PR            ghpr.PRDetail
-	PRNumber      int
+	// Deploy run detail + live log fragment.
+	DeployRun        *deploy.Run
+	DeployLogStep    int
+	DeployLogChunk   string
+	DeployLogClipped bool
+	CanDeploy        bool
+	PR               ghpr.PRDetail
+	PRNumber         int
 	// PR detail shippability strip (nil when the PR snapshot failed to load).
 	PRGates     []prGate
 	PRShipReady bool // every gate green → merge affordance opens expanded
@@ -592,18 +617,18 @@ type pageData struct {
 	// many bind it (>1 means the link is the most recent, not the only one).
 	PRSessionThreadID string
 	PRSessionCount    int
-	SessionEntry  sessionstore.Entry
+	SessionEntry      sessionstore.Entry
 	// AgentLabel names the CLI a session runs on ("Grok" / "Claude"), for the
 	// session page's reply bubbles and run-status line.
-	AgentLabel string
-	DiscordURL string
-	HasSession    bool // live sessionstore entry exists (false after reset)
-	HasWorktree   bool // session worktree still on disk (enables Worktree diff)
-	RunActivity   string
-	RunPhases     string
-	RunElapsed    string
-	RunBusy       bool
-	RunQueue      int
+	AgentLabel  string
+	DiscordURL  string
+	HasSession  bool // live sessionstore entry exists (false after reset)
+	HasWorktree bool // session worktree still on disk (enables Worktree diff)
+	RunActivity string
+	RunPhases   string
+	RunElapsed  string
+	RunBusy     bool
+	RunQueue    int
 	// In-flight turn (session detail streaming, mirrors Discord live message).
 	RunPrompt   string
 	RunLiveText string

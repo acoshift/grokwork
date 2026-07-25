@@ -21,6 +21,7 @@ const (
 	sseEventHistory   = "history"
 	sseEventWorktrees = "worktrees"
 	sseEventConfig    = "config"
+	sseEventDeploy    = "deploy"
 )
 
 // liveRevs are content fingerprints for each live domain.
@@ -32,6 +33,7 @@ type liveRevs struct {
 	History   string `json:"history"`
 	Worktrees string `json:"worktrees"`
 	Config    string `json:"config"`
+	Deploy    string `json:"deploy"`
 }
 
 func hashFingerprint(parts ...string) string {
@@ -67,7 +69,20 @@ func (s *Server) computeLiveRevs() liveRevs {
 		History:   s.fpHistory(),
 		Worktrees: s.fpWorktrees(),
 		Config:    s.fpConfig(),
+		Deploy:    s.fpDeploys(),
 	}
+}
+
+// fpDeploys folds the engine's monotonic revision in with the active count.
+//
+// The rev is load-bearing: a lane claimed, run and released inside one 2s tick
+// produces an identical RAM-derived fingerprint before and after, so a passive
+// viewer's board would never refresh for that deploy.
+func (s *Server) fpDeploys() string {
+	if s.deploys == nil {
+		return ""
+	}
+	return hashFingerprint(fmt.Sprintf("rev=%d active=%d", s.deploys.Rev(), s.deploys.ActiveCount()))
 }
 
 func (s *Server) fpDashboard() string {
@@ -250,6 +265,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 				{sseEventHistory, curr.History, prev.History},
 				{sseEventWorktrees, curr.Worktrees, prev.Worktrees},
 				{sseEventConfig, curr.Config, prev.Config},
+				{sseEventDeploy, curr.Deploy, prev.Deploy},
 			} {
 				if p.rev == p.prev {
 					continue

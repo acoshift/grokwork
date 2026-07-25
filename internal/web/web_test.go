@@ -1599,7 +1599,7 @@ func TestConfigAddsPersist(t *testing.T) {
 	customWT := filepath.Join(t.TempDir(), "custom-worktrees")
 	reqTTL := httptest.NewRequest(http.MethodPost, "/config/worktrees", strings.NewReader(url.Values{
 		"worktreeIdleTTLDays": {"14"}, "terminalSessionTTLDays": {"0"},
-		"worktreeDir":         {customWT},
+		"worktreeDir": {customWT},
 	}.Encode()))
 	reqTTL.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	wTTL := httptest.NewRecorder()

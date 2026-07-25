@@ -687,7 +687,6 @@ func TestSessionClaimRefusedWhenDone(t *testing.T) {
 	assertAuditAction(t, srv, audit.ActionSessionClaim, false)
 }
 
-
 func TestSessionRailHiddenForViewer(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	seedOwned(t, srv, "rail-viewer", "member-1", "Member One")

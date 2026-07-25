@@ -93,10 +93,78 @@ services:
   </table>
   </div>
   <p class="sub">
-    Read-only for now: this is what a deploy would run, resolved from the manifest
-    at <span class="mono">{{.DeployRef}}</span>.
+    Resolved from the manifest at <span class="mono">{{.DeployRef}}</span>.
   </p>
 </div>
+
+{{if .DeployRows}}
+{{/* Trigger forms sit OUTSIDE any live region on purpose. The confirm handler
+     bails on a detached form (it checks isConnected) and the swap-pause hook
+     only covers isEditing(), which an open dialog is not — so a confirmed prod
+     deploy inside a live region can silently do nothing. */}}
+<div class="section" id="deploy-trigger">
+  <h2>Deploy</h2>
+  {{if not .DeployEnabled}}
+  <p class="sub">Deploys are not enabled for this project. Turn them on in
+    <a href="/config/projects/{{.Project}}/deploy">project settings</a>.</p>
+  {{else if not .DeployFeatureOn}}
+  <p class="sub">Triggering is off: deploys need web auth and the
+    <span class="mono">deploy</span> feature flag.</p>
+  {{else}}
+  <div class="rail-group">
+  {{range .DeployRows}}
+    {{$svc := .Service}}
+    {{range .Cells}}
+      {{if .Deployable}}
+      {{$gated := index $.DeployEnvGated .Env}}
+      <form method="post" action="/projects/{{$.Project}}/deploys" class="inline"
+            style="grid-template-columns: 1fr 12rem auto;"
+            data-confirm="Deploy {{$svc}} to {{.Env}} at {{$.DeployShortSHA}}? {{len .Steps}} step{{if ne (len .Steps) 1}}s{{end}} will run against {{.Env}}."
+            data-confirm-title="Deploy {{$svc}} → {{.Env}}"
+            data-confirm-ok="Deploy"
+            {{if $gated}}data-confirm-danger="1"{{end}}>
+        {{template "csrf" $}}
+        <input type="hidden" name="service" value="{{$svc}}">
+        <input type="hidden" name="env" value="{{.Env}}">
+        <input type="hidden" name="owner" value="{{$.ActiveOwner}}">
+        <input type="hidden" name="repo" value="{{$.ActiveRepo}}">
+        <span><span class="mono">{{$svc}}</span> → <span class="mono">{{.Env}}</span></span>
+        <input type="text" name="ref" value="{{$.DeployRef}}" class="mono" aria-label="Ref for {{$svc}} to {{.Env}}">
+        <button type="submit" class="{{if $gated}}btn-danger{{else}}btn-secondary{{end}}">Deploy</button>
+      </form>
+      {{end}}
+    {{end}}
+  {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{if .DeployRecent}}
+<div class="section">
+  <h2>Recent runs</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>When</th><th>Service</th><th>Env</th><th>Commit</th><th>Status</th><th>By</th></tr></thead>
+    <tbody>
+    {{range .DeployRecent}}
+      <tr>
+        <td class="mono"><a href="/projects/{{$.Project}}/deploys/{{.ID}}">{{shortTime .QueuedAt}}</a></td>
+        <td class="mono">{{.Service}}</td>
+        <td class="mono">{{.Env}}</td>
+        <td class="mono">{{.ShortSHA}}</td>
+        <td>
+          <span class="badge {{if eq .Status "succeeded"}}status-done{{else if eq .Status "failed"}}status-error{{else if eq .Status "running"}}live{{else}}status-warn{{end}}">{{.Status}}</span>
+          {{if .SupersededBy}}<span class="muted" title="A later deploy replaced this one">superseded</span>{{end}}
+        </td>
+        <td>{{.ActorName}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
 
 {{range .DeployRows}}
 <div class="section">

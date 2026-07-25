@@ -14,6 +14,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/deploy"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 	"github.com/acoshift/grokwork/internal/web"
@@ -90,10 +91,18 @@ func main() {
 	<-stop
 	fmt.Println("Shutting down…")
 
+	// Order matters. The web server closes first so a trigger cannot land
+	// mid-shutdown; then deploys drain with their own context, because anything
+	// placed after the bot's cancel() below would be handed a dead context and
+	// force-kill every in-flight step.
+	// Web stop is configured for near-instant close (no wait for SSE).
+	_ = webSrv.Shutdown()
+
+	depCtx, depCancel := context.WithTimeout(context.Background(), deploy.StopTimeout)
+	webSrv.Deploys().Stop(depCtx)
+	depCancel()
+
 	stopCtx, cancel := context.WithTimeout(context.Background(), b.ShutdownTimeout())
 	b.Stop(stopCtx)
 	cancel()
-
-	// Web stop is configured for near-instant close (no wait for SSE).
-	_ = webSrv.Shutdown()
 }

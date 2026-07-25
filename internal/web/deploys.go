@@ -117,6 +117,26 @@ func (s *Server) deploysPage(ctx *hime.Context) error {
 
 	d.DeployEnvs = m.Environments
 	d.DeployRows = buildDeployRows(m)
+	d.DeployEnabled = s.cfg.ProjectDeployEnabled(project)
+	d.DeployFeatureOn = s.cfg.FeatureDeploy()
+	d.DeployEnvGated = map[string]bool{}
+	for _, env := range m.Environments {
+		// Gate strength drives the confirm styling: prod reads as dangerous,
+		// dev does not.
+		if envCfg, ok := s.cfg.ProjectDeployEnv(project, env); ok && envCfg.RequireCapability != "" {
+			d.DeployEnvGated[env] = true
+		}
+	}
+	if runs, err := s.deploys.Store().List(); err == nil {
+		for _, r := range runs {
+			if r.Project == project {
+				d.DeployRecent = append(d.DeployRecent, r)
+			}
+			if len(d.DeployRecent) >= 20 {
+				break
+			}
+		}
+	}
 	return s.viewPage(ctx, "deploys", d)
 }
 
