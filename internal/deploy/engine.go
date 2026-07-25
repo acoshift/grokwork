@@ -68,6 +68,9 @@ type Engine struct {
 	root  string // deploys root (checkouts live under it)
 	host  string
 
+	notifier   Notifier
+	publicBase string
+
 	mu    sync.Mutex
 	lanes map[string]*laneState
 	// laneRepo remembers the checkout a lane deploys from, so a promoted run
@@ -631,6 +634,11 @@ func (e *Engine) finishRun(runID string, status Status, msg string) {
 		e.markSuperseded(runID)
 	}
 	e.bump()
+	// One notice per finished run, from the single place a run reaches a
+	// terminal status. A delivery failure never fails the deploy.
+	if r, ok, err := e.store.Get(runID); err == nil && ok {
+		e.notifyFinished(r)
+	}
 }
 
 // skipFrom marks every step from idx onward as skipped.

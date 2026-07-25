@@ -28,6 +28,14 @@
     <button type="submit" class="btn-danger">Cancel run</button>
   </form>
   {{end}}
+  {{if and $run.Status.Terminal .CanDeploy}}
+  <form method="post" action="/projects/{{.Project}}/deploys/{{$run.ID}}/redeploy"
+        data-confirm="Redeploy {{$run.Service}} to {{$run.Env}} at {{$run.ShortSHA}}? The exact steps recorded on this run are replayed."
+        data-confirm-title="Redeploy {{$run.Service}} → {{$run.Env}}" data-confirm-ok="Redeploy">
+    {{template "csrf" $}}
+    <button type="submit">Redeploy this commit</button>
+  </form>
+  {{end}}
   <a class="btn-secondary" href="/projects/{{.Project}}/deploys/{{$run.ID}}/log.txt?step={{.DeployLogStep}}"
      hx-boost="false" target="_blank" rel="noopener">Full log</a>
 </div>

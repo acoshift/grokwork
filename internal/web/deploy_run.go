@@ -87,6 +87,52 @@ func (s *Server) postDeployCancel(ctx *hime.Context) error {
 	return s.deployRedirect(ctx, project, runID, "Cancelling…", err)
 }
 
+// postDeployRedeploy replays a past run's frozen steps at its own commit.
+//
+// This is the whole rollback story for phase 1: runs are SHA-pinned and their
+// steps are frozen, so re-running one is exactly reproducible.
+func (s *Server) postDeployRedeploy(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	runID := strings.TrimSpace(ctx.PathValue("runID"))
+	src, ok, err := s.deploys.Store().Get(runID)
+	if err != nil || !ok || src.Project != project {
+		return ctx.Status(http.StatusNotFound).Error("unknown deploy run")
+	}
+	root, err := s.projectPath(project)
+	if err != nil {
+		return ctx.Status(http.StatusNotFound).Error(err.Error())
+	}
+	owner, repo := "", ""
+	if o, r, found := strings.Cut(src.Repo, "/"); found {
+		owner, repo = o, r
+	}
+	repoPath, slug, err := s.deployRepoPath(ctx, project, root, owner, repo)
+	if err != nil {
+		return s.deployRedirect(ctx, project, runID, "", err)
+	}
+	userID, _ := s.sessionIdentity(ctx)
+	_, name := s.sessionDisplay(ctx)
+	run, err := s.deploys.Trigger(ctx.Context(), deploy.TriggerRequest{
+		Project: project, Repo: slug, RepoPath: repoPath,
+		Service: src.Service, Env: src.Env,
+		Actor:      deploy.Actor{ID: userID, Name: name},
+		Caps:       s.cfg.ResolveCapabilities(project, userID, nil),
+		RedeployOf: runID,
+	})
+	s.auditAction(ctx, "deploy.redeploy", err, map[string]any{
+		"project": project, "service": src.Service, "env": src.Env,
+		"sha": src.SHA, "sourceRunId": runID, "runId": run.ID, "refCheck": run.RefCheck,
+	})
+	if err != nil {
+		return s.deployRedirect(ctx, project, runID, "", err)
+	}
+	return s.deployRedirect(ctx, project, run.ID,
+		fmt.Sprintf("Redeploying %s to %s at %s", src.Service, src.Env, src.ShortSHA), nil)
+}
+
 // deployRepoPath resolves the local checkout and the repo slug for a project.
 func (s *Server) deployRepoPath(ctx *hime.Context, project, root, owner, repo string) (path, slug string, err error) {
 	catalog, cErr := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)

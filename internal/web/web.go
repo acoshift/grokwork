@@ -86,6 +86,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		panic("web: deploy engine: " + err.Error())
 	}
 	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, webUsers: webUsers, audit: auditLog, deploys: deployEngine}
+	s.wireDeployNotifier()
 	app := hime.New()
 	app.Address(cfg.ListenAddr())
 	// POST forms under hx-boost still use 3xx; non-boosted htmx posts get HX-Redirect.
@@ -302,6 +303,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeploy))))
 	mux.Handle("POST /projects/{project}/deploys/{runID}/cancel",
 		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeployCancel))))
+	mux.Handle("POST /projects/{project}/deploys/{runID}/redeploy",
+		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeployRedeploy))))
 	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))
 	mux.Handle("POST /projects/{project}/commits/fetch", s.requireMember(hime.Handler(s.postCommitsFetch)))
 	mux.Handle("GET /projects/{project}/commits/{sha}", s.requireAuth(hime.Handler(s.commitDetail)))

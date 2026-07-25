@@ -730,3 +730,131 @@ func TestSweepOrphanCheckouts(t *testing.T) {
 		t.Fatal("a live run's checkout was swept")
 	}
 }
+
+// TestRedeployReplaysFrozenStepsAtSameSHA: the point of redeploy is exact
+// reproduction, so it must not re-read the manifest — the branch may have moved.
+func TestRedeployReplaysFrozenStepsAtSameSHA(t *testing.T) {
+	skipOnWindows(t)
+	manifest := `version: 1
+environments: [dev]
+services:
+  api:
+    steps:
+      - { name: original, run: "echo original" }
+`
+	eng, _, repo := testEngine(t, manifest)
+	req := TriggerRequest{Project: "app", RepoPath: repo, Service: "api", Env: "dev", Ref: "main", Caps: builderCaps()}
+	first, err := eng.Trigger(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := waitTerminal(t, eng, first.ID)
+	if got.Status != StatusSucceeded {
+		t.Fatalf("first run %q: %s", got.Status, got.Error)
+	}
+
+	// Rewrite the pipeline and move the branch on.
+	if err := os.WriteFile(filepath.Join(repo, ".grokwork", "deploy.yaml"), []byte(`version: 1
+environments: [dev]
+services:
+  api:
+    steps:
+      - { name: rewritten, run: "echo rewritten" }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "-C", repo, "-c", "user.email=t@e.com", "-c", "user.name=t", "commit", "-qam", "rewrite")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("commit: %v\n%s", err, out)
+	}
+
+	redeploy, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: repo, Service: "api", Env: "dev",
+		Caps: builderCaps(), RedeployOf: first.ID,
+	})
+	if err != nil {
+		t.Fatalf("redeploy: %v", err)
+	}
+	if redeploy.SHA != first.SHA {
+		t.Fatalf("redeploy SHA = %s, want the original %s", redeploy.SHA, first.SHA)
+	}
+	if len(redeploy.Steps) != 1 || redeploy.Steps[0].Name != "original" {
+		t.Fatalf("redeploy did not replay the frozen steps: %+v", redeploy.Steps)
+	}
+	if redeploy.RedeployOf != first.ID {
+		t.Fatalf("RedeployOf = %q", redeploy.RedeployOf)
+	}
+	waitTerminal(t, eng, redeploy.ID)
+}
+
+// TestRedeployWaivesRefCheckOnSameLane: re-asserting reachability would block
+// rollback during an incident, and the commit already passed the gate here.
+func TestRedeployWaivesRefCheckOnSameLane(t *testing.T) {
+	skipOnWindows(t)
+	manifest := `version: 1
+environments: [dev]
+services:
+  api:
+    steps:
+      - { name: ok, run: "true" }
+`
+	eng, cfg, repo := testEngine(t, manifest)
+	first, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: repo, Service: "api", Env: "dev", Ref: "main", Caps: builderCaps(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitTerminal(t, eng, first.ID)
+
+	// Tighten the allowlist to something the original ref no longer matches.
+	if err := cfg.SetProjectDeployEnvPolicy("app", "dev", config.DeployEnvPolicy{
+		AllowedRefs: []string{"release/*"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A fresh trigger is refused...
+	if _, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: repo, Service: "api", Env: "dev", Ref: "main", Caps: builderCaps(),
+	}); err == nil {
+		t.Fatal("fresh trigger passed a tightened allowlist")
+	}
+	// ...but the rollback path stays open.
+	redeploy, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: repo, Service: "api", Env: "dev",
+		Caps: builderCaps(), RedeployOf: first.ID,
+	})
+	if err != nil {
+		t.Fatalf("redeploy refused during what would be an incident: %v", err)
+	}
+	if redeploy.RefCheck != "waived_redeploy" {
+		t.Fatalf("RefCheck = %q, want it recorded as waived", redeploy.RefCheck)
+	}
+	waitTerminal(t, eng, redeploy.ID)
+}
+
+// TestRedeployStillChecksCapability: waiving the ref check must not waive the
+// gate that says who may touch the environment.
+func TestRedeployStillChecksCapability(t *testing.T) {
+	skipOnWindows(t)
+	eng, cfg, repo := testEngine(t, twoStepManifest)
+	mustMkdirCommit(t, repo, "svc")
+	first, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: repo, Service: "api", Env: "dev", Ref: "main", Caps: builderCaps(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitTerminal(t, eng, first.ID)
+	if err := cfg.SetProjectDeployEnvPolicy("app", "dev", config.DeployEnvPolicy{
+		RequireCapability: "approve", AllowedRefs: []string{"*"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: repo, Service: "api", Env: "dev",
+		Caps: builderCaps(), RedeployOf: first.ID,
+	}); err == nil {
+		t.Fatal("redeploy bypassed the capability gate")
+	}
+}
