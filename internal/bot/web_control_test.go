@@ -295,4 +295,3 @@ func TestResetUnitAbandonTombstone(t *testing.T) {
 		t.Fatalf("ownership/project not kept: %+v", e)
 	}
 }
-

@@ -97,23 +97,36 @@ func looksLikeGrokwork(pid int) bool {
 	return strings.Contains(low, "grokwork")
 }
 
-// LooksLikeGrokCLI reports whether pid looks like a grok CLI child we started.
-func LooksLikeGrokCLI(pid int, grokBin string) bool {
+// LooksLikeAgentCLI reports whether pid looks like an agent CLI child we started.
+//
+// agent is the recorded agent name and bin its configured binary; either may be
+// empty on journals written before the agent was recorded, which is why the
+// grok name is always accepted. Matching only the agent's own name would leave a
+// live claude child unkilled after a crash, and matching too loosely would kill
+// an unrelated process that inherited the PID.
+func LooksLikeAgentCLI(pid int, agent, bin string) bool {
 	cmd := processCommandLine(pid)
 	if cmd == "" {
 		return false
 	}
 	low := strings.ToLower(cmd)
-	if strings.Contains(low, "grok") {
-		return true
+	for _, name := range []string{"grok", strings.ToLower(strings.TrimSpace(agent))} {
+		if name != "" && strings.Contains(low, name) {
+			return true
+		}
 	}
-	if grokBin != "" {
-		base := strings.ToLower(filepath.Base(grokBin))
+	if bin != "" {
+		base := strings.ToLower(filepath.Base(bin))
 		if base != "" && strings.Contains(low, base) {
 			return true
 		}
 	}
 	return false
+}
+
+// LooksLikeGrokCLI is the grok-only form of LooksLikeAgentCLI.
+func LooksLikeGrokCLI(pid int, grokBin string) bool {
+	return LooksLikeAgentCLI(pid, "", grokBin)
 }
 
 func processCommandLine(pid int) string {

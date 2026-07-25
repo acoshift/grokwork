@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/acoshift/grokwork/internal/grokrun"
 )
 
 const (
@@ -62,18 +64,38 @@ type Config struct {
 	DiscordClientID string `json:"discordClientId,omitempty"`
 	// DiscordClientSecret is the OAuth2 client secret for web login (never log).
 	// Prefer env DISCORD_CLIENT_SECRET / GROK_WORK_DISCORD_CLIENT_SECRET.
-	DiscordClientSecret  string            `json:"discordClientSecret,omitempty"`
-	Projects             ProjectsMap       `json:"projects"`
-	Channels             map[string]string `json:"channels"` // channel ID → project name
-	GrokBin              string            `json:"grokBin"`
-	Yolo                 *bool             `json:"yolo"`
-	Model                string            `json:"model"`
-	MaxTurns             int               `json:"maxTurns"`
-	TimeoutMs            int               `json:"timeoutMs"`
-	ExtraArgs            []string          `json:"extraArgs"`
-	SummarizeThreadTitle *bool             `json:"summarizeThreadTitle"`
-	SummarizeTimeoutMs   int               `json:"summarizeTimeoutMs"`
-	WorktreeIsolation    *bool             `json:"worktreeIsolation"`
+	DiscordClientSecret string            `json:"discordClientSecret,omitempty"`
+	Projects            ProjectsMap       `json:"projects"`
+	Channels            map[string]string `json:"channels"` // channel ID → project name
+	GrokBin             string            `json:"grokBin"`
+	// Agent is the default coding CLI for new sessions: "grok" (default) or
+	// "claude". Sessions stamp the agent they were created with and keep it;
+	// @Grok /agent <name> picks a different one per thread.
+	Agent string `json:"agent,omitempty"`
+	// ClaudeBin is the claude CLI binary. Empty → "claude" on PATH.
+	ClaudeBin string `json:"claudeBin,omitempty"`
+	// SummarizeModel overrides Model for thread-title summarization only. That
+	// call is one turn with tools off and returns a few words, so it is worth
+	// pointing at a cheap model. Like Model it takes a name from either vendor
+	// and the agent is inferred from it. Empty → Model.
+	SummarizeModel string `json:"summarizeModel,omitempty"`
+	// ClaudeExtraArgs are extra claude CLI flags. ExtraArgs below is grok
+	// vocabulary and is never passed to claude.
+	ClaudeExtraArgs []string `json:"claudeExtraArgs,omitempty"`
+	// ClaudeIncludeAnthropicEnv keeps ANTHROPIC_* in the claude child environment.
+	// nil/false strips them like every other host credential. An OAuth/keychain
+	// login needs nothing here; enable it only for API-key or gateway setups.
+	ClaudeIncludeAnthropicEnv *bool `json:"claudeIncludeAnthropicEnv,omitempty"`
+	Yolo                      *bool `json:"yolo"`
+	// Model is the task model for either agent. The agent that owns the name is
+	// inferred (grokrun.AgentForModel); an unrecognized name falls back to Agent.
+	Model                string   `json:"model"`
+	MaxTurns             int      `json:"maxTurns"`
+	TimeoutMs            int      `json:"timeoutMs"`
+	ExtraArgs            []string `json:"extraArgs"`
+	SummarizeThreadTitle *bool    `json:"summarizeThreadTitle"`
+	SummarizeTimeoutMs   int      `json:"summarizeTimeoutMs"`
+	WorktreeIsolation    *bool    `json:"worktreeIsolation"`
 	// WorktreeDir is the root directory for per-thread git worktrees
 	// (<root>/<project>/<unitID>). Empty/omitted → <DataDir>/worktrees.
 	// Absolute, or relative to the config file directory. Applies to newly
@@ -194,16 +216,35 @@ type ChannelItem struct {
 
 // Snapshot is a read-only copy of config fields used by the web UI.
 type Snapshot struct {
-	Projects          []ProjectItem
-	Channels          []ChannelItem
-	ProjectNames      []string
-	HTTPListen        string
-	GrokBin           string
-	Model             string
-	MaxTurns          int // effective (default 40)
-	TimeoutMs         int // effective (default 1800000 = 30m)
-	Yolo              bool
-	WorktreeIsolation bool
+	Projects     []ProjectItem
+	Channels     []ChannelItem
+	ProjectNames []string
+	HTTPListen   string
+	GrokBin      string
+	Model        string
+	// Agent is the default coding CLI for new sessions ("grok" or "claude").
+	Agent     string
+	ClaudeBin string
+	// SummarizeModel is the raw configured value (empty = "use Model"), not the
+	// effective one, so the config form shows a placeholder rather than a
+	// fabricated value.
+	SummarizeModel string
+	// ModelAgent / SummarizeModelAgent are the agents inferred from those model
+	// names, and *Known is false when the name identifies neither. The config page
+	// renders these so the derived agent is visible rather than implicit.
+	ModelAgent          string
+	ModelAgentKnown     bool
+	SummarizeAgent      string
+	SummarizeAgentKnown bool
+	// ModelGroups / SummarizeModelGroups are the dropdown options for each field,
+	// grouped by agent and including the configured value when it is not curated.
+	ModelGroups               []ModelGroup
+	SummarizeModelGroups      []ModelGroup
+	ClaudeIncludeAnthropicEnv bool
+	MaxTurns                  int // effective (default 40)
+	TimeoutMs                 int // effective (default 1800000 = 30m)
+	Yolo                      bool
+	WorktreeIsolation         bool
 	// WorktreeDir is the configured override (empty = default under DataDir).
 	WorktreeDir string
 	// WorktreesRoot is the effective absolute root for new worktrees.
@@ -505,6 +546,15 @@ func Load() (*Config, error) {
 	if c.GrokBin == "" {
 		c.GrokBin = "grok"
 	}
+	if c.ClaudeBin == "" {
+		c.ClaudeBin = grokrun.AgentClaude.DefaultBin()
+	}
+	// Reject an unknown agent rather than silently running the default: a typo
+	// would otherwise route every session to the wrong CLI.
+	if _, ok := grokrun.ParseAgent(c.Agent); !ok {
+		return nil, fmt.Errorf("agent %q is not a known coding CLI (want %q or %q)",
+			c.Agent, grokrun.AgentGrok, grokrun.AgentClaude)
+	}
 	if c.MaxTurns <= 0 {
 		c.MaxTurns = DefaultMaxTurns
 	}
@@ -543,79 +593,89 @@ func (c *Config) saveLocked() error {
 	// Re-read existing file so unknown/extra fields from other tools are not wiped
 	// for keys we don't own; we rewrite the full known schema.
 	out := struct {
-		DiscordToken           string                    `json:"discordToken"`
-		DiscordClientID        string                    `json:"discordClientId,omitempty"`
-		DiscordClientSecret    string                    `json:"discordClientSecret,omitempty"`
-		Projects               ProjectsMap               `json:"projects"`
-		Channels               map[string]string         `json:"channels"`
-		GrokBin                string                    `json:"grokBin"`
-		Yolo                   *bool                     `json:"yolo"`
-		Model                  string                    `json:"model"`
-		MaxTurns               int                       `json:"maxTurns"`
-		TimeoutMs              int                       `json:"timeoutMs"`
-		ExtraArgs              []string                  `json:"extraArgs"`
-		SummarizeThreadTitle   *bool                     `json:"summarizeThreadTitle"`
-		SummarizeTimeoutMs     int                       `json:"summarizeTimeoutMs"`
-		WorktreeIsolation      *bool                     `json:"worktreeIsolation"`
-		WorktreeDir            string                    `json:"worktreeDir,omitempty"`
-		WorktreeIdleTTLDays    *int                      `json:"worktreeIdleTTLDays,omitempty"`
-		TerminalSessionTTLDays *int                      `json:"terminalSessionTTLDays,omitempty"`
-		HTTPListen             string                    `json:"httpListen,omitempty"`
-		WebPublicBaseURL       string                    `json:"webPublicBaseURL,omitempty"`
-		DiscordGuildID         string                    `json:"discordGuildId,omitempty"`
-		WebMergeMethod         string                    `json:"webMergeMethod,omitempty"`
-		DiscordPRLink          string                    `json:"discordPRLink,omitempty"`
-		WebAuth                *WebAuthConfig            `json:"webAuth,omitempty"`
-		RiskyPathGlobs         []string                  `json:"riskyPathGlobs,omitempty"`
-		AutoFixCI              *bool                     `json:"autoFixCI,omitempty"`
-		AutoFixCIMax           int                       `json:"autoFixCIMax,omitempty"`
-		BoardStaleDays         *int                      `json:"boardStaleDays,omitempty"`
-		BoardDigestChannel     string                    `json:"boardDigestChannel,omitempty"`
-		ResumeActiveRuns       *bool                     `json:"resumeActiveRuns,omitempty"`
-		ShutdownTimeoutMs      int                       `json:"shutdownTimeoutMs,omitempty"`
-		MaxConcurrentRuns      *int                      `json:"maxConcurrentRuns,omitempty"`
-		MaxConcurrentRunsUser  *int                      `json:"maxConcurrentRunsUser,omitempty"`
-		GrokEnvDenylist        []string                  `json:"grokEnvDenylist,omitempty"`
-		DiscordUserGitHub      map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
-		NotifyOnDone           string                    `json:"notifyOnDone,omitempty"`
-		NotifyOnDoneLongMs     int                       `json:"notifyOnDoneLongMs,omitempty"`
+		DiscordToken              string                    `json:"discordToken"`
+		DiscordClientID           string                    `json:"discordClientId,omitempty"`
+		DiscordClientSecret       string                    `json:"discordClientSecret,omitempty"`
+		Projects                  ProjectsMap               `json:"projects"`
+		Channels                  map[string]string         `json:"channels"`
+		GrokBin                   string                    `json:"grokBin"`
+		Agent                     string                    `json:"agent,omitempty"`
+		ClaudeBin                 string                    `json:"claudeBin,omitempty"`
+		SummarizeModel            string                    `json:"summarizeModel,omitempty"`
+		ClaudeExtraArgs           []string                  `json:"claudeExtraArgs,omitempty"`
+		ClaudeIncludeAnthropicEnv *bool                     `json:"claudeIncludeAnthropicEnv,omitempty"`
+		Yolo                      *bool                     `json:"yolo"`
+		Model                     string                    `json:"model"`
+		MaxTurns                  int                       `json:"maxTurns"`
+		TimeoutMs                 int                       `json:"timeoutMs"`
+		ExtraArgs                 []string                  `json:"extraArgs"`
+		SummarizeThreadTitle      *bool                     `json:"summarizeThreadTitle"`
+		SummarizeTimeoutMs        int                       `json:"summarizeTimeoutMs"`
+		WorktreeIsolation         *bool                     `json:"worktreeIsolation"`
+		WorktreeDir               string                    `json:"worktreeDir,omitempty"`
+		WorktreeIdleTTLDays       *int                      `json:"worktreeIdleTTLDays,omitempty"`
+		TerminalSessionTTLDays    *int                      `json:"terminalSessionTTLDays,omitempty"`
+		HTTPListen                string                    `json:"httpListen,omitempty"`
+		WebPublicBaseURL          string                    `json:"webPublicBaseURL,omitempty"`
+		DiscordGuildID            string                    `json:"discordGuildId,omitempty"`
+		WebMergeMethod            string                    `json:"webMergeMethod,omitempty"`
+		DiscordPRLink             string                    `json:"discordPRLink,omitempty"`
+		WebAuth                   *WebAuthConfig            `json:"webAuth,omitempty"`
+		RiskyPathGlobs            []string                  `json:"riskyPathGlobs,omitempty"`
+		AutoFixCI                 *bool                     `json:"autoFixCI,omitempty"`
+		AutoFixCIMax              int                       `json:"autoFixCIMax,omitempty"`
+		BoardStaleDays            *int                      `json:"boardStaleDays,omitempty"`
+		BoardDigestChannel        string                    `json:"boardDigestChannel,omitempty"`
+		ResumeActiveRuns          *bool                     `json:"resumeActiveRuns,omitempty"`
+		ShutdownTimeoutMs         int                       `json:"shutdownTimeoutMs,omitempty"`
+		MaxConcurrentRuns         *int                      `json:"maxConcurrentRuns,omitempty"`
+		MaxConcurrentRunsUser     *int                      `json:"maxConcurrentRunsUser,omitempty"`
+		GrokEnvDenylist           []string                  `json:"grokEnvDenylist,omitempty"`
+		DiscordUserGitHub         map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
+		NotifyOnDone              string                    `json:"notifyOnDone,omitempty"`
+		NotifyOnDoneLongMs        int                       `json:"notifyOnDoneLongMs,omitempty"`
 	}{
-		DiscordToken:           c.DiscordToken,
-		DiscordClientID:        c.DiscordClientID,
-		DiscordClientSecret:    c.DiscordClientSecret,
-		Projects:               cloneProjectsMap(c.Projects),
-		Channels:               cloneStringMap(c.Channels),
-		GrokBin:                c.GrokBin,
-		Yolo:                   c.Yolo,
-		Model:                  c.Model,
-		MaxTurns:               c.MaxTurns,
-		TimeoutMs:              c.TimeoutMs,
-		ExtraArgs:              slices.Clone(c.ExtraArgs),
-		SummarizeThreadTitle:   c.SummarizeThreadTitle,
-		SummarizeTimeoutMs:     c.SummarizeTimeoutMs,
-		WorktreeIsolation:      c.WorktreeIsolation,
-		WorktreeDir:            strings.TrimSpace(c.WorktreeDir),
-		WorktreeIdleTTLDays:    cloneIntPtr(c.WorktreeIdleTTLDays),
-		TerminalSessionTTLDays: cloneIntPtr(c.TerminalSessionTTLDays),
-		HTTPListen:             c.HTTPListen,
-		WebPublicBaseURL:       c.WebPublicBaseURL,
-		DiscordGuildID:         c.DiscordGuildID,
-		WebMergeMethod:         c.WebMergeMethod,
-		DiscordPRLink:          c.DiscordPRLink,
-		WebAuth:                cloneWebAuth(c.WebAuth),
-		RiskyPathGlobs:         slices.Clone(c.RiskyPathGlobs),
-		AutoFixCI:              c.AutoFixCI,
-		AutoFixCIMax:           c.AutoFixCIMax,
-		BoardStaleDays:         cloneIntPtr(c.BoardStaleDays),
-		BoardDigestChannel:     c.BoardDigestChannel,
-		ResumeActiveRuns:       cloneBoolPtr(c.ResumeActiveRuns),
-		ShutdownTimeoutMs:      c.ShutdownTimeoutMs,
-		MaxConcurrentRuns:      cloneIntPtr(c.MaxConcurrentRuns),
-		MaxConcurrentRunsUser:  cloneIntPtr(c.MaxConcurrentRunsUser),
-		GrokEnvDenylist:        slices.Clone(c.GrokEnvDenylist),
-		DiscordUserGitHub:      cloneGitHubIdentityMap(c.DiscordUserGitHub),
-		NotifyOnDone:           c.NotifyOnDone,
-		NotifyOnDoneLongMs:     c.NotifyOnDoneLongMs,
+		DiscordToken:              c.DiscordToken,
+		DiscordClientID:           c.DiscordClientID,
+		DiscordClientSecret:       c.DiscordClientSecret,
+		Projects:                  cloneProjectsMap(c.Projects),
+		Channels:                  cloneStringMap(c.Channels),
+		GrokBin:                   c.GrokBin,
+		Agent:                     c.Agent,
+		ClaudeBin:                 c.ClaudeBin,
+		SummarizeModel:            c.SummarizeModel,
+		ClaudeExtraArgs:           slices.Clone(c.ClaudeExtraArgs),
+		ClaudeIncludeAnthropicEnv: cloneBoolPtr(c.ClaudeIncludeAnthropicEnv),
+		Yolo:                      c.Yolo,
+		Model:                     c.Model,
+		MaxTurns:                  c.MaxTurns,
+		TimeoutMs:                 c.TimeoutMs,
+		ExtraArgs:                 slices.Clone(c.ExtraArgs),
+		SummarizeThreadTitle:      c.SummarizeThreadTitle,
+		SummarizeTimeoutMs:        c.SummarizeTimeoutMs,
+		WorktreeIsolation:         c.WorktreeIsolation,
+		WorktreeDir:               strings.TrimSpace(c.WorktreeDir),
+		WorktreeIdleTTLDays:       cloneIntPtr(c.WorktreeIdleTTLDays),
+		TerminalSessionTTLDays:    cloneIntPtr(c.TerminalSessionTTLDays),
+		HTTPListen:                c.HTTPListen,
+		WebPublicBaseURL:          c.WebPublicBaseURL,
+		DiscordGuildID:            c.DiscordGuildID,
+		WebMergeMethod:            c.WebMergeMethod,
+		DiscordPRLink:             c.DiscordPRLink,
+		WebAuth:                   cloneWebAuth(c.WebAuth),
+		RiskyPathGlobs:            slices.Clone(c.RiskyPathGlobs),
+		AutoFixCI:                 c.AutoFixCI,
+		AutoFixCIMax:              c.AutoFixCIMax,
+		BoardStaleDays:            cloneIntPtr(c.BoardStaleDays),
+		BoardDigestChannel:        c.BoardDigestChannel,
+		ResumeActiveRuns:          cloneBoolPtr(c.ResumeActiveRuns),
+		ShutdownTimeoutMs:         c.ShutdownTimeoutMs,
+		MaxConcurrentRuns:         cloneIntPtr(c.MaxConcurrentRuns),
+		MaxConcurrentRunsUser:     cloneIntPtr(c.MaxConcurrentRunsUser),
+		GrokEnvDenylist:           slices.Clone(c.GrokEnvDenylist),
+		DiscordUserGitHub:         cloneGitHubIdentityMap(c.DiscordUserGitHub),
+		NotifyOnDone:              c.NotifyOnDone,
+		NotifyOnDoneLongMs:        c.NotifyOnDoneLongMs,
 	}
 	raw, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
@@ -1129,31 +1189,54 @@ func (c *Config) Snapshot() Snapshot {
 	if timeoutMs <= 0 {
 		timeoutMs = DefaultTimeoutMs
 	}
+	agent := c.defaultAgentLocked()
+	modelAgent, modelAgentKnown := grokrun.AgentForModel(c.Model)
+	if !modelAgentKnown {
+		modelAgent = agent
+	}
+	summarizeAgent, summarizeAgentKnown := grokrun.AgentForModel(c.SummarizeModel)
+	if !summarizeAgentKnown {
+		summarizeAgent = modelAgent
+	}
+	claudeBin := strings.TrimSpace(c.ClaudeBin)
+	if claudeBin == "" {
+		claudeBin = grokrun.AgentClaude.DefaultBin()
+	}
 	snap := Snapshot{
-		Projects:               projects,
-		Channels:               channels,
-		ProjectNames:           names,
-		GitHubIdentities:       githubIdentities,
-		HTTPListen:             c.HTTPListen,
-		GrokBin:                c.GrokBin,
-		Model:                  c.Model,
-		MaxTurns:               maxTurns,
-		TimeoutMs:              timeoutMs,
-		Yolo:                   c.YoloEnabled(),
-		WorktreeIsolation:      c.WorktreeIsolationEnabled(),
-		WorktreeDir:            strings.TrimSpace(c.WorktreeDir),
-		WorktreesRoot:          c.worktreesRootLocked(),
-		WorktreeIdleTTLDays:    idleDays,
-		TerminalSessionTTLDays: termDays,
-		AutoFixCI:              c.AutoFixCI != nil && *c.AutoFixCI,
-		AutoFixCIMax:           autoFixMax,
-		RiskyPathGlobsText:     riskyText,
-		RiskyPathUseDefault:    riskyDefault,
-		BoardStaleDays:         boardStale,
-		BoardDigestChannel:     strings.TrimSpace(c.BoardDigestChannel),
-		NotifyOnDone:           notifyOnDoneEffectiveLocked(c.NotifyOnDone),
-		NotifyOnDoneLongMs:     notifyOnDoneLongMsEffectiveLocked(c.NotifyOnDoneLongMs),
-		ResumeActiveRuns:       c.ResumeActiveRuns == nil || *c.ResumeActiveRuns,
+		Projects:                  projects,
+		Channels:                  channels,
+		ProjectNames:              names,
+		GitHubIdentities:          githubIdentities,
+		HTTPListen:                c.HTTPListen,
+		GrokBin:                   c.GrokBin,
+		Model:                     c.Model,
+		Agent:                     agent.String(),
+		ClaudeBin:                 claudeBin,
+		SummarizeModel:            strings.TrimSpace(c.SummarizeModel),
+		ModelAgent:                modelAgent.String(),
+		ModelAgentKnown:           modelAgentKnown,
+		SummarizeAgent:            summarizeAgent.String(),
+		SummarizeAgentKnown:       summarizeAgentKnown,
+		ModelGroups:               ModelGroups(c.Model),
+		SummarizeModelGroups:      ModelGroups(c.SummarizeModel),
+		ClaudeIncludeAnthropicEnv: c.ClaudeIncludeAnthropicEnv != nil && *c.ClaudeIncludeAnthropicEnv,
+		MaxTurns:                  maxTurns,
+		TimeoutMs:                 timeoutMs,
+		Yolo:                      c.YoloEnabled(),
+		WorktreeIsolation:         c.WorktreeIsolationEnabled(),
+		WorktreeDir:               strings.TrimSpace(c.WorktreeDir),
+		WorktreesRoot:             c.worktreesRootLocked(),
+		WorktreeIdleTTLDays:       idleDays,
+		TerminalSessionTTLDays:    termDays,
+		AutoFixCI:                 c.AutoFixCI != nil && *c.AutoFixCI,
+		AutoFixCIMax:              autoFixMax,
+		RiskyPathGlobsText:        riskyText,
+		RiskyPathUseDefault:       riskyDefault,
+		BoardStaleDays:            boardStale,
+		BoardDigestChannel:        strings.TrimSpace(c.BoardDigestChannel),
+		NotifyOnDone:              notifyOnDoneEffectiveLocked(c.NotifyOnDone),
+		NotifyOnDoneLongMs:        notifyOnDoneLongMsEffectiveLocked(c.NotifyOnDoneLongMs),
+		ResumeActiveRuns:          c.ResumeActiveRuns == nil || *c.ResumeActiveRuns,
 		ShutdownTimeoutMs: func() int {
 			if c.ShutdownTimeoutMs <= 0 {
 				return DefaultShutdownTimeoutMs

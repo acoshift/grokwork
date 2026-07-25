@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -63,11 +64,29 @@ type PolicyInput struct {
 	ForceInvestigate bool
 	// SafeTeamMode on project (affects nothing here; caps already resolved).
 	InvestigateTools string // project override; empty → default read allowlist
+	// Agent is the coding CLI this run will use. Tool names are agent-specific
+	// vocabulary, so the investigate allowlist depends on it.
+	Agent grokrun.Agent
 }
 
-// DefaultInvestigateTools is the best-effort Wave 1 tools allowlist (K21).
+// DefaultInvestigateTools is the best-effort Wave 1 tools allowlist (K21) for grok.
 // Host probe may refine later; fail-closed tools-off is "" pointer rewrite in grokrun.
 const DefaultInvestigateTools = "read_file,grep"
+
+// investigateTools picks the read-only allowlist for an investigate run.
+//
+// The project override is written in one agent's tool vocabulary. Handing grok
+// names to claude (or the reverse) would not fail loudly — it would resolve to
+// an allowlist of zero real tools, leaving the model unable to read the repo and
+// producing a confidently empty investigation. So an override only applies to
+// the agent whose names it is written in; other agents get their own default.
+func investigateTools(agent grokrun.Agent, override string) string {
+	override = strings.TrimSpace(override)
+	if override != "" && agent.Resolve() == grokrun.AgentGrok {
+		return override
+	}
+	return agent.DefaultInvestigateTools()
+}
 
 // BuildRunPolicy is a pure function: mode × caps × ship → gates (testable without Discord).
 func BuildRunPolicy(in PolicyInput) RunPolicy {
@@ -135,11 +154,7 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 				rk = RunKindInvestigate
 			}
 		}
-		tools := in.InvestigateTools
-		if tools == "" {
-			tools = DefaultInvestigateTools
-		}
-		toolsCopy := tools
+		toolsCopy := investigateTools(in.Agent, in.InvestigateTools)
 		pol := RunPolicy{
 			Mode:                 mode,
 			Phase:                phase,
@@ -181,6 +196,7 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 			Caps:             in.Caps,
 			InvestigateTools: in.InvestigateTools,
 			ShipMode:         in.ShipMode,
+			Agent:            in.Agent,
 		})
 	}
 

@@ -370,10 +370,10 @@ func TestPruneTerminalSessions(t *testing.T) {
 			UpdatedAt: oldAt,
 		},
 		"old-abandoned": {
-			Project:   "app",
-			Label:     sessionstore.LabelAbandoned,
+			Project:     "app",
+			Label:       sessionstore.LabelAbandoned,
 			LabelManual: true,
-			UpdatedAt: oldAt,
+			UpdatedAt:   oldAt,
 		},
 		"fresh-done": {
 			Project:   "app",

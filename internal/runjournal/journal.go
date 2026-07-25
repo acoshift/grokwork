@@ -78,7 +78,11 @@ type Journal struct {
 	WorktreeCwd   string       `json:"worktreeCwd,omitempty"`
 	Branch        string       `json:"branch,omitempty"`
 	GrokPID       int          `json:"grokPid,omitempty"`
-	Host          string       `json:"host,omitempty"`
+	// Agent is the coding CLI that owns GrokPID and SessionID ("grok", "claude").
+	// Crash recovery needs it to tell a live agent child apart from a recycled
+	// PID, and to know which CLI can resume SessionID. Empty means grok.
+	Agent string `json:"agent,omitempty"`
+	Host  string `json:"host,omitempty"`
 	HeartbeatAt   string       `json:"heartbeatAt,omitempty"`
 	Generation    uint64       `json:"generation"`
 	BlockedReason string       `json:"blockedReason,omitempty"`

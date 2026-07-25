@@ -22,16 +22,16 @@ func testFixBot(t *testing.T) (*Bot, string) {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{
-		GrokBin:        writeFakeGrok(t),
-		Projects:       config.PathProjects(map[string]string{"app": proj}),
-		Channels:       map[string]string{"ch-app": "app"},
-		DiscordGuildID: "guild-1",
-		DataDir:        filepath.Join(dir, "data"),
-		ConfigPath:     filepath.Join(dir, "config.json"),
+		GrokBin:           writeFakeGrok(t),
+		Projects:          config.PathProjects(map[string]string{"app": proj}),
+		Channels:          map[string]string{"ch-app": "app"},
+		DiscordGuildID:    "guild-1",
+		DataDir:           filepath.Join(dir, "data"),
+		ConfigPath:        filepath.Join(dir, "config.json"),
 		WorktreeIsolation: boolPtr(false),
-		MaxTurns:       5,
-		TimeoutMs:      5000,
-		Yolo:           boolPtr(true),
+		MaxTurns:          5,
+		TimeoutMs:         5000,
+		Yolo:              boolPtr(true),
 	}
 	// preferred channel = mapped
 	pc := cfg.Projects["app"]
@@ -302,7 +302,7 @@ func TestStartFixLinearCreate(t *testing.T) {
 	res, err := b.StartFix(FixStartOpts{
 		Kind: FixKindLinear, Project: "app", Identifier: "ENG-55",
 		Title: "Lin bug", Body: "steps", State: "Todo",
-		URL: "https://linear.app/x/issue/ENG-55",
+		URL:   "https://linear.app/x/issue/ENG-55",
 		Actor: Actor{ID: "u", DisplayName: "U"},
 	})
 	if err != nil {

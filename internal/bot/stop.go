@@ -53,7 +53,7 @@ func (b *Bot) Stop(ctx context.Context) {
 				tid := j.ThreadID
 				_ = b.runs.Update(tid, func(jj *runjournal.Journal) error {
 					if jj.GrokPID != 0 {
-						if grokrun.ProcessAlive(jj.GrokPID) && runjournal.LooksLikeGrokCLI(jj.GrokPID, b.cfg.GrokBin) {
+						if grokrun.ProcessAlive(jj.GrokPID) && b.looksLikeAgentChild(jj.GrokPID, jj.Agent) {
 							grokrun.KillProcessGroup(jj.GrokPID)
 						}
 						jj.GrokPID = 0

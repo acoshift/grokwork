@@ -166,6 +166,7 @@ func TestPagesRender(t *testing.T) {
 		{"/config", `href="/config/channels"`},
 		{"/config", `href="/config/github-identities"`},
 		{"/config", `href="/config/run"`},
+		{"/config", `href="/config/agent"`},
 		{"/config", `href="/config/risky"`},
 		{"/config", `href="/config/board"`},
 		{"/config", `href="/config/ci"`},
@@ -189,6 +190,20 @@ func TestPagesRender(t *testing.T) {
 		{"/config/github-identities", `id="github-identity-form"`},
 		{"/config/run", `id="page-config-run"`},
 		{"/config/run", `name="maxTurns"`},
+		{"/config/agent", `id="page-config-agent"`},
+		{"/config/agent", `name="agent"`},
+		{"/config/agent", `name="claudeBin"`},
+		{"/config/agent", `name="grokBin"`},
+		{"/config/agent", `name="model"`},
+		{"/config/agent", `name="summarizeModel"`},
+		{"/config/agent", `name="claudeIncludeAnthropicEnv"`},
+		// Models are picked from a grouped dropdown, not typed free-form; the
+		// optgroup label is how the inferred agent shows at the point of choice.
+		{"/config/agent", `<optgroup label="Grok">`},
+		{"/config/agent", `<optgroup label="Claude">`},
+		{"/config/agent", `<option value="sonnet"`},
+		{"/config/agent", `<option value="grok-4.5"`},
+		{"/config/agent", `<option value="claude-opus-5"`},
 		{"/config/worktrees", `id="page-config-worktrees"`},
 		{"/config/worktrees", `name="worktreeIdleTTLDays"`},
 		{"/config/worktrees", `name="terminalSessionTTLDays"`},
@@ -1424,6 +1439,54 @@ func TestConfigAddsPersist(t *testing.T) {
 		t.Fatalf("run limits turns=%d timeout=%d", cfg.MaxTurnsValue(), cfg.TimeoutMsValue())
 	}
 
+	// Settings: default coding agent
+	reqAgent := httptest.NewRequest(http.MethodPost, "/config/agent", strings.NewReader(url.Values{
+		"agent":                     {"grok"},
+		"claudeBin":                 {"/opt/claude"},
+		"model":                     {"sonnet"},
+		"summarizeModel":            {"haiku"},
+		"claudeIncludeAnthropicEnv": {"1"},
+	}.Encode()))
+	reqAgent.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wAgent := httptest.NewRecorder()
+	h.ServeHTTP(wAgent, reqAgent)
+	if wAgent.Code != http.StatusSeeOther && wAgent.Code != http.StatusFound {
+		t.Fatalf("agent settings status=%d body=%s", wAgent.Code, wAgent.Body.String())
+	}
+	// The model name selects the CLI: "sonnet" routes to claude even though the
+	// fallback agent is grok.
+	agentCLI := cfg.ResolveAgentCLI("")
+	if agentCLI.Agent != grokrun.AgentClaude || agentCLI.Bin != "/opt/claude" || agentCLI.Model != "sonnet" {
+		t.Fatalf("agent settings not applied: %+v", agentCLI)
+	}
+	if !cfg.AgentIncludesAnthropicEnv(grokrun.AgentClaude) {
+		t.Fatal("ANTHROPIC_* opt-in not persisted")
+	}
+	// Thread titles run on the cheap model; tasks keep the full one.
+	if got := cfg.ResolveSummarizeCLI("").Model; got != "haiku" {
+		t.Fatalf("title model=%q", got)
+	}
+	// A model that is not one of the offered options must not be persisted — the
+	// dropdown is the whole allowed set, so a hand-crafted POST cannot widen it.
+	reqBadModel := httptest.NewRequest(http.MethodPost, "/config/agent", strings.NewReader(url.Values{
+		"agent": {"grok"}, "model": {"gpt-5"},
+	}.Encode()))
+	reqBadModel.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), reqBadModel)
+	if got := cfg.ResolveAgentCLI("").Model; got != "sonnet" {
+		t.Fatalf("rejected model overwrote config: %q", got)
+	}
+	// An unknown agent is rejected instead of silently falling back.
+	reqBadAgent := httptest.NewRequest(http.MethodPost, "/config/agent", strings.NewReader(url.Values{
+		"agent": {"gpt"},
+	}.Encode()))
+	reqBadAgent.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wBadAgent := httptest.NewRecorder()
+	h.ServeHTTP(wBadAgent, reqBadAgent)
+	if got := cfg.ResolveAgentCLI("").Agent; got != grokrun.AgentClaude {
+		t.Fatalf("rejected agent overwrote config: %q", got)
+	}
+
 	// Settings: worktree dir + idle TTL
 	customWT := filepath.Join(t.TempDir(), "custom-worktrees")
 	reqTTL := httptest.NewRequest(http.MethodPost, "/config/worktrees", strings.NewReader(url.Values{
@@ -1814,7 +1877,7 @@ func TestGenerateProjectVerifyDraft(t *testing.T) {
 	}
 	called := false
 	var sawActivity bool
-	srv.suggestVerify = func(ctx context.Context, grokBin, model, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error) {
+	srv.suggestVerify = func(ctx context.Context, cli grokrun.CLI, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error) {
 		called = true
 		if cwd == "" {
 			t.Fatal("empty cwd")
@@ -1909,7 +1972,7 @@ func TestGenerateProjectVerifyDraft(t *testing.T) {
 
 func TestGenerateProjectVerifyError(t *testing.T) {
 	srv, _, _ := testServer(t)
-	srv.suggestVerify = func(ctx context.Context, grokBin, model, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error) {
+	srv.suggestVerify = func(ctx context.Context, cli grokrun.CLI, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error) {
 		return "", context.DeadlineExceeded
 	}
 	h := srv.Handler()

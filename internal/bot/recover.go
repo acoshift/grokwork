@@ -52,7 +52,7 @@ func (b *Bot) purgeLeftoverJournals(ctx context.Context) error {
 			return err
 		}
 		if j.GrokPID != 0 {
-			if grokrun.ProcessAlive(j.GrokPID) && runjournal.LooksLikeGrokCLI(j.GrokPID, b.cfg.GrokBin) {
+			if grokrun.ProcessAlive(j.GrokPID) && b.looksLikeAgentChild(j.GrokPID, j.Agent) {
 				grokrun.KillProcessGroup(j.GrokPID)
 			}
 		}
@@ -95,8 +95,8 @@ func (b *Bot) recoverOne(ctx context.Context, j runjournal.Journal) {
 	if needsKill {
 		if j.GrokPID != 0 {
 			if grokrun.ProcessAlive(j.GrokPID) {
-				if !runjournal.LooksLikeGrokCLI(j.GrokPID, b.cfg.GrokBin) {
-					log.Printf("resume: pid %d not grok CLI; clearing dead/recycled PID thread=%s", j.GrokPID, threadID)
+				if !b.looksLikeAgentChild(j.GrokPID, j.Agent) {
+					log.Printf("resume: pid %d not an agent CLI; clearing dead/recycled PID thread=%s", j.GrokPID, threadID)
 					j.GrokPID = 0
 				} else {
 					grokrun.KillProcessGroup(j.GrokPID)
@@ -344,16 +344,21 @@ func (b *Bot) notifyResumeFail(threadID, text string) {
 // prebindSessionID ensures a durable session id in the journal before grokrun.Run.
 // Does NOT write SessionID into sessions.json (post-run save stays as today).
 // Returns sessionID and forceNew (-s vs --resume).
-func (b *Bot) prebindSessionID(threadID, project string) (sessionID string, forceNew bool) {
+//
+// agent is the CLI about to run. A session id belongs to the CLI that issued it,
+// so ids recorded under a different agent are discarded rather than resumed.
+func (b *Bot) prebindSessionID(threadID, project string, agent grokrun.Agent) (sessionID string, forceNew bool) {
 	_ = project
 	var journalSID string
 	if b.runs != nil && b.resumeEnabled() {
 		if j, ok, err := b.runs.Load(threadID); err == nil && ok {
-			journalSID = strings.TrimSpace(j.SessionID)
+			if sameAgent(j.Agent, agent) {
+				journalSID = strings.TrimSpace(j.SessionID)
+			}
 		}
 	}
 	var sessionsSID string
-	if e, ok := b.sessions.Get(threadID); ok {
+	if e, ok := b.sessions.Get(threadID); ok && sameAgent(e.Agent, agent) {
 		sessionsSID = strings.TrimSpace(e.SessionID)
 	}
 

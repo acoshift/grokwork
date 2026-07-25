@@ -9,8 +9,16 @@ import (
 	"time"
 )
 
-// Default tools for inspect-only verify command suggestion.
-const suggestVerifyTools = "read_file,list_dir,grep"
+// suggestVerifyTools is the inspect-only allowlist for verify suggestion.
+// Tool names are agent-specific vocabulary and do not carry across CLIs.
+func suggestVerifyTools(a Agent) string {
+	switch a.Resolve() {
+	case AgentClaude:
+		return "Read,Glob,Grep"
+	default:
+		return "read_file,list_dir,grep"
+	}
+}
 
 // SuggestStreamHooks receive live output while SuggestVerifyCommands runs.
 // All fields are optional. Callbacks may run on a worker goroutine.
@@ -24,7 +32,7 @@ type SuggestStreamHooks struct {
 // harness lines (name | command [| timeoutMs]). Does not persist config.
 // Returns cleaned multi-line text ready for config.ParseVerifyCommandsText.
 // When hooks is non-nil, streaming-json is enabled so the UI can show progress.
-func SuggestVerifyCommands(ctx context.Context, grokBin, model, cwd string, timeout time.Duration, hooks *SuggestStreamHooks) (string, error) {
+func SuggestVerifyCommands(ctx context.Context, cli CLI, cwd string, timeout time.Duration, hooks *SuggestStreamHooks) (string, error) {
 	cwd = strings.TrimSpace(cwd)
 	if cwd == "" {
 		return "", fmt.Errorf("project path is required")
@@ -35,11 +43,9 @@ func SuggestVerifyCommands(ctx context.Context, grokBin, model, cwd string, time
 	if timeout <= 0 {
 		timeout = 3 * time.Minute
 	}
-	if strings.TrimSpace(grokBin) == "" {
-		grokBin = "grok"
-	}
+	cli = cli.Resolved()
 
-	tools := suggestVerifyTools
+	tools := suggestVerifyTools(cli.Agent)
 	prompt := strings.Join([]string{
 		"You configure project verify commands for Grok Work.",
 		"Inspect this repository (your cwd) and propose shell commands that check the project is healthy:",
@@ -61,11 +67,12 @@ func SuggestVerifyCommands(ctx context.Context, grokBin, model, cwd string, time
 	}, "\n")
 
 	opt := Options{
-		GrokBin:          grokBin,
+		Agent:            cli.Agent,
+		Bin:              cli.Bin,
 		Prompt:           prompt,
 		Cwd:              cwd,
 		Yolo:             false,
-		Model:            model,
+		Model:            cli.Model,
 		MaxTurns:         16,
 		Timeout:          timeout,
 		Tools:            &tools,

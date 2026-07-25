@@ -730,6 +730,8 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleWatch(s, m)
 	case KindUnwatch:
 		b.handleUnwatch(s, m)
+	case KindAgent:
+		b.handleAgent(s, m, parsed)
 	case KindStartInvestigate, KindStartFix, KindStartExplain, KindTask:
 		log.Printf("task: starting async for msg=%s kind=%d", m.ID, parsed.Kind)
 		// Immediate typing indicator while we open the thread / claim the queue.
@@ -1150,7 +1152,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 
 	// Non-blocking title improve: rename the thread later if Grok returns a better name.
 	if needTitle && b.cfg.SummarizeTitleEnabled() {
-		go b.improveThreadTitle(s, threadID, titlePrompt, username, proj.Cwd, titleIssues)
+		go b.improveThreadTitle(s, threadID, titlePrompt, username, proj.Cwd, titleIssues, parsed.Agent)
 	}
 
 	// Early ack so the user sees activity before materialize / worktree / Grok.
@@ -1195,6 +1197,22 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			parsed.Prompt = "Investigate the codebase for the issue described in this thread."
 			if parsed.Kind == KindStartFix {
 				parsed.Prompt = "Continue the task for this thread."
+			}
+		}
+	}
+	// Explicit "/claude <task>" on a thread already pinned to the other CLI:
+	// refuse rather than silently running on an agent the user did not ask for.
+	if want := strings.TrimSpace(parsed.Agent); want != "" {
+		if wantAgent, ok := grokrun.ParseAgent(want); ok {
+			if cur, pinned := b.pinnedAgent(threadID); pinned && cur.Resolve() != wantAgent.Resolve() {
+				b.postOrEditThreadStatus(s, threadID, statusMsgID, fmt.Sprintf(
+					"This thread runs on **%s** — its session cannot be resumed by %s. Start a new thread with `@Grok /%s <task>`.",
+					cur.Label(), wantAgent.Label(), wantAgent),
+					actionBarDone(threadID, b.sessionWebURL(threadID)))
+				if b.runs != nil {
+					b.runs.RemoveTaskFiles(threadID, taskID)
+				}
+				return
 			}
 		}
 	}
@@ -1315,7 +1333,10 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 }
 
 // improveThreadTitle runs SummarizeTitle off the critical path and renames the thread if useful.
-func (b *Bot) improveThreadTitle(s *discordgo.Session, threadID, titlePrompt, username, cwd string, issues []sessionstore.TrackedIssue) {
+// requestedAgent is the "/agent <name>" selection from the message that opened
+// this thread. The session is not stamped until the run finishes, so without it
+// a new claude thread would summarize its title with grok.
+func (b *Bot) improveThreadTitle(s *discordgo.Session, threadID, titlePrompt, username, cwd string, issues []sessionstore.TrackedIssue, requestedAgent string) {
 	if b == nil || s == nil || threadID == "" || b.cfg == nil {
 		return
 	}
@@ -1329,7 +1350,9 @@ func (b *Bot) improveThreadTitle(s *discordgo.Session, threadID, titlePrompt, us
 	log.Printf("task: summarizing title async thread=%s…", threadID)
 	sumCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	t, ok := grokrun.SummarizeTitle(sumCtx, b.cfg.GrokBin, b.cfg.Model, titlePrompt, cwd, timeout)
+	cli := b.threadSummarizeCLI(threadID, requestedAgent).CLI()
+	log.Printf("task: summarize agent=%s model=%q thread=%s", cli.Agent, cli.Model, threadID)
+	t, ok := grokrun.SummarizeTitle(sumCtx, cli, titlePrompt, cwd, timeout)
 	if !ok {
 		log.Printf("task: async summarize failed thread=%s (keeping local title)", threadID)
 		return
@@ -1393,8 +1416,26 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	b.bindThreadOwnerActor(threadID, proj.Name, actor)
 	// Stamp sticky ShipMode from project config on first run (thread-sticky thereafter).
 	shipMode := b.ensureShipMode(threadID, proj.Name)
+	// Resolve the agent once, before anything derived from it. Two things depend on
+	// getting this before the run rather than after: investigate tool names are
+	// agent-specific vocabulary, and the stamp is what makes the choice survive a
+	// restart — a crash mid-first-run used to leave the thread unstamped, so the
+	// re-drive resolved the config default and could re-pin a /claude thread to grok.
+	agentCLI := b.threadCLI(threadID, item.parsed.Agent)
+	// threadCLI ignores the request once a thread is stamped, so a queued "/grok
+	// <task>" behind a running claude thread never runs on the wrong CLI — but it
+	// would run with no explanation. The enqueue-time refusal cannot catch this
+	// one: the follow-up was queued before the first run stamped the thread.
+	if want := strings.TrimSpace(item.parsed.Agent); want != "" && present {
+		if wantAgent, ok := grokrun.ParseAgent(want); ok && wantAgent.Resolve() != agentCLI.Agent.Resolve() {
+			sendChunks(s, threadID, fmt.Sprintf(
+				"Running on **%s**: this thread is pinned to it and its session cannot be resumed by %s. Start a new thread with `@Grok /%s <task>`.",
+				agentCLI.Agent.Label(), wantAgent.Label(), wantAgent))
+		}
+	}
+	b.ensureSessionCLI(threadID, agentCLI)
 	// Resolve run policy (bot-enforced gates). Prefer snapshot from enqueue (K19).
-	pol := b.resolveRunPolicy(threadID, proj.Name, item, shipMode, actor)
+	pol := b.resolveRunPolicy(threadID, proj.Name, item, shipMode, actor, agentCLI.Agent)
 	// Live closed-case check: queue drain after /close and web StartTask (not enqueue-only).
 	caseClosed := false
 	if b.sessions != nil {
@@ -1403,6 +1444,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			pol = BuildRunPolicy(PolicyInput{
 				SessionMode: ModeCase, SessionPhase: sessionstore.PhaseClosed,
 				Caps: config.Capabilities{}, ShipMode: shipMode,
+				Agent: agentCLI.Agent,
 			})
 		}
 	}
@@ -1669,22 +1711,25 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		sendChunks(s, threadID, "Policy: running as **investigate** (no ship/write caps for this actor).")
 	}
 
-	sessionID, forceNew := b.prebindSessionID(threadID, proj.Name)
+	sessionID, forceNew := b.prebindSessionID(threadID, proj.Name, agentCLI.Agent)
 	if sessionID != "" {
 		log.Printf("task: session=%s forceNew=%v attempt=%d", sessionID, forceNew, item.attempt)
 	}
 
 	maxTurns := b.cfg.MaxTurnsValue()
 	timeout := time.Duration(b.cfg.TimeoutMsValue()) * time.Millisecond
-	childEnv, droppedEnv := grokrun.FilterChildEnv(os.Environ(), pol.IncludeGHToken, b.cfg.GrokEnvDenylistPrefixes())
+	envPol := b.childEnvPolicy(agentCLI.Agent, pol)
+	childEnv, droppedEnv := grokrun.FilterChildEnv(os.Environ(), envPol)
 	if len(droppedEnv) > 0 {
-		log.Printf("task: child env dropped names=%v includeGH=%v", droppedEnv, pol.IncludeGHToken)
+		log.Printf("task: child env dropped names=%v includeGH=%v includeAnthropic=%v",
+			droppedEnv, envPol.IncludeGHToken, envPol.IncludeAnthropicEnv)
 	}
-	log.Printf("task: running grok bin=%s yolo=%v mode=%s allowPR=%v allowDirect=%v tools=%v maxTurns=%d timeout=%s cwd=%s stream=true",
-		b.cfg.GrokBin, pol.Yolo, pol.Mode, pol.AllowPR, pol.AllowDirectShip, pol.Tools != nil, maxTurns, timeout, runCwd)
+	log.Printf("task: running agent=%s bin=%s yolo=%v mode=%s allowPR=%v allowDirect=%v tools=%v maxTurns=%d timeout=%s cwd=%s stream=true",
+		agentCLI.Agent, agentCLI.Bin, pol.Yolo, pol.Mode, pol.AllowPR, pol.AllowDirectShip, pol.Tools != nil, maxTurns, timeout, runCwd)
 
 	result := grokrun.Run(ctx, grokrun.Options{
-		GrokBin:         b.cfg.GrokBin,
+		Agent:           agentCLI.Agent,
+		Bin:             agentCLI.Bin,
 		Prompt:          prompt,
 		Cwd:             runCwd,
 		SessionID:       sessionID,
@@ -1693,10 +1738,10 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		Tools:           pol.Tools,
 		NoSubagents:     pol.NoSubagents,
 		Env:             childEnv,
-		Model:           b.cfg.Model,
+		Model:           agentCLI.Model,
 		MaxTurns:        maxTurns,
 		Timeout:         timeout,
-		ExtraArgs:       b.cfg.ExtraArgs,
+		ExtraArgs:       agentCLI.ExtraArgs,
 		OnTextDelta: func(delta string) {
 			streamer.OnDelta(delta)
 			// Mirror Discord's live message into StatusSnapshot for the web session page.
@@ -1711,6 +1756,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		OnStartPID: func(pid int) {
 			b.patchJournal(threadID, func(j *runjournal.Journal) {
 				j.GrokPID = pid
+				j.Agent = agentCLI.Agent.String()
 			})
 		},
 	})
@@ -1753,6 +1799,8 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		lastUser := actor.String()
 		entry := sessionstore.Entry{
 			SessionID:      sid,
+			Agent:          agentCLI.Agent.String(),
+			Model:          agentCLI.Model,
 			Project:        proj.Name,
 			Cwd:            runCwd,
 			MainCwd:        proj.Cwd,
@@ -2015,7 +2063,11 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 }
 
 // resolveRunPolicy builds RunPolicy from snapshot and/or live session + capabilities.
-func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode string, actor Actor) RunPolicy {
+// resolveRunPolicy builds the bot-enforced gates for one run. agent is passed in
+// rather than read back from the session because on a thread's first run the
+// caller has already resolved it from the message ("@Grok /claude /investigate …")
+// and the session does not name it yet.
+func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode string, actor Actor, agent grokrun.Agent) RunPolicy {
 	sessionMode := ""
 	sessionPhase := item.snapPhase
 	if b != nil && b.sessions != nil {
@@ -2089,6 +2141,7 @@ func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode
 		RequestedRunKind: reqRunKind,
 		ForceInvestigate: forceInv,
 		InvestigateTools: tools,
+		Agent:            agent,
 	}
 	// When snap fields present, prefer them for allow flags after build (tighten only).
 	pol := BuildRunPolicy(in)
@@ -2106,6 +2159,7 @@ func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode
 					Caps:             caps,
 					ShipMode:         shipMode,
 					InvestigateTools: tools,
+					Agent:            in.Agent,
 				})
 				pol2.Coerced = true
 				return pol2

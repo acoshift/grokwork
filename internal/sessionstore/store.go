@@ -76,6 +76,17 @@ type Entry struct {
 	// Orthogonal to ShipMode (K27). Empty = eng fix default for capable actors.
 	Mode string `json:"mode,omitempty"`
 
+	// Agent and Model are pinned when the session is created and never change.
+	// SessionID is issued by one CLI and is meaningless to the other, so the
+	// agent cannot move; the model is pinned with it so a thread's turns stay
+	// consistent and editing global config never alters a live session. Pick
+	// them on the message that opens the thread (@Grok /claude <task>).
+	//
+	// Agent empty on an entry that already has a SessionID is pre-agent data,
+	// which ran on grok. Model empty means the CLI chooses.
+	Agent string `json:"agent,omitempty"`
+	Model string `json:"model,omitempty"`
+
 	// Wave 3 case lifecycle (Mode=case). Phase drives RunPolicy ship gates.
 	// intake | investigate | answered | fixing | shipping | closed
 	Phase string `json:"phase,omitempty"`

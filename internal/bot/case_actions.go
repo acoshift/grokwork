@@ -11,13 +11,13 @@ import (
 
 // Case action errors (web + tests).
 var (
-	ErrNotACase         = fmt.Errorf("not a case session")
-	ErrCaseClosed       = fmt.Errorf("case is closed")
-	ErrCaseNotClosed    = fmt.Errorf("case is not closed")
-	ErrCaseBadPhase     = fmt.Errorf("invalid reopen phase (use investigate or fixing)")
-	ErrCaseForbidden    = fmt.Errorf("not allowed for this case action")
-	ErrCaseNoSession    = fmt.Errorf("unknown session")
-	ErrCaseEmptyTitle   = fmt.Errorf("customer update empty after sanitizer")
+	ErrNotACase       = fmt.Errorf("not a case session")
+	ErrCaseClosed     = fmt.Errorf("case is closed")
+	ErrCaseNotClosed  = fmt.Errorf("case is not closed")
+	ErrCaseBadPhase   = fmt.Errorf("invalid reopen phase (use investigate or fixing)")
+	ErrCaseForbidden  = fmt.Errorf("not allowed for this case action")
+	ErrCaseNoSession  = fmt.Errorf("unknown session")
+	ErrCaseEmptyTitle = fmt.Errorf("customer update empty after sanitizer")
 )
 
 // EscalateCase moves Mode=case → Phase=fixing (K17: Mode stays case).

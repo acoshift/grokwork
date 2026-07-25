@@ -37,8 +37,15 @@
       </a>
     </div>
 
-    <div class="drill-cap">Grok runtime</div>
+    <div class="drill-cap">Agent runtime</div>
     <div class="drill-group">
+      <a class="drill" href="{{route "config.agent"}}">
+        <span class="drill-main">
+          <span class="drill-t">Coding agent</span>
+          <span class="drill-s">default CLI for new sessions</span>
+        </span>
+        <span class="drill-v">{{if eq .Config.Agent "claude"}}Claude{{else}}Grok{{end}}{{if and (eq .Config.Agent "claude") .Config.ClaudeModel}} · {{.Config.ClaudeModel}}{{end}}</span>
+      </a>
       <a class="drill" href="{{route "config.run"}}">
         <span class="drill-main">
           <span class="drill-t">Run limits</span>

@@ -67,13 +67,13 @@ func TestDiscordReadyAfterRegister(t *testing.T) {
 }
 
 type fakeThreadAPI struct {
-	mu       sync.Mutex
-	sends    []string
-	starts   []string
-	failSend error
+	mu        sync.Mutex
+	sends     []string
+	starts    []string
+	failSend  error
 	failStart error
-	nextMsg  string
-	nextTh   string
+	nextMsg   string
+	nextTh    string
 }
 
 func (f *fakeThreadAPI) SendMessage(channelID, content string) (string, error) {
@@ -240,12 +240,12 @@ func TestExecuteTaskDiscordOptionalNilSession(t *testing.T) {
 
 	item := taskItem{
 		s: nil, m: nil,
-		parsed:   Parsed{Kind: KindTask, Prompt: "fix the flaky test"},
-		proj:     projectRef{Name: "app", Cwd: projPath},
-		threadID: threadID,
-		actor:    Actor{ID: "user-9", DisplayName: "Web User"},
-		source:   SourceWeb,
-		origin:   SourceWeb,
+		parsed:    Parsed{Kind: KindTask, Prompt: "fix the flaky test"},
+		proj:      projectRef{Name: "app", Cwd: projPath},
+		threadID:  threadID,
+		actor:     Actor{ID: "user-9", DisplayName: "Web User"},
+		source:    SourceWeb,
+		origin:    SourceWeb,
 		createdBy: "user-9", createdByName: "Web User",
 		discordURL: "https://discord.example/threads/web-thread-1",
 	}
@@ -361,12 +361,12 @@ func TestStartTaskRunsWhenIdle(t *testing.T) {
 	b.cfg.GrokBin = writeFakeGrok(t)
 	threadID := "start-idle-1"
 	pos, err := b.StartTask(StartTaskOpts{
-		ThreadID: threadID,
-		Proj:     projectRef{Name: "app", Cwd: projPath},
-		Prompt:   "do the thing",
-		Actor:    Actor{ID: "u3", DisplayName: "Cara"},
-		Source:   SourceWeb,
-		Origin:   SourceWeb,
+		ThreadID:  threadID,
+		Proj:      projectRef{Name: "app", Cwd: projPath},
+		Prompt:    "do the thing",
+		Actor:     Actor{ID: "u3", DisplayName: "Cara"},
+		Source:    SourceWeb,
+		Origin:    SourceWeb,
 		CreatedBy: "u3", CreatedByName: "Cara",
 	})
 	if err != nil {
@@ -633,12 +633,12 @@ func TestExecuteTaskDiscordOriginUsesActor(t *testing.T) {
 	threadID := "discord-shape-1"
 	item := taskItem{
 		s: nil, m: nil,
-		parsed:   Parsed{Kind: KindTask, Prompt: "discord-style follow-up"},
-		proj:     projectRef{Name: "app", Cwd: projPath},
-		threadID: threadID,
-		actor:    Actor{ID: "disc-1", DisplayName: "DiscordUser#1"},
-		source:   SourceDiscord,
-		origin:   SourceDiscord,
+		parsed:    Parsed{Kind: KindTask, Prompt: "discord-style follow-up"},
+		proj:      projectRef{Name: "app", Cwd: projPath},
+		threadID:  threadID,
+		actor:     Actor{ID: "disc-1", DisplayName: "DiscordUser#1"},
+		source:    SourceDiscord,
+		origin:    SourceDiscord,
 		createdBy: "disc-1", createdByName: "DiscordUser#1",
 	}
 	ctx, cancel := context.WithCancel(context.Background())

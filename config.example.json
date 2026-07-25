@@ -36,8 +36,13 @@
     "DISCORD_CHANNEL_ID_FOR_API": "api"
   },
   "grokBin": "grok",
+  "agent": "grok",
+  "claudeBin": "claude",
+  "claudeExtraArgs": [],
+  "claudeIncludeAnthropicEnv": false,
   "yolo": true,
   "model": "",
+  "summarizeModel": "",
   "maxTurns": 40,
   "timeoutMs": 1800000,
   "extraArgs": [],

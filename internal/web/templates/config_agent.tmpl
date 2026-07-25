@@ -1,0 +1,111 @@
+{{define "content"}}
+<div class="config-sub" id="page-config-agent">
+{{template "config_sub_header" $}}
+<h1>Coding agent</h1>
+<p class="sub">
+  Which CLI runs Discord tasks. The model name picks the CLI — <span class="mono">sonnet</span> runs
+  Claude, <span class="mono">grok-4.5</span> runs Grok. A thread stamps the agent and model it started
+  on and keeps them for life — a session cannot be resumed by the other CLI — so these settings only
+  affect <strong>new</strong> sessions. Open one on a specific agent with
+  <span class="mono">@Grok /claude &lt;task&gt;</span>.
+</p>
+
+<div class="section card">
+  <form method="post" action="{{route "config.agent"}}">
+    {{template "csrf" $}}
+
+    <h2 style="margin:0 0 0.35rem">Models</h2>
+    <p class="sub" style="margin:0 0 0.65rem">
+      Naming a thread is one tools-off turn that returns a few words, so it can run on a cheaper
+      model than the tasks do — and even on the other CLI, since a title is not tied to the thread's
+      session. Blank title model falls back to the task model.
+    </p>
+    {{/* Options are grouped by the CLI each name routes to, so the derived agent
+         is visible at the point of choice rather than only after saving. */}}
+    <div class="inline" style="grid-template-columns: 1fr 1fr;">
+      <div>
+        <label for="model">Task model</label>
+        <select id="model" name="model">
+          <option value="">CLI default</option>
+          {{template "model_optgroups" .Config.ModelGroups}}
+        </select>
+        <p class="sub" style="margin:0.35rem 0 0" id="model-agent">
+          {{if .Config.Model}}
+            {{if .Config.ModelAgentKnown}}→ runs on <strong>{{if eq .Config.ModelAgent "claude"}}Claude{{else}}Grok{{end}}</strong>
+            {{else}}→ name not recognized, using the fallback agent{{end}}
+          {{else}}→ fallback agent, each CLI picks its own default model{{end}}
+        </p>
+      </div>
+      <div>
+        <label for="summarize-model">Thread-title model</label>
+        <select id="summarize-model" name="summarizeModel">
+          <option value="">Same as task model</option>
+          {{template "model_optgroups" .Config.SummarizeModelGroups}}
+        </select>
+        <p class="sub" style="margin:0.35rem 0 0" id="summarize-agent">
+          {{if .Config.SummarizeModel}}
+            {{if .Config.SummarizeAgentKnown}}→ runs on <strong>{{if eq .Config.SummarizeAgent "claude"}}Claude{{else}}Grok{{end}}</strong>
+            {{else}}→ name not recognized, runs on the session's agent{{end}}
+          {{else}}→ same as the task model{{end}}
+        </p>
+      </div>
+    </div>
+
+    <h2 style="margin:1.25rem 0 0.35rem">Binaries &amp; fallback</h2>
+    <div class="inline" style="grid-template-columns: 1fr 1fr 1fr;">
+      <div>
+        <label for="agent">Fallback agent</label>
+        <select id="agent" name="agent">
+          <option value="grok" {{if ne .Config.Agent "claude"}}selected{{end}}>Grok</option>
+          <option value="claude" {{if eq .Config.Agent "claude"}}selected{{end}}>Claude</option>
+        </select>
+      </div>
+      <div>
+        <label for="grok-bin">Grok binary</label>
+        <input id="grok-bin" type="text" name="grokBin" value="{{.Config.GrokBin}}" placeholder="grok" autocomplete="off">
+      </div>
+      <div>
+        <label for="claude-bin">Claude binary</label>
+        <input id="claude-bin" type="text" name="claudeBin" value="{{.Config.ClaudeBin}}" placeholder="claude" autocomplete="off">
+      </div>
+    </div>
+    <p class="sub" style="margin:0.5rem 0 0">
+      The fallback agent is used when the model field is blank or its name identifies neither CLI.
+      An unrecognized name is never guessed at — it goes to the fallback agent and is passed through,
+      so that CLI reports the bad model itself instead of silently running the wrong one.
+    </p>
+
+    {{/* .switch is an icon-only control (fixed 2.9rem box, knob absolutely
+         covering it), so its text label sits beside it, not inside. */}}
+    <div class="section" style="margin-top:1rem;display:flex;gap:0.75rem;align-items:start">
+      <label class="switch" title="Pass ANTHROPIC_* to claude runs" style="flex:none;margin-top:0.1rem">
+        <input type="checkbox" name="claudeIncludeAnthropicEnv" value="1" {{if .Config.ClaudeIncludeAnthropicEnv}}checked{{end}}>
+        <span class="knob" aria-hidden="true"></span>
+        <span class="sr-only">Pass ANTHROPIC_* to claude runs</span>
+      </label>
+      <div>
+        <strong>Pass <span class="mono">ANTHROPIC_*</span> to claude runs</strong>
+        <p class="sub" style="margin:0.35rem 0 0">
+          Off by default: host credentials are stripped from every agent child, and a normal
+          OAuth login authenticates from the keychain without any environment variable.
+          Turn this on only for API-key, gateway, or custom base-URL setups — it hands the
+          agent process your Anthropic credentials.
+        </p>
+      </div>
+    </div>
+
+    <div style="margin-top:1rem"><button type="submit">Save</button></div>
+  </form>
+</div>
+</div>
+{{end}}
+
+{{define "model_optgroups"}}
+{{- range .}}
+<optgroup label="{{.Label}}">
+  {{- range .Choices}}
+  <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+  {{- end}}
+</optgroup>
+{{- end}}
+{{- end}}

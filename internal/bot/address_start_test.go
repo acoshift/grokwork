@@ -240,7 +240,7 @@ func TestStartAddressReviewCreate(t *testing.T) {
 	b.threadAPI = fake
 	res, err := b.StartAddressReview(AddressReviewOpts{
 		Project: "app", Owner: "acme", Repo: "app", Number: 8,
-		Actor: Actor{ID: "u", DisplayName: "U"},
+		Actor:    Actor{ID: "u", DisplayName: "U"},
 		Comments: []ghpr.ReviewComment{{Path: "x.go", Body: "fix me", Author: "r"}},
 	})
 	if err != nil {

@@ -136,7 +136,7 @@ func TestFindByIssueOrderingBusyWorktreeNewest(t *testing.T) {
 			Project: "app", UpdatedAt: updated, WorktreeBranch: branch,
 		}
 		e.UpsertIssue(sessionstore.TrackedIssue{Owner: "o", Repo: "r", Number: 1})
-		// Set bypasses UpdatedAt rewrite with fixed value — use Patch after Set... 
+		// Set bypasses UpdatedAt rewrite with fixed value — use Patch after Set...
 		// Set always rewrites UpdatedAt. Sleep or rely on order of Set for newest.
 		if err := store.Set(id, e); err != nil {
 			t.Fatal(err)

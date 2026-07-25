@@ -59,7 +59,7 @@ type Server struct {
 	verifyDraftMu sync.Mutex
 	verifyDrafts  map[string]string
 	// Test injectable; nil → grokrun.SuggestVerifyCommands (SSE stream hooks optional).
-	suggestVerify func(ctx context.Context, grokBin, model, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error)
+	suggestVerify func(ctx context.Context, cli grokrun.CLI, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error)
 }
 
 // New builds a hime app with dashboard, history, config, and SSE routes.
@@ -139,6 +139,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.identities":                  "/config/github-identities",
 		"config.projectNew":                  "/config/projects/new",
 		"config.run":                         "/config/run",
+		"config.agent":                       "/config/agent",
 		"config.worktrees":                   "/config/worktrees",
 		"config.board":                       "/config/board",
 		"config.notify":                      "/config/notify",
@@ -209,6 +210,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("config_identities", "layout.tmpl", "config_identities.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_project_new", "layout.tmpl", "config_project_new.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_run", "layout.tmpl", "config_run.tmpl", "config_shared.tmpl")
+	tp.ParseFiles("config_agent", "layout.tmpl", "config_agent.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_worktrees", "layout.tmpl", "config_worktrees.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_board", "layout.tmpl", "config_board.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_notify", "layout.tmpl", "config_notify.tmpl", "config_shared.tmpl")
@@ -407,6 +409,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/github-identities", s.requireAdmin(hime.Handler(s.configSubPage("config_identities", "GitHub attribution", true))))
 	mux.Handle("GET /config/projects/new", s.requireAdmin(hime.Handler(s.configSubPage("config_project_new", "Add project", false))))
 	mux.Handle("GET /config/run", s.requireAdmin(hime.Handler(s.configSubPage("config_run", "Run limits", false))))
+	mux.Handle("GET /config/agent", s.requireAdmin(hime.Handler(s.configSubPage("config_agent", "Coding agent", false))))
 	mux.Handle("GET /config/worktrees", s.requireAdmin(hime.Handler(s.configSubPage("config_worktrees", "Worktrees", false))))
 	mux.Handle("GET /config/board", s.requireAdmin(hime.Handler(s.configSubPage("config_board", "Team activity board", false))))
 	mux.Handle("GET /config/notify", s.requireAdmin(hime.Handler(s.configSubPage("config_notify", "Run notifications", false))))
@@ -414,6 +417,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/pr-links", s.requireAdmin(hime.Handler(s.configSubPage("config_prlinks", "Discord PR links", false))))
 	mux.Handle("GET /config/risky", s.requireAdmin(hime.Handler(s.configSubPage("config_risky", "Completion risk paths", false))))
 	mux.Handle("POST /config/run", s.requireAdmin(hime.Handler(s.updateRunSettings)))
+	mux.Handle("POST /config/agent", s.requireAdmin(hime.Handler(s.updateAgentSettings)))
 	mux.Handle("POST /config/worktrees", s.requireAdmin(hime.Handler(s.updateWorktreeSettings)))
 	mux.Handle("POST /config/board", s.requireAdmin(hime.Handler(s.updateBoardSettings)))
 	mux.Handle("POST /config/notify", s.requireAdmin(hime.Handler(s.updateNotifySettings)))
@@ -1181,7 +1185,6 @@ func (s *Server) generateProjectVerify(ctx *hime.Context) error {
 
 	_ = stream.Status("Inspecting repository…")
 
-	snap := s.cfg.Snapshot()
 	suggest := s.suggestVerify
 	if suggest == nil {
 		suggest = grokrun.SuggestVerifyCommands
@@ -1191,7 +1194,8 @@ func (s *Server) generateProjectVerify(ctx *hime.Context) error {
 		OnThought:   func(delta string) { _ = stream.ThoughtDelta(delta) },
 		OnActivity:  func(line string) { _ = stream.Activity(line) },
 	}
-	raw, err := suggest(ctx.Context(), snap.GrokBin, snap.Model, path, 3*time.Minute, hooks)
+	// Verify suggestion runs on the host default agent: it is not tied to a session.
+	raw, err := suggest(ctx.Context(), s.cfg.ResolveAgentCLI("").CLI(), path, 3*time.Minute, hooks)
 	s.auditAction(ctx, "config.generate_project_verify", err, map[string]any{
 		"name": name,
 	})
@@ -1462,6 +1466,31 @@ func (s *Server) configPageRedirect(ctx *hime.Context, routeName, okMsg string, 
 		return ctx.RedirectTo(routeName, map[string]string{"err": err.Error()})
 	}
 	return ctx.RedirectTo(routeName, map[string]string{"ok": okMsg})
+}
+
+// updateAgentSettings persists the default coding CLI and its claude-side
+// binary/model. Sessions already stamped with an agent are unaffected.
+func (s *Server) updateAgentSettings(ctx *hime.Context) error {
+	in := config.AgentSettings{
+		Agent:          strings.TrimSpace(ctx.PostFormValue("agent")),
+		Model:          strings.TrimSpace(ctx.PostFormValue("model")),
+		SummarizeModel: strings.TrimSpace(ctx.PostFormValue("summarizeModel")),
+		GrokBin:        strings.TrimSpace(ctx.PostFormValue("grokBin")),
+		ClaudeBin:      strings.TrimSpace(ctx.PostFormValue("claudeBin")),
+		IncludeAnthropicEnv: ctx.PostFormValue("claudeIncludeAnthropicEnv") == "1" ||
+			strings.EqualFold(ctx.PostFormValue("claudeIncludeAnthropicEnv"), "on"),
+	}
+
+	err := s.cfg.SetAgentSettings(in)
+	s.auditAction(ctx, audit.ActionConfigSettings, err, map[string]any{"section": "agent"})
+	if err != nil {
+		return s.configPageRedirect(ctx, "config.agent", "", err)
+	}
+	msg := fmt.Sprintf("Default agent: %s", s.cfg.DefaultAgent().Label())
+	if model, ok := s.cfg.ModelAgent(); ok {
+		msg = fmt.Sprintf("Model %q runs on %s", in.Model, model.Label())
+	}
+	return s.configPageRedirect(ctx, "config.agent", msg, nil)
 }
 
 func (s *Server) updateRunSettings(ctx *hime.Context) error {

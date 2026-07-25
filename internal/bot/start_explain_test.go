@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/grokrun"
 )
 
 // Real path: ParseMessage → snapshotPolicyOntoItem (shipped claim path) must
@@ -49,7 +50,7 @@ func TestStartExplainSnapshotPolicyNonShip(t *testing.T) {
 	}
 
 	// resolveRunPolicy at execute must match (uses snap + KindStartExplain).
-	pol := b.resolveRunPolicy("th-explain", "app", item, "pr", item.actor)
+	pol := b.resolveRunPolicy("th-explain", "app", item, "pr", item.actor, grokrun.AgentGrok)
 	if pol.Mode != ModeExplain {
 		t.Fatalf("resolve Mode=%q", pol.Mode)
 	}

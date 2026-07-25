@@ -9,6 +9,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/grokrun"
 )
 
 func TestWebTaskKindMapping(t *testing.T) {
@@ -271,7 +272,7 @@ func TestStartWebTaskInvestigateNonShip(t *testing.T) {
 	if item.snapAllowPR || item.snapAllowDirect {
 		t.Fatalf("investigate must not ship: allowPR=%v allowDirect=%v", item.snapAllowPR, item.snapAllowDirect)
 	}
-	pol := b.resolveRunPolicy("th-web-inv", "app", item, "pr", item.actor)
+	pol := b.resolveRunPolicy("th-web-inv", "app", item, "pr", item.actor, grokrun.AgentGrok)
 	if pol.AllowPR || pol.AllowDirectShip || pol.AllowDirectIntegrate {
 		t.Fatalf("resolve must not ship: %+v", pol)
 	}

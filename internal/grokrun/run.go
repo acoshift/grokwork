@@ -1,7 +1,6 @@
 package grokrun
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -19,7 +18,10 @@ import (
 )
 
 type Options struct {
-	GrokBin   string
+	// Agent selects the coding CLI. Zero value is AgentGrok.
+	Agent Agent
+	// Bin is the CLI binary (path or PATH name) for Agent.
+	Bin       string
 	Prompt    string
 	Cwd       string
 	SessionID string
@@ -75,8 +77,8 @@ func toolFlags(tools *string) []string {
 	return []string{"--tools", t}
 }
 
-// MaxTurnsUserMessage is posted to Discord when Grok hits --max-turns.
-const MaxTurnsUserMessage = "Reached max turns before a final reply. Partial work may exist in the Grok session — send another task to continue."
+// MaxTurnsUserMessage is posted to Discord when the agent hits --max-turns.
+const MaxTurnsUserMessage = "Reached max turns before a final reply. Partial work may exist in the agent session — send another task to continue."
 
 type Result struct {
 	Text                string
@@ -94,16 +96,19 @@ type Result struct {
 type Usage struct {
 	InputTokens          int `json:"input_tokens"`
 	CacheReadInputTokens int `json:"cache_read_input_tokens"`
-	OutputTokens         int `json:"output_tokens"`
-	ReasoningTokens      int `json:"reasoning_tokens"`
-	TotalTokens          int `json:"total_tokens"`
+	// CacheCreationInputTokens is reported by claude and is part of the prompt:
+	// on a cold cache it dwarfs input_tokens. grok omits it (stays zero).
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	OutputTokens             int `json:"output_tokens"`
+	ReasoningTokens          int `json:"reasoning_tokens"`
+	TotalTokens              int `json:"total_tokens"`
 }
 
 func (u *Usage) PromptTokens() int {
 	if u == nil {
 		return 0
 	}
-	return u.InputTokens + u.CacheReadInputTokens
+	return u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
 }
 
 // ContextSummary formats used/size for Discord status (e.g. "4.8k/500k").
@@ -168,90 +173,104 @@ type streamEvent struct {
 	Usage      *Usage `json:"usage"`
 }
 
+// Run executes one agent turn.
+//
+// The retries exist because callers mint a session id *before* the run (so a crash
+// can still find the session), which means neither the caller nor Run can know
+// whether a given id has been created yet — and claude rejects the wrong guess in
+// either direction: creating an existing id fails with "Session ID … is already in
+// use", resuming a missing one with "No conversation found". Both were verified
+// against the CLI (exit 1, message on stderr, empty stdout), as was the fact that
+// resuming after the first error recovers the session with its context intact.
+// So run the caller's intent, then flip the guess exactly once on that signal.
+// grok needs none of this: its -s is create-or-attach.
 func Run(ctx context.Context, opt Options) Result {
+	res := runOnce(ctx, opt)
+	if strings.TrimSpace(opt.SessionID) == "" || res.Cancelled {
+		return res
+	}
+	d := opt.Agent.driver()
+	switch {
+	case opt.ForceNewSession && d.sessionAlreadyExists(res):
+		log.Printf("grokrun: session %s already exists, retrying as resume", opt.SessionID)
+		retry := opt
+		retry.ForceNewSession = false
+		return runOnce(ctx, retry)
+	case !opt.ForceNewSession && d.sessionMissing(res):
+		// The stored id names no transcript — the run that minted it died before the
+		// CLI created it, or the run cwd changed and transcripts are cwd-keyed. Start
+		// the session under that same id instead of failing every run from here on.
+		// Prior context is lost either way; a working thread beats a stuck one.
+		log.Printf("grokrun: session %s not found, starting it instead", opt.SessionID)
+		retry := opt
+		retry.ForceNewSession = true
+		return runOnce(ctx, retry)
+	}
+	return res
+}
+
+func runOnce(ctx context.Context, opt Options) Result {
 	if opt.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, opt.Timeout)
 		defer cancel()
 	}
 
+	d := opt.Agent.driver()
+
 	stream := opt.OnTextDelta != nil || opt.OnThought != nil || opt.OnActivity != nil
 	format := "json"
 	if stream {
-		format = "streaming-json"
+		format = d.streamFormat()
 	}
 
-	// Pass the prompt via a temp file + --verbatim so characters like #, ?, &,
-	// and URL query strings are not mangled by CLI/shell parsing of -p.
-	promptPath, cleanupPrompt, err := writePromptFile(opt.Prompt)
-	if err != nil {
-		return Result{
-			Text:      fmt.Sprintf("Failed to write prompt file: %v", err),
-			SessionID: opt.SessionID,
-			Code:      1,
+	// grok takes the prompt as a file (+ --verbatim) so characters like #, ?, &
+	// and URL query strings survive CLI parsing; claude takes it on stdin, which
+	// is unparsed and needs no file.
+	promptPath := ""
+	if !d.promptOnStdin() {
+		path, cleanupPrompt, err := writePromptFile(opt.Prompt)
+		if err != nil {
+			return Result{
+				Text:      fmt.Sprintf("Failed to write prompt file: %v", err),
+				SessionID: opt.SessionID,
+				Code:      1,
+			}
 		}
+		defer cleanupPrompt()
+		promptPath = path
 	}
-	defer cleanupPrompt()
 
-	// Know the session id before the process starts so we can tail updates.jsonl
-	// for tool activity (streaming-json does not emit tool events).
+	// Some drivers must know the session id before the process starts (grok tails
+	// updates.jsonl for tool activity, keyed by that id).
 	runSessionID := strings.TrimSpace(opt.SessionID)
-	newSession := false
-	if runSessionID == "" && stream && opt.OnActivity != nil {
+	prebound := false
+	if runSessionID == "" && stream && d.prebindSession(opt) {
 		runSessionID = NewSessionID()
-		newSession = true
+		prebound = true
 	}
 
-	args := []string{
-		"--prompt-file", promptPath,
-		"--verbatim",
-		"--cwd", opt.Cwd,
-		"--output-format", format,
-		"--max-turns", fmt.Sprintf("%d", opt.MaxTurns),
-		"--no-auto-update",
-	}
-	if opt.Yolo {
-		args = append(args, "--yolo")
-	}
-	if opt.Model != "" {
-		args = append(args, "-m", opt.Model)
-	}
-	if opt.SessionID != "" {
-		if opt.ForceNewSession {
-			args = append(args, "-s", opt.SessionID)
-		} else {
-			args = append(args, "--resume", opt.SessionID)
-		}
-	} else if newSession {
-		args = append(args, "-s", runSessionID)
-	}
-	args = append(args, toolFlags(opt.Tools)...)
-	if opt.NoSubagents {
-		args = append(args, "--no-subagents")
-	}
-	if opt.NoPlan {
-		args = append(args, "--no-plan")
-	}
-	if opt.NoMemory {
-		args = append(args, "--no-memory")
-	}
-	if opt.DisableWebSearch {
-		args = append(args, "--disable-web-search")
-	}
-	if schema := strings.TrimSpace(opt.JSONSchema); schema != "" {
-		args = append(args, "--json-schema", schema)
-	}
-	args = append(args, opt.ExtraArgs...)
+	args := d.args(argInput{
+		opt:          opt,
+		promptPath:   promptPath,
+		format:       format,
+		runSessionID: runSessionID,
+		prebound:     prebound,
+	})
 
-	log.Printf("grokrun: exec bin=%q cwd=%q format=%s promptFile=%s promptLen=%d promptPreview=%q args=%v",
-		opt.GrokBin, opt.Cwd, format, promptPath, len(opt.Prompt), truncate(opt.Prompt, 200), args)
+	log.Printf("grokrun: exec agent=%s bin=%q cwd=%q format=%s promptFile=%s promptLen=%d promptPreview=%q args=%v",
+		opt.Agent, opt.Bin, opt.Cwd, format, promptPath, len(opt.Prompt), truncate(opt.Prompt, 200), args)
 
-	cmd := exec.CommandContext(ctx, opt.GrokBin, args...)
+	cmd := exec.CommandContext(ctx, opt.Bin, args...)
 	cmd.Dir = opt.Cwd
 	if opt.Env != nil {
 		cmd.Env = opt.Env
 	} else {
 		cmd.Env = os.Environ()
+	}
+	cmd.Env = d.childEnv(cmd.Env)
+	if d.promptOnStdin() {
+		cmd.Stdin = strings.NewReader(sanitizePrompt(opt.Prompt))
 	}
 	setProcessGroup(cmd)
 
@@ -263,7 +282,7 @@ func Run(ctx context.Context, opt Options) Result {
 		cmd.Stdout = &stdout
 		if err := cmd.Start(); err != nil {
 			return Result{
-				Text:      fmt.Sprintf("Failed to start grok: %v", err),
+				Text:      fmt.Sprintf("Failed to start %s: %v", opt.Agent, err),
 				SessionID: runSessionID,
 				Code:      1,
 				Stderr:    stderr.String(),
@@ -284,13 +303,13 @@ func Run(ctx context.Context, opt Options) Result {
 		}()
 		err := cmd.Wait()
 		close(done)
-		return finishResult(ctx, opt, err, stdout.Bytes(), stderr.String(), opt.Timeout)
+		return finishResult(ctx, opt, d, err, stdout.Bytes(), stderr.String(), opt.Timeout)
 	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return Result{
-			Text:      fmt.Sprintf("Failed to start grok stdout pipe: %v", err),
+			Text:      fmt.Sprintf("Failed to open %s stdout pipe: %v", opt.Agent, err),
 			SessionID: runSessionID,
 			Code:      1,
 			Stderr:    stderr.String(),
@@ -298,7 +317,7 @@ func Run(ctx context.Context, opt Options) Result {
 	}
 	if err := cmd.Start(); err != nil {
 		return Result{
-			Text:      fmt.Sprintf("Failed to start grok: %v", err),
+			Text:      fmt.Sprintf("Failed to start %s: %v", opt.Agent, err),
 			SessionID: runSessionID,
 			Code:      1,
 			Stderr:    stderr.String(),
@@ -310,11 +329,11 @@ func Run(ctx context.Context, opt Options) Result {
 
 	watchCtx, stopWatch := context.WithCancel(ctx)
 	var watchWG sync.WaitGroup
-	if opt.OnActivity != nil && runSessionID != "" {
+	if d.prebindSession(opt) && runSessionID != "" {
 		watchWG.Add(1)
 		go func() {
 			defer watchWG.Done()
-			watchSessionTools(watchCtx, opt.Cwd, runSessionID, opt.OnActivity)
+			d.watchActivity(watchCtx, opt.Cwd, runSessionID, opt.OnActivity)
 		}()
 	}
 
@@ -330,7 +349,12 @@ func Run(ctx context.Context, opt Options) Result {
 		}
 	}()
 
-	streamed, parseErr := consumeStream(stdout, opt.OnTextDelta, opt.OnThought, opt.OnActivity)
+	streamed, parseErr := decodeStream(stdout, d, streamCallbacks{
+		onText:     opt.OnTextDelta,
+		onThought:  opt.OnThought,
+		onActivity: opt.OnActivity,
+		cwd:        opt.Cwd,
+	})
 	waitErr := cmd.Wait()
 	close(killDone)
 	stopWatch()
@@ -355,7 +379,8 @@ func Run(ctx context.Context, opt Options) Result {
 		res.Usage = streamed.Usage
 		res.NumTurns = streamed.NumTurns
 		res.MaxTurnsReached = streamed.MaxTurnsReached
-		enrichContext(&res, opt.Cwd)
+		applyStreamContext(&res, streamed)
+		d.enrich(&res, opt.Cwd)
 		return res
 	}
 
@@ -368,14 +393,15 @@ func Run(ctx context.Context, opt Options) Result {
 		} else {
 			log.Printf("grokrun: wait failed: %v stderr=%q", waitErr, truncate(stderr.String(), 1000))
 			res := Result{
-				Text:      fmt.Sprintf("Failed to run grok: %v", waitErr),
+				Text:      fmt.Sprintf("Failed to run %s: %v", opt.Agent, waitErr),
 				SessionID: sessionID,
 				Code:      1,
 				Stderr:    stderr.String(),
 				Usage:     streamed.Usage,
 				NumTurns:  streamed.NumTurns,
 			}
-			enrichContext(&res, opt.Cwd)
+			applyStreamContext(&res, streamed)
+			d.enrich(&res, opt.Cwd)
 			return res
 		}
 	} else {
@@ -390,7 +416,7 @@ func Run(ctx context.Context, opt Options) Result {
 		text = strings.TrimSpace(stderr.String())
 		if text == "" {
 			if code != 0 {
-				text = fmt.Sprintf("(grok exited %d with empty stream text)", code)
+				text = fmt.Sprintf("(%s exited %d with empty stream text)", opt.Agent, code)
 			} else {
 				text = "(empty response)"
 			}
@@ -407,11 +433,23 @@ func Run(ctx context.Context, opt Options) Result {
 		NumTurns:        streamed.NumTurns,
 	}
 	ensureMaxTurnsMessage(&res)
-	enrichContext(&res, opt.Cwd)
+	applyStreamContext(&res, streamed)
+	d.enrich(&res, opt.Cwd)
 	return res
 }
 
-func finishResult(ctx context.Context, opt Options, err error, stdout []byte, stderr string, timeout time.Duration) Result {
+// applyStreamContext carries context-window numbers that arrived on the stream.
+// Drivers with an out-of-band source (grok's signals.json) refine these in enrich.
+func applyStreamContext(res *Result, streamed streamOut) {
+	if res.ContextTokensUsed == 0 {
+		res.ContextTokensUsed = streamed.ContextTokensUsed
+	}
+	if res.ContextWindowTokens == 0 {
+		res.ContextWindowTokens = streamed.ContextWindowTokens
+	}
+}
+
+func finishResult(ctx context.Context, opt Options, d driver, err error, stdout []byte, stderr string, timeout time.Duration) Result {
 	if res, ok := contextResult(ctx, opt, stderr, timeout); ok && err != nil {
 		return res
 	}
@@ -425,7 +463,7 @@ func finishResult(ctx context.Context, opt Options, err error, stdout []byte, st
 		} else {
 			log.Printf("grokrun: start failed: %v stderr=%q", err, truncate(stderr, 1000))
 			return Result{
-				Text:      fmt.Sprintf("Failed to start grok: %v", err),
+				Text:      fmt.Sprintf("Failed to start %s: %v", opt.Agent, err),
 				SessionID: opt.SessionID,
 				Code:      1,
 				Stderr:    stderr,
@@ -440,15 +478,10 @@ func finishResult(ctx context.Context, opt Options, err error, stdout []byte, st
 	sessionID := opt.SessionID
 	var usage *Usage
 	var numTurns int
+	maxTurns := false
 
-	var parsed jsonOut
-	if err := json.Unmarshal(stdout, &parsed); err == nil {
-		if parsed.Type == "error" {
-			text = parsed.Message
-			if text == "" {
-				text = out
-			}
-		} else if parsed.Text != "" {
+	if parsed, ok := d.decodeFinal(stdout); ok {
+		if parsed.Text != "" {
 			text = parsed.Text
 		}
 		if parsed.SessionID != "" {
@@ -456,10 +489,11 @@ func finishResult(ctx context.Context, opt Options, err error, stdout []byte, st
 		}
 		usage = parsed.Usage
 		numTurns = parsed.NumTurns
+		maxTurns = parsed.MaxTurnsReached
 	} else if out == "" {
 		text = strings.TrimSpace(stderr)
 		if text == "" {
-			text = fmt.Sprintf("(grok exited %d with empty stdout)", code)
+			text = fmt.Sprintf("(%s exited %d with empty stdout)", opt.Agent, code)
 		}
 	}
 
@@ -468,15 +502,16 @@ func finishResult(ctx context.Context, opt Options, err error, stdout []byte, st
 	}
 
 	res := Result{
-		Text:      text,
-		SessionID: sessionID,
-		Code:      code,
-		Stderr:    stderr,
-		Usage:     usage,
-		NumTurns:  numTurns,
+		Text:            text,
+		SessionID:       sessionID,
+		Code:            code,
+		Stderr:          stderr,
+		Usage:           usage,
+		NumTurns:        numTurns,
+		MaxTurnsReached: maxTurns,
 	}
 	ensureMaxTurnsMessage(&res)
-	enrichContext(&res, opt.Cwd)
+	d.enrich(&res, opt.Cwd)
 	return res
 }
 
@@ -513,7 +548,7 @@ func contextResult(ctx context.Context, opt Options, stderr string, timeout time
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		log.Printf("grokrun: timeout after %s stderr=%q", timeout, truncate(stderr, 1000))
 		return Result{
-			Text:      fmt.Sprintf("Timed out after %s. Partial work may exist in the Grok session.", timeout),
+			Text:      fmt.Sprintf("Timed out after %s. Partial work may exist in the %s.", timeout, opt.Agent.SessionLabel()),
 			SessionID: opt.SessionID,
 			Code:      124,
 			Stderr:    stderr,
@@ -521,7 +556,7 @@ func contextResult(ctx context.Context, opt Options, stderr string, timeout time
 	case ctx.Err() != nil:
 		log.Printf("grokrun: cancelled stderr=%q", truncate(stderr, 1000))
 		return Result{
-			Text:      "Cancelled. Partial work may exist in the Grok session.",
+			Text:      "Cancelled. Partial work may exist in the " + opt.Agent.SessionLabel() + ".",
 			SessionID: opt.SessionID,
 			Code:      130,
 			Stderr:    stderr,
@@ -538,140 +573,20 @@ type streamOut struct {
 	Usage           *Usage
 	NumTurns        int
 	MaxTurnsReached bool
+	// Context fields are set by drivers that report the window on the stream
+	// (claude); grok fills them from signals.json in enrich instead.
+	ContextTokensUsed   int
+	ContextWindowTokens int
 }
 
-func consumeStream(r io.Reader, onText, onThought, onActivity func(string)) (out streamOut, err error) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-
-	var b strings.Builder
-	var parseNotes []string
-	maxTurnsNotified := false
-
-	appendText := func(delta string) {
-		if delta == "" {
-			return
-		}
-		b.WriteString(delta)
-		if onText != nil {
-			onText(delta)
-		}
-	}
-
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-		var ev streamEvent
-		if jerr := json.Unmarshal([]byte(line), &ev); jerr != nil {
-			parseNotes = append(parseNotes, jerr.Error())
-			continue
-		}
-		switch strings.ToLower(ev.Type) {
-		case "text":
-			delta := ev.Data
-			if delta == "" {
-				delta = ev.Text
-			}
-			appendText(delta)
-		case "thought":
-			delta := ev.Data
-			if delta == "" {
-				delta = ev.Text
-			}
-			if delta != "" && onThought != nil {
-				onThought(delta)
-			}
-		case "tool", "tool_call", "tool_use", "tool_start", "status":
-			if line := activityLine(ev); line != "" && onActivity != nil {
-				onActivity(line)
-			}
-			if ev.SessionID != "" {
-				out.SessionID = ev.SessionID
-			}
-		case "max_turns_reached":
-			out.MaxTurnsReached = true
-			if !maxTurnsNotified {
-				maxTurnsNotified = true
-				delta := MaxTurnsUserMessage
-				if b.Len() > 0 {
-					delta = "\n\n" + MaxTurnsUserMessage
-				}
-				appendText(delta)
-			}
-			if ev.SessionID != "" {
-				out.SessionID = ev.SessionID
-			}
-			if ev.Usage != nil {
-				out.Usage = ev.Usage
-			}
-			if ev.NumTurns > 0 {
-				out.NumTurns = ev.NumTurns
-			}
-		case "end":
-			if ev.SessionID != "" {
-				out.SessionID = ev.SessionID
-			}
-			if ev.Usage != nil {
-				out.Usage = ev.Usage
-			}
-			if ev.NumTurns > 0 {
-				out.NumTurns = ev.NumTurns
-			}
-		case "error":
-			msg := ev.Message
-			if msg == "" {
-				msg = ev.Data
-			}
-			if msg == "" {
-				msg = ev.Text
-			}
-			if isMaxTurnsError(msg) {
-				out.MaxTurnsReached = true
-				if !maxTurnsNotified {
-					maxTurnsNotified = true
-					delta := MaxTurnsUserMessage
-					if b.Len() > 0 {
-						delta = "\n\n" + MaxTurnsUserMessage
-					}
-					appendText(delta)
-				}
-			} else if msg != "" {
-				if b.Len() > 0 {
-					appendText("\n\n" + msg)
-				} else {
-					appendText(msg)
-				}
-			}
-			if ev.Usage != nil {
-				out.Usage = ev.Usage
-			}
-			if ev.NumTurns > 0 {
-				out.NumTurns = ev.NumTurns
-			}
-			if ev.SessionID != "" {
-				out.SessionID = ev.SessionID
-			}
-		default:
-			if line := activityLine(ev); line != "" && onActivity != nil {
-				// Soft-show unknown non-text events when they look like activity.
-				if strings.Contains(strings.ToLower(ev.Type), "tool") {
-					onActivity(line)
-				}
-			}
-			if ev.SessionID != "" {
-				out.SessionID = ev.SessionID
-			}
-		}
-	}
-	out.Text = b.String()
-	if scanErr := sc.Err(); scanErr != nil {
-		err = scanErr
-	} else if len(parseNotes) > 0 {
-		err = fmt.Errorf("skipped %d malformed lines (e.g. %s)", len(parseNotes), parseNotes[0])
-	}
-	return out, err
+// consumeStream decodes grok streaming-json. Kept as a named helper because the
+// grok event vocabulary is what the stream tests pin.
+func consumeStream(r io.Reader, onText, onThought, onActivity func(string)) (streamOut, error) {
+	return decodeStream(r, grokDriver{}, streamCallbacks{
+		onText:     onText,
+		onThought:  onThought,
+		onActivity: onActivity,
+	})
 }
 
 func activityLine(ev streamEvent) string {
@@ -761,8 +676,13 @@ func grokHome() string {
 // encodeSessionDir matches Grok's session dir naming (%2FUsers%2F…).
 // writePromptFile stores the user/system prompt for --prompt-file so special
 // characters (#, ?, &, quotes, newlines) are delivered verbatim to the CLI.
+// sanitizePrompt strips NULs, which no CLI accepts on stdin or in a prompt file.
+func sanitizePrompt(prompt string) string {
+	return strings.ReplaceAll(prompt, "\x00", "")
+}
+
 func writePromptFile(prompt string) (path string, cleanup func(), err error) {
-	prompt = strings.ReplaceAll(prompt, "\x00", "")
+	prompt = sanitizePrompt(prompt)
 	f, err := os.CreateTemp("", "grokwork-prompt-*.txt")
 	if err != nil {
 		return "", func() {}, err
@@ -798,7 +718,7 @@ func encodeSessionDir(abs string) string {
 	return b.String()
 }
 
-func SummarizeTitle(ctx context.Context, grokBin, model, taskPrompt, cwd string, timeout time.Duration) (title string, ok bool) {
+func SummarizeTitle(ctx context.Context, cli CLI, taskPrompt, cwd string, timeout time.Duration) (title string, ok bool) {
 	if strings.TrimSpace(taskPrompt) == "" {
 		return "", false
 	}
@@ -824,12 +744,14 @@ func SummarizeTitle(ctx context.Context, grokBin, model, taskPrompt, cwd string,
 		taskPrompt,
 	}, "\n")
 
+	cli = cli.Resolved()
 	result := Run(ctx, Options{
-		GrokBin:          grokBin,
+		Agent:            cli.Agent,
+		Bin:              cli.Bin,
 		Prompt:           prompt,
 		Cwd:              cwd,
 		Yolo:             false,
-		Model:            model,
+		Model:            cli.Model,
 		MaxTurns:         1,
 		Timeout:          timeout,
 		Tools:            &noTools,

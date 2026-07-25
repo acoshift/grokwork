@@ -29,6 +29,9 @@
 {{if .Project}}
 <div class="pr-meta">
   <span><strong>{{.Project}}</strong></span>
+  {{/* Sessions started before agents were selectable carry no stamp; showing
+       nothing there is accurate, since they ran on whatever the default was. */}}
+  {{if .SessionEntry.Agent}}<span class="badge" id="session-agent">{{.SessionEntry.Agent}}{{if .SessionEntry.Model}} · {{.SessionEntry.Model}}{{end}}</span>{{end}}
   {{if .SessionEntry.IsCase}}
   <span class="badge">case</span>
   {{if .SessionEntry.Phase}}<span class="badge">{{.SessionEntry.Phase}}</span>{{end}}

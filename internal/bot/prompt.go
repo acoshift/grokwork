@@ -7,6 +7,8 @@ import (
 	"unicode"
 
 	"github.com/bwmarrin/discordgo"
+
+	"github.com/acoshift/grokwork/internal/grokrun"
 )
 
 type Kind int
@@ -48,6 +50,7 @@ const (
 	KindAddress
 	KindWatch
 	KindUnwatch
+	KindAgent
 	KindTask
 )
 
@@ -56,6 +59,12 @@ type Parsed struct {
 	Prompt string
 	// Arg is optional argument text (queue index, start body, etc.).
 	Arg string
+	// Agent is an explicit coding-CLI selection for this thread, from
+	// "/agent <name> …", "/claude …", or "/grok …". Empty keeps whatever the
+	// session is already stamped with. It rides alongside Kind rather than
+	// being one, so "/claude /start investigate X" still parses as a start
+	// command that happens to pick an agent.
+	Agent string
 }
 
 var mentionRE = regexp.MustCompile(`<@!?\d+>`)
@@ -130,6 +139,16 @@ func ParseMessage(content, botUserID string) Parsed {
 		return Parsed{Kind: KindWatch}
 	case "/unwatch", "unwatch":
 		return Parsed{Kind: KindUnwatch}
+	case "/agent":
+		return Parsed{Kind: KindAgent}
+	case "/claude":
+		return Parsed{Kind: KindAgent, Arg: "claude"}
+	case "/grok":
+		return Parsed{Kind: KindAgent, Arg: "grok"}
+	}
+
+	if p, ok := parseAgentCommand(lower, text); ok {
+		return p
 	}
 
 	if isStartCommand(lower, text) {
@@ -201,6 +220,43 @@ func ParseMessage(content, botUserID string) Parsed {
 	}
 
 	return Parsed{Kind: KindTask, Prompt: text}
+}
+
+// parseAgentCommand handles the per-thread agent selectors. With a trailing task
+// the rest is re-parsed so the selection composes with any other command
+// ("/claude /start fix X"); without one it is a bare set/show request.
+//
+// Only slash forms are commands — a free-form task that merely mentions claude
+// or grok stays a task.
+func parseAgentCommand(lower, text string) (Parsed, bool) {
+	var name, rest string
+	switch {
+	case strings.HasPrefix(lower, "/agent "):
+		fields := strings.Fields(text[len("/agent "):])
+		if len(fields) == 0 {
+			return Parsed{Kind: KindAgent}, true
+		}
+		name = fields[0]
+		rest = strings.TrimSpace(text[strings.Index(text, name)+len(name):])
+		// An unrecognized name is reported by the handler rather than silently
+		// running the default agent, so any trailing task is dropped.
+		if _, ok := grokrun.ParseAgent(name); !ok {
+			return Parsed{Kind: KindAgent, Arg: name}, true
+		}
+	case strings.HasPrefix(lower, "/claude "):
+		name, rest = "claude", strings.TrimSpace(text[len("/claude "):])
+	case strings.HasPrefix(lower, "/grok "):
+		name, rest = "grok", strings.TrimSpace(text[len("/grok "):])
+	default:
+		return Parsed{}, false
+	}
+
+	if rest == "" {
+		return Parsed{Kind: KindAgent, Arg: name}, true
+	}
+	inner := ParseMessage(rest, "")
+	inner.Agent = name
+	return inner, true
 }
 
 func isHandOffCommand(lower string) bool {
@@ -431,6 +487,8 @@ func HelpText() string {
 		"• `/queue` — list queued follow-ups (author + intent)",
 		"• `/dequeue N` — remove queue item N (1-based; owner/mod or your own)",
 		"• `/cancel-mine` — remove your queued items",
+		"• `/agent` — show this thread's coding CLI and model (fixed when the session starts)",
+		"• `/claude <task>` / `/grok <task>` — open a thread on a specific coding CLI",
 		"• `/start investigate|fix|explain <task>` — set session mode and run",
 		"• `/investigate <task>` — read-only investigate (no PR / no direct ship)",
 		"• `/case [severity] [ref:ID] <title>` — open a support case (Mode=case, phase intake)",
