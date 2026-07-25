@@ -1,12 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Grok Work">
-  <!-- Matches .brand-mark: solid tile + diagonal band at 115°. -->
-  <defs>
-    <linearGradient id="slash" gradientUnits="userSpaceOnUse" x1="2" y1="28" x2="30" y2="4">
-      <stop offset="46%" stop-color="#050505"/>
-      <stop offset="46%" stop-color="#f7f7f7"/>
-      <stop offset="56%" stop-color="#f7f7f7"/>
-      <stop offset="56%" stop-color="#050505"/>
-    </linearGradient>
-  </defs>
-  <rect width="32" height="32" rx="9.5" fill="url(#slash)"/>
+  <!-- Same geometry as favicon.svg — see the derivation there. Keep the two in
+       step: this is the standalone logo, that one is the tab icon. -->
+  <style>
+    .tile { fill: #050505 }
+    .cut { fill: #f7f7f7 }
+    @media (prefers-color-scheme: dark) {
+      .tile { fill: #ebebeb }
+      .cut { fill: #121212 }
+    }
+  </style>
+  <clipPath id="tile"><rect width="32" height="32" rx="9.697"/></clipPath>
+  <g clip-path="url(#tile)">
+    <rect class="tile" width="32" height="32"/>
+    <path class="cut" d="M25.315 -8H30.007L7.625 40H2.931Z"/>
+  </g>
 </svg>

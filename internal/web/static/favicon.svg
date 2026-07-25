@@ -1,11 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <defs>
-    <linearGradient id="slash" gradientUnits="userSpaceOnUse" x1="2" y1="28" x2="30" y2="4">
-      <stop offset="46%" stop-color="#050505"/>
-      <stop offset="46%" stop-color="#f7f7f7"/>
-      <stop offset="56%" stop-color="#f7f7f7"/>
-      <stop offset="56%" stop-color="#050505"/>
-    </linearGradient>
-  </defs>
-  <rect width="32" height="32" rx="9.5" fill="url(#slash)"/>
+  <!-- The .brand-mark as geometry: ink squircle (radius 0.5/1.65 of the side, as
+       in the CSS) clipping a band whose edges are the CSS gradient's 46% and 56%
+       stops along linear-gradient(115deg). A path, not a gradient: coincident
+       stops render soft in some favicon rasterisers, and a hard edge survives
+       16px. Derivation for the 32-unit tile — d = (sin115, -cos115) =
+       (0.906308, 0.422618), gradient line L = 32(|sin115| + |cos115|) = 42.5256,
+       so the band edges are 0.906308x + 0.422618y = {0.46L, 0.56L}, extended
+       past the tile and clipped. -->
+  <style>
+    .tile { fill: #050505 }
+    .cut { fill: #f7f7f7 }
+    /* Follows the browser theme the way .brand-mark follows the page theme, so
+       the tab icon never sinks into a dark tab strip. */
+    @media (prefers-color-scheme: dark) {
+      .tile { fill: #ebebeb }
+      .cut { fill: #121212 }
+    }
+  </style>
+  <clipPath id="tile"><rect width="32" height="32" rx="9.697"/></clipPath>
+  <g clip-path="url(#tile)">
+    <rect class="tile" width="32" height="32"/>
+    <path class="cut" d="M25.315 -8H30.007L7.625 40H2.931Z"/>
+  </g>
 </svg>
