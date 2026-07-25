@@ -623,10 +623,11 @@ func buildPRGates(pr ghpr.PRDetail, teamRollup string) ([]prGate, bool) {
 		mg.Class = "err"
 		mg.Hint = "update branch"
 	case "HAS_HOOKS":
-		mg.Class = "warn"
-		mg.Hint = "hooks/checks pending"
+		mg.Class = "err"
+		mg.Hint = "hooks/checks not satisfied"
 	case "UNKNOWN":
-		mg.Hint = "computing"
+		mg.Class = "warn"
+		mg.Hint = "computing — not ready"
 	case "":
 		// Older fixtures / gh without the field — fall back to mergeable.
 		mg.Label = "Mergeable"

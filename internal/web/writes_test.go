@@ -585,8 +585,9 @@ func TestMergeBlockedPreflightShowsAlert(t *testing.T) {
 	if !strings.Contains(trig, "Merge failed") {
 		t.Fatalf("HX-Trigger=%q want title Merge failed", trig)
 	}
-	if !strings.Contains(strings.ToLower(trig), "blocked") {
-		t.Fatalf("HX-Trigger=%q want blocked preflight reason", trig)
+	// BLOCKED + REVIEW_REQUIRED → specific review message, not generic "blocked".
+	if !strings.Contains(strings.ToLower(trig), "approving review") {
+		t.Fatalf("HX-Trigger=%q want review-required preflight reason", trig)
 	}
 }
 

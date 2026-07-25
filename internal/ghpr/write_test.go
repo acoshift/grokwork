@@ -273,6 +273,10 @@ func TestCheckMergePreflight(t *testing.T) {
 	if CheckMergePreflight(blocked, true).Allow {
 		t.Fatal("attempt anyway must not allow BLOCKED")
 	}
+	blocked.ReviewDecision = "REVIEW_REQUIRED"
+	if pre := CheckMergePreflight(blocked, false); pre.Allow || !strings.Contains(pre.Reason, "approving review") {
+		t.Fatalf("blocked+review: %+v", pre)
+	}
 
 	dirty := base
 	dirty.MergeStateStatus = "DIRTY"
@@ -292,6 +296,12 @@ func TestCheckMergePreflight(t *testing.T) {
 		t.Fatal("HAS_HOOKS should refuse")
 	}
 
+	unknown := base
+	unknown.MergeStateStatus = "UNKNOWN"
+	if pre := CheckMergePreflight(unknown, false); pre.Allow || !strings.Contains(pre.Reason, "computing") {
+		t.Fatalf("unknown: %+v", pre)
+	}
+
 	clean := base
 	clean.MergeStateStatus = "CLEAN"
 	if !CheckMergePreflight(clean, false).Allow {
@@ -302,6 +312,24 @@ func TestCheckMergePreflight(t *testing.T) {
 	unstable.MergeStateStatus = "UNSTABLE"
 	if !CheckMergePreflight(unstable, false).Allow {
 		t.Fatal("UNSTABLE alone should allow (non-required checks)")
+	}
+}
+
+func TestMergeStateHelpers(t *testing.T) {
+	if !MergeStateBlocksMerge("BLOCKED") || !MergeStateBlocksMerge("UNKNOWN") {
+		t.Fatal("expected blocks")
+	}
+	if MergeStateBlocksMerge("") || MergeStateBlocksMerge("CLEAN") {
+		t.Fatal("empty/CLEAN must not block")
+	}
+	if !MergeStateAllowsShip("") || !MergeStateAllowsShip("CLEAN") || !MergeStateAllowsShip("UNSTABLE") {
+		t.Fatal("expected allows ship")
+	}
+	if MergeStateAllowsShip("UNKNOWN") || MergeStateAllowsShip("BLOCKED") {
+		t.Fatal("UNKNOWN/BLOCKED must not be ship-ready")
+	}
+	if got := MergeStateBlockReason("BLOCKED", "REVIEW_REQUIRED"); !strings.Contains(got, "approving review") {
+		t.Fatalf("reason=%q", got)
 	}
 }
 

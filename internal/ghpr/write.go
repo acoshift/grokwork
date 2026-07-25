@@ -315,15 +315,8 @@ func CheckMergePreflight(d PRDetail, attemptAnyway bool) MergePreflight {
 	if d.IsDraft {
 		return MergePreflight{Allow: false, Reason: "PR is a draft"}
 	}
-	switch strings.ToUpper(strings.TrimSpace(d.MergeStateStatus)) {
-	case "BLOCKED":
-		return MergePreflight{Allow: false, Reason: "GitHub merge is blocked (branch protection or required reviews)"}
-	case "DIRTY":
-		return MergePreflight{Allow: false, Reason: "PR has merge conflicts"}
-	case "BEHIND":
-		return MergePreflight{Allow: false, Reason: "branch is behind the base; update required"}
-	case "HAS_HOOKS":
-		return MergePreflight{Allow: false, Reason: "required status checks or hooks not satisfied"}
+	if reason := MergeStateBlockReason(d.MergeStateStatus, d.ReviewDecision); reason != "" {
+		return MergePreflight{Allow: false, Reason: reason}
 	}
 	m := strings.ToUpper(strings.TrimSpace(d.Mergeable))
 	if m == "CONFLICTING" {

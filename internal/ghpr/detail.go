@@ -104,24 +104,46 @@ func parsePRDetailJSON(raw []byte) (PRDetail, error) {
 	return d, nil
 }
 
-// MergeStateBlocksMerge reports statuses where GitHub will refuse a plain merge
-// (branch protection, conflicts, behind base, required hooks). Empty/UNKNOWN
-// do not block — status may still be computing; gh remains the final authority.
+// MergeStateBlocksMerge reports statuses that must refuse a plain merge.
+// Empty is not a block (field absent / legacy). UNKNOWN is a block — GitHub
+// is still computing, so we do not claim ship-ready or call merge yet.
 func MergeStateBlocksMerge(status string) bool {
+	return MergeStateBlockReason(status, "") != ""
+}
+
+// MergeStateBlockReason returns a user-facing refuse reason for a blocking
+// mergeStateStatus, or "" if the status alone does not block. reviewDecision
+// refines BLOCKED (required reviews vs generic protection).
+func MergeStateBlockReason(status, reviewDecision string) string {
 	switch strings.ToUpper(strings.TrimSpace(status)) {
-	case "BLOCKED", "DIRTY", "BEHIND", "HAS_HOOKS":
-		return true
+	case "BLOCKED":
+		switch strings.ToUpper(strings.TrimSpace(reviewDecision)) {
+		case "REVIEW_REQUIRED":
+			return "GitHub requires an approving review before merge"
+		case "CHANGES_REQUESTED":
+			return "GitHub merge is blocked (changes requested)"
+		default:
+			return "GitHub merge is blocked (branch protection or required reviews)"
+		}
+	case "DIRTY":
+		return "PR has merge conflicts"
+	case "BEHIND":
+		return "branch is behind the base; update required"
+	case "HAS_HOOKS":
+		return "required status checks or hooks not satisfied"
+	case "UNKNOWN":
+		return "merge status still computing; wait and retry"
 	default:
-		return false
+		return ""
 	}
 }
 
-// MergeStateAllowsShip is true when the status is green enough to treat the PR
-// as shippable in the UI. Empty/UNKNOWN keep prior gate logic (field absent or
-// still computing); CLEAN and UNSTABLE are explicit go/soft-go.
+// MergeStateAllowsShip is true when the status is green enough for the PR
+// ship strip "ready" affordance. Empty keeps legacy mergeable-only logic
+// (field absent). UNKNOWN is not ready — still computing.
 func MergeStateAllowsShip(status string) bool {
 	switch strings.ToUpper(strings.TrimSpace(status)) {
-	case "", "CLEAN", "UNSTABLE", "UNKNOWN":
+	case "", "CLEAN", "UNSTABLE":
 		return true
 	default:
 		return false

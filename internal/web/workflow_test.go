@@ -455,6 +455,24 @@ func TestBuildPRGates(t *testing.T) {
 		t.Fatalf("blocked gate=%+v", gates[3])
 	}
 
+	// Status still computing: not ship-ready.
+	unknown := green
+	unknown.MergeStateStatus = "UNKNOWN"
+	gates, ready = buildPRGates(unknown, reviewstore.RollupApproved)
+	if ready {
+		t.Fatal("UNKNOWN must not be ship-ready")
+	}
+	if gates[3].Class != "warn" {
+		t.Fatalf("unknown gate=%+v", gates[3])
+	}
+
+	hooks := green
+	hooks.MergeStateStatus = "HAS_HOOKS"
+	gates, ready = buildPRGates(hooks, reviewstore.RollupApproved)
+	if ready || gates[3].Class != "err" {
+		t.Fatalf("HAS_HOOKS ready=%v gate=%+v", ready, gates[3])
+	}
+
 	// Legacy fixture without mergeStateStatus still uses mergeable.
 	legacy := ghpr.PRDetail{
 		Info:      ghpr.Info{State: "OPEN", ReviewDecision: "APPROVED", Checks: "✓ 1"},
