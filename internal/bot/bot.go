@@ -22,6 +22,7 @@ import (
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/timeline"
 )
 
 const (
@@ -93,6 +94,7 @@ type Bot struct {
 	reviews  *reviewstore.Store
 	states   sync.Map // threadID → *threadState
 	runs     *runjournal.Store
+	events   *timeline.Store
 
 	ready     atomic.Bool
 	gateReady atomic.Bool
@@ -133,6 +135,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) 
 			log.Printf("warn: reviewstore: %v", err)
 		} else {
 			b.reviews = rev
+		}
+		if tl, err := timeline.New(cfg.DataDir); err != nil {
+			log.Printf("warn: timeline: %v", err)
+		} else {
+			b.events = tl
 		}
 	}
 	if host, err := os.Hostname(); err == nil {
@@ -1892,6 +1899,9 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		histM = &discordgo.MessageCreate{Message: &discordgo.Message{ID: item.triggerMsgID}}
 	}
 	b.recordTurnActorPolicy(threadID, actor, histM, proj.Name, parsed.Prompt, result, elapsed, pol)
+	// Durable per-unit record. Outside the !result.Cancelled branch below on
+	// purpose: a cancelled run is exactly the case whose output history drops.
+	b.recordRunTimeline(threadID, streamer.Text(), result, elapsed)
 
 	if !result.Cancelled {
 		replyText := result.Text
@@ -2021,7 +2031,11 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 	if m != nil {
 		msgID = m.ID
 	}
-	// Prefer streamer/result text; keep a hard cap so history files stay manageable.
+	// Only the final reply; keep a hard cap so history files stay manageable.
+	// Note this does NOT fall back to the streamed text, so a run that ended
+	// without a final reply (cancelled, max turns) records an empty response
+	// here. The per-unit timeline is what preserves that output —
+	// recordRunTimeline, called unconditionally by the task path.
 	response := result.Text
 	const maxResponse = 200_000
 	if len(response) > maxResponse {
