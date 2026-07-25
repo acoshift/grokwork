@@ -106,6 +106,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"sessions.thread":                    "/sessions/",
 		"ship":                               "/ship",
 		"cases":                              "/cases",
+		"inbox":                              "/inbox",
 		"worktrees":                          "/worktrees",
 		"worktrees.prune":                    "/worktrees/prune",
 		"worktrees.pruneIdle":                "/worktrees/prune-idle",
@@ -194,6 +195,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("sessions", "layout.tmpl", "sessions.tmpl")
 	tp.ParseFiles("ship", "layout.tmpl", "ship.tmpl")
 	tp.ParseFiles("cases", "layout.tmpl", "cases.tmpl")
+	tp.ParseFiles("inbox", "layout.tmpl", "inbox.tmpl")
 	tp.ParseFiles("case_new", "layout.tmpl", "case_new.tmpl")
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
 	tp.ParseFiles("config", "layout.tmpl", "config.tmpl")
@@ -251,6 +253,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /sessions/{threadID}", s.requireAuth(hime.Handler(s.sessionPage)))
 	mux.Handle("GET /ship", s.requireAuth(hime.Handler(s.shipPage)))
 	mux.Handle("GET /cases", s.requireAuth(hime.Handler(s.casesGlobal)))
+	mux.Handle("GET /inbox", s.requireAuth(hime.Handler(s.inboxPage)))
 	mux.Handle("GET /worktrees", s.requireAuth(hime.Handler(s.worktreesPage)))
 	mux.Handle("GET /config", s.requireAdmin(hime.Handler(s.configPage)))
 	mux.Handle("GET /config/projects/{name}", s.requireAdmin(hime.Handler(s.projectConfigPage)))
@@ -448,6 +451,7 @@ type pageData struct {
 	IsSessions  bool
 	IsShip      bool
 	IsCases     bool
+	IsInbox     bool
 	IsWorktrees bool
 	IsConfig    bool
 	IsLogin     bool
@@ -568,6 +572,8 @@ type pageData struct {
 	// as the fallback when a turn has no recorded response (cancelled / max
 	// turns), which is the only copy a web-native unit ever had.
 	RunTranscript string
+	// InboxItems are the viewer's queued notifications (newest first).
+	InboxItems InboxItems
 	// Session lifecycle controls (cancel/reset/dequeue/claim on the detail page).
 	// CanControlSession gates control affordances: it already folds in
 	// CanStartSession (feature+role), so the buttons never render when the POST

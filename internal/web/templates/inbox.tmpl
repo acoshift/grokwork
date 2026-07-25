@@ -1,0 +1,23 @@
+{{define "content"}}
+<div id="page-inbox">
+  <h1>Inbox</h1>
+  <p class="muted">Notifications queued for you because there was no channel to push them to — a run you were watching finished, and your account has no Discord DM to receive it.</p>
+  {{if .InboxItems}}
+  <div class="card-list">
+    {{range .InboxItems}}
+    <article class="card">
+      <header class="meta">
+        <span class="badge">{{.Kind}}</span>
+        {{if .Project}}<span class="mono">{{.Project}}</span>{{end}}
+        <span class="muted mono">{{.At}}</span>
+      </header>
+      <div>{{if .URL}}<a href="{{.URL}}">{{.Subject}}</a>{{else}}{{.Subject}}{{end}}</div>
+      {{if .Body}}<div class="muted">{{.Body}}</div>{{end}}
+    </article>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty">Nothing queued. Notifications appear here only when they cannot be delivered another way.</div>
+  {{end}}
+</div>
+{{end}}
