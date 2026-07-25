@@ -4,8 +4,8 @@
 <h1>Run limits</h1>
 <p class="sub">
   Per Discord task: <span class="mono">maxTurns</span> is the tool/turn budget for
-  <span class="mono">grok -p</span>; <span class="mono">timeoutMs</span> kills the process after that many milliseconds.
-  Defaults are <span class="mono">40</span> turns and <span class="mono">1800000</span> ms (30 minutes). Applies to new runs only.
+  the coding CLI; <span class="mono">timeout</span> kills the process after that duration.
+  Defaults are <span class="mono">40</span> turns and <span class="mono">30m</span>. Applies to new runs only.
 </p>
 <div class="section card">
   <form class="inline" method="post" action="{{route "config.run"}}" style="grid-template-columns: 1fr 1fr auto;">
@@ -15,13 +15,12 @@
       <input id="max-turns" type="number" name="maxTurns" min="1" step="1" required value="{{.Config.MaxTurns}}" autocomplete="off">
     </div>
     <div>
-      <label for="timeout-ms">Timeout (ms)</label>
-      {{/* min=1000 and step=1: min=1+step=1000 made default 1800000 fail HTML5 validation. */}}
-      <input id="timeout-ms" type="number" name="timeoutMs" min="1000" max="86400000" step="1" required value="{{.Config.TimeoutMs}}" autocomplete="off" title="1000–86400000 ms (1 second–24 hours)">
+      <label for="timeout">Timeout</label>
+      <input id="timeout" type="text" name="timeoutMs" required value="{{msDur .Config.TimeoutMs}}" autocomplete="off" placeholder="30m" spellcheck="false" title="Duration with unit: 30m, 1h, 45s (1 second–24 hours). Bare numbers are milliseconds.">
     </div>
     <button type="submit">Save</button>
   </form>
-  <p class="sub" style="margin:0.5rem 0 0">Range: 1 s–24 h. Examples: 15 min = <span class="mono">900000</span>, 30 min = <span class="mono">1800000</span>, 1 h = <span class="mono">3600000</span>.</p>
+  <p class="sub" style="margin:0.5rem 0 0">Range: 1 s–24 h. Unit suffixes: <span class="mono">s</span>, <span class="mono">m</span>, <span class="mono">h</span> (e.g. <span class="mono">15m</span>, <span class="mono">1h</span>, <span class="mono">1h30m</span>). Bare numbers are milliseconds.</p>
 </div>
 </div>
 {{end}}

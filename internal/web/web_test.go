@@ -190,6 +190,8 @@ func TestPagesRender(t *testing.T) {
 		{"/config/github-identities", `id="github-identity-form"`},
 		{"/config/run", `id="page-config-run"`},
 		{"/config/run", `name="maxTurns"`},
+		{"/config/run", `name="timeoutMs"`},
+		{"/config/run", `placeholder="30m"`},
 		{"/config/agent", `id="page-config-agent"`},
 		{"/config/agent", `name="agent"`},
 		{"/config/agent", `name="claudeBin"`},
@@ -1424,10 +1426,10 @@ func TestConfigAddsPersist(t *testing.T) {
 		}
 	}
 
-	// Settings: Grok run limits
+	// Settings: Grok run limits (unit suffix, e.g. 20m)
 	reqRun := httptest.NewRequest(http.MethodPost, "/config/run", strings.NewReader(url.Values{
 		"maxTurns":  {"55"},
-		"timeoutMs": {"1200000"},
+		"timeoutMs": {"20m"},
 	}.Encode()))
 	reqRun.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	wRun := httptest.NewRecorder()
@@ -1437,6 +1439,20 @@ func TestConfigAddsPersist(t *testing.T) {
 	}
 	if cfg.MaxTurnsValue() != 55 || cfg.TimeoutMsValue() != 1_200_000 {
 		t.Fatalf("run limits turns=%d timeout=%d", cfg.MaxTurnsValue(), cfg.TimeoutMsValue())
+	}
+	// Bare milliseconds still accepted for backward compatibility.
+	reqRunMs := httptest.NewRequest(http.MethodPost, "/config/run", strings.NewReader(url.Values{
+		"maxTurns":  {"55"},
+		"timeoutMs": {"900000"},
+	}.Encode()))
+	reqRunMs.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wRunMs := httptest.NewRecorder()
+	h.ServeHTTP(wRunMs, reqRunMs)
+	if wRunMs.Code != http.StatusSeeOther && wRunMs.Code != http.StatusFound {
+		t.Fatalf("run settings ms status=%d body=%s", wRunMs.Code, wRunMs.Body.String())
+	}
+	if cfg.TimeoutMsValue() != 900_000 {
+		t.Fatalf("run limits bare-ms timeout=%d", cfg.TimeoutMsValue())
 	}
 
 	// Settings: default coding agent

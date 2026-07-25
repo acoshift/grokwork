@@ -173,17 +173,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 
 	app.TemplateFunc("add", func(a, b int) int { return a + b })
 	app.TemplateFunc("sub", func(a, b int) int { return a - b })
-	// Millisecond durations as compact human text (config hub row values).
-	app.TemplateFunc("msDur", func(ms int) string {
-		d := time.Duration(ms) * time.Millisecond
-		if d >= time.Hour && d%time.Hour == 0 {
-			return fmt.Sprintf("%dh", int(d/time.Hour))
-		}
-		if d >= time.Minute {
-			return fmt.Sprintf("%dm", int(d/time.Minute))
-		}
-		return fmt.Sprintf("%ds", int(d/time.Second))
-	})
+	// Millisecond durations as compact unit-suffixed text (config form + hub).
+	app.TemplateFunc("msDur", formatMsDur)
 	app.TemplateFunc("markdown", markdown.Render)
 	// shortTime formats a time.Time or RFC3339 string as "2006-01-02 15:04"
 	// (same layout as the commits list Date column).
@@ -1508,9 +1499,8 @@ func (s *Server) updateRunSettings(ctx *hime.Context) error {
 		return s.configPageRedirect(ctx, "config.run", "", err)
 	}
 	maxTurns, _ := strconv.Atoi(strings.TrimSpace(ctx.PostFormValue("maxTurns")))
-	timeoutMs, _ := strconv.Atoi(strings.TrimSpace(ctx.PostFormValue("timeoutMs")))
-	mins := float64(timeoutMs) / 60000
-	msg := fmt.Sprintf("Grok run limits: maxTurns=%d, timeoutMs=%d (%.1f min)", maxTurns, timeoutMs, mins)
+	timeoutMs, _ := parseTimeoutMs(ctx.PostFormValue("timeoutMs"))
+	msg := fmt.Sprintf("Run limits: maxTurns=%d, timeout=%s", maxTurns, formatMsDur(timeoutMs))
 	return s.configPageRedirect(ctx, "config.run", msg, nil)
 }
 
@@ -1666,20 +1656,16 @@ func (s *Server) updateResumeSettingsErr(ctx *hime.Context) error {
 
 func (s *Server) updateRunSettingsErr(ctx *hime.Context) error {
 	rawTurns := strings.TrimSpace(ctx.PostFormValue("maxTurns"))
-	rawTimeout := strings.TrimSpace(ctx.PostFormValue("timeoutMs"))
 	if rawTurns == "" {
 		return fmt.Errorf("maxTurns is required")
-	}
-	if rawTimeout == "" {
-		return fmt.Errorf("timeoutMs is required")
 	}
 	maxTurns, err := strconv.Atoi(rawTurns)
 	if err != nil {
 		return fmt.Errorf("maxTurns must be an integer")
 	}
-	timeoutMs, err := strconv.Atoi(rawTimeout)
+	timeoutMs, err := parseTimeoutMs(ctx.PostFormValue("timeoutMs"))
 	if err != nil {
-		return fmt.Errorf("timeoutMs must be an integer")
+		return err
 	}
 	return s.cfg.SetGrokRunLimits(maxTurns, timeoutMs)
 }
