@@ -318,6 +318,10 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAddressCI))))
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/address-review",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAddressReview))))
+	// Agentic PR review → one PR comment (never reuses a session, files no issues).
+	// Distinct from POST …/reviews, which records a human team-review verdict.
+	mux.Handle("POST /prs/{owner}/{repo}/{n}/agent-review",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAgentReview))))
 	mux.Handle("POST /sessions/{threadID}/continue",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionContinue))))
 	// Session lifecycle controls (cancel/reset/dequeue/label/goal/claim).

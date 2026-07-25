@@ -47,6 +47,7 @@ const (
 	ActionSessionGoal             = "session.goal"
 	ActionSessionClaim            = "session.claim"
 	ActionCommitReviewStart       = "commit.review.start"
+	ActionPRReviewStart           = "pr.review.start" // agentic PR review → PR comment
 	ActionGitFetch                = "git.fetch"
 )
 

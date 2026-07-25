@@ -1887,6 +1887,9 @@
       padding: 0.45rem 0 0.25rem;
     }
     .grok-dispatch label.check { min-height: 0; font-size: 0.84rem; }
+    /* A second dispatch in one rail group (PR rail: the Address pair, then Review)
+       needs a hairline, or its note reads as more of the first one's note. */
+    .grok-dispatch.dispatch-next { border-top: 1px solid var(--border); padding-top: 0.75rem; }
     .btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
     .btn-pair button { min-width: 0; padding: 0 0.5rem; font-size: 0.84rem; }
     .grok-pick {

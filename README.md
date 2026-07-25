@@ -86,7 +86,7 @@ While the process runs it also serves a small server-rendered admin UI (hime + `
 | `/issues` | Project picker for GitHub issues |
 | `/projects/{project}/issues` | Issue list with multi-repo picker |
 | `/projects/{project}/linear` | Linear issues (when Linear enabled on the project) |
-| `/prs/{owner}/{repo}/{n}` | PR detail (ship board links here); address CI / address review when `startSessions` is on |
+| `/prs/{owner}/{repo}/{n}` | PR detail (ship board links here); address CI / address review / review-in-new-session when `startSessions` is on |
 | `/prs/.../diff` | Unified diff browser for a PR |
 
 **Web writes (optional, require `webAuth.enabled`):**
@@ -95,7 +95,7 @@ While the process runs it also serves a small server-rendered admin UI (hime + `
 |--------------|--------|
 | `webAuth.features.githubWrites` | Members can comment / close issues & PRs |
 | `webAuth.features.merge` | Members can merge (default `webMergeMethod`: `squash`). Never passes `--admin` |
-| `webAuth.features.startSessions` | Members can **Fix** from a GitHub/Linear issue and **Address CI / Address review** from a PR (starts/queues a Grok run on the project’s Discord channel) |
+| `webAuth.features.startSessions` | Members can **Fix** from a GitHub/Linear issue, **Address CI / Address review** from a PR, and **Review** a PR or commit (a PR review posts one PR comment; a commit review files issues) |
 
 Bind for Tailscale or LAN with `"httpListen": "0.0.0.0:8787"` (or a Tailscale IP).
 

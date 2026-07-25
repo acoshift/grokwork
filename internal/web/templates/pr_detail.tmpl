@@ -265,6 +265,19 @@
     </div>
   </form>
   <p class="rail-note">Reuses a session already bound to this PR, or starts a new one — no Discord thread. A reused session keeps its own model. The agent pushes fixes; it never merges.</p>
+  {{/* Review is deliberately reuse-free: it re-reads the current head, so there is
+       no force_new checkbox and the picker above does not apply to it. Its own
+       hidden select feeds its own confirm modal. */}}
+  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/agent-review" class="grok-dispatch dispatch-next">
+    {{template "csrf" $}}
+    <input type="hidden" name="project" value="{{.Project}}">
+    {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
+    <div class="form-actions">
+      <button type="submit" class="btn-secondary" id="btn-review-pr"
+        {{- if .CanSelectModel}} data-confirm="Reviews this pull request in a new session and posts the findings as one PR comment." data-confirm-title="Review PR" data-confirm-ok="Start review" data-confirm-select="model" data-confirm-select-label="Review model"{{end}}>Review in new session</button>
+    </div>
+  </form>
+  <p class="rail-note">Always a new session, never one from above. Posts findings as a single PR comment — no GitHub issues, no code changes, no merge.</p>
 </div>
 {{end}}
 
