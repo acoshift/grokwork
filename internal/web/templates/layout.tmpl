@@ -1612,7 +1612,11 @@
       align-items: flex-start;
       justify-content: space-between;
       gap: 0.5rem 1rem;
-      margin-bottom: 0.45rem;
+      /* The row zeroes its h1's margin and stands in for it, so it has to leave
+         the same trailing space — otherwise a page that puts a button beside its
+         title (cases, project overview) sits its .sub lower than the identical
+         page that does not (ship, sessions, worktrees). */
+      margin-bottom: 0.35rem;
     }
     .pr-title-row h1 { margin: 0; flex: 1 1 22rem; }
     .pr-head-links {

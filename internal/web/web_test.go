@@ -1013,6 +1013,38 @@ func TestNavBrandChrome(t *testing.T) {
 	}
 }
 
+// TestProjectSettingsHasNoConfigCrumb pins the removal of the "← Config" link.
+// /config/projects/{p} scopes the shell to the project workspace (see the
+// /config/projects/proj row in TestNavScopeRules), so the sidebar is the way
+// out and it leads back to the project — the global hub is a sibling scope,
+// not a parent. If that scoping ever regresses, this page loses its only
+// escape, so the two tests are meant to be read together.
+func TestProjectSettingsHasNoConfigCrumb(t *testing.T) {
+	srv, _, _ := testServer(t)
+	h := srv.Handler()
+	for _, path := range []string{
+		"/config/projects/proj",
+		"/config/projects/proj/workflow",
+		"/config/projects/proj/integrations",
+		"/config/projects/proj/danger",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status=%d", path, w.Code)
+		}
+		body := w.Body.String()
+		if strings.Contains(body, "← Config") {
+			t.Fatalf("%s still renders the Config crumb", path)
+		}
+		// The workspace sidebar is what replaced it.
+		if !strings.Contains(body, `data-scope="proj"`) {
+			t.Fatalf("%s lost its workspace shell — nothing links out now", path)
+		}
+	}
+}
+
 // TestNavScopeRules pins the URL→shell-scope contract (mirrored by the layout
 // JS navScopeOf): path scopes /projects/… and /config/projects/…;
 // ?project= scopes only /sessions/{id…}, /history/{id…}, and /prs/… detail

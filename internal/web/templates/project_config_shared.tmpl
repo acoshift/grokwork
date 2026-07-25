@@ -1,5 +1,8 @@
 {{define "project_config_header"}}
-<p class="sub" style="margin-bottom:0.5rem"><a href="{{route "config"}}">← Config</a></p>
+{{/* No "← Config" crumb: this path scopes the shell to the project workspace
+     (navScopeFromURL covers /config/projects/{p}), so the sidebar is already
+     the way out — and it leads to the project, which is where the reader came
+     from. The global hub is a different scope, not a parent. */}}
 <h1><span class="mono">{{.ProjectItem.Name}}</span> <span class="muted" style="font-weight:500;font-size:1.05rem">· project settings</span></h1>
 <p class="sub">
   <span class="mono">{{.ProjectItem.Path}}</span>
