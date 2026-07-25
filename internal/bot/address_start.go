@@ -14,7 +14,7 @@ var (
 	ErrInvalidPR        = fmt.Errorf("invalid pull request")
 	ErrEmptyPrompt      = fmt.Errorf("empty prompt")
 	ErrUnknownThread    = fmt.Errorf("unknown session/thread")
-	ErrNoReviewComments = fmt.Errorf("no unresolved review comments")
+	ErrNoReviewComments = fmt.Errorf("no unresolved review comments and no PR comments to work through")
 )
 
 // AddressCIOpts starts a single-PR CI fix from the web.
@@ -190,8 +190,17 @@ type AddressReviewOpts struct {
 	Number int
 	Title  string
 	URL    string
-	// Comments must be non-empty; caller fails closed if list failed.
+	// Comments are unresolved inline review threads. Caller fails closed if the
+	// list call failed.
 	Comments []ghpr.ReviewComment
+	// Conversation is the PR's top-level comment thread. Separate from Comments
+	// because it is a different kind of instruction: an inline thread points at
+	// a line and is unresolved by definition, while a conversation comment may
+	// be chatter, may already be handled, and — importantly — is where an agent
+	// review lands, since StartPRReview posts its findings with `gh pr comment`.
+	// Without this the review loop could not close: the reviewer wrote its
+	// findings somewhere this dispatch never read.
+	Conversation []ghpr.IssueComment
 	// Model applies only when this dispatch creates a session — see AddressCIOpts.
 	Model string
 }
@@ -212,7 +221,9 @@ func (b *Bot) StartAddressReview(opts AddressReviewOpts) (FixStartResult, error)
 	if opts.Number <= 0 || strings.TrimSpace(opts.Owner) == "" || strings.TrimSpace(opts.Repo) == "" {
 		return FixStartResult{}, ErrInvalidPR
 	}
-	if len(opts.Comments) == 0 {
+	// Either source alone is enough work to do: a reviewer who wrote "please
+	// rework the retry logic" as a plain comment left no unresolved thread.
+	if len(opts.Comments) == 0 && len(opts.Conversation) == 0 {
 		return FixStartResult{}, ErrNoReviewComments
 	}
 	cli, err := b.resolveDispatchCLI(project, opts.Actor, opts.Model)
@@ -444,7 +455,12 @@ func BuildAddressReviewPrompt(opts AddressReviewOpts) string {
 	if url != "" {
 		fmt.Fprintf(&b, "PR URL: %s\n", url)
 	}
-	b.WriteString("\nUnresolved review comments:\n")
+	if len(opts.Comments) == 0 {
+		b.WriteString("\nNo unresolved inline review threads.\n")
+	}
+	if len(opts.Comments) > 0 {
+		b.WriteString("\nUnresolved review comments:\n")
+	}
 	for i, c := range opts.Comments {
 		fmt.Fprintf(&b, "\n### Comment %d", i+1)
 		if c.Path != "" {
@@ -467,11 +483,71 @@ func BuildAddressReviewPrompt(opts AddressReviewOpts) string {
 		b.WriteString(body)
 		b.WriteString("\n")
 	}
+	writeAddressConversation(&b, opts.Conversation)
+
 	b.WriteString("\nTasks:\n")
 	b.WriteString("1. Address each unresolved review comment with a minimal, correct change.\n")
-	b.WriteString("2. Run relevant tests when practical.\n")
-	b.WriteString("3. Commit, push to the PR branch, and update the existing PR (do not open a duplicate).\n")
-	b.WriteString("4. Summarize what you changed for each comment.\n")
+	if len(opts.Conversation) > 0 {
+		b.WriteString("2. Read the PR conversation and act on anything it asks for that is still outstanding. Some of it is discussion, and some may already be done — check the current code before changing anything, and say what you skipped and why.\n")
+		b.WriteString("3. Run relevant tests when practical.\n")
+		b.WriteString("4. Commit, push to the PR branch, and update the existing PR (do not open a duplicate).\n")
+		b.WriteString("5. Summarize what you changed for each item you acted on.\n")
+	} else {
+		b.WriteString("2. Run relevant tests when practical.\n")
+		b.WriteString("3. Commit, push to the PR branch, and update the existing PR (do not open a duplicate).\n")
+		b.WriteString("4. Summarize what you changed for each comment.\n")
+	}
 	b.WriteString("Do not merge the PR.\n")
 	return b.String()
+}
+
+// Prompt budget for the PR conversation. Unlike inline threads, which are
+// unresolved by definition and therefore all actionable, a conversation is
+// mostly history — the newest few carry the outstanding asks, and an old PR's
+// full thread would crowd out the diff the agent actually needs to read.
+const (
+	maxPromptConversation     = 15
+	maxPromptConversationBody = 4000
+)
+
+func writeAddressConversation(b *strings.Builder, comments []ghpr.IssueComment) {
+	if len(comments) == 0 {
+		return
+	}
+	omitted := 0
+	if len(comments) > maxPromptConversation {
+		omitted = len(comments) - maxPromptConversation
+		comments = comments[len(comments)-maxPromptConversation:]
+	}
+	b.WriteString("\nPR conversation (top-level comments, oldest first")
+	if omitted > 0 {
+		// No count: the caller may already have capped its fetch, so any number
+		// here would understate the drop. The PR URL above is the full thread.
+		b.WriteString("; older ones omitted — read the PR itself if you need them")
+	}
+	b.WriteString("):\n")
+	for i, c := range comments {
+		fmt.Fprintf(b, "\n### PR comment %d", i+1)
+		if a := strings.TrimSpace(c.Author); a != "" {
+			fmt.Fprintf(b, " · %s", a)
+		}
+		if !c.CreatedAt.IsZero() {
+			fmt.Fprintf(b, " · %s", c.CreatedAt.UTC().Format("2006-01-02 15:04"))
+		}
+		b.WriteString("\n")
+		if u := strings.TrimSpace(c.URL); u != "" {
+			fmt.Fprintf(b, "URL: %s\n", u)
+		}
+		body := strings.TrimSpace(c.Body)
+		if body == "" {
+			body = "(empty)"
+		} else if len(body) > maxPromptConversationBody {
+			// Byte cut, so drop the partial rune it may end on: this prompt is
+			// handed to a CLI (claude takes it on stdin as JSON), and invalid
+			// UTF-8 breaks the encoding rather than just looking wrong.
+			body = strings.ToValidUTF8(body[:maxPromptConversationBody], "") + "\n…(truncated)"
+		}
+		b.WriteString(body)
+		b.WriteString("\n")
+	}
 }

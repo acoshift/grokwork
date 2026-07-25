@@ -118,18 +118,24 @@ func (s *Server) postPRAddressReview(ctx *hime.Context) error {
 		return s.prAddressRedirect(ctx, owner, repo, n, project, "",
 			fmt.Errorf("could not list review comments: %w", listErr), http.StatusBadRequest)
 	}
-	if len(comments) == 0 {
+
+	// PR detail rather than the lighter Info view: same two gh calls, and it
+	// carries the conversation. Reviewers routinely ask for things in a
+	// top-level comment instead of an inline thread — and an agent review posts
+	// its findings there — so inline threads alone are not "the review".
+	// Best-effort like the Info call it replaces: a PR with unresolved threads
+	// still dispatches if this fails.
+	selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
+	detail, _ := ghpr.ViewPRDetailWith(ctx.Context(), s.ghRun(), cwd, selector)
+	if len(comments) == 0 && len(detail.Comments) == 0 {
 		err := bot.ErrNoReviewComments
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
 			"kind": "address_review", "project": project, "owner": owner, "repo": repo, "number": n,
 		})
 		return s.prAddressRedirect(ctx, owner, repo, n, project, "", err, http.StatusBadRequest)
 	}
-
-	selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
-	info, _ := ghpr.ViewWith(ctx.Context(), s.ghRun(), cwd, selector)
-	title := info.Title
-	prURL := info.URL
+	title := detail.Title
+	prURL := detail.URL
 	if prURL == "" {
 		prURL = selector
 	}
@@ -139,8 +145,9 @@ func (s *Server) postPRAddressReview(ctx *hime.Context) error {
 	res, startErr := s.bot.StartAddressReview(bot.AddressReviewOpts{
 		Project: project, Actor: actor, ForceNew: forceNew, ThreadID: pickThread,
 		Owner: owner, Repo: repo, Number: n, Title: title, URL: prURL,
-		Comments: comments,
-		Model:    model,
+		Comments:     comments,
+		Conversation: detail.Comments,
+		Model:        model,
 	})
 	return s.handleAddressResult(ctx, startErr, res, addressRedirectContext{
 		Kind: "address_review", Project: project, Owner: owner, Repo: repo, Number: n, Model: model,

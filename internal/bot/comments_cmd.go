@@ -109,27 +109,33 @@ func (b *Bot) handleAddress(s *discordgo.Session, m *discordgo.MessageCreate, pa
 		replyText(s, m, "Could not list review comments: "+err.Error())
 		return
 	}
-	if len(comments) == 0 {
-		replyText(s, m, "No unresolved review comments to address.")
+	// Same two sources as the web button, or `/address` and "Address review"
+	// would mean different things under one name. Best-effort: unresolved
+	// threads alone are still enough to run.
+	detail, _ := ghpr.ViewPRDetail(ctx, cwd, pr.Selector())
+	if len(comments) == 0 && len(detail.Comments) == 0 {
+		replyText(s, m, "No unresolved review comments or PR comments to address.")
 		return
 	}
 	actor := ActorFromUser(m.Author)
 	res, err := b.StartAddressReview(AddressReviewOpts{
-		Project:  e.Project,
-		Actor:    actor,
-		ThreadID: m.ChannelID,
-		Owner:    pr.Owner,
-		Repo:     pr.Repo,
-		Number:   pr.Number,
-		Title:    pr.Title,
-		URL:      pr.URL,
-		Comments: comments,
+		Project:      e.Project,
+		Actor:        actor,
+		ThreadID:     m.ChannelID,
+		Owner:        pr.Owner,
+		Repo:         pr.Repo,
+		Number:       pr.Number,
+		Title:        pr.Title,
+		URL:          pr.URL,
+		Comments:     comments,
+		Conversation: detail.Comments,
 	})
 	if err != nil {
 		replyText(s, m, "Address failed: "+err.Error())
 		return
 	}
-	msg := fmt.Sprintf("Queued **address review** for %s/%s#%d (%d comments).", pr.Owner, pr.Repo, pr.Number, len(comments))
+	msg := fmt.Sprintf("Queued **address review** for %s/%s#%d (%d review comments, %d PR comments).",
+		pr.Owner, pr.Repo, pr.Number, len(comments), len(detail.Comments))
 	if res.QueuePos > 0 {
 		msg += fmt.Sprintf(" Queue position **%d**.", res.QueuePos)
 	}

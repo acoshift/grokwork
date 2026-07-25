@@ -272,7 +272,7 @@
       <button type="submit" class="btn-secondary" id="btn-address-ci"
         {{- if .CanSelectModel}} data-confirm="Pushes fixes for the failing checks on this pull request. It never merges." data-confirm-title="Address CI" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address CI</button>
       <button type="submit" class="btn-secondary" id="btn-address-review" formaction="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-review"
-        {{- if .CanSelectModel}} data-confirm="Works through the unresolved review comments on this pull request. It never merges." data-confirm-title="Address review" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address review</button>
+        {{- if .CanSelectModel}} data-confirm="Works through the unresolved review threads and the PR conversation. It never merges." data-confirm-title="Address review" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address review</button>
     </div>
   </form>
   <p class="rail-note">Pushes fixes to this PR; it never merges. A continued session keeps the model it started on, so the model choice only reaches a new one.</p>

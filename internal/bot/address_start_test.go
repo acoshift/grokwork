@@ -2,11 +2,13 @@ package bot
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
@@ -105,6 +107,92 @@ func TestBuildAddressReviewPromptNoMerge(t *testing.T) {
 		if !strings.Contains(p, want) {
 			t.Fatalf("missing %q", want)
 		}
+	}
+	// No conversation supplied: no empty section, and the task list does not
+	// tell the agent to read something that is not there.
+	if strings.Contains(p, "PR conversation") {
+		t.Fatalf("empty conversation section rendered:\n%s", p)
+	}
+}
+
+// TestBuildAddressReviewPromptConversation pins that the PR conversation reaches
+// the prompt, is kept distinct from inline threads (it is history, not a list of
+// unresolved asks), and is bounded — an old PR's full thread would crowd out the
+// code the agent has to read.
+func TestBuildAddressReviewPromptConversation(t *testing.T) {
+	p := BuildAddressReviewPrompt(AddressReviewOpts{
+		Actor: Actor{DisplayName: "Bob"},
+		Owner: "acme", Repo: "app", Number: 2,
+		Comments: []ghpr.ReviewComment{{Path: "f.go", Line: 3, Body: "nil check"}},
+		Conversation: []ghpr.IssueComment{
+			{Author: "beam", Body: "also please add a changelog entry", URL: "https://x/1"},
+		},
+	})
+	for _, want := range []string{
+		"Unresolved review comments:",
+		"nil check",
+		"PR conversation",
+		"beam",
+		"also please add a changelog entry",
+		"https://x/1",
+		"may already be done",
+	} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("missing %q in:\n%s", want, p)
+		}
+	}
+
+	// Conversation only: say so rather than heading an empty list.
+	only := BuildAddressReviewPrompt(AddressReviewOpts{
+		Owner: "acme", Repo: "app", Number: 2,
+		Conversation: []ghpr.IssueComment{{Author: "beam", Body: "rework the retry logic"}},
+	})
+	if !strings.Contains(only, "No unresolved inline review threads.") {
+		t.Fatalf("missing the empty-threads note:\n%s", only)
+	}
+	if strings.Contains(only, "Unresolved review comments:") {
+		t.Fatalf("empty inline section rendered:\n%s", only)
+	}
+
+	// Over the cap: newest kept, oldest dropped, drop reported.
+	many := make([]ghpr.IssueComment, maxPromptConversation+3)
+	for i := range many {
+		many[i] = ghpr.IssueComment{Author: "u", Body: fmt.Sprintf("comment-%d", i)}
+	}
+	capped := BuildAddressReviewPrompt(AddressReviewOpts{
+		Owner: "acme", Repo: "app", Number: 2, Conversation: many,
+	})
+	if !strings.Contains(capped, "older ones omitted") {
+		t.Fatalf("cap not reported:\n%s", capped)
+	}
+	if strings.Contains(capped, "comment-0\n") {
+		t.Fatal("cap dropped the wrong end (oldest must go)")
+	}
+	if !strings.Contains(capped, fmt.Sprintf("comment-%d", len(many)-1)) {
+		t.Fatal("newest comment missing")
+	}
+
+	// A single huge comment must not become the whole prompt.
+	huge := BuildAddressReviewPrompt(AddressReviewOpts{
+		Owner: "acme", Repo: "app", Number: 2,
+		Conversation: []ghpr.IssueComment{{Author: "u", Body: strings.Repeat("x", maxPromptConversationBody*3)}},
+	})
+	if !strings.Contains(huge, "…(truncated)") {
+		t.Fatal("oversized comment body not truncated")
+	}
+	if len(huge) > maxPromptConversationBody*2 {
+		t.Fatalf("prompt still oversized: %d bytes", len(huge))
+	}
+
+	// The cut is by bytes, so a multi-byte body will land mid-rune. The prompt is
+	// handed to a CLI (claude reads it as JSON on stdin), where invalid UTF-8 is
+	// an encoding failure, not a cosmetic one.
+	multibyte := BuildAddressReviewPrompt(AddressReviewOpts{
+		Owner: "acme", Repo: "app", Number: 2,
+		Conversation: []ghpr.IssueComment{{Author: "u", Body: strings.Repeat("ぁ", maxPromptConversationBody)}},
+	})
+	if !utf8.ValidString(multibyte) {
+		t.Fatal("truncation produced invalid UTF-8")
 	}
 }
 
@@ -321,5 +409,24 @@ func TestStartAddressReviewEmptyComments(t *testing.T) {
 	})
 	if !errors.Is(err, ErrNoReviewComments) {
 		t.Fatalf("%v", err)
+	}
+}
+
+// A PR with no unresolved inline threads still has work to do when someone left
+// the ask as a plain comment — including the agent review, which posts its
+// findings with `gh pr comment` and would otherwise never be read back.
+func TestStartAddressReviewConversationOnly(t *testing.T) {
+	b, _ := testAddressBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	res, err := b.StartAddressReview(AddressReviewOpts{
+		Project: "app", Owner: "acme", Repo: "app", Number: 8,
+		Actor: Actor{ID: "u", DisplayName: "U"}, Comments: nil,
+		Conversation: []ghpr.IssueComment{{Author: "beam", Body: "please rework the retry logic"}},
+	})
+	if err != nil {
+		t.Fatalf("conversation-only dispatch refused: %v", err)
+	}
+	if strings.TrimSpace(res.ThreadID) == "" {
+		t.Fatalf("no unit started: %+v", res)
 	}
 }

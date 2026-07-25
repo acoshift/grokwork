@@ -457,6 +457,62 @@ func TestAddressReviewEmptyCommentsFailClosed(t *testing.T) {
 	}
 }
 
+// TestAddressReviewReadsPRConversation pins that "Address review" sees top-level
+// PR comments, not just unresolved inline threads. Reviewers routinely leave the
+// ask as a plain comment, and an agent review posts its findings with
+// `gh pr comment` — so without this the review loop never closes.
+func TestAddressReviewReadsPRConversation(t *testing.T) {
+	srv, b := addressEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := name + " " + strings.Join(args, " ")
+		switch {
+		// No unresolved inline threads at all.
+		case strings.Contains(joined, "graphql"):
+			return []byte(`{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]}}}}}`), nil
+		case strings.Contains(joined, "pr view"):
+			return []byte(`{
+				"number":9,"url":"https://github.com/acme/app/pull/9","title":"CI PR","state":"OPEN",
+				"comments":[
+					{"author":{"login":"beam"},"body":"please rework the retry logic","url":"https://gh/c1","createdAt":"2026-07-21T09:00:00Z"}
+				]
+			}`), nil
+		default:
+			return []byte(`[]`), nil
+		}
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/prs/acme/app/9/address-review", sid, csrf, url.Values{"project": {"proj"}})
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/sessions/") {
+		t.Fatalf("conversation-only PR must still dispatch: status=%d loc=%q", w.Code, loc)
+	}
+	tid := webUnitFromLocation(t, loc)
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		th, err := srv.history.Get(tid)
+		if err == nil && len(th.Turns) >= 1 {
+			p := th.Turns[0].Prompt
+			for _, want := range []string{
+				"No unresolved inline review threads.",
+				"PR conversation",
+				"beam",
+				"please rework the retry logic",
+			} {
+				if !strings.Contains(p, want) {
+					t.Fatalf("prompt missing %q:\n%s", want, p)
+				}
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("timeout waiting for the dispatched run's prompt")
+}
+
 func TestPRDetailShowsAddressButtons(t *testing.T) {
 	srv, _ := addressEnabledServer(t)
 	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
