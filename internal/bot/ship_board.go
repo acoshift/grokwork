@@ -51,6 +51,10 @@ type ShipPRRow struct {
 	FromCase  bool
 	CasePhase string // case phase when FromCase
 	CaseTitle string // CustomerTitle when set
+
+	// SessionCount is how many work units bind this PR. Always ≥1; >1 means the
+	// row is a merge and its session-side fields name only the primary unit.
+	SessionCount int
 }
 
 // ShipBoard is a lead-facing view of all bot-tracked PRs.
@@ -149,6 +153,10 @@ func (b *Bot) ListShipBoardAmong(projectFilter, stateFilter string, among []stri
 		}
 	}
 
+	// One row per PR, not per (session, PR) pair — see mergeShipRows. Done before
+	// counting so "N tracked" counts pull requests, like the rows it describes.
+	all = mergeShipRows(all)
+
 	// Counts always reflect project-filtered set before state filter (open focus for leads).
 	for _, r := range all {
 		board.Total++
@@ -244,6 +252,145 @@ func shipRowFrom(threadID string, e sessionstore.Entry, pr sessionstore.TrackedP
 
 func checksLookFailing(checks string) bool {
 	return strings.Contains(checks, "✗")
+}
+
+// mergeShipRows collapses rows describing the same pull request.
+//
+// Rows are built per (session, tracked PR) pair, so a PR that two units bind —
+// an Address CI session and a review session, say — produced two near-identical
+// rows on a board that is about pull requests, not sessions.
+//
+// The merge splits along the two kinds of fact a row carries:
+//
+//   - PR facts (state, checks, review, title, head, and everything derived from
+//     them) come from the unit holding the freshest copy. pollPRStatuses skips
+//     busy threads, so a unit with a run in flight holds the STALE copy — idle
+//     units win, newest first.
+//   - Session facts (which unit to open, its owner and goal) come from the unit
+//     a human would want: running, then queued, then newest.
+//
+// Those two are often different units, so the rest aggregates: Running/Queue so
+// an in-flight run still shows even when the PR facts came from an idle unit,
+// Label as the most attention-needing of the group, UpdatedAt as the latest
+// movement, and SessionCount so the row admits how many units are behind it.
+func mergeShipRows(rows []ShipPRRow) []ShipPRRow {
+	if len(rows) == 0 {
+		return rows
+	}
+	order := make([]string, 0, len(rows))
+	groups := make(map[string][]ShipPRRow, len(rows))
+	for _, r := range rows {
+		k := shipRowKey(r)
+		if _, seen := groups[k]; !seen {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], r)
+	}
+	out := make([]ShipPRRow, 0, len(order))
+	for _, k := range order {
+		out = append(out, mergeShipGroup(groups[k]))
+	}
+	return out
+}
+
+// shipRowKey identifies the PR a row is about. A row whose PR cannot be
+// identified at all merges with nothing — guessing would fuse unrelated PRs.
+func shipRowKey(r ShipPRRow) string {
+	pr := sessionstore.TrackedPR{URL: r.URL, Number: r.Number, Owner: r.GHOwner, Repo: r.GHRepo}
+	key := pr.PRKey()
+	if key == "" {
+		return "unit\x00" + r.ThreadID
+	}
+	return strings.ToLower(strings.TrimSpace(r.Project)) + "\x00" + key
+}
+
+func mergeShipGroup(group []ShipPRRow) ShipPRRow {
+	if len(group) == 1 {
+		row := group[0]
+		row.SessionCount = 1
+		return row
+	}
+	fresh, primary := group[0], group[0]
+	for _, r := range group[1:] {
+		if fresherPRRecord(r, fresh) {
+			fresh = r
+		}
+		if livelierSession(r, primary) {
+			primary = r
+		}
+	}
+	// Start from the freshest PR record so every PR-derived flag (ChecksFailing,
+	// ChangesRequested, the team rollup) stays consistent with the checks and
+	// review text it was computed from.
+	row := fresh
+	row.ThreadID = primary.ThreadID
+	row.OwnerID, row.OwnerName, row.Goal = primary.OwnerID, primary.OwnerName, primary.Goal
+	// Distinct units, not rows: one entry listing the same PR twice is one
+	// session, and the badge says "sessions".
+	units := make(map[string]struct{}, len(group))
+	for _, r := range group {
+		units[r.ThreadID] = struct{}{}
+	}
+	row.SessionCount = len(units)
+	row.Running, row.Queue = false, 0
+	row.FromCase, row.CasePhase, row.CaseTitle = false, "", ""
+	row.Label, row.LabelManual = "", false
+	for _, r := range group {
+		row.Running = row.Running || r.Running
+		row.Queue = max(row.Queue, r.Queue)
+		if r.UpdatedAt > row.UpdatedAt {
+			row.UpdatedAt = r.UpdatedAt
+		}
+		if r.FromCase && !row.FromCase {
+			row.FromCase, row.CasePhase, row.CaseTitle = true, r.CasePhase, r.CaseTitle
+		}
+		if row.Label == "" || labelAttention(r.Label) < labelAttention(row.Label) {
+			row.Label, row.LabelManual = r.Label, r.LabelManual
+		}
+	}
+	return row
+}
+
+// fresherPRRecord reports whether a holds a more current PR snapshot than b.
+// The poller skips busy threads, so "not running" beats "running" outright.
+func fresherPRRecord(a, b ShipPRRow) bool {
+	if a.Running != b.Running {
+		return !a.Running
+	}
+	if a.UpdatedAt != b.UpdatedAt {
+		return a.UpdatedAt > b.UpdatedAt
+	}
+	return a.ThreadID < b.ThreadID
+}
+
+// livelierSession reports whether a is the unit a reader would rather open.
+//
+// Deliberately does NOT fall back to UpdatedAt, for the reason sortShipRows
+// gives: the poller patches every open session each cycle, so between two
+// equally idle units recency is a coin flip that lands differently every tick.
+// This picks the row's Owner and Goal, so an unstable answer would make those
+// cells swap on every SSE refresh. Thread id is arbitrary but it holds still.
+func livelierSession(a, b ShipPRRow) bool {
+	if a.Running != b.Running {
+		return a.Running
+	}
+	if (a.Queue > 0) != (b.Queue > 0) {
+		return a.Queue > 0
+	}
+	if at, bt := sessionstore.IsTerminalLabel(a.Label), sessionstore.IsTerminalLabel(b.Label); at != bt {
+		return !at
+	}
+	return a.ThreadID < b.ThreadID
+}
+
+// labelAttention ranks a session label by how much it wants a human, reusing
+// the board display order (blocked first … abandoned last). Unknown labels sort
+// last so they never outrank a real one.
+func labelAttention(label string) int {
+	if i := slices.Index(sessionstore.CanonicalLabels, label); i >= 0 {
+		return i
+	}
+	return len(sessionstore.CanonicalLabels)
 }
 
 func (b *Bot) enrichTeamReview(row *ShipPRRow) {

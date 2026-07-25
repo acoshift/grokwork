@@ -122,6 +122,18 @@ func TestPreviewServer(t *testing.T) {
 				Review: "CHANGES_REQUESTED", Owner: "acme", Repo: "webapp",
 			}},
 		},
+		// A second unit on #128 — the ship board must still show one row for it,
+		// and the PR rail must offer both as dispatch targets.
+		"1390000000000000009": {
+			SessionID: "sess-a2", Project: "webapp", LastUser: "beam#0",
+			OwnerName: "beam", Origin: "web", Label: "needs_review",
+			Goal: "Review acme/webapp#128: fix: debounce payment retry queue",
+			PRs: []sessionstore.TrackedPR{{
+				URL: "https://github.com/acme/webapp/pull/128", Number: 128, State: "OPEN",
+				Title: "fix: debounce payment retry queue", Checks: "✓ 4 · ✗ 1",
+				Review: "CHANGES_REQUESTED", Owner: "acme", Repo: "webapp",
+			}},
+		},
 		"1390000000000000002": {
 			SessionID: "sess-b2", Project: "api", LastUser: "poon#0",
 			OwnerName: "poon", Origin: "web",
@@ -283,7 +295,15 @@ func TestPreviewServer(t *testing.T) {
 	// changeset: /projects/webapp/commits → commit detail (lazy per-file
 	// hunks), /prs/acme/webapp/128/diff for the PR surface.
 	srv.ghRunner = previewGitRunner()
-	ln, err := net.Listen("tcp", "127.0.0.1:18787")
+	// Agents work this repo in parallel worktrees, so a hardcoded port means the
+	// second preview to boot dies on "address already in use" — or, worse, the
+	// operator kills someone else's server to free it. GROKWORK_WEB_PREVIEW_PORT
+	// gives each worktree its own.
+	addr := "127.0.0.1:18787"
+	if p := strings.TrimSpace(os.Getenv("GROKWORK_WEB_PREVIEW_PORT")); p != "" {
+		addr = "127.0.0.1:" + p
+	}
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -600,7 +620,12 @@ func previewGitRunner() func(ctx context.Context, dir, name string, args ...stri
 				"headRefName":"grok/discord/1390000000000000001","baseRefName":"main",
 				"body":"## What\n\nPayment webhook retries were re-enqueuing per event, so a burst of webhooks for one order queued duplicate settle jobs. This debounces the queue flush per order and makes the settle job idempotent.\n\n## Why\n\nThe checkout E2E was flaky (~1 in 5 runs): the test asserted on the first settle attempt while a duplicate job raced it.\n\n## Testing\n\n- unit: retry queue debounce window\n- e2e: checkout happy path, webhook burst",
 				"mergeable":"MERGEABLE","author":{"login":"grok-work"},
-				"additions":214,"deletions":96,"changedFiles":9
+				"additions":214,"deletions":96,"changedFiles":9,
+				"comments":[
+					{"author":{"login":"beam"},"body":"The debounce window is 500ms — is that enough when the webhook lands twice in the same tick?","url":"https://github.com/acme/webapp/pull/128#issuecomment-1","createdAt":"2026-07-21T10:42:00Z"},
+					{"author":{"login":"grok-work"},"body":"Widened to 2s and added a burst test. See ` + "`retry_queue_test.go`" + `.","url":"https://github.com/acme/webapp/pull/128#issuecomment-2","createdAt":"2026-07-21T11:05:00Z"},
+					{"author":{"login":"poon"},"body":"Queue drain logic looks right to me now.","url":"https://github.com/acme/webapp/pull/128#issuecomment-3","createdAt":"2026-07-21T12:20:00Z"}
+				]
 			}`), nil
 		case name == "gh" && strings.HasPrefix(joined, "pr checks"):
 			return []byte(`[

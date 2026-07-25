@@ -15,6 +15,24 @@ import (
 	"github.com/acoshift/grokwork/internal/ghpr"
 )
 
+// newSessionChoice is the value the PR detail card's single Session dropdown
+// carries for "start a new one". The dropdown has to express both "continue
+// unit X" and "create" through one field, and no work-unit id can collide with
+// it — Discord thread ids are snowflake digits, web-native ids are "w_"-prefixed.
+const newSessionChoice = "__new__"
+
+// addressTarget reads the dispatch target from the posted form. The dropdown
+// folds force_new into thread_id; the standalone force_new checkbox is still
+// honored for the no-bound-session case and for non-browser callers.
+func addressTarget(ctx *hime.Context) (threadID string, forceNew bool) {
+	forceNew = formBool(ctx.PostFormValue("force_new"))
+	threadID = strings.TrimSpace(ctx.PostFormValue("thread_id"))
+	if threadID == newSessionChoice {
+		return "", true
+	}
+	return threadID, forceNew
+}
+
 func (s *Server) postPRAddressCI(ctx *hime.Context) error {
 	owner := strings.TrimSpace(ctx.PathValue("owner"))
 	repo := strings.TrimSpace(ctx.PathValue("repo"))
@@ -23,8 +41,7 @@ func (s *Server) postPRAddressCI(ctx *hime.Context) error {
 		return ctx.Status(http.StatusBadRequest).Error("invalid PR number")
 	}
 	project := strings.TrimSpace(ctx.PostFormValue("project"))
-	forceNew := formBool(ctx.PostFormValue("force_new"))
-	pickThread := strings.TrimSpace(ctx.PostFormValue("thread_id"))
+	pickThread, forceNew := addressTarget(ctx)
 
 	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
@@ -78,8 +95,7 @@ func (s *Server) postPRAddressReview(ctx *hime.Context) error {
 		return ctx.Status(http.StatusBadRequest).Error("invalid PR number")
 	}
 	project := strings.TrimSpace(ctx.PostFormValue("project"))
-	forceNew := formBool(ctx.PostFormValue("force_new"))
-	pickThread := strings.TrimSpace(ctx.PostFormValue("thread_id"))
+	pickThread, forceNew := addressTarget(ctx)
 
 	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {

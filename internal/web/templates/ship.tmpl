@@ -97,6 +97,7 @@
           {{else if eq .State "CLOSED"}}<span class="badge status-cancelled">closed</span>
           {{else if .State}}<span class="badge">{{.State}}</span>{{end}}
           {{if .Running}}<span class="badge live">running</span>{{end}}
+          {{if gt .SessionCount 1}}<span class="badge">{{.SessionCount}} sessions</span>{{end}}
           {{if .ChecksFailing}}<span class="badge status-error">CI failing</span>{{end}}
           {{if eq .TeamRollup "changes_requested"}}<span class="badge status-warn">changes requested</span>
           {{else if eq .TeamRollup "approved"}}<span class="badge status-done">approved</span>
@@ -151,6 +152,7 @@
           {{end}}
           {{if .Running}} <span class="badge live">running</span>{{end}}
           {{if gt .Queue 0}} <span class="badge">queue {{.Queue}}</span>{{end}}
+          {{if gt .SessionCount 1}} <span class="badge" title="{{.SessionCount}} work units bind this PR — the row shows the most active">{{.SessionCount}} sessions</span>{{end}}
           {{if .FromCase}} <span class="badge" title="{{if .CaseTitle}}{{.CaseTitle}}{{else}}support case{{end}}{{if .CasePhase}} · {{.CasePhase}}{{end}}">from case{{if .CasePhase}} · {{.CasePhase}}{{end}}</span>{{end}}
         </td>
         <td class="mono">

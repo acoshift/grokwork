@@ -1870,6 +1870,36 @@
       color: var(--muted);
     }
     .action-body .rail-note { margin: 0; }
+    /* PR comment byline: author, time, GitHub link on one wrapping row. */
+    .pr-comment-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.25rem 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    /* Jump-out links under a dispatch form (PR rail: open a bound session).
+       Plain list — these navigate, so they must not read as more buttons. */
+    .rail-links {
+      list-style: none;
+      margin: 0 0 0.55rem;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      font-size: 0.78rem;
+    }
+    /* Goals run long; clamp to two lines so the list stays a list. */
+    .rail-links a {
+      color: var(--muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      overflow-wrap: anywhere;
+    }
+    .rail-links a:hover { color: var(--fg); }
     .grok-dispatch {
       display: flex;
       flex-direction: column;

@@ -7,10 +7,19 @@ import (
 	"strings"
 )
 
+// MaxPRComments is how many of a PR's newest comments the detail view keeps.
+const MaxPRComments = 50
+
 // PRDetail is a richer PR snapshot for the web ship surface (beyond status cards).
 type PRDetail struct {
 	Info
-	Body             string
+	Body string
+	// Comments is the PR conversation (issue comments), oldest first, capped at
+	// the newest MaxPRComments. Review comments are a different surface and are
+	// not included here.
+	Comments []IssueComment
+	// CommentsOmitted counts older comments dropped by that cap.
+	CommentsOmitted  int
 	Mergeable        string // MERGEABLE, CONFLICTING, UNKNOWN, … (git trees only)
 	MergeStateStatus string // CLEAN, BLOCKED, DIRTY, BEHIND, UNSTABLE, HAS_HOOKS, UNKNOWN
 	BaseRef          string
@@ -36,7 +45,7 @@ func ViewPRDetailWith(ctx context.Context, run Runner, repoDir, selector string)
 		return PRDetail{}, fmt.Errorf("empty PR selector")
 	}
 	raw, err := run(ctx, repoDir, "gh", "pr", "view", selector,
-		"--json", "number,url,title,state,isDraft,reviewDecision,headRefOid,headRefName,baseRefName,body,mergeable,mergeStateStatus,author,additions,deletions,changedFiles")
+		"--json", "number,url,title,state,isDraft,reviewDecision,headRefOid,headRefName,baseRefName,body,comments,mergeable,mergeStateStatus,author,additions,deletions,changedFiles")
 	if err != nil {
 		return PRDetail{}, err
 	}
@@ -56,16 +65,22 @@ func ViewPRDetailWith(ctx context.Context, run Runner, repoDir, selector string)
 }
 
 type prDetailJSON struct {
-	Number           int    `json:"number"`
-	URL              string `json:"url"`
-	Title            string `json:"title"`
-	State            string `json:"state"`
-	IsDraft          bool   `json:"isDraft"`
-	ReviewDecision   string `json:"reviewDecision"`
-	HeadRefOid       string `json:"headRefOid"`
-	HeadRefName      string `json:"headRefName"`
-	BaseRefName      string `json:"baseRefName"`
-	Body             string `json:"body"`
+	Number         int    `json:"number"`
+	URL            string `json:"url"`
+	Title          string `json:"title"`
+	State          string `json:"state"`
+	IsDraft        bool   `json:"isDraft"`
+	ReviewDecision string `json:"reviewDecision"`
+	HeadRefOid     string `json:"headRefOid"`
+	HeadRefName    string `json:"headRefName"`
+	BaseRefName    string `json:"baseRefName"`
+	Body           string `json:"body"`
+	Comments       []struct {
+		Author    any    `json:"author"`
+		Body      string `json:"body"`
+		URL       string `json:"url"`
+		CreatedAt string `json:"createdAt"`
+	} `json:"comments"`
 	Mergeable        string `json:"mergeable"`
 	MergeStateStatus string `json:"mergeStateStatus"`
 	Author           any    `json:"author"`
@@ -100,6 +115,28 @@ func parsePRDetailJSON(raw []byte) (PRDetail, error) {
 		Deletions:        j.Deletions,
 		ChangedFiles:     j.ChangedFiles,
 		Truncated:        trunc,
+	}
+	// Newest MaxPRComments only. gh returns every comment, and a long-lived PR
+	// has hundreds — rendering them all turns the detail page into a wall no one
+	// reads, and the recent ones are the ones that still matter. CommentsOmitted
+	// carries the drop so the UI can point at GitHub for the rest.
+	//
+	// Truncated is deliberately NOT set here: the page renders it as "Body
+	// truncated." under the description, so a long comment must not make the
+	// description claim something about itself.
+	src := j.Comments
+	if len(src) > MaxPRComments {
+		d.CommentsOmitted = len(src) - MaxPRComments
+		src = src[len(src)-MaxPRComments:]
+	}
+	for _, c := range src {
+		cb, _ := truncateBytes(c.Body, DefaultIssueBodyCap)
+		d.Comments = append(d.Comments, IssueComment{
+			Author:    authorLogin(c.Author),
+			Body:      cb,
+			URL:       c.URL,
+			CreatedAt: parseGHTime(c.CreatedAt),
+		})
 	}
 	return d, nil
 }

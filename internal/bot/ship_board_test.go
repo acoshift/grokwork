@@ -179,6 +179,219 @@ func TestListShipBoard(t *testing.T) {
 	}
 }
 
+// TestShipBoardMergesUnitsOnOnePR pins the one-row-per-PR merge. Two units bind
+// #7: an idle one holding the current poll (the poller skips busy threads) and a
+// running one whose copy froze when its run started. The row must take PR facts
+// from the idle unit, still say "running", and open the running unit.
+func TestShipBoardMergesUnitsOnOnePR(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		Projects: config.PathProjects(map[string]string{"alpha": filepath.Join(dir, "alpha")}),
+		DataDir:  dir,
+	}
+	if err := os.MkdirAll(cfg.Projects["alpha"].Path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr := sessionstore.TrackedPR{
+		URL: "https://github.com/acme/alpha/pull/7", Number: 7,
+		Owner: "acme", Repo: "alpha", State: "OPEN", Title: "fix retry queue",
+	}
+	// Idle unit: freshest poll — CI has since gone red.
+	stale := pr
+	stale.Checks = "✓ 3"
+	fresh := pr
+	fresh.Checks = "✓ 2 · ✗ 1"
+	if err := store.Set("t-idle", sessionstore.Entry{
+		SessionID: "s-idle", Project: "alpha", OwnerName: "idle-owner",
+		Goal: "review pass", Label: sessionstore.LabelDone,
+		PRs: []sessionstore.TrackedPR{fresh},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Busy unit: its PR copy froze at run start, so it is the stale one.
+	if err := store.Set("t-busy", sessionstore.Entry{
+		SessionID: "s-busy", Project: "alpha", OwnerName: "busy-owner",
+		Goal: "address CI", Label: sessionstore.LabelInProgress,
+		PRs: []sessionstore.TrackedPR{stale},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	b := New(cfg, store, hist)
+	// A run in flight is what makes t-busy's PR copy the stale one.
+	b.states.Store("t-busy", &threadState{job: &runJob{}})
+
+	board := b.ListShipBoard("alpha", "all")
+	if len(board.Rows) != 1 {
+		t.Fatalf("want 1 merged row, got %d: %+v", len(board.Rows), board.Rows)
+	}
+	if board.Total != 1 {
+		t.Fatalf("stats must count PRs, not pairs: total=%d", board.Total)
+	}
+	row := board.Rows[0]
+	if row.SessionCount != 2 {
+		t.Fatalf("SessionCount=%d want 2", row.SessionCount)
+	}
+	// PR facts from the idle unit — the busy one's "✓ 3" is stale.
+	if row.Checks != "✓ 2 · ✗ 1" || !row.ChecksFailing {
+		t.Fatalf("PR facts not from the freshest copy: checks=%q failing=%v", row.Checks, row.ChecksFailing)
+	}
+	// Session facts from the running unit, and the run still shows.
+	if row.ThreadID != "t-busy" || row.OwnerName != "busy-owner" || row.Goal != "address CI" {
+		t.Fatalf("session facts not from the live unit: %+v", row)
+	}
+	if !row.Running {
+		t.Fatal("merged row must still report the in-flight run")
+	}
+	// Least-terminal label wins: one unit being done does not make the PR done.
+	if row.Label != sessionstore.LabelInProgress {
+		t.Fatalf("Label=%q want %q", row.Label, sessionstore.LabelInProgress)
+	}
+
+	// A second, unrelated PR stays its own row.
+	if err := store.Set("t-other", sessionstore.Entry{
+		SessionID: "s-other", Project: "alpha",
+		PRs: []sessionstore.TrackedPR{{
+			URL: "https://github.com/acme/alpha/pull/8", Number: 8,
+			Owner: "acme", Repo: "alpha", State: "OPEN",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if board := b.ListShipBoard("alpha", "all"); len(board.Rows) != 2 {
+		t.Fatalf("distinct PRs must not merge: %d rows", len(board.Rows))
+	}
+}
+
+// TestMergeShipRows pins the per-field merge rules. It works on rows directly
+// because sessionstore stamps UpdatedAt on every write, so the recency tiebreaks
+// are unreachable through the store.
+func TestMergeShipRows(t *testing.T) {
+	base := func(thread, checks, updated string) ShipPRRow {
+		return ShipPRRow{
+			ThreadID: thread, Project: "alpha",
+			URL: "https://github.com/acme/alpha/pull/7", Number: 7,
+			GHOwner: "acme", GHRepo: "alpha", State: "OPEN",
+			Checks: checks, ChecksFailing: checksLookFailing(checks), UpdatedAt: updated,
+		}
+	}
+
+	t.Run("freshest PR facts, liveliest session", func(t *testing.T) {
+		busy := base("t-busy", "✓ 3", "2026-07-25T13:00:00Z")
+		busy.Running, busy.OwnerName, busy.Goal = true, "busy-owner", "address CI"
+		busy.Label = sessionstore.LabelInProgress
+		idle := base("t-idle", "✓ 2 · ✗ 1", "2026-07-25T12:00:00Z")
+		idle.OwnerName, idle.Goal, idle.Label = "idle-owner", "review pass", sessionstore.LabelDone
+		idle.Queue = 2
+
+		got := mergeShipRows([]ShipPRRow{busy, idle})
+		if len(got) != 1 {
+			t.Fatalf("want 1 row, got %d", len(got))
+		}
+		row := got[0]
+		// The busy unit is NEWER but its PR copy froze at run start — the poller
+		// skips busy threads — so the idle unit's red CI is the truth.
+		if row.Checks != "✓ 2 · ✗ 1" || !row.ChecksFailing {
+			t.Fatalf("PR facts: checks=%q failing=%v", row.Checks, row.ChecksFailing)
+		}
+		if row.ThreadID != "t-busy" || row.OwnerName != "busy-owner" || row.Goal != "address CI" {
+			t.Fatalf("session facts: %+v", row)
+		}
+		if !row.Running || row.Queue != 2 {
+			t.Fatalf("aggregates: running=%v queue=%d", row.Running, row.Queue)
+		}
+		if row.Label != sessionstore.LabelInProgress {
+			t.Fatalf("one unit being done must not mark the PR done: %q", row.Label)
+		}
+		if row.UpdatedAt != "2026-07-25T13:00:00Z" {
+			t.Fatalf("UpdatedAt=%q want the latest movement", row.UpdatedAt)
+		}
+		if row.SessionCount != 2 {
+			t.Fatalf("SessionCount=%d", row.SessionCount)
+		}
+	})
+
+	t.Run("idle pair takes the newer PR copy", func(t *testing.T) {
+		old := base("t-old", "✓ 1", "2026-07-25T10:00:00Z")
+		recent := base("t-zz", "✗ 1", "2026-07-25T11:00:00Z")
+		got := mergeShipRows([]ShipPRRow{old, recent})
+		if len(got) != 1 || got[0].Checks != "✗ 1" {
+			t.Fatalf("PR facts must follow the newer poll: %+v", got)
+		}
+		// ...but the unit to open is chosen without UpdatedAt, or the Owner and
+		// Goal cells would swap on every poll tick. See livelierSession.
+		if got[0].ThreadID != "t-old" {
+			t.Fatalf("session pick must be recency-independent, got %q", got[0].ThreadID)
+		}
+	})
+
+	t.Run("session pick holds still as timestamps move", func(t *testing.T) {
+		a := base("t-a", "✓ 1", "2026-07-25T10:00:00Z")
+		b := base("t-b", "✓ 1", "2026-07-25T11:00:00Z")
+		first := mergeShipRows([]ShipPRRow{a, b})[0].ThreadID
+		// Next poll cycle flips which one was written last.
+		a.UpdatedAt, b.UpdatedAt = "2026-07-25T12:00:00Z", "2026-07-25T11:30:00Z"
+		if second := mergeShipRows([]ShipPRRow{a, b})[0].ThreadID; second != first {
+			t.Fatalf("merged row changed unit on a poll tick: %q → %q", first, second)
+		}
+	})
+
+	t.Run("one unit listing a PR twice is one session", func(t *testing.T) {
+		dup := base("t-dup", "✓ 1", "2026-07-25T10:00:00Z")
+		got := mergeShipRows([]ShipPRRow{dup, dup})
+		if len(got) != 1 || got[0].SessionCount != 1 {
+			t.Fatalf("SessionCount counts units, not rows: %+v", got)
+		}
+	})
+
+	t.Run("owner/repo and URL forms of the same PR merge", func(t *testing.T) {
+		byURL := base("t-url", "✓ 1", "2026-07-25T10:00:00Z")
+		byRef := ShipPRRow{
+			ThreadID: "t-ref", Project: "alpha", Number: 7,
+			GHOwner: "acme", GHRepo: "alpha", State: "OPEN",
+			UpdatedAt: "2026-07-25T09:00:00Z",
+		}
+		if got := mergeShipRows([]ShipPRRow{byURL, byRef}); len(got) != 1 {
+			t.Fatalf("want 1 row, got %d: %+v", len(got), got)
+		}
+	})
+
+	t.Run("distinct PRs and projects stay apart", func(t *testing.T) {
+		a := base("t-a", "", "2026-07-25T10:00:00Z")
+		other := base("t-b", "", "2026-07-25T10:00:00Z")
+		other.Number, other.URL = 8, "https://github.com/acme/alpha/pull/8"
+		crossProject := base("t-c", "", "2026-07-25T10:00:00Z")
+		crossProject.Project = "beta"
+		if got := mergeShipRows([]ShipPRRow{a, other, crossProject}); len(got) != 3 {
+			t.Fatalf("want 3 rows, got %d: %+v", len(got), got)
+		}
+	})
+
+	t.Run("unidentifiable PRs never merge", func(t *testing.T) {
+		// No URL, no owner/repo, no number: nothing says these are the same PR.
+		a := ShipPRRow{ThreadID: "t-a", Project: "alpha", State: "OPEN"}
+		b := ShipPRRow{ThreadID: "t-b", Project: "alpha", State: "OPEN"}
+		if got := mergeShipRows([]ShipPRRow{a, b}); len(got) != 2 {
+			t.Fatalf("want 2 rows, got %d: %+v", len(got), got)
+		}
+	})
+
+	t.Run("single row still reports its count", func(t *testing.T) {
+		got := mergeShipRows([]ShipPRRow{base("t-a", "✓ 1", "2026-07-25T10:00:00Z")})
+		if len(got) != 1 || got[0].SessionCount != 1 {
+			t.Fatalf("%+v", got)
+		}
+	})
+}
+
 func TestChecksLookFailing(t *testing.T) {
 	if !checksLookFailing("✓ 2 · ✗ 1") {
 		t.Fatal("expected failing")

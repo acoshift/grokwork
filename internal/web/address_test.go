@@ -212,6 +212,66 @@ func TestAddressCIReuseNoCreate(t *testing.T) {
 	}
 }
 
+// TestAddressDispatchTargetPicker pins the single Session dropdown that replaced
+// the per-session button pairs: one option per bound unit plus an explicit "new"
+// sentinel, and the sentinel must create rather than reuse.
+func TestAddressDispatchTargetPicker(t *testing.T) {
+	srv, b := addressEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No bound unit: no dropdown to render, and the form states its intent.
+	body := getPageBody(t, srv, sid, "/prs/acme/app/9?project=proj")
+	if strings.Contains(body, `id="dispatch-thread"`) {
+		t.Fatal("unbound PR should not render a session dropdown")
+	}
+	if !strings.Contains(body, `name="force_new" value="1"`) {
+		t.Fatalf("unbound PR must post force_new: %s", body)
+	}
+
+	e := sessionstore.Entry{Project: "proj", Goal: "address CI", Label: sessionstore.LabelInProgress}
+	e.UpsertPR(sessionstore.TrackedPR{Owner: "acme", Repo: "app", Number: 9, State: "OPEN"})
+	if err := srv.sessions.Set("bound-1", e); err != nil {
+		t.Fatal(err)
+	}
+	body = getPageBody(t, srv, sid, "/prs/acme/app/9?project=proj")
+	for _, want := range []string{
+		`id="dispatch-thread"`,
+		`<option value="bound-1">`,
+		`<option value="__new__">Start a new session</option>`,
+		"address CI",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("dispatch picker missing %q in %s", want, body)
+		}
+	}
+	// The action pair renders once, not once per bound unit.
+	if n := strings.Count(body, `id="btn-address-ci"`); n != 1 {
+		t.Fatalf("Address CI rendered %d times, want 1", n)
+	}
+
+	// Sentinel creates. Without it the same POST would reuse bound-1, so landing
+	// on a fresh web-native unit (startPRCreate never opens a Discord thread) is
+	// the proof that force_new was inferred from the dropdown.
+	w := postFix(t, srv, "/prs/acme/app/9/address-ci", sid, csrf, url.Values{
+		"project": {"proj"}, "thread_id": {newSessionChoice},
+	})
+	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/sessions/w_") {
+		t.Fatalf("%q sentinel did not create: loc=%q", newSessionChoice, loc)
+	}
+
+	// A real id still reuses that unit.
+	w = postFix(t, srv, "/prs/acme/app/9/address-ci", sid, csrf, url.Values{
+		"project": {"proj"}, "thread_id": {"bound-1"},
+	})
+	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/sessions/bound-1") {
+		t.Fatalf("picked unit not reused: loc=%q", loc)
+	}
+}
+
 func TestAddressCIDiscordDownWebNative(t *testing.T) {
 	srv, b := addressEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })

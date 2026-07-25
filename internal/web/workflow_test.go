@@ -97,7 +97,11 @@ func workflowServer(t *testing.T) *Server {
 				"state":"OPEN","isDraft":false,"reviewDecision":"APPROVED","headRefOid":"abc",
 				"headRefName":"feat","baseRefName":"main","body":"pr body",
 				"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","author":{"login":"zoe"},
-				"additions":1,"deletions":0,"changedFiles":1
+				"additions":1,"deletions":0,"changedFiles":1,
+				"comments":[
+					{"author":{"login":"kai"},"body":"needs a changelog entry","url":"https://github.com/acme/app/pull/9#issuecomment-1","createdAt":"2026-07-21T09:30:00Z"},
+					{"author":{"login":"zoe"},"body":"added, thanks","url":"https://github.com/acme/app/pull/9#issuecomment-2","createdAt":"2026-07-21T10:00:00Z"}
+				]
 			}`), nil
 		case strings.HasPrefix(joined, "pr checks"):
 			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil
@@ -529,6 +533,18 @@ func TestPRDetailAndDiff(t *testing.T) {
 	// No session binds this PR in the base fixture, so no jump target.
 	if strings.Contains(body, "Go to session") {
 		t.Fatal("unbound PR must not offer a session jump")
+	}
+	// PR conversation, distinct from the team-review card below it.
+	for _, want := range []string{
+		`id="pr-comments"`,
+		"needs a changelog entry",
+		"added, thanks",
+		"kai",
+		"2026-07-21 09:30",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("pr comments missing %q in %s", want, body)
+		}
 	}
 	assertNavActive(t, body, "Ship")
 

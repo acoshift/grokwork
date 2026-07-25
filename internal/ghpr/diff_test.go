@@ -2,6 +2,7 @@ package ghpr
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -221,5 +222,61 @@ func TestViewPRDetailWithMock(t *testing.T) {
 	}
 	if d.Checks != "✓ 1" {
 		t.Fatalf("checks=%q", d.Checks)
+	}
+}
+
+// TestViewPRDetailComments pins the comment cap: a long-lived PR must not drop
+// hundreds of cards onto the detail page, the NEWEST ones are the ones kept,
+// and the drop is reported rather than silent.
+func TestViewPRDetailComments(t *testing.T) {
+	makeRun := func(n int) Runner {
+		var b strings.Builder
+		b.WriteString(`{"number":9,"url":"https://github.com/o/r/pull/9","state":"OPEN","body":"b","comments":[`)
+		for i := range n {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(&b, `{"author":{"login":"u%d"},"body":"c%d","url":"u","createdAt":"2026-07-2%dT10:00:00Z"}`,
+				i, i, i%10)
+		}
+		b.WriteString(`]}`)
+		payload := b.String()
+		return func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+			if strings.HasPrefix(strings.Join(args, " "), "pr view") {
+				return []byte(payload), nil
+			}
+			return []byte(`[]`), nil
+		}
+	}
+
+	d, err := ViewPRDetailWith(context.Background(), makeRun(3), "/repo", "9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Comments) != 3 || d.CommentsOmitted != 0 {
+		t.Fatalf("under the cap: n=%d omitted=%d", len(d.Comments), d.CommentsOmitted)
+	}
+	if d.Comments[0].Author != "u0" || d.Comments[0].Body != "c0" {
+		t.Fatalf("comment 0 = %+v", d.Comments[0])
+	}
+	if d.Comments[0].CreatedAt.IsZero() {
+		t.Fatal("createdAt not parsed")
+	}
+	// A long comment must not make the page claim the *description* was cut.
+	if d.Truncated {
+		t.Fatal("comments must not set the body-truncation flag")
+	}
+
+	over := MaxPRComments + 7
+	d, err = ViewPRDetailWith(context.Background(), makeRun(over), "/repo", "9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Comments) != MaxPRComments || d.CommentsOmitted != 7 {
+		t.Fatalf("over the cap: n=%d omitted=%d", len(d.Comments), d.CommentsOmitted)
+	}
+	// Newest kept, oldest dropped.
+	if last := d.Comments[len(d.Comments)-1]; last.Body != fmt.Sprintf("c%d", over-1) {
+		t.Fatalf("cap dropped the wrong end: last=%q", last.Body)
 	}
 }

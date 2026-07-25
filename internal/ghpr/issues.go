@@ -27,9 +27,10 @@ type IssueListOpts struct {
 
 // IssueComment is one issue comment.
 type IssueComment struct {
-	Author string
-	Body   string
-	URL    string
+	Author    string
+	Body      string
+	URL       string
+	CreatedAt time.Time
 }
 
 // IssueLinkedPR is a pull request linked as a closing reference for an issue
@@ -167,9 +168,10 @@ type issueJSON struct {
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
 	Comments  []struct {
-		Author any    `json:"author"`
-		Body   string `json:"body"`
-		URL    string `json:"url"`
+		Author    any    `json:"author"`
+		Body      string `json:"body"`
+		URL       string `json:"url"`
+		CreatedAt string `json:"createdAt"`
 	} `json:"comments"`
 	ClosedByPullRequestsReferences []issueLinkedPRJSON `json:"closedByPullRequestsReferences"`
 }
@@ -219,9 +221,10 @@ func (r issueJSON) toInfo(owner, repo string, bodyCap int) (IssueInfo, error) {
 			info.Truncated = true
 		}
 		info.Comments = append(info.Comments, IssueComment{
-			Author: authorLogin(c.Author),
-			Body:   cb,
-			URL:    c.URL,
+			Author:    authorLogin(c.Author),
+			Body:      cb,
+			URL:       c.URL,
+			CreatedAt: parseGHTime(c.CreatedAt),
 		})
 	}
 	for _, pr := range r.ClosedByPullRequestsReferences {
