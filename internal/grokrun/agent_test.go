@@ -54,7 +54,7 @@ func TestAgentToolVocabularyDiffers(t *testing.T) {
 
 // The dropdown list and the inference table are two halves of one contract: a
 // model offered in the UI must route to the agent the UI claims it does, or the
-// user picks "sonnet" and the run goes to grok.
+// user picks "claude-sonnet-5" and the run goes to grok.
 func TestModelOptionsMatchInference(t *testing.T) {
 	opts := ModelOptions()
 	if len(opts) == 0 {
@@ -78,7 +78,7 @@ func TestModelOptionsMatchInference(t *testing.T) {
 		}
 		seen[opt.Value] = true
 	}
-	if !IsKnownModel("sonnet") || IsKnownModel("not-a-model") {
+	if !IsKnownModel("claude-opus-5") || IsKnownModel("not-a-model") || IsKnownModel("opus") {
 		t.Error("IsKnownModel disagrees with the option list")
 	}
 	// Both agents must be represented, or one CLI becomes unselectable in the UI.

@@ -68,21 +68,17 @@ type ModelOption struct {
 // agent. It lives next to AgentForModel so the two cannot drift: a name added
 // here that the inference table does not recognize fails the tests.
 //
-// Vendor aliases ("opus", "sonnet") track that vendor's current model; the
-// pinned ids stay put. Both CLIs also accept names not listed here — the config
-// page keeps whatever is already in config.json as a selectable option, so a
-// hand-edited value survives a save.
+// Only pinned vendor ids are listed — no rolling aliases like "opus"/"sonnet".
+// Both CLIs also accept names not listed here; the config page keeps whatever
+// is already in config.json as a selectable option, so a hand-edited value
+// survives a save.
 func ModelOptions() []ModelOption {
 	return []ModelOption{
 		// grok. `grok models` reports what a given account can actually reach, so
 		// this list is intentionally short — extend it per deployment.
 		{Value: "grok-4.5", Label: "grok-4.5", Agent: AgentGrok},
 
-		// claude. Aliases first, then pinned ids.
-		{Value: "opus", Label: "opus (latest Opus)", Agent: AgentClaude},
-		{Value: "sonnet", Label: "sonnet (latest Sonnet)", Agent: AgentClaude},
-		{Value: "haiku", Label: "haiku (latest Haiku)", Agent: AgentClaude},
-		{Value: "fable", Label: "fable (latest Fable)", Agent: AgentClaude},
+		// claude.
 		{Value: "claude-opus-5", Label: "claude-opus-5", Agent: AgentClaude},
 		{Value: "claude-opus-4-8", Label: "claude-opus-4-8", Agent: AgentClaude},
 		{Value: "claude-sonnet-5", Label: "claude-sonnet-5", Agent: AgentClaude},

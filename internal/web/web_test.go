@@ -203,9 +203,9 @@ func TestPagesRender(t *testing.T) {
 		// optgroup label is how the inferred agent shows at the point of choice.
 		{"/config/agent", `<optgroup label="Grok">`},
 		{"/config/agent", `<optgroup label="Claude">`},
-		{"/config/agent", `<option value="sonnet"`},
 		{"/config/agent", `<option value="grok-4.5"`},
 		{"/config/agent", `<option value="claude-opus-5"`},
+		{"/config/agent", `<option value="claude-sonnet-5"`},
 		{"/config/worktrees", `id="page-config-worktrees"`},
 		{"/config/worktrees", `name="worktreeIdleTTLDays"`},
 		{"/config/worktrees", `name="terminalSessionTTLDays"`},
@@ -1546,8 +1546,8 @@ func TestConfigAddsPersist(t *testing.T) {
 	reqAgent := httptest.NewRequest(http.MethodPost, "/config/agent", strings.NewReader(url.Values{
 		"agent":                     {"grok"},
 		"claudeBin":                 {"/opt/claude"},
-		"model":                     {"sonnet"},
-		"summarizeModel":            {"haiku"},
+		"model":                     {"claude-opus-5"},
+		"summarizeModel":            {"claude-haiku-4-5"},
 		"claudeIncludeAnthropicEnv": {"1"},
 	}.Encode()))
 	reqAgent.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1556,17 +1556,17 @@ func TestConfigAddsPersist(t *testing.T) {
 	if wAgent.Code != http.StatusSeeOther && wAgent.Code != http.StatusFound {
 		t.Fatalf("agent settings status=%d body=%s", wAgent.Code, wAgent.Body.String())
 	}
-	// The model name selects the CLI: "sonnet" routes to claude even though the
-	// fallback agent is grok.
+	// The model name selects the CLI: "claude-opus-5" routes to claude even though
+	// the fallback agent is grok.
 	agentCLI := cfg.ResolveAgentCLI("")
-	if agentCLI.Agent != grokrun.AgentClaude || agentCLI.Bin != "/opt/claude" || agentCLI.Model != "sonnet" {
+	if agentCLI.Agent != grokrun.AgentClaude || agentCLI.Bin != "/opt/claude" || agentCLI.Model != "claude-opus-5" {
 		t.Fatalf("agent settings not applied: %+v", agentCLI)
 	}
 	if !cfg.AgentIncludesAnthropicEnv(grokrun.AgentClaude) {
 		t.Fatal("ANTHROPIC_* opt-in not persisted")
 	}
 	// Thread titles run on the cheap model; tasks keep the full one.
-	if got := cfg.ResolveSummarizeCLI("").Model; got != "haiku" {
+	if got := cfg.ResolveSummarizeCLI("").Model; got != "claude-haiku-4-5" {
 		t.Fatalf("title model=%q", got)
 	}
 	// A model that is not one of the offered options must not be persisted — the
@@ -1576,7 +1576,7 @@ func TestConfigAddsPersist(t *testing.T) {
 	}.Encode()))
 	reqBadModel.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	h.ServeHTTP(httptest.NewRecorder(), reqBadModel)
-	if got := cfg.ResolveAgentCLI("").Model; got != "sonnet" {
+	if got := cfg.ResolveAgentCLI("").Model; got != "claude-opus-5" {
 		t.Fatalf("rejected model overwrote config: %q", got)
 	}
 	// An unknown agent is rejected instead of silently falling back.

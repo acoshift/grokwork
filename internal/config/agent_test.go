@@ -374,8 +374,8 @@ func TestSetAgentSettingsRoundTripsModels(t *testing.T) {
 	}
 	err = cfg.SetAgentSettings(AgentSettings{
 		Agent:          "grok",
-		Model:          "opus",
-		SummarizeModel: "haiku",
+		Model:          "claude-opus-5",
+		SummarizeModel: "claude-haiku-4-5",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -384,10 +384,10 @@ func TestSetAgentSettingsRoundTripsModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := reloaded.ResolveAgentCLI("").Model; got != "opus" {
+	if got := reloaded.ResolveAgentCLI("").Model; got != "claude-opus-5" {
 		t.Fatalf("task model=%q", got)
 	}
-	if got := reloaded.ResolveSummarizeCLI(""); got.Model != "haiku" || got.Agent != grokrun.AgentClaude {
+	if got := reloaded.ResolveSummarizeCLI(""); got.Model != "claude-haiku-4-5" || got.Agent != grokrun.AgentClaude {
 		t.Fatalf("summarize cli=%+v", got)
 	}
 	// Blank claude binary resolves rather than persisting empty.
