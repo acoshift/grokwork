@@ -284,6 +284,25 @@
 {{end}}
 
 {{define "session_live"}}
+{{/* Completion summary from the unit's run record. On Discord this is a card in
+     the thread; a web-native unit has no thread, so this is the only place it
+     appears. */}}
+{{if .Completion}}
+<div class="section card" id="session-completion-panel">
+  <h2>Last completion</h2>
+  <p class="sub" style="margin:0">
+    <span class="badge">{{.Completion.Status}}</span>
+    {{if .Completion.Branch}} <span class="mono">{{.Completion.Branch}}</span>{{end}}
+    {{if .Completion.Diff.FileCount}} · {{.Completion.Diff.FileCount}} file{{if ne .Completion.Diff.FileCount 1}}s{{end}}{{end}}
+    {{if .Completion.Diff.Insertions}} · <span class="diff-add">+{{.Completion.Diff.Insertions}}</span>{{end}}
+    {{if .Completion.Diff.Deletions}} · <span class="diff-del">-{{.Completion.Diff.Deletions}}</span>{{end}}
+    {{if .Completion.Diff.Dirty}} · <span class="badge status-error">uncommitted</span>{{end}}
+  </p>
+  {{if .Completion.Diff.Risky}}
+  <p class="sub" style="margin:0.35rem 0 0">Risky paths: {{range $i, $p := .Completion.Diff.Risky}}{{if $i}}, {{end}}<span class="mono">{{$p}}</span>{{end}}</p>
+  {{end}}
+</div>
+{{end}}
 {{if .SessionEntry.LastVerify}}
 <div class="section card" id="session-verify-panel">
   <h2>Last verify</h2>

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/timeline"
 )
@@ -111,5 +112,57 @@ func TestRecoveredOutputOnlyOnNewestTurn(t *testing.T) {
 	}
 	if !strings.Contains(body, "first answer") {
 		t.Error("earlier turn's real response was lost")
+	}
+}
+
+// TestWebNativeUnitGetsCompletionSummary closes C3 row 1. The completion summary
+// used to be computed only as a side effect of posting a Discord card, and its
+// collector returned early on a nil session — so a web-native unit (every commit
+// review, every PR dispatch) never got one anywhere.
+func TestWebNativeUnitGetsCompletionSummary(t *testing.T) {
+	srv, _, _ := testServer(t)
+	events := srv.bot.Events()
+	if events == nil {
+		t.Fatal("timeline store missing")
+	}
+	if _, err := events.Append("thread-99", timeline.KindCompletion, bot.CompletionCardInput{
+		Status:  "Done",
+		Project: "proj",
+		Branch:  "grokwork/thread-99",
+		Diff: bot.DiffSummary{
+			FileCount:  3,
+			Insertions: 42,
+			Deletions:  7,
+			Risky:      []string{"internal/config/config.go"},
+			HasCommits: true,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99?project=proj", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="session-completion-panel"`) {
+		t.Fatal("completion panel missing")
+	}
+	for _, want := range []string{"grokwork/thread-99", "3 files", "+42", "-7", "internal/config/config.go"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("completion panel missing %q", want)
+		}
+	}
+}
+
+func TestNoCompletionPanelWithoutRecord(t *testing.T) {
+	srv, _, _ := testServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99?project=proj", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if strings.Contains(w.Body.String(), `id="session-completion-panel"`) {
+		t.Error("panel rendered with no completion record")
 	}
 }

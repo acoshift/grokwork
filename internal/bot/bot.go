@@ -1963,11 +1963,16 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			}
 		}
 		b.ensureThreadGoal(threadID, parsed.Prompt)
-		// Completion card + brief pin are Discord-only presentation.
+		// The completion summary is data, not presentation: it records the diff
+		// stats and risky paths for the unit and renders a Discord card only when
+		// there is a thread. Calling it outside `present` is what finally gives a
+		// web-native unit a completion record at all — it passes s (possibly nil)
+		// and decides internally.
+		if pol.PostCompletion == "eng" {
+			b.postCompletionSummary(s, threadID, proj.Name, runCwd, wtBranch, elapsed, result.Code, result.Cancelled)
+		}
+		// The brief is a pinned Discord message, so it stays presentation-gated.
 		if present {
-			if pol.PostCompletion == "eng" {
-				b.postCompletionSummary(s, threadID, proj.Name, runCwd, wtBranch, elapsed, result.Code, result.Cancelled)
-			}
 			if pol.RefreshBrief {
 				if _, err := b.refreshBriefCard(s, threadID, runCwd); err != nil {
 					log.Printf("brief: post-task refresh thread=%s: %v", threadID, err)

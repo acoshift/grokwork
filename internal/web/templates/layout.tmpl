@@ -1636,8 +1636,10 @@
     #live-session,
     .pr-rail,
     #live-root h1 { overflow-wrap: anywhere; }
-    .pr-meta .diff-add { color: var(--ok); }
-    .pr-meta .diff-del { color: var(--danger); }
+    .pr-meta .diff-add,
+    #session-completion-panel .diff-add { color: var(--ok); }
+    .pr-meta .diff-del,
+    #session-completion-panel .diff-del { color: var(--danger); }
 
     .pr-gates {
       display: grid;

@@ -572,6 +572,8 @@ type pageData struct {
 	// as the fallback when a turn has no recorded response (cancelled / max
 	// turns), which is the only copy a web-native unit ever had.
 	RunTranscript string
+	// Completion is the newest recorded completion summary for this unit, if any.
+	Completion *bot.CompletionCardInput
 	// InboxItems are the viewer's queued notifications (newest first).
 	InboxItems InboxItems
 	// Session lifecycle controls (cancel/reset/dequeue/claim on the detail page).

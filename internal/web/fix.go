@@ -661,6 +661,18 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 		if events := s.bot.Events(); events != nil {
 			if evs, err := events.Read(threadID); err == nil {
 				d.RunTranscript = timeline.LastRunTranscript(evs)
+				// Newest completion record. A web-native unit has no Discord card,
+				// so this is the only place its diff summary is visible.
+				for i := len(evs) - 1; i >= 0; i-- {
+					if evs[i].Kind != timeline.KindCompletion {
+						continue
+					}
+					var c bot.CompletionCardInput
+					if err := evs[i].DecodeData(&c); err == nil {
+						d.Completion = &c
+					}
+					break
+				}
 			}
 		}
 	}

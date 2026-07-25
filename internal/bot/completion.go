@@ -16,6 +16,7 @@ import (
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/timeline"
 )
 
 // DefaultRiskyPathGlobs is the completion-card risk list (alias of config defaults).
@@ -611,8 +612,15 @@ func truncateRunes(s string, n int) string {
 }
 
 // postCompletionSummary collects git diff info and posts a summary card.
+// postCompletionSummary collects the completion data, records it durably, and
+// renders a Discord card when there is a thread to render into.
+//
+// The collection half must not depend on Discord. It used to return early on a
+// nil session, which is why a web-native unit — every commit review, every PR
+// dispatch — never got a completion summary anywhere: the diff stats and risky
+// paths were computed only as a side effect of posting a message.
 func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd, branch string, elapsed time.Duration, resultCode int, cancelled bool) {
-	if s == nil || threadID == "" || cancelled {
+	if threadID == "" || cancelled {
 		return
 	}
 	if cwd == "" || !gitworktree.IsRepo(cwd) {
@@ -674,6 +682,15 @@ func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd
 		SessionURL: b.sessionWebURL(threadID),
 		Diff:       diff,
 		Queued:     b.queueLen(threadID),
+	}
+	// Durable first, render second: the record is the same for both surfaces, and
+	// a Discord failure below must not lose it.
+	if completionHasContent(diff) {
+		b.appendTimeline(threadID, timeline.KindCompletion, in)
+	}
+
+	if s == nil {
+		return // web-native unit: recorded above, nothing to post
 	}
 	emb, ok := FormatCompletionEmbed(in)
 	if !ok {
