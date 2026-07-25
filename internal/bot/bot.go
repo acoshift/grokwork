@@ -1968,8 +1968,12 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	}
 	log.Printf("task: finished msg=%s thread=%s source=%s present=%v", msgTag, threadID, item.source, present)
 
-	// Watchers + notifyOnDone author pings (Discord threads only).
-	if present && s != nil {
+	// Watchers + notifyOnDone author pings. A Discord thread gets an in-thread
+	// mention; a web-native unit has no channel, so recipients are DMed — `present`
+	// is false for those, which is why it is not the only gate. (A *degraded* Discord
+	// thread, where the status message failed to post, still skips: the thread exists
+	// but Discord was refusing writes.)
+	if s != nil && (present || gitworktree.IsWebUnitID(threadID)) {
 		b.notifyRunDone(s, threadID, taskAuthorID(item, m), result, elapsed)
 	}
 }

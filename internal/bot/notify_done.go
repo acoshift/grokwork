@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
@@ -125,8 +126,18 @@ func discordNotifySend(s *discordgo.Session) notifySend {
 	}
 }
 
-// notifyRunDone pings watchers and optionally the run author after a Discord-visible run.
+// notifyRunDone pings watchers and optionally the run author after a run.
+//
+// A Discord thread gets one in-thread message that @mentions everyone; a
+// web-native unit has no channel to post into, so each recipient is DMed instead.
+// The two cannot share a message: a DM addressed to one person must not read
+// "@you @someone-else — run done", and it carries no ambient context, so it has to
+// name the work and link to it.
 func (b *Bot) notifyRunDone(s *discordgo.Session, threadID, authorID string, result grokrun.Result, elapsed time.Duration) {
+	if gitworktree.IsWebUnitID(threadID) {
+		b.notifyRunDoneDM(threadID, authorID, result, elapsed, discordDMSend(s))
+		return
+	}
 	b.notifyRunDoneSend(threadID, authorID, result, elapsed, discordNotifySend(s))
 }
 
@@ -136,11 +147,9 @@ func (b *Bot) notifyRunFailed(s *discordgo.Session, threadID, authorID string, e
 	b.notifyRunDone(s, threadID, authorID, grokrun.Result{Code: 1}, elapsed)
 }
 
-// notifyRunDoneSend is the testable core of notifyRunDone (real session lookup + policy).
-func (b *Bot) notifyRunDoneSend(threadID, authorID string, result grokrun.Result, elapsed time.Duration, send notifySend) {
-	if b == nil || send == nil || threadID == "" || gitworktree.IsWebUnitID(threadID) {
-		return
-	}
+// notifyRecipients resolves who to ping for a finished run: watchers (who opted
+// in) plus the author when notifyOnDone policy says so. Policy only — no delivery.
+func (b *Bot) notifyRecipients(threadID, authorID string, outcome runOutcome, elapsed time.Duration) []string {
 	var watchers []string
 	if b.sessions != nil {
 		if e, ok := b.sessions.Get(threadID); ok {
@@ -153,8 +162,18 @@ func (b *Bot) notifyRunDoneSend(threadID, authorID string, result grokrun.Result
 		mode = b.cfg.NotifyOnDoneValue()
 		longMs = b.cfg.NotifyOnDoneLongMsValue()
 	}
+	return notifyMentionIDs(authorID, watchers, mode, longMs, outcome, elapsed)
+}
+
+// notifyRunDoneSend is the testable core of the in-thread ping (session lookup +
+// policy). Keeps refusing web-unit ids: those are not Discord channels, and posting
+// to one is a guaranteed 4xx every poll.
+func (b *Bot) notifyRunDoneSend(threadID, authorID string, result grokrun.Result, elapsed time.Duration, send notifySend) {
+	if b == nil || send == nil || threadID == "" || gitworktree.IsWebUnitID(threadID) {
+		return
+	}
 	outcome := classifyRunOutcome(result)
-	ids := notifyMentionIDs(authorID, watchers, mode, longMs, outcome, elapsed)
+	ids := b.notifyRecipients(threadID, authorID, outcome, elapsed)
 	if len(ids) == 0 {
 		return
 	}
@@ -164,6 +183,105 @@ func (b *Bot) notifyRunDoneSend(threadID, authorID string, result grokrun.Result
 	}
 	if err := send(threadID, msg, ids); err != nil {
 		log.Printf("warn: notify-done thread=%s: %v", threadID, err)
+	}
+}
+
+// maxNotifyDMs caps the fan-out of one finished run. Reached only via a long
+// watcher list; the drop is logged rather than silent.
+const maxNotifyDMs = 10
+
+// dmSend delivers one direct message to a user. Injectable for tests.
+type dmSend func(userID, content string) error
+
+// notifyRunDoneDM is notifyRunDoneSend for web-native units: same policy, but one
+// DM per recipient because there is no shared channel.
+func (b *Bot) notifyRunDoneDM(threadID, authorID string, result grokrun.Result, elapsed time.Duration, dm dmSend) {
+	if b == nil || dm == nil || threadID == "" {
+		return
+	}
+	outcome := classifyRunOutcome(result)
+	ids := b.notifyRecipients(threadID, authorID, outcome, elapsed)
+	// A web session's actor id is a Discord snowflake only when the viewer logged in
+	// through Discord OAuth. Anything else cannot be DMed, so drop it here rather
+	// than letting the API reject it per recipient.
+	ids = slices.DeleteFunc(ids, func(id string) bool { return !looksLikeDiscordUserID(id) })
+	if len(ids) == 0 {
+		return
+	}
+	if len(ids) > maxNotifyDMs {
+		log.Printf("notify-done: unit=%s recipients=%d capped to %d", threadID, len(ids), maxNotifyDMs)
+		ids = ids[:maxNotifyDMs]
+	}
+	msg := b.formatNotifyDoneDM(threadID, outcome, elapsed)
+	if msg == "" {
+		return
+	}
+	for _, id := range ids {
+		// One recipient blocking bot DMs must not silence the rest.
+		if err := dm(id, msg); err != nil {
+			log.Printf("warn: notify-done dm unit=%s user=%s: %v", threadID, id, err)
+		}
+	}
+}
+
+// formatNotifyDoneDM writes the DM body. Unlike the in-thread message it names the
+// work and links to it: a DM arrives with no surrounding context, so "run done" on
+// its own is unactionable.
+func (b *Bot) formatNotifyDoneDM(threadID string, outcome runOutcome, elapsed time.Duration) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Run **%s** · %s", outcomeLabel(outcome), formatElapsed(elapsed))
+	if b.sessions != nil {
+		if e, ok := b.sessions.Get(threadID); ok {
+			// Project name and goal are already Discord-visible (brief cards); never
+			// add cwd/branch, which would leak a local path.
+			if p := strings.TrimSpace(e.Project); p != "" {
+				fmt.Fprintf(&sb, " · %s", p)
+			}
+			if g := strings.TrimSpace(e.Goal); g != "" {
+				fmt.Fprintf(&sb, "\n%s", truncateRunes(g, 200))
+			}
+		}
+	}
+	if u := b.sessionWebURL(threadID); u != "" {
+		sb.WriteString("\n" + u)
+	} else {
+		// Without webPublicBaseURL there is no link to give, so at least name the unit.
+		sb.WriteString("\nSession `" + threadID + "` (set webPublicBaseURL for a direct link)")
+	}
+	return sb.String()
+}
+
+// looksLikeDiscordUserID reports whether id is shaped like a snowflake.
+func looksLikeDiscordUserID(id string) bool {
+	id = strings.TrimSpace(id)
+	if len(id) < 17 || len(id) > 20 {
+		return false
+	}
+	for _, r := range id {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// discordDMSend opens (or reuses) the recipient's DM channel and posts there.
+func discordDMSend(s *discordgo.Session) dmSend {
+	return func(userID, content string) error {
+		if s == nil {
+			return fmt.Errorf("discord session is nil")
+		}
+		ch, err := s.UserChannelCreate(userID)
+		if err != nil {
+			return fmt.Errorf("open dm: %w", err)
+		}
+		_, err = s.ChannelMessageSendComplex(ch.ID, &discordgo.MessageSend{
+			Content: sanitizeDiscordContent(content),
+			// Addressed to one person: nothing to ping, and never let content parse into one.
+			AllowedMentions: &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}},
+			Flags:           discordgo.MessageFlagsSuppressEmbeds,
+		})
+		return err
 	}
 }
 

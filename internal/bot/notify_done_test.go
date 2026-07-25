@@ -2,6 +2,7 @@ package bot
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -252,11 +253,12 @@ func TestNotifyRunDoneSend(t *testing.T) {
 		t.Fatalf("fail users=%v", gotUsers)
 	}
 
-	// Web unit → no send
+	// Web unit → never posted as if it were a channel (it is DMed instead; see
+	// TestNotifyRunDoneDM).
 	calls = 0
 	b.notifyRunDoneSend("w_abc123def", "author", grokrun.Result{Code: 1}, time.Second, send)
 	if calls != 0 {
-		t.Fatal("web unit must not notify")
+		t.Fatal("web unit id must never be used as a Discord channel")
 	}
 
 	// Pre-run fail helper
@@ -264,5 +266,137 @@ func TestNotifyRunDoneSend(t *testing.T) {
 	b.notifyRunDoneSend(threadID, "author", grokrun.Result{Code: 1}, time.Second, send)
 	if calls != 1 || !strings.Contains(gotContent, "**failed**") {
 		t.Fatalf("synthetic fail: calls=%d content=%s", calls, gotContent)
+	}
+}
+
+// A web-native unit has no channel, so the finished-run ping is DMed to each
+// recipient instead — one DM each, since a shared "@you @them" message makes no
+// sense in a private conversation.
+func TestNotifyRunDoneDM(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		DataDir:          dir,
+		NotifyOnDone:     config.NotifyOnDoneAlways,
+		WebPublicBaseURL: "https://grok.example/",
+	}
+	const unit = "w_abc123def456"
+	if err := store.Set(unit, sessionstore.Entry{
+		Project: "app",
+		Goal:    "Review abcdef0: fix nil deref",
+		// A non-snowflake watcher (a web login that was not Discord OAuth) cannot be
+		// DMed and must be dropped before the API rejects it.
+		WatcherIDs: []string{"222222222222222222", "web:local-admin"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b := &Bot{cfg: cfg, sessions: store}
+
+	sent := map[string]string{}
+	dm := func(userID, content string) error {
+		sent[userID] = content
+		return nil
+	}
+	b.notifyRunDoneDM(unit, "111111111111111111", grokrun.Result{Code: 0}, 25*time.Minute, dm)
+
+	if len(sent) != 2 {
+		t.Fatalf("want one DM per DM-able recipient, got %d: %v", len(sent), sent)
+	}
+	for _, id := range []string{"111111111111111111", "222222222222222222"} {
+		body, ok := sent[id]
+		if !ok {
+			t.Fatalf("no DM for %s", id)
+		}
+		// A DM carries no ambient context, so it must name the work and link to it.
+		for _, want := range []string{"**done**", "app", "Review abcdef0", "https://grok.example/sessions/" + unit} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("DM to %s missing %q:\n%s", id, want, body)
+			}
+		}
+		// Never address a DM with mentions of the other recipients.
+		if strings.Contains(body, "<@") {
+			t.Fatalf("DM must not @mention: %s", body)
+		}
+	}
+	if _, leaked := sent["web:local-admin"]; leaked {
+		t.Fatal("non-snowflake id must not be DMed")
+	}
+
+	// Policy still applies: never = nobody, even on failure.
+	cfg.NotifyOnDone = config.NotifyOnDoneNever
+	if err := store.Set(unit, sessionstore.Entry{Project: "app"}); err != nil {
+		t.Fatal(err)
+	}
+	sent = map[string]string{}
+	b.notifyRunDoneDM(unit, "111111111111111111", grokrun.Result{Code: 1}, time.Minute, dm)
+	if len(sent) != 0 {
+		t.Fatalf("notifyOnDone=never must not DM: %v", sent)
+	}
+}
+
+// One recipient with DMs closed must not silence the others.
+func TestNotifyRunDoneDMContinuesPastFailure(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const unit = "w_ff0011223344"
+	if err := store.Set(unit, sessionstore.Entry{
+		Project:    "app",
+		WatcherIDs: []string{"222222222222222222", "333333333333333333"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b := &Bot{cfg: &config.Config{DataDir: dir, NotifyOnDone: config.NotifyOnDoneAlways}, sessions: store}
+
+	var attempted []string
+	dm := func(userID, content string) error {
+		attempted = append(attempted, userID)
+		if userID == "222222222222222222" {
+			return errors.New("Cannot send messages to this user")
+		}
+		return nil
+	}
+	b.notifyRunDoneDM(unit, "", grokrun.Result{Code: 0}, time.Minute, dm)
+	if len(attempted) != 2 {
+		t.Fatalf("a blocked recipient stopped the loop: %v", attempted)
+	}
+}
+
+// Without webPublicBaseURL there is no link, but the DM must still identify the unit
+// rather than saying only "run done".
+func TestNotifyRunDoneDMWithoutBaseURL(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const unit = "w_9988776655"
+	if err := store.Set(unit, sessionstore.Entry{Project: "app"}); err != nil {
+		t.Fatal(err)
+	}
+	b := &Bot{cfg: &config.Config{DataDir: dir, NotifyOnDone: config.NotifyOnDoneAlways}, sessions: store}
+	var body string
+	b.notifyRunDoneDM(unit, "111111111111111111", grokrun.Result{Code: 1}, time.Minute,
+		func(_, content string) error { body = content; return nil })
+	if !strings.Contains(body, unit) || !strings.Contains(body, "**failed**") {
+		t.Fatalf("body=%q", body)
+	}
+}
+
+func TestLooksLikeDiscordUserID(t *testing.T) {
+	for _, ok := range []string{"111111111111111111", "12345678901234567", "12345678901234567890"} {
+		if !looksLikeDiscordUserID(ok) {
+			t.Fatalf("%q should be a snowflake", ok)
+		}
+	}
+	for _, bad := range []string{"", "web:x", "1234567890123456", "123456789012345678901", "11111111111111111a"} {
+		if looksLikeDiscordUserID(bad) {
+			t.Fatalf("%q should not be a snowflake", bad)
+		}
 	}
 }
