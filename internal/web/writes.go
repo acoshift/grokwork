@@ -29,6 +29,8 @@ func (s *Server) requireFeature(feature string, next http.Handler) http.Handler 
 			on = s.cfg.FeatureStartSessions()
 		case "prReviews":
 			on = s.cfg.FeaturePRReviews()
+		case "deploy":
+			on = s.cfg.FeatureDeploy()
 		}
 		if !on {
 			http.Error(w, "not found", http.StatusNotFound)

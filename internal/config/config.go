@@ -160,6 +160,13 @@ type Config struct {
 	DiscordUserGitHub map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
 	// NotifyOnDone controls when the run author is @mentioned after a Grok run:
 	// never | errors | always | long_only. Empty/omitted → errors.
+	// MaxConcurrentDeploys caps host-wide concurrent deploy runs.
+	// nil/0 → DefaultMaxConcurrentDeploys.
+	MaxConcurrentDeploys *int `json:"maxConcurrentDeploys,omitempty"`
+	// DeployRunRetention is how many terminal deploy runs to keep per lane.
+	// nil/0 → DefaultDeployRunRetention.
+	DeployRunRetention *int `json:"deployRunRetention,omitempty"`
+
 	NotifyOnDone string `json:"notifyOnDone,omitempty"`
 	// NotifyOnDoneLongMs is the elapsed threshold for long_only (default 300000 = 5m).
 	NotifyOnDoneLongMs int `json:"notifyOnDoneLongMs,omitempty"`
@@ -212,6 +219,11 @@ type ProjectItem struct {
 	CapabilityTemplateNames []string // builtin + project overlay names for selects
 	// VerifyCommandsText is the config form body: "name | command [| timeoutMs]" per line.
 	VerifyCommandsText string
+	// Deploy settings. DeployEnvs carries variable NAMES and a secret flag only —
+	// never a value, the same rule as LinearAPIKeySet above.
+	DeployEnabled      bool
+	DeployManifestPath string
+	DeployEnvs         []DeployEnvItem
 }
 
 // ChannelItem is a channel→project mapping row for the config UI.
@@ -647,6 +659,8 @@ func (c *Config) saveLocked() error {
 		DiscordUserGitHub         map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
 		NotifyOnDone              string                    `json:"notifyOnDone,omitempty"`
 		NotifyOnDoneLongMs        int                       `json:"notifyOnDoneLongMs,omitempty"`
+		MaxConcurrentDeploys      *int                      `json:"maxConcurrentDeploys,omitempty"`
+		DeployRunRetention        *int                      `json:"deployRunRetention,omitempty"`
 	}{
 		DiscordToken:              c.DiscordToken,
 		DiscordClientID:           c.DiscordClientID,
@@ -690,6 +704,8 @@ func (c *Config) saveLocked() error {
 		DiscordUserGitHub:         cloneGitHubIdentityMap(c.DiscordUserGitHub),
 		NotifyOnDone:              c.NotifyOnDone,
 		NotifyOnDoneLongMs:        c.NotifyOnDoneLongMs,
+		MaxConcurrentDeploys:      cloneIntPtr(c.MaxConcurrentDeploys),
+		DeployRunRetention:        cloneIntPtr(c.DeployRunRetention),
 	}
 	raw, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
@@ -1121,6 +1137,7 @@ func (c *Config) Snapshot() Snapshot {
 			CapabilityTemplateNames:  capabilityTemplateNames(pc.CapabilityTemplates),
 			VerifyCommandsText:       FormatVerifyCommandsText(pc.VerifyCommands),
 		}
+		item.DeployEnabled, item.DeployManifestPath, item.DeployEnvs = deployItems(pc.Deploy)
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled
 			item.LinearTeamKey = strings.TrimSpace(pc.Linear.TeamKey)

@@ -12,6 +12,7 @@
   <a href="/config/projects/{{.ProjectItem.Name}}" {{if eq .ProjectTab "access"}}class="active"{{end}}>Access <span class="count">{{add (len .ProjectItem.AllowedUserIDs) (len .ProjectItem.AllowedRoleIDs)}}</span></a>
   <a href="/config/projects/{{.ProjectItem.Name}}/workflow" {{if eq .ProjectTab "workflow"}}class="active"{{end}}>Workflow</a>
   <a href="/config/projects/{{.ProjectItem.Name}}/integrations" {{if eq .ProjectTab "integrations"}}class="active"{{end}}>Integrations</a>
+  <a href="/config/projects/{{.ProjectItem.Name}}/deploy" {{if eq .ProjectTab "deploy"}}class="active"{{end}}>Deploy{{if .ProjectItem.DeployEnvs}} <span class="count">{{len .ProjectItem.DeployEnvs}}</span>{{end}}</a>
   <span class="spacer"></span>
   <a href="/config/projects/{{.ProjectItem.Name}}/danger" class="tab-danger{{if eq .ProjectTab "danger"}} active{{end}}">Danger zone</a>
 </nav>

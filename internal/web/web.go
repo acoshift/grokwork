@@ -119,6 +119,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.setProjectShip":              "/config/projects/ship",
 		"config.setProjectSafeTeam":          "/config/projects/safe-team",
 		"config.setProjectVerify":            "/config/projects/verify",
+		"config.setProjectDeployEnabled":     "/config/projects/deploy/enabled",
+		"config.setProjectDeployEnv":         "/config/projects/deploy/environment",
+		"config.removeProjectDeployEnv":      "/config/projects/deploy/environment/remove",
+		"config.setProjectDeployEnvVar":      "/config/projects/deploy/var",
+		"config.removeProjectDeployEnvVar":   "/config/projects/deploy/var/remove",
 		"config.generateProjectVerify":       "/config/projects/verify/generate",
 		"config.setProjectMode":              "/config/projects/mode",
 		"config.addProjectMember":            "/config/projects/members",
@@ -213,6 +218,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("project_config", "layout.tmpl", "project_config.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("project_config_workflow", "layout.tmpl", "project_config_workflow.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("project_config_integrations", "layout.tmpl", "project_config_integrations.tmpl", "project_config_shared.tmpl")
+	tp.ParseFiles("project_config_deploy", "layout.tmpl", "project_config_deploy.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("project_config_danger", "layout.tmpl", "project_config_danger.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("login", "layout.tmpl", "login.tmpl")
 	tp.ParseFiles("issues", "layout.tmpl", "issues.tmpl")
@@ -258,7 +264,14 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/projects/{name}", s.requireAdmin(hime.Handler(s.projectConfigPage)))
 	mux.Handle("GET /config/projects/{name}/workflow", s.requireAdmin(hime.Handler(s.projectConfigWorkflowPage)))
 	mux.Handle("GET /config/projects/{name}/integrations", s.requireAdmin(hime.Handler(s.projectConfigIntegrationsPage)))
+	mux.Handle("GET /config/projects/{name}/deploy", s.requireAdmin(hime.Handler(s.projectConfigDeployPage)))
 	mux.Handle("GET /config/projects/{name}/danger", s.requireAdmin(hime.Handler(s.projectConfigDangerPage)))
+	// Deploy policy and credentials are admin-only, like every other config write.
+	mux.Handle("POST /config/projects/deploy/enabled", s.requireAdmin(hime.Handler(s.setProjectDeployEnabled)))
+	mux.Handle("POST /config/projects/deploy/environment", s.requireAdmin(hime.Handler(s.setProjectDeployEnv)))
+	mux.Handle("POST /config/projects/deploy/environment/remove", s.requireAdmin(hime.Handler(s.removeProjectDeployEnv)))
+	mux.Handle("POST /config/projects/deploy/var", s.requireAdmin(hime.Handler(s.setProjectDeployEnvVar)))
+	mux.Handle("POST /config/projects/deploy/var/remove", s.requireAdmin(hime.Handler(s.removeProjectDeployEnvVar)))
 	// Project workspace (project-first UX): overview + scoped list pages.
 	mux.Handle("GET /projects/{project}", s.requireAuth(hime.Handler(s.projectOverview)))
 	mux.Handle("GET /projects/{project}/start", s.requireAuth(hime.Handler(s.startComposer)))
@@ -530,6 +543,9 @@ type pageData struct {
 	DeployShortSHA      string
 	DeployEnvs          []string
 	DeployRows          []deployRow
+	// Deploy settings tab.
+	DeployCapabilityNames []string
+	DeployFeatureOn       bool
 	PR            ghpr.PRDetail
 	PRNumber      int
 	// PR detail shippability strip (nil when the PR snapshot failed to load).

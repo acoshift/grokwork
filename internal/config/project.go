@@ -47,6 +47,9 @@ type ProjectConfig struct {
 	VerifyCommands []VerifyCommand `json:"verifyCommands,omitempty"`
 	GitHub         *ProjectGitHubConfig `json:"github,omitempty"`
 	Linear         *ProjectLinearConfig `json:"linear,omitempty"`
+	// Deploy is per-project deploy policy and credentials. The pipeline itself
+	// lives in the repo at .grokwork/deploy.yaml (see internal/deploy).
+	Deploy *ProjectDeployConfig `json:"deploy,omitempty"`
 }
 
 // VerifyCommand is one named verify harness entry.
@@ -114,6 +117,7 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 				pc.GitHub = nil
 			}
 		}
+		pc.Deploy = normalizeProjectDeploy(pc.Deploy)
 		out[name] = pc
 	}
 	*m = out
@@ -143,6 +147,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		VerifyCommands           []VerifyCommand         `json:"verifyCommands,omitempty"`
 		GitHub                   *ProjectGitHubConfig    `json:"github,omitempty"`
 		Linear                   *ProjectLinearConfig    `json:"linear,omitempty"`
+		Deploy                   *ProjectDeployConfig    `json:"deploy,omitempty"`
 	}
 	out := make(map[string]outObj, len(m))
 	for name, pc := range m {
@@ -164,6 +169,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			VerifyCommands:           cloneVerifyCommands(pc.VerifyCommands),
 			GitHub:                   cloneProjectGitHub(pc.GitHub),
 			Linear:                   cloneProjectLinear(pc.Linear),
+			Deploy:                   cloneProjectDeploy(pc.Deploy),
 		}
 	}
 	return json.Marshal(out)
@@ -208,6 +214,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			VerifyCommands:           cloneVerifyCommands(v.VerifyCommands),
 			GitHub:                   cloneProjectGitHub(v.GitHub),
 			Linear:                   cloneProjectLinear(v.Linear),
+			Deploy:                   cloneProjectDeploy(v.Deploy),
 		}
 	}
 	return out

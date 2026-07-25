@@ -50,6 +50,9 @@ const (
 	MaxStepTimeout = time.Hour
 )
 
+// EnvNameRule is the environment-name rule shared with internal/config.
+const EnvNameRule = `^[a-z][a-z0-9-]{0,31}$`
+
 // ErrNoManifest reports that the commit has no manifest at the expected path.
 // Callers render a "not configured" state rather than an error for this.
 var ErrNoManifest = errors.New("deploy: no manifest in commit")
@@ -59,7 +62,10 @@ var (
 	nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 	// envNameRe matches an environment name. Stricter than nameRe: environment
 	// names become path segments and env var values, and "." would be confusing.
-	envNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+	// EnvNameRule is duplicated as config.DeployEnvNameRule — this package will
+	// need internal/config for per-environment credentials, so config cannot
+	// import it back. TestEnvNameRuleMatchesConfig pins the two together.
+	envNameRe = regexp.MustCompile(EnvNameRule)
 )
 
 // Runner runs a command in dir and returns stdout. Tests inject fakes.

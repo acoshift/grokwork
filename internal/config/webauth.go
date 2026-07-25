@@ -24,6 +24,7 @@ type WebAuthFeatures struct {
 	Merge         bool `json:"merge,omitempty"`
 	StartSessions bool `json:"startSessions,omitempty"`
 	PRReviews     bool `json:"prReviews,omitempty"` // team PR review (local SOT + optional GH comment)
+	Deploy        bool `json:"deploy,omitempty"`    // trigger deploys from the web UI
 }
 
 // WebAuthConfig is optional private-web authentication (Discord OAuth).
@@ -125,6 +126,14 @@ func (c *Config) FeatureStartSessions() bool {
 }
 func (c *Config) FeaturePRReviews() bool {
 	return c.featureFlag(func(f WebAuthFeatures) bool { return f.PRReviews })
+}
+
+// FeatureDeploy gates triggering deploys from the web UI. Like every other write
+// feature it is false whenever webAuth is disabled, so enabling deploys requires
+// enabling web auth — deliberate: a production deploy needs an identity for the
+// audit trail and for the per-environment capability check.
+func (c *Config) FeatureDeploy() bool {
+	return c.featureFlag(func(f WebAuthFeatures) bool { return f.Deploy })
 }
 
 func (c *Config) featureFlag(fn func(WebAuthFeatures) bool) bool {

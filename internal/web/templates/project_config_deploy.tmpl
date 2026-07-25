@@ -1,0 +1,157 @@
+{{define "content"}}
+<div id="page-project-config-deploy">
+{{template "project_config_header" $}}
+
+<div class="section card" id="project-deploy-enable">
+  <h2>Deploy pipeline</h2>
+  <p class="sub" style="margin-top:0">
+    The pipeline itself lives in the repo at
+    <span class="mono">{{if .ProjectItem.DeployManifestPath}}{{.ProjectItem.DeployManifestPath}}{{else}}.grokwork/deploy.yaml{{end}}</span>
+    and is read from the commit being deployed, so it is versioned with the code
+    and reviewed like any other change. This page holds only what must not be
+    committed: which environments exist, who may deploy to each, and their
+    credentials. See <a href="/projects/{{.ProjectItem.Name}}/deploys">Deploys</a>
+    for what the repo currently declares.
+  </p>
+  {{if not .DeployFeatureOn}}
+  <p class="sub">
+    <strong>Triggering is off.</strong> Deploys need web auth enabled and the
+    <span class="mono">deploy</span> feature flag — like every other write
+    feature, it is fail-closed on an open network because a production deploy
+    needs a signed-in identity for the audit trail and the capability check.
+  </p>
+  {{end}}
+  <form class="inline" method="post" action="{{route "config.setProjectDeployEnabled"}}" style="grid-template-columns: auto auto;">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <label class="check">
+      <input type="checkbox" name="enabled" value="1" {{if .ProjectItem.DeployEnabled}}checked{{end}} data-autosubmit>
+      Enabled for this project
+    </label>
+    <button type="submit" class="btn-secondary">Save</button>
+  </form>
+</div>
+
+<div class="section card" id="project-deploy-add-env">
+  <h2>Add or update an environment</h2>
+  <p class="sub" style="margin-top:0">
+    The name must match one declared in the repo manifest's
+    <span class="mono">environments</span> list. Saving policy never touches
+    stored credentials.
+  </p>
+  <form method="post" action="{{route "config.setProjectDeployEnv"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div class="inline" style="grid-template-columns: 1fr 1fr 1fr;">
+      <div>
+        <label for="deploy-env-name">Environment</label>
+        <input id="deploy-env-name" type="text" name="env" placeholder="prod" class="mono" autocomplete="off" required>
+      </div>
+      <div>
+        <label for="deploy-env-cap">Required capability</label>
+        <select id="deploy-env-cap" name="requireCapability">
+          <option value="">Builder (start sessions + GitHub writes)</option>
+          {{range .DeployCapabilityNames}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select>
+      </div>
+      <div>
+        <label for="deploy-env-timeout">Step timeout ceiling</label>
+        <input id="deploy-env-timeout" type="text" name="stepTimeoutMax" placeholder="1h" class="mono" autocomplete="off">
+      </div>
+    </div>
+    <div>
+      <label for="deploy-env-refs">Allowed refs</label>
+      <textarea id="deploy-env-refs" name="allowedRefs" rows="3" class="mono" placeholder="main"></textarea>
+      <p class="sub">
+        One ref per line. Empty means the project primary branch only — this is
+        what stops someone pushing a branch that rewrites the pipeline and
+        deploying it here. Use <span class="mono">*</span> to allow any ref
+        (reasonable for dev, not for production).
+      </p>
+    </div>
+    <div class="form-actions"><button type="submit">Save environment</button></div>
+  </form>
+</div>
+
+{{range .ProjectItem.DeployEnvs}}
+<div class="section card">
+  <h2><span class="mono">{{.Name}}</span></h2>
+  <p class="sub" style="margin-top:0">
+    Gate: <span class="mono">{{if .RequireCapability}}{{.RequireCapability}}{{else}}builder{{end}}</span>
+    · refs: <span class="mono">{{if .AllowedRefsText}}{{.AllowedRefsText}}{{else}}primary branch only{{end}}</span>
+    · step ceiling: <span class="mono">{{msDur .StepTimeoutMaxMs}}</span>
+    · {{len .Keys}} variable{{if ne (len .Keys) 1}}s{{end}} ({{.SecretCount}} redacted)
+  </p>
+
+  {{if .Keys}}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Variable</th><th>Redacted in logs</th><th></th></tr></thead>
+    <tbody>
+    {{$env := .Name}}
+    {{range .Keys}}
+      <tr>
+        <td class="mono">{{.Key}}</td>
+        <td>{{if .Secret}}<span class="flag ok">yes</span>{{else}}<span class="muted">no</span>{{end}}</td>
+        <td>
+          <form method="post" action="{{route "config.removeProjectDeployEnvVar"}}"
+                data-confirm="Delete {{.Key}} from {{$env}}? Steps that read it will fail."
+                data-confirm-ok="Delete" data-confirm-danger="1">
+            {{template "csrf" $}}
+            <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+            <input type="hidden" name="env" value="{{$env}}">
+            <input type="hidden" name="key" value="{{.Key}}">
+            <button type="submit" class="btn-secondary">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">No variables yet.</div>
+  {{end}}
+
+  <form method="post" action="{{route "config.setProjectDeployEnvVar"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+    <input type="hidden" name="env" value="{{.Name}}">
+    <div class="inline" style="grid-template-columns: 1fr 1fr auto;">
+      <div>
+        <label for="deploy-var-key-{{.Name}}">Variable</label>
+        <input id="deploy-var-key-{{.Name}}" type="text" name="key" placeholder="KUBECONFIG" class="mono" autocomplete="off" required>
+      </div>
+      <div>
+        <label for="deploy-var-val-{{.Name}}">Value</label>
+        <input id="deploy-var-val-{{.Name}}" type="password" name="value" placeholder="leave blank to keep" autocomplete="off">
+      </div>
+      <label class="check">
+        <input type="checkbox" name="secret" value="1" checked> Redact
+      </label>
+    </div>
+    <p class="sub">
+      Stored values are never rendered back. Leave “Redact” on for credentials;
+      turn it off for plain configuration like a namespace, so a failed deploy's
+      log stays readable.
+    </p>
+    <div class="form-actions"><button type="submit">Save variable</button></div>
+  </form>
+
+  <details class="action danger">
+    <summary><span class="action-title">Remove environment</span></summary>
+    <div class="action-body">
+      <form method="post" action="{{route "config.removeProjectDeployEnv"}}"
+            data-confirm="Remove {{.Name}} and all {{len .Keys}} of its variables?"
+            data-confirm-title="Remove environment" data-confirm-ok="Remove" data-confirm-danger="1">
+        {{template "csrf" $}}
+        <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+        <input type="hidden" name="env" value="{{.Name}}">
+        <button type="submit" class="btn-danger">Remove {{.Name}}</button>
+      </form>
+    </div>
+  </details>
+</div>
+{{end}}
+</div>
+{{end}}

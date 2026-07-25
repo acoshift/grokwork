@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/acoshift/grokwork/internal/config"
 )
 
 // monorepoManifest is the worked example from docs/design-deploy-pipeline.md.
@@ -401,5 +403,16 @@ func TestLoadAtRejectsEscapingManifestPath(t *testing.T) {
 	}
 	if len(f.calls) != 0 {
 		t.Fatalf("ran git for a rejected path: %v", f.calls)
+	}
+}
+
+// TestEnvNameRuleMatchesConfig pins the deliberately duplicated environment-name
+// rule. internal/config cannot import this package (this package needs config
+// for per-environment credentials, so the dependency only runs one way), and a
+// silent drift would let an admin create an environment no manifest can name.
+func TestEnvNameRuleMatchesConfig(t *testing.T) {
+	if EnvNameRule != config.DeployEnvNameRule {
+		t.Fatalf("EnvNameRule = %q, config.DeployEnvNameRule = %q — the duplicated rule drifted",
+			EnvNameRule, config.DeployEnvNameRule)
 	}
 }
