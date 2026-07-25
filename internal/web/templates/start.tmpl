@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1 id="page-start">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· start task</span></h1>
-<p class="sub">The web equivalent of tagging <span class="mono">@Grok</span> in a mapped channel: describe the work and Grok runs it on a fresh worktree, streaming into a new session.</p>
+<p class="sub">Describe the work and Grok runs it on a fresh worktree, streaming into a new session.</p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
@@ -42,7 +42,7 @@
       <select id="start-model" name="model">
         {{template "model_picker_options" $}}
       </select>
-      <p class="rail-note" style="margin-top:0.4rem">The model picks the CLI, and the session keeps both for life — a thread cannot be resumed by the other CLI.</p>
+      <p class="rail-note" style="margin-top:0.4rem">The model picks the CLI, and the session keeps both for life.</p>
     </div>
     {{end}}
     <div class="form-actions"><button type="submit" id="btn-start">Start task</button></div>
@@ -57,22 +57,20 @@
 <div class="section card" id="start-context">
   <h2>What happens</h2>
   <p class="sub" style="margin-top:0">
-    Ship mode is fixed per project (set in
-    {{if .IsAdmin}}<a href="/config/projects/{{.Project}}">settings</a>{{else}}project settings{{end}})
-    and stays sticky for the life of the session.
+    Ship mode is set in
+    {{if .IsAdmin}}<a href="/config/projects/{{.Project}}">project settings</a>{{else}}project settings{{end}}
+    and stays fixed for the session.
   </p>
   {{if .CanStartFixMode}}
   <p class="sub" style="margin-top:0.35rem">
     When a run ships:
-    {{if .StartDirectShip}}<span class="badge">Direct to primary</span> — the bot fast-forwards the project default branch and pushes; no PR.{{else}}<span class="badge">PR mode</span> — the session works on a managed branch and opens a pull request.{{end}}
+    {{if .StartDirectShip}}<span class="badge">Direct to primary</span> — Grok fast-forwards the project default branch and pushes; no PR.{{else}}<span class="badge">PR mode</span> — the session works on a managed branch and opens a pull request.{{end}}
   </p>
-  {{if ne .StartDefaultMode "fix"}}<p class="sub" style="margin-top:0.35rem">Project default mode is <span class="mono">{{.StartDefaultMode}}</span> — investigate and explain runs never ship.</p>{{end}}
-  {{else}}
-  <p class="sub" style="margin-top:0.35rem">Your project role cannot Fix &amp; ship — only investigate/explain runs are available here.</p>
+  {{if ne .StartDefaultMode "fix"}}<p class="sub" style="margin-top:0.35rem">Project default mode is <span class="mono">{{.StartDefaultMode}}</span>.</p>{{end}}
   {{end}}
   <p class="sub" style="margin-top:0.35rem">
     Destination:
-    {{if .StartDiscordDest}}opens a Discord thread in this project's mapped channel.{{else}}<span class="mono">web-native</span> — no Discord thread; the run streams here only.{{end}}
+    {{if .StartDiscordDest}}opens a Discord thread in this project's mapped channel.{{else}}streams here on this page.{{end}}
   </p>
 </div>
 {{end}}

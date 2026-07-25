@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1 id="page-sessions">{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· sessions</span>{{else}}Sessions{{end}}</h1>
-<p class="sub">Work units (Discord threads / Grok sessions) with {{if .Project}}turn activity in this project{{else}}project and turn activity{{end}} ({{len .Threads}}{{if ne (len .Threads) .SessionFilters.Total}} of {{.SessionFilters.Total}}{{end}}).</p>
+<p class="sub">Sessions with {{if .Project}}turn activity in this project{{else}}project and turn activity{{end}} ({{len .Threads}}{{if ne (len .Threads) .SessionFilters.Total}} of {{.SessionFilters.Total}}{{end}}).</p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
@@ -56,7 +56,7 @@
 <table>
   <thead>
     <tr>
-      <th>Thread</th>
+      <th>Session</th>
       {{if not .Project}}<th>Project</th>{{end}}
       <th>State</th>
       <th>PR</th>
@@ -119,6 +119,6 @@
 </table>
 </div>
 {{else}}
-<div class="empty" id="sessions-empty">{{if gt .SessionFilters.Total 0}}No sessions match this filter ({{.SessionFilters.Total}} total).{{else}}No sessions {{if .Project}}in this project {{end}}yet. Work units appear after Discord or web starts a Grok task.{{end}}</div>
+<div class="empty" id="sessions-empty">{{if gt .SessionFilters.Total 0}}No sessions match this filter ({{.SessionFilters.Total}} total).{{else}}No sessions {{if .Project}}in this project {{end}}yet.{{if and .Project .CanStartSession}} <a href="/projects/{{.Project}}/start">Start one</a>.{{end}}{{end}}</div>
 {{end}}
 {{end}}

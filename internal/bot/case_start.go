@@ -17,8 +17,8 @@ var ErrEmptyCaseTitle = errors.New("case title required")
 // without queuing a run (intake-only, like Discord "/case").
 const FixStatusOpened FixStartStatus = "opened"
 
-// StartCaseOpts opens a support case from the web — the web equivalent of
-// "@Grok /case [severity] [ref:ID] <title>" (case_cmd.go).
+// StartCaseOpts opens a support case from the web. Same unit and lifecycle as
+// the Discord path, "@Grok /case [severity] [ref:ID] <title>" (case_cmd.go).
 type StartCaseOpts struct {
 	Project  string
 	Title    string // customer-facing title (required)

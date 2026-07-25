@@ -172,7 +172,7 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 	detail["status"] = string(res.Status)
 	detail["queuePos"] = res.QueuePos
 	s.auditAction(ctx, audit.ActionSessionStart, nil, detail)
-	ok := string(res.Status)
+	ok := fixStatusFlash(res.Status)
 	if res.DiscordOffline {
 		ok += "&discord=offline"
 	}
@@ -224,7 +224,7 @@ func (s *Server) handleAddressResult(ctx *hime.Context, startErr error, res bot.
 		return s.prAddressRedirect(ctx, rc.Owner, rc.Repo, rc.Number, rc.Project, "", startErr, http.StatusFound)
 	}
 	s.auditAction(ctx, audit.ActionSessionStart, nil, detail)
-	ok := string(res.Status)
+	ok := fixStatusFlash(res.Status)
 	if res.DiscordOffline {
 		ok += "&discord=offline"
 	}

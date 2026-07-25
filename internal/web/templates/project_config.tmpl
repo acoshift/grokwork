@@ -5,9 +5,7 @@
 <div class="section card" id="project-policy">
   <h2>Team policy</h2>
   <p class="sub" style="margin-top:0">
-    What Grok does for members without an explicit role. Explicit roles on the
-    roster below always apply. Changes save immediately, including for
-    already-queued tasks.
+    What Grok does for members without an explicit role.
   </p>
   <form method="post" action="{{route "config.setProjectSafeTeam"}}">
     {{template "csrf" $}}
@@ -28,7 +26,7 @@
     </div>
     {{if .ProjectItem.SafeTeamMode}}
     <div class="choice-extra">
-      <label for="safe-team-default-tpl">Default role for members without one</label>
+      <label for="safe-team-default-tpl">Default role</label>
       <select id="safe-team-default-tpl" name="safeTeamDefaultTemplate" data-autosubmit>
         {{$curTpl := .ProjectItem.SafeTeamDefaultTemplate}}
         {{range .ProjectItem.CapabilityTemplateNames}}
@@ -47,8 +45,9 @@
 <div class="section card" id="project-members">
   <h2>Members</h2>
   <p class="sub" style="margin-top:0">
-    Who can <span class="mono">@Grok</span> on this project’s channels, and their role.
-    Role changes save immediately. Web UI visibility follows user entries; Discord roles apply in chat only.
+    Who can start work on this project, and their role. Applies to the web UI and to
+    <span class="mono">@Grok</span> in mapped Discord channels. Role changes save immediately;
+    Discord roles apply in chat only.
   </p>
   {{if not .ProjectItem.AllowedUserIDs}}{{if not .ProjectItem.AllowedRoleIDs}}
   <div class="flash err" style="margin-bottom:0.85rem;">No members — add at least one user or role or nobody can use Grok on this project (fail-closed).</div>

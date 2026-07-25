@@ -20,7 +20,6 @@
       <textarea id="risky-globs" name="riskyPathGlobs" rows="8" placeholder="**/migrations/**&#10;**/auth/**&#10;**/.env*" {{if .Config.RiskyPathUseDefault}}readonly{{end}}>{{.Config.RiskyPathGlobsText}}</textarea>
     </div>
     <p class="sub" style="margin:0.5rem 0 0">
-      With defaults checked, the list is shown read-only (not stored as a custom override).
       Uncheck defaults to edit; clear the box entirely to disable risk highlighting.
     </p>
     <div class="form-actions">

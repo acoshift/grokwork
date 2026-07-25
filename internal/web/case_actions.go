@@ -70,9 +70,9 @@ func escalateFlash(out bot.EscalateOutcome) string {
 	case out.Assigned:
 		return "Escalated → fixing, assigned to you."
 	case out.EngineerID != "":
-		return "Escalated → fixing. Still assigned to the same engineer."
+		return "Escalated → fixing. Assignee unchanged."
 	default:
-		return "Escalated → fixing. No engineer assigned yet."
+		return "Escalated → fixing. Unassigned."
 	}
 }
 
@@ -97,7 +97,7 @@ func (s *Server) postCaseAnswer(ctx *hime.Context) error {
 	if ansErr != nil {
 		return s.sessionRedirect(ctx, threadID, "", ansErr.Error())
 	}
-	return s.sessionRedirect(ctx, threadID, "Phase → answered. Set customer text then close when done.", "")
+	return s.sessionRedirect(ctx, threadID, "Phase → answered.", "")
 }
 
 func (s *Server) postCaseClose(ctx *hime.Context) error {

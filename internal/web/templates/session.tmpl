@@ -74,7 +74,7 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
     </button>
   </form>
-  <p class="composer-hint"><span>Queues a follow-up on this work unit — no new Discord thread.</span><span class="composer-kbd"><kbd>⌘</kbd><kbd>↩</kbd> send</span></p>
+  <p class="composer-hint"><span>Queues a follow-up on this session.</span><span class="composer-kbd"><kbd>⌘</kbd><kbd>↩</kbd> send</span></p>
 </div>
 {{end}}
 
@@ -101,7 +101,7 @@
         </div>
         <div class="form-actions"><button type="submit" id="btn-case-reopen" class="btn-secondary">Reopen case</button></div>
       </form>
-      <p class="rail-note" style="margin-top:0.55rem">Clears resolution; keeps dossier and Mode=case.</p>
+      <p class="rail-note" style="margin-top:0.55rem">Clears resolution; keeps the dossier.</p>
     </div>
   </details>
   {{end}}
@@ -138,7 +138,7 @@
   {{end}}
   {{if .CanCaseAnswer}}
   <details class="action">
-    <summary><span class="action-title">Answer (knowledge path)</span></summary>
+    <summary><span class="action-title">Answer</span></summary>
     <div class="action-body">
       <form method="post" action="/sessions/{{.ThreadID}}/case/answer">
         {{template "csrf" $}}
@@ -171,7 +171,7 @@
   <details class="action">
     <summary><span class="action-title">Close case</span></summary>
     <div class="action-body">
-      <form method="post" action="/sessions/{{.ThreadID}}/case/close" data-confirm="Close this case? You can reopen later with Reopen case or @Grok /reopen." data-confirm-title="Close case" data-confirm-ok="Close case">
+      <form method="post" action="/sessions/{{.ThreadID}}/case/close" data-confirm="Close this case? You can reopen it later with Reopen case." data-confirm-title="Close case" data-confirm-ok="Close case">
         {{template "csrf" $}}
         <div class="field">
           <label for="case-resolution">Resolution</label>
@@ -253,7 +253,7 @@
 {{else if .CanStartSession}}
 <div class="rail-group">
   <div class="rail-group-title">Actions</div>
-  <p class="rail-note">This session is no longer active — start a new task or open another work unit to continue.</p>
+  <p class="rail-note">This session is no longer active.{{if .Project}} <a href="/projects/{{.Project}}/start">Start a new task</a>.{{end}}</p>
 </div>
 {{else}}
 <div class="rail-group">
@@ -274,7 +274,7 @@
     {{template "csrf" $}}
     <div class="form-actions"><button type="submit" id="btn-abandon" class="btn-danger"{{if .RunBusy}} disabled title="Cancel the active run before abandoning"{{end}}>Abandon</button></div>
   </form>
-  <p class="rail-note">Give up on this unit: remove the worktree, delete the managed branch, and clear the session. History stays. Cannot be undone.</p>
+  <p class="rail-note">History stays.</p>
 </div>
 {{end}}
 {{end}}
@@ -454,7 +454,7 @@
   {{if .RunPhases}}<p class="mono" style="margin:0.85rem 0 0">{{.RunPhases}}</p>{{end}}
   {{if .RunActivity}}<p class="muted" style="margin:0.35rem 0 0"><em>{{.RunActivity}}</em></p>{{end}}
   {{else}}
-  <p class="muted" style="margin:0.85rem 0 0">No active {{.AgentLabel}} run on this thread.</p>
+  <p class="muted" style="margin:0.85rem 0 0">No active {{.AgentLabel}} run.</p>
   {{end}}
 </div>
 
@@ -520,7 +520,7 @@
     {{end}}
   </div>
   {{else}}
-  <div class="empty">No turns yet. If a run just started, the live reply will appear here.</div>
+  <div class="empty">No turns yet.</div>
   {{end}}
 </div>
 {{end}}

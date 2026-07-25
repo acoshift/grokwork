@@ -3,8 +3,8 @@
 {{template "config_sub_header" $}}
 <h1>CI triage</h1>
 <p class="sub">
-  When a thread’s PR has failing checks, the bot posts a digest and offers <span class="mono">@Grok /fix-ci</span>.
-  Optionally auto-queue a fix (default off). Cap is per Discord thread session.
+  When a session’s PR has failing checks, Grok posts a digest and offers <span class="mono">@Grok /fix-ci</span>.
+  Optionally auto-queue a fix (default off).
 </p>
 <div class="section card">
   <form class="inline" method="post" action="{{route "config.ci"}}" style="grid-template-columns: auto 1fr auto;">
@@ -21,7 +21,7 @@
     </div>
     <button type="submit">Save</button>
   </form>
-  <p class="sub" style="margin:0.5rem 0 0">Max is per Discord thread session (default 2). Manual <span class="mono">/fix-ci</span> is always available.</p>
+  <p class="sub" style="margin:0.5rem 0 0">Max is per session (default 2). A manual fix is always available.</p>
 </div>
 </div>
 {{end}}

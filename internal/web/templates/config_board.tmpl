@@ -3,7 +3,7 @@
 {{template "config_sub_header" $}}
 <h1>Team activity board</h1>
 <p class="sub">
-  <span class="mono">@Grok /board</span> groups threads by activity (running, queued, waiting on human, stale).
+  <span class="mono">@Grok /board</span> groups sessions by activity (running, queued, waiting on human, stale).
   Stale is based on session inactivity. Optional nightly digest posts the board into a Discord channel.
 </p>
 <div class="section card">
@@ -19,7 +19,7 @@
     </div>
     <button type="submit">Save</button>
   </form>
-  <p class="sub" style="margin:0.5rem 0 0">Default stale threshold is <span class="mono">3</span> days. Leave the channel empty to disable the digest.</p>
+  <p class="sub" style="margin:0.5rem 0 0">Leave the channel empty to disable the digest.</p>
 </div>
 </div>
 {{end}}

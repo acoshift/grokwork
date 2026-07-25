@@ -1,7 +1,7 @@
 {{define "content"}}
 <div class="config-page" id="page-config">
 <h1>Config</h1>
-<p class="sub">Global bot &amp; runtime settings — each row opens a focused page. Changes persist to the config file and apply immediately. Per-project settings (members, workflow, integrations) live inside each project.</p>
+<p class="sub">Global settings. Changes persist to the config file and apply immediately. Per-project settings (members, workflow, integrations) live inside each project.</p>
 
 {{if .Flash}}
 <div class="flash">{{.Flash}}</div>
@@ -12,7 +12,7 @@
 
 <div class="cfg-hub">
   <div class="cfg-hub-col">
-    <div class="drill-cap">Bot</div>
+    <div class="drill-cap">Discord</div>
     <div class="drill-group">
       <a class="drill" href="{{route "config.bot"}}">
         <span class="drill-main">
@@ -49,7 +49,7 @@
       <a class="drill" href="{{route "config.run"}}">
         <span class="drill-main">
           <span class="drill-t">Run limits</span>
-          <span class="drill-s">turn budget &amp; timeout per Discord task</span>
+          <span class="drill-s">turn budget &amp; timeout per run</span>
         </span>
         <span class="drill-v">{{.Config.MaxTurns}} turns · {{msDur .Config.TimeoutMs}}</span>
       </a>
@@ -84,7 +84,7 @@
       <a class="drill" href="{{route "config.board"}}">
         <span class="drill-main">
           <span class="drill-t">Team activity board</span>
-          <span class="drill-s">/board grouping · nightly digest</span>
+          <span class="drill-s">activity grouping · nightly digest</span>
         </span>
         <span class="drill-v">stale {{.Config.BoardStaleDays}}d{{if .Config.BoardDigestChannel}} · digest on{{end}}</span>
       </a>
@@ -115,7 +115,7 @@
     <div class="drill-group">
       <a class="drill" href="{{route "config.worktrees"}}">
         <span class="drill-main">
-          <span class="drill-t">Folder &amp; idle cleanup</span>
+          <span class="drill-t">Worktrees</span>
           <span class="drill-s mono">{{.Config.WorktreesRoot}}</span>
         </span>
         <span class="drill-v">{{if .Config.WorktreeIdleTTLDays}}wt {{.Config.WorktreeIdleTTLDays}}d{{else}}wt off{{end}}{{if .Config.TerminalSessionTTLDays}} · sess {{.Config.TerminalSessionTTLDays}}d{{else}} · sess off{{end}}</span>
@@ -136,7 +136,7 @@
   {{template "config_lists" .}}
 </div>
 
-<p class="sub" id="access">Members are configured per project (open a project’s Settings). A project with no members is fail-closed — nobody can <span class="mono">@Grok</span> on its channels.</p>
+<p class="sub" id="access">Members are configured per project (open a project’s Settings). A project with no members is fail-closed — nobody can see it in the web UI or use <span class="mono">@Grok</span> on its channels.</p>
 </div>
 {{end}}
 

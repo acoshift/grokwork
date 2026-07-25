@@ -12,8 +12,9 @@ import (
 	"github.com/acoshift/grokwork/internal/bot"
 )
 
-// startComposer renders the "Start a task" page: the web equivalent of tagging
-// @Grok in a mapped channel. The page renders read-only when the viewer
+// startComposer renders the "Start a task" page, the web entry point for a new
+// session (the Discord equivalent is tagging @Grok in a mapped channel, but
+// neither surface is primary). The page renders read-only when the viewer
 // cannot start sessions; the hard gate lives on the POST (requireFeature +
 // requireMember). Fix & ship is hidden without project CanShip caps.
 func (s *Server) startComposer(ctx *hime.Context) error {
@@ -91,7 +92,7 @@ func (s *Server) postStart(ctx *hime.Context) error {
 	}
 	s.auditAction(ctx, audit.ActionSessionStart, nil, detail)
 
-	ok := string(res.Status)
+	ok := fixStatusFlash(res.Status)
 	if res.DiscordOffline {
 		ok += "&discord=offline"
 	}

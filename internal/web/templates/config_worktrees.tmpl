@@ -3,11 +3,9 @@
 {{template "config_sub_header" $}}
 <h1>Worktrees</h1>
 <p class="sub">
-  New per-thread git worktrees are created under <span class="mono">&lt;root&gt;/&lt;project&gt;/&lt;threadId&gt;</span>.
-  Leave the folder empty to use the default <span class="mono">data/worktrees</span> next to <span class="mono">config.json</span>.
+  A git worktree is created for each session, under <span class="mono">&lt;root&gt;/&lt;project&gt;/&lt;sessionId&gt;</span>.
   Absolute path recommended; relative paths resolve against the config file directory.
-  Existing sessions keep their stored path until reset. Idle prune after this many days without activity (<span class="mono">0</span> disables; default <span class="mono">30</span>).
-  Terminal sessions (<span class="mono">done</span> / <span class="mono">abandoned</span>) can be deleted after this many days since last update (<span class="mono">0</span> disables; default off).
+  Existing sessions keep their stored path until reset.
 </p>
 <div class="section card">
   <form class="inline" method="post" action="{{route "config.worktrees"}}" style="grid-template-columns: 2fr 1fr 1fr auto;">
@@ -26,6 +24,11 @@
     </div>
     <button type="submit">Save</button>
   </form>
+  <p class="sub" style="margin:0.5rem 0 0">
+    Idle TTL prunes after that many days without activity (default <span class="mono">30</span>);
+    done/abandoned TTL deletes terminal sessions that long after their last update (default off).
+    <span class="mono">0</span> disables either.
+  </p>
   <p class="sub" style="margin:0.5rem 0 0">Effective root for new worktrees: <span class="mono">{{.Config.WorktreesRoot}}</span></p>
 </div>
 </div>

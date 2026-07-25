@@ -149,12 +149,12 @@ func (s *Server) postPRReview(ctx *hime.Context) error {
 		selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
 		if live, vErr := ghpr.ViewWith(ctx.Context(), s.ghRun(), cwd, selector); vErr == nil {
 			if live.HeadSHA != "" && !strings.EqualFold(live.HeadSHA, headSHA) {
-				msg += " — head moved since you loaded the page (review is for the older commit)"
+				msg += " — head moved; this review covers the older commit"
 			}
 		}
 	}
 	if mirror && s.cfg.FeatureGitHubWrites() && !mirrorOK {
-		msg += " · GitHub mirror failed (local review kept)"
+		msg += " · GitHub mirror failed"
 	}
 	return s.prRedirect(ctx, owner, repo, n, project, msg, nil)
 }

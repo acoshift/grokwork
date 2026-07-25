@@ -7,7 +7,7 @@
   </div>
   {{end}}
 </div>
-<p class="sub">Support cases {{if .Project}}for this project{{else}}across your projects{{end}}, tracked by lifecycle phase (intake → investigate → answered → fixing → shipping). A case is a Grok session in case mode — rows open the session workspace.</p>
+<p class="sub">Support cases {{if .Project}}for this project{{else}}across your projects{{end}}.</p>
 
 {{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
@@ -190,10 +190,10 @@
   <div class="empty" id="cases-empty">
     {{if eq .Cases.Total 0}}
     {{if .Project}}
-    <p style="margin:0">No support cases in <span class="mono">{{.Project}}</span> yet. Open one here on the web, or from Discord via <span class="mono">@Grok /case &lt;title&gt;</span> in a mapped channel.</p>
+    <p style="margin:0">No support cases in <span class="mono">{{.Project}}</span> yet.{{if .CanOpenCase}} Open one here, or with <span class="mono">@Grok /case &lt;title&gt;</span> in a mapped Discord channel.{{end}}</p>
     {{if .CanOpenCase}}<p style="margin:0.65rem 0 0"><a class="btn btn-compact" href="/projects/{{.Project}}/cases/new">New case</a></p>{{end}}
     {{else}}
-    <p style="margin:0">No support cases in your projects yet. Open one from a project&rsquo;s case board, or from Discord via <span class="mono">@Grok /case &lt;title&gt;</span>.</p>
+    <p style="margin:0">No support cases in your projects yet. Open one from a project&rsquo;s case board, or with <span class="mono">@Grok /case &lt;title&gt;</span> in a mapped Discord channel.</p>
     {{end}}
     {{else}}
     No cases match this filter ({{.Cases.Total}} tracked, {{.Cases.OpenTotal}} open).

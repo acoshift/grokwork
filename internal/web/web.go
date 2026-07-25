@@ -1141,9 +1141,9 @@ func (s *Server) setProjectSafeTeam(ctx *hime.Context) error {
 		"name": name, "safeTeamMode": enabled,
 		"safeTeamDefaultTemplate": defaultTpl,
 	})
-	msg := fmt.Sprintf("Team policy for project %q: trusted — members without a role act as builder", name)
+	msg := fmt.Sprintf("Team policy for %q: trusted", name)
 	if enabled {
-		msg = fmt.Sprintf("Team policy for project %q: role-based — members without a role use the default role", name)
+		msg = fmt.Sprintf("Team policy for %q: role-based", name)
 	}
 	return s.projectConfigRedirect(ctx, name, msg, err)
 }

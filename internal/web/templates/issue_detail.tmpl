@@ -37,7 +37,6 @@
 {{if .Issue.LinkedPRs}}
 <div class="section card" id="issue-linked-prs">
   <h2>Related PRs <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Issue.LinkedPRs}})</span></h2>
-  <p class="sub" style="margin:0 0 0.75rem">Pull requests linked as closing references (GitHub Development).</p>
   <div class="table-scroll">
   <table>
     <thead><tr><th>#</th><th>Title</th><th>State</th><th>Repo</th></tr></thead>
@@ -98,7 +97,7 @@
 
 {{if .CanStartSession}}
 <div class="rail-group" id="issue-fix-form">
-  <div class="rail-group-title">Grok</div>
+  <div class="rail-group-title">Agent</div>
   {{if .ShowFixPicker}}
   <p class="rail-note">Multiple sessions bind this issue — continue one:</p>
   {{range .FixHits}}
@@ -118,9 +117,9 @@
     </form>
   </div>
   {{else}}
-  <p class="rail-note">No candidates (they may be terminal).</p>
+  <p class="rail-note">No sessions available to continue.</p>
   {{end}}
-  <p class="rail-note">Or dispatch a fresh thread:</p>
+  <p class="rail-note">Or start a new session:</p>
   {{end}}
   <form method="post" action="/projects/{{.Project}}/issues/{{.Issue.Number}}/fix" class="grok-dispatch">
     {{template "csrf" $}}
@@ -129,11 +128,11 @@
     {{if .ShowFixPicker}}
     <input type="hidden" name="force_new" value="1">
     {{else}}
-    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start a new thread</label>
+    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start a new session</label>
     {{end}}
     <div class="form-actions"><button type="submit" id="btn-fix-github">Fix with Grok</button></div>
   </form>
-  <p class="rail-note">Starts or reuses a Discord work unit (Fixes bind). Grok opens/updates a PR; it never merges.</p>
+  <p class="rail-note">Starts or reuses a session for this issue. Grok opens or updates a PR; it never merges.</p>
 </div>
 {{end}}
 
@@ -149,7 +148,7 @@
         <input type="hidden" name="repo" value="{{.ActiveRepo}}">
         <div class="field">
           <label for="issue-body">Comment</label>
-          <textarea id="issue-body" name="body" rows="4" required placeholder="Write a comment…"></textarea>
+          <textarea id="issue-body" name="body" rows="4" required></textarea>
         </div>
         <div class="form-actions">
           <button type="submit">Post comment</button>

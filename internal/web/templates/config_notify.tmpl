@@ -4,7 +4,6 @@
 <h1>Run notifications</h1>
 <p class="sub">
   Controls when the run author is <span class="mono">@mentioned</span> after a Grok run finishes.
-  Anyone can still opt in per-thread with <span class="mono">@Grok /watch</span> (watchers are always mentioned on complete/fail).
 </p>
 <div class="section card">
   <form class="inline" method="post" action="{{route "config.notify"}}" style="grid-template-columns: 1.4fr 1fr auto;">
@@ -25,11 +24,9 @@
     <button type="submit">Save</button>
   </form>
   <p class="sub" style="margin:0.5rem 0 0">
-    Default is <span class="mono">errors</span> (author pinged on fail/cancel/max-turns after upgrade).
-    <span class="mono">long_only</span> pings the author when elapsed ≥ threshold <strong>or</strong> the run failed/cancelled.
-    Long threshold default is <span class="mono">300000</span> ms (5 minutes).
-    Thread status / completion cards still post either way — this only controls author pings.
-    Watchers (<span class="mono">@Grok /watch</span>) are always mentioned on complete/fail, independent of this policy.
+    Default is <span class="mono">errors</span>. <span class="mono">long_only</span> pings when elapsed ≥ threshold
+    <strong>or</strong> the run failed. Status and completion cards still post either way — this only controls author pings.
+    Watchers (<span class="mono">@Grok /watch</span>) are always mentioned.
   </p>
 </div>
 </div>

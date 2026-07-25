@@ -1466,16 +1466,6 @@
       box-shadow: inset 2px 0 0 var(--accent);
     }
     .gw-confirm-modal.is-danger .gw-confirm-shell { box-shadow: inset 2px 0 0 var(--danger); }
-    .gw-confirm-eyebrow {
-      margin: 0 0 0.2rem;
-      font-family: var(--mono);
-      font-size: 0.68rem;
-      font-weight: 500;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-    .gw-confirm-modal.is-danger .gw-confirm-eyebrow { color: var(--danger); }
     .gw-confirm-title {
       margin: 0;
       font-size: 1.02rem;
@@ -3613,7 +3603,7 @@
         {{end}}
       </nav>
       <div class="side-foot">
-        <span id="sse-status" title="Live updates via SSE">connecting…</span>
+        <span id="sse-status" title="Live updates">connecting…</span>
         {{if .AuthEnabled}}
           {{/* One markup, two shapes. Desktop: a grid — avatar + name/role on
                row 1, Log out spanning row 2 (.side-user-pop is display:contents
@@ -3683,7 +3673,6 @@
        phase and re-submits only after an explicit OK. */}}
   <dialog id="gw-confirm-modal" class="gw-confirm-modal" aria-labelledby="gw-confirm-title" aria-describedby="gw-confirm-msg">
     <form method="dialog" class="gw-confirm-shell">
-      <p class="gw-confirm-eyebrow" id="gw-confirm-eyebrow">Confirm</p>
       <h2 class="gw-confirm-title" id="gw-confirm-title">Are you sure?</h2>
       <p class="gw-confirm-msg" id="gw-confirm-msg"></p>
       {{/* One-choice field for data-confirm-select. Options are cloned from a
@@ -3845,7 +3834,7 @@
           }
           break;
         case "error":
-          finishUI("err", data.message || "Something went wrong");
+          finishUI("err", data.message || "Run failed");
           if (typeof opts.onError === "function") {
             try { opts.onError(data.message || "error"); } catch (e) { /* ignore */ }
           }
@@ -4042,7 +4031,6 @@
     var dlg = document.getElementById("gw-confirm-modal");
     if (!dlg) return;
     var dlgForm = dlg.querySelector("form");
-    var eyebrowEl = document.getElementById("gw-confirm-eyebrow");
     var titleEl = document.getElementById("gw-confirm-title");
     var msgEl = document.getElementById("gw-confirm-msg");
     var cancelBtn = document.getElementById("gw-confirm-cancel");
@@ -4070,7 +4058,6 @@
       var isAlert = kind === "alert";
       dlg.classList.toggle("is-danger", danger);
       dlg.classList.toggle("is-alert", isAlert);
-      eyebrowEl.textContent = isAlert ? "Notice" : "Confirm";
       titleEl.textContent = opts.title || (isAlert ? "Heads up" : "Are you sure?");
       msgEl.textContent = opts.message || "";
       okBtn.textContent = opts.ok || (isAlert ? "OK" : "Confirm");
@@ -4250,7 +4237,7 @@
     function setStatus(text, cls) {
       if (!statusEl) return;
       // Full detail always available on hover/long-press.
-      statusEl.title = text || "Live updates via SSE";
+      statusEl.title = text || "Live updates";
       var shown = text;
       if (narrowMQ.matches && text) {
         // Drop the refresh clock; keep a one-word state so the top bar stays

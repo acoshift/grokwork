@@ -23,9 +23,9 @@
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err"{{if .ErrorAlertTitle}} data-app-alert data-app-alert-title="{{.ErrorAlertTitle}}"{{end}}>{{.Error}}</div>{{end}}
 
-{{/* Checks / review / mergeable strip: re-fetch on sse:ship when the Discord PR
-     poller updates session store (CI green/fail, state flips). Live gh call on
-     each partial so the strip matches GitHub, not the poller cache alone. */}}
+{{/* Checks / review / mergeable strip: re-fetch on sse:ship when the PR poller
+     updates session store (CI green/fail, state flips). Live gh call on each
+     partial so the strip matches GitHub, not the poller cache alone. */}}
 <div class="live-region"
      id="live-pr-gates"
      hx-get="/partials/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/gates{{if .Project}}?project={{urlquery .Project}}{{end}}"
@@ -57,7 +57,7 @@
       {{end}}
     </div>
   </div>
-  <p class="sub team-review-blurb">Discord-attributed team process. Does not satisfy GitHub branch protection.</p>
+  <p class="sub team-review-blurb">Does not satisfy GitHub branch protection.</p>
 
   {{if .TeamReviews}}
   <div class="table-scroll team-review-history">
@@ -157,7 +157,7 @@
           </select>
         </div>
         <label class="check"><input type="checkbox" name="attemptAnyway" value="1"> Attempt even if checks look failing</label>
-        <div class="form-actions"><button type="submit">Merge pull request</button></div>
+        <div class="form-actions"><button type="submit">Merge</button></div>
       </form>
     </div>
   </details>
@@ -189,7 +189,7 @@
         {{if .CanGitHubWrite}}
         <label class="check"><input type="checkbox" name="mirror" value="1" checked> Mirror to GitHub as a PR comment</label>
         {{end}}
-        <div class="form-actions"><button type="submit" id="btn-submit-review">Submit review</button></div>
+        <div class="form-actions"><button type="submit" id="btn-submit-review">Submit</button></div>
       </form>
     </div>
   </details>
@@ -214,7 +214,7 @@
           <label for="review-note">Note (optional)</label>
           <input type="text" id="review-note" name="note" placeholder="What should they focus on?">
         </div>
-        <div class="form-actions"><button type="submit" class="btn-secondary" id="btn-request-review">Request review</button></div>
+        <div class="form-actions"><button type="submit" class="btn-secondary" id="btn-request-review">Send request</button></div>
       </form>
     </div>
   </details>
@@ -226,7 +226,7 @@
 <div class="rail-group" id="pr-address-actions">
   <div class="rail-group-title">Agent</div>
   {{if .ShowFixPicker}}
-  <p class="rail-note">Multiple sessions bind this PR — continue one (each keeps the model it started on):</p>
+  <p class="rail-note">Multiple sessions bind this PR — continue one:</p>
   {{range .FixHits}}
   <div class="grok-pick">
     <div class="grok-pick-head">
@@ -244,7 +244,7 @@
     </form>
   </div>
   {{end}}
-  <p class="rail-note">Or dispatch a fresh session:</p>
+  <p class="rail-note">Or start a new one:</p>
   {{end}}
   {{/* Model is per-button so each modal names the action it is confirming. The
        select is hidden: the modal clones its options, and with scripting off the
@@ -265,7 +265,7 @@
         {{- if .CanSelectModel}} data-confirm="Works through the unresolved review comments on this pull request. It never merges." data-confirm-title="Address review" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address review</button>
     </div>
   </form>
-  <p class="rail-note">Reuses a session already bound to this PR, or starts a new one — no Discord thread. A reused session keeps its own model. The agent pushes fixes; it never merges.</p>
+  <p class="rail-note">Reuses a session already bound to this PR, or starts a new one. A reused session keeps its own model. The agent pushes fixes; it never merges.</p>
   {{/* Review is deliberately reuse-free: it re-reads the current head, so there is
        no force_new checkbox and the picker above does not apply to it. Its own
        hidden select feeds its own confirm modal. */}}
@@ -293,7 +293,7 @@
         <input type="hidden" name="project" value="{{.Project}}">
         <div class="field">
           <label for="pr-body">Comment</label>
-          <textarea id="pr-body" name="body" rows="4" required placeholder="Write a comment…"></textarea>
+          <textarea id="pr-body" name="body" rows="4" required></textarea>
         </div>
         <div class="form-actions"><button type="submit">Post comment</button></div>
       </form>
@@ -307,7 +307,7 @@
       <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/close" data-confirm="Close this pull request?" data-confirm-title="Close pull request" data-confirm-ok="Close PR" data-confirm-danger>
         {{template "csrf" $}}
         <input type="hidden" name="project" value="{{.Project}}">
-        <div class="form-actions"><button type="submit" class="btn-danger">Close pull request</button></div>
+        <div class="form-actions"><button type="submit" class="btn-danger">Close</button></div>
       </form>
     </div>
   </details>
@@ -318,7 +318,7 @@
 {{if not (or .CanMerge .CanPRReview .CanStartSession .CanGitHubWrite)}}
 <div class="rail-group">
   <div class="rail-group-title">Actions</div>
-  <p class="rail-note">Read-only access — merge, review, and Grok dispatch need a member role with web features enabled.</p>
+  <p class="rail-note">Read-only access — merge, review, and starting sessions need a member role with web features enabled.</p>
 </div>
 {{end}}
 

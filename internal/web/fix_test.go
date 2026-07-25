@@ -167,8 +167,8 @@ func TestFixGitHubCreateRedirectSession(t *testing.T) {
 	if !strings.HasPrefix(loc, "/sessions/th-web-1") {
 		t.Fatalf("Location=%q", loc)
 	}
-	if !strings.Contains(loc, "ok=started") {
-		t.Fatalf("Location=%q want ok=started", loc)
+	if !strings.Contains(loc, "ok=Session+started") {
+		t.Fatalf("Location=%q want ok=Session+started", loc)
 	}
 	// Session bound
 	e, ok := srv.sessions.Get("th-web-1")
@@ -291,6 +291,57 @@ func TestFixCreateDiscordDownWebNative(t *testing.T) {
 	loc := w.Header().Get("Location")
 	if !strings.HasPrefix(loc, "/sessions/w_") {
 		t.Fatalf("Location=%q want web-native /sessions/w_*", loc)
+	}
+}
+
+// fixStatusFlash output is concatenated into the redirect query as a raw
+// string, and sessionRedirect hand-splits that on "&" to recover the extra
+// pairs appended after it (today: "&discord=offline"). An "&" inside a flash
+// sentence would therefore be silently parsed as a query pair and corrupt both
+// the flash and the params after it, so the sentences must stay "&"-free.
+func TestFixStatusFlashHasNoQuerySeparator(t *testing.T) {
+	for _, st := range []bot.FixStartStatus{
+		bot.FixStatusStarted,
+		bot.FixStatusQueued,
+		bot.FixStatusPicker,
+	} {
+		got := fixStatusFlash(st)
+		if got == "" || got == string(st) {
+			t.Fatalf("status %q has no flash sentence, got %q", st, got)
+		}
+		if strings.ContainsAny(got, "&=") {
+			t.Fatalf("flash for %q must not contain & or =: %q", st, got)
+		}
+	}
+}
+
+// The Discord-offline notice rides the redirect as a separate "discord=offline"
+// pair appended to the ok flash. Now that the flash is a sentence with spaces
+// rather than a bare enum token, pin that both halves survive the round trip
+// and land on the session page together.
+func TestSessionPageDiscordOfflineFlashRoundTrip(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	seedOwned(t, srv, "flash-1", "member-1", "Member One")
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The two pairs as sessionRedirect emits them after splitting
+	// "<flash>&discord=offline" back apart.
+	loc := "/sessions/flash-1?ok=" + url.QueryEscape(fixStatusFlash(bot.FixStatusStarted)) + "&discord=offline"
+	req := httptest.NewRequest(http.MethodGet, loc, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Session started") {
+		t.Fatal("session page missing the start flash")
+	}
+	if !strings.Contains(body, "Discord is offline") {
+		t.Fatal("session page missing the Discord-offline notice")
 	}
 }
 

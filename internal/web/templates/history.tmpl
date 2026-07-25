@@ -14,14 +14,14 @@
 {{end}}
 
 {{define "history_table"}}
-<p class="sub">Thread conversations with per-turn user prompts and Grok replies ({{len .Threads}} threads).</p>
+<p class="sub">{{len .Threads}} session{{if ne (len .Threads) 1}}s{{end}}.</p>
 
 {{if .Threads}}
 <div class="table-scroll">
 <table>
   <thead>
     <tr>
-      <th>Thread</th>
+      <th>Session</th>
       <th>Project</th>
       <th>Turns</th>
       <th>Last user</th>
@@ -44,6 +44,6 @@
 </table>
 </div>
 {{else}}
-<div class="empty">No history yet. Turns are recorded after Discord threads run Grok tasks.</div>
+<div class="empty">No history yet. Turns are recorded once a session runs.</div>
 {{end}}
 {{end}}

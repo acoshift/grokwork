@@ -94,8 +94,8 @@ func TestCaseCreateIntakeShell(t *testing.T) {
 	if !strings.HasPrefix(loc, "/sessions/th-web-1") {
 		t.Fatalf("Location=%q want /sessions/th-web-1", loc)
 	}
-	if !strings.Contains(loc, "ok=case+opened") {
-		t.Fatalf("Location=%q want ok=case+opened flash", loc)
+	if !strings.Contains(loc, "ok=Case+opened") {
+		t.Fatalf("Location=%q want ok=Case+opened flash", loc)
 	}
 	if !strings.Contains(loc, "project=proj") {
 		t.Fatalf("Location=%q want project=proj scope", loc)
@@ -168,7 +168,7 @@ func TestCaseCreateNotesQueuesInvestigate(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/sessions/th-web-1") || !strings.Contains(loc, "ok=case+opened") {
+	if !strings.HasPrefix(loc, "/sessions/th-web-1") || !strings.Contains(loc, "ok=Case+opened") {
 		t.Fatalf("Location=%q", loc)
 	}
 	e, ok := srv.sessions.Get("th-web-1")
@@ -317,7 +317,7 @@ func TestCaseNewPageForm(t *testing.T) {
 		`name="notes"`,
 		// Intake contract copy: no run until investigate, never ships.
 		`intake`,
-		`never opens PRs or ships`,
+		`never ship code`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("case intake page missing %q", want)
@@ -369,7 +369,7 @@ func TestCasesBoardNewCaseCTA(t *testing.T) {
 	}
 	for _, want := range []string{
 		`id="cases-empty"`,
-		"Open one here on the web",
+		"Open one here",
 		"@Grok /case",
 	} {
 		if !strings.Contains(body, want) {

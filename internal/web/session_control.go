@@ -81,7 +81,7 @@ func (s *Server) postSessionReset(ctx *hime.Context) error {
 	}
 	// UI hides Abandon for terminal labels; refuse if POSTed anyway.
 	if hasSession && sessionstore.IsTerminalLabel(ent.EffectiveLabel()) {
-		return s.sessionRedirect(ctx, threadID, "", "Session is already done or abandoned — nothing to abandon.")
+		return s.sessionRedirect(ctx, threadID, "", "Session is already done or abandoned.")
 	}
 	msg, resetErr := s.bot.ResetUnit(threadID)
 	s.auditAction(ctx, audit.ActionSessionReset, resetErr, map[string]any{"threadId": threadID, "project": project})

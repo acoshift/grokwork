@@ -48,7 +48,7 @@
     {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
     <div class="form-actions"><button type="submit">Review in new session</button></div>
   </form>
-  <p class="rail-note">Starts a new session — no Discord thread — so the agent can review this commit with full tools and open GitHub issues agentically: labels, commit links, related refs.</p>
+  <p class="rail-note">The agent reviews the commit with full tools and files a GitHub issue per confirmed finding.</p>
   {{else}}
   <p class="rail-note">Requires member role with <span class="mono">startSessions</span> enabled.</p>
   {{end}}

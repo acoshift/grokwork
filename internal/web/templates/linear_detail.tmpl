@@ -35,7 +35,7 @@
 
 {{if and .CanStartSession .LinearEnabled}}
 <div class="rail-group" id="linear-fix-form">
-  <div class="rail-group-title">Grok</div>
+  <div class="rail-group-title">Agent</div>
   {{if .ShowFixPicker}}
   <p class="rail-note">Multiple sessions bind this issue — continue one:</p>
   {{range .FixHits}}
@@ -53,20 +53,20 @@
     </form>
   </div>
   {{else}}
-  <p class="rail-note">No candidates (they may be terminal).</p>
+  <p class="rail-note">No sessions available to continue.</p>
   {{end}}
-  <p class="rail-note">Or dispatch a fresh thread:</p>
+  <p class="rail-note">Or start a new session:</p>
   {{end}}
   <form method="post" action="/projects/{{.Project}}/linear/{{.LinearIssue.Identifier}}/fix" class="grok-dispatch">
     {{template "csrf" $}}
     {{if .ShowFixPicker}}
     <input type="hidden" name="force_new" value="1">
     {{else}}
-    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start a new thread</label>
+    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start a new session</label>
     {{end}}
     <div class="form-actions"><button type="submit" id="btn-fix-linear">Fix with Grok</button></div>
   </form>
-  <p class="rail-note">Starts or reuses a Discord work unit (Fixes bind). Grok opens/updates a PR; it never merges.</p>
+  <p class="rail-note">Starts or reuses a session for this issue. Grok opens or updates a PR; it never merges.</p>
 </div>
 {{else}}
 <div class="rail-group">

@@ -332,7 +332,7 @@ func TestPagesRender(t *testing.T) {
 			{"/partials/history/turns/thread-99", `id="turns"`, "history"},
 			{"/partials/sessions/thread-99", `id="turns"`, "dashboard"},
 			{"/partials/worktrees/table", "All worktrees", "worktrees"},
-			{"/partials/issues/table?project=proj&owner=acme&repo=app", "No issues loaded", ""},
+			{"/partials/issues/table?project=proj&owner=acme&repo=app", "No issues.", ""},
 			{"/partials/config/lists", "Projects", "config"},
 		}
 		for _, tc := range paths {
@@ -556,7 +556,7 @@ func TestTranscriptNamesSessionAgent(t *testing.T) {
 		}
 	}
 	// Same resolution drives the idle run-status line on the session page.
-	if body := getBody(t, h, "/sessions/thread-99"); !strings.Contains(body, "No active Claude run on this thread.") {
+	if body := getBody(t, h, "/sessions/thread-99"); !strings.Contains(body, "No active Claude run.") {
 		t.Fatalf("session page run-status line not agent-aware: %s", body)
 	}
 }

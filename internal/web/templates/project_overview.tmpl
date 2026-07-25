@@ -7,8 +7,7 @@
   </div>
   {{end}}
 </div>
-<p class="sub">Live pulse of this workspace. Queue work by tagging <span class="mono">@Grok</span> in a mapped Discord channel; browse
-  <a href="/projects/{{.Project}}/issues">issues</a>{{if .NavLinearEnabled}}, <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}
+<p class="sub">Browse <a href="/projects/{{.Project}}/issues">issues</a>{{if .NavLinearEnabled}}, <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}
   or <a href="/projects/{{.Project}}/commits">commits</a> to start from existing work.</p>
 
 {{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
@@ -40,7 +39,7 @@
       <span class="m-row-main"><span class="m-row-t">Commits</span><span class="m-row-s">history browser · request commit review</span></span>
     </a>
     <a class="m-row" href="/projects/{{.Project}}/worktrees">
-      <span class="m-row-main"><span class="m-row-t">Worktrees</span><span class="m-row-s">per-thread checkouts · prune</span></span>
+      <span class="m-row-main"><span class="m-row-t">Worktrees</span><span class="m-row-s">per-session checkouts · prune</span></span>
     </a>
     {{if .IsAdmin}}
     <a class="m-row" href="/config/projects/{{.Project}}">
@@ -71,7 +70,7 @@
   <table>
     <thead>
       <tr>
-        <th>Thread</th>
+        <th>Session</th>
         <th>State</th>
         <th>PR</th>
         <th>Turns</th>
@@ -117,7 +116,7 @@
   </table>
   </div>
   {{else}}
-  <div class="empty">No sessions in this project yet. Tag <span class="mono">@Grok</span> in a mapped Discord channel to start one.</div>
+  <div class="empty">No sessions in this project yet.{{if .CanStartSession}} <a href="/projects/{{.Project}}/start">Start one</a>.{{end}}</div>
   {{end}}
 </div>
 {{end}}
@@ -132,7 +131,7 @@
   <div class="card">
     <div class="label">Queued</div>
     <div class="value" id="pulse-queued">{{.Status.QueuedTotal}}</div>
-    <div class="hint">follow-ups waiting</div>
+    <div class="hint">follow-ups</div>
   </div>
   <div class="card">
     <div class="label">Open PRs</div>
@@ -175,7 +174,7 @@
 <div class="table-scroll m-hide" style="margin-bottom:1.5rem">
 <table>
   <thead>
-    <tr><th>Thread</th><th>Elapsed</th><th>Activity</th><th>Queue</th></tr>
+    <tr><th>Session</th><th>Elapsed</th><th>Activity</th><th>Queue</th></tr>
   </thead>
   <tbody>
     {{range .Status.ActiveRuns}}

@@ -24,7 +24,7 @@
     {{end}}
   </div>
   {{else}}
-  <div class="empty" style="margin-bottom:0.85rem;">No channels mapped — tasks cannot start from Discord until one is.</div>
+  <div class="empty" style="margin-bottom:0.85rem;">No channels mapped — <span class="mono">@Grok</span> can’t start tasks here yet. Work can still start from the web UI.</div>
   {{end}}
   <form class="inline" method="post" action="{{route "config.addChannel"}}" style="grid-template-columns: 1fr auto;">
     {{template "csrf" $}}
@@ -44,7 +44,7 @@
       <div>
         <label for="project-channel">Preferred channel</label>
         <select id="project-channel" name="channelId">
-          <option value="">(auto / reverse-map)</option>
+          <option value="">(auto)</option>
           {{$pref := .ProjectItem.DiscordChannelID}}
           {{range .ProjectItem.ChannelOptions}}
           <option value="{{.}}" {{if eq . $pref}}selected{{end}}>{{.}}</option>
@@ -113,10 +113,10 @@
 <div class="section card" id="project-repo-fetch">
   <h2>Repo freshness</h2>
   <p class="sub" style="margin-top:0">
-    While the bot is running, periodically run <span class="mono">git fetch --all --prune</span> on this project’s
+    While Grok Work is running, periodically run <span class="mono">git fetch --all --prune</span> on this project’s
     main checkout so commits / remote-tracking refs stay fresh.
     Default is <span class="mono">5</span> minutes when unset; <span class="mono">0</span> disables idle fetch.
-    Creating a new worktree always fetches with a short hardcoded throttle (5s), independent of this setting.
+    New worktrees always fetch first, independent of this setting.
   </p>
   <form class="inline" method="post" action="{{route "config.setProjectFetch"}}" style="grid-template-columns: 12rem auto;">
     {{template "csrf" $}}

@@ -57,6 +57,43 @@ func TestStartBadCSRF(t *testing.T) {
 	}
 }
 
+// The "no sessions yet" empty states offer a start link, and unlike the always-
+// present sidebar entry they are the only thing on the screen — so they follow
+// the local convention (project_overview's own New task button) and gate on
+// CanStartSession rather than sending a viewer somewhere that can only say no.
+func TestSessionsEmptyStateStartLinkGated(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	const (
+		empty  = "No sessions in this project yet."
+		withLn = empty + ` <a href="/projects/proj/start">Start one</a>.`
+	)
+	for _, path := range []string{"/projects/proj", "/projects/proj/sessions"} {
+		for _, tc := range []struct {
+			role config.WebRole
+			id   string
+			want string
+		}{
+			{config.WebRoleMember, "member-1", withLn},
+			{config.WebRoleViewer, "viewer-1", empty + "</div>"},
+		} {
+			sid, _, err := srv.LoginAs(tc.id, "U", tc.role)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("%s as %s status=%d", path, tc.role, w.Code)
+			}
+			if !strings.Contains(w.Body.String(), tc.want) {
+				t.Fatalf("%s as %s: empty state missing %q", path, tc.role, tc.want)
+			}
+		}
+	}
+}
+
 func TestStartCreatesSessionRedirect(t *testing.T) {
 	srv, _, b := fixEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
@@ -75,8 +112,8 @@ func TestStartCreatesSessionRedirect(t *testing.T) {
 	if !strings.HasPrefix(loc, "/sessions/th-web-1") {
 		t.Fatalf("Location=%q want /sessions/th-web-1", loc)
 	}
-	if !strings.Contains(loc, "ok=started") {
-		t.Fatalf("Location=%q want ok=started", loc)
+	if !strings.Contains(loc, "ok=Session+started") {
+		t.Fatalf("Location=%q want ok=Session+started", loc)
 	}
 	// Owner + web origin stamped so the creator can cancel/reset their own unit.
 	e, ok := srv.sessions.Get("th-web-1")
@@ -242,7 +279,7 @@ func TestStartPageNonFixDefaultMode(t *testing.T) {
 		`Project default (investigate)`,
 		`<option value="fix">Fix &amp; ship</option>`,
 		`Project default mode is`,
-		`never ship`,
+		`never opens PRs or ships`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("non-fix start page missing %q", want)

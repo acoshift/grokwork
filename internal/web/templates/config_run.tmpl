@@ -3,7 +3,7 @@
 {{template "config_sub_header" $}}
 <h1>Run limits</h1>
 <p class="sub">
-  Per Discord task: <span class="mono">maxTurns</span> is the tool/turn budget for
+  Per run: <span class="mono">maxTurns</span> is the tool/turn budget for
   the coding CLI; <span class="mono">timeout</span> kills the process after that duration.
   Defaults are <span class="mono">40</span> turns and <span class="mono">30m</span>. Applies to new runs only.
 </p>
@@ -20,7 +20,6 @@
     </div>
     <button type="submit">Save</button>
   </form>
-  <p class="sub" style="margin:0.5rem 0 0">Range: 1 s–24 h. Unit suffixes: <span class="mono">s</span>, <span class="mono">m</span>, <span class="mono">h</span> (e.g. <span class="mono">15m</span>, <span class="mono">1h</span>, <span class="mono">1h30m</span>). Bare numbers are milliseconds.</p>
 </div>
 </div>
 {{end}}

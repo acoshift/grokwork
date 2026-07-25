@@ -1,7 +1,7 @@
 {{define "content"}}
 <div id="page-inbox">
   <h1>Inbox</h1>
-  <p class="muted">Notifications queued for you because there was no channel to push them to — a run you were watching finished, and your account has no Discord DM to receive it.</p>
+  <p class="muted">Run notifications land here, including Discord DMs that could not be delivered.</p>
   {{if .InboxItems}}
   <div class="card-list">
     {{range .InboxItems}}
@@ -17,7 +17,7 @@
     {{end}}
   </div>
   {{else}}
-  <div class="empty">Nothing queued. Notifications appear here only when they cannot be delivered another way.</div>
+  <div class="empty">Nothing queued.</div>
   {{end}}
 </div>
 {{end}}

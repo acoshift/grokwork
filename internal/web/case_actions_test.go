@@ -144,7 +144,7 @@ func TestPostCaseEscalateAssignsByRole(t *testing.T) {
 		wantFlash string
 	}{
 		{"builder claims", "builder", "member-1", "assigned to you"},
-		{"investigator releases", "investigator", "", "No engineer assigned"},
+		{"investigator releases", "investigator", "", "Unassigned"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, cfg, _ := fixEnabledServer(t)

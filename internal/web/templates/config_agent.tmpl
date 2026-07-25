@@ -5,9 +5,8 @@
 <p class="sub">
   Which CLI runs a session, and on which model. The model name picks the CLI —
   <span class="mono">sonnet</span> runs Claude, <span class="mono">grok-4.5</span> runs Grok.
-  Discord users never choose: for them these defaults decide, and there is no chat command for it.
-  In the web UI a builder may override the model when starting a task or dispatching a review.
-  Either way a session stamps the agent and model it started on and keeps them for life, since a
+  These are the defaults; a builder may override the model per session when starting work in the web UI.
+  A session stamps the agent and model it started on and keeps them for life, since a
   session cannot be resumed by the other CLI — so changes here only affect <strong>new</strong> sessions.
 </p>
 
@@ -17,10 +16,9 @@
 
     <h2 style="margin:0 0 0.35rem">Models</h2>
     <p class="sub" style="margin:0 0 0.65rem">
-      Naming a thread is one tools-off turn that returns a few words, so it can run on a cheaper
-      model than the tasks do — and even on the other CLI, since a title is not tied to the thread's
-      session. The review model is the default for sessions dispatched from a commit or pull request,
-      where a builder can still override it per session. Both blank fields fall back to the task model.
+      A title run is one cheap tools-off turn, so it can use a smaller model or the other CLI.
+      The review model is the default for sessions dispatched from a commit or pull request.
+      Both blank fields fall back to the task model.
     </p>
     {{/* .inline bottom-aligns by default, which staggers these three labels as soon
          as one field's note wraps to a second line. */}}
@@ -39,7 +37,7 @@
         </p>
       </div>
       <div>
-        <label for="summarize-model">Thread-title model</label>
+        <label for="summarize-model">Session-title model</label>
         <select id="summarize-model" name="summarizeModel">
           <option value="">Same as task model</option>
           {{template "model_optgroups" .Config.SummarizeModelGroups}}
@@ -86,8 +84,7 @@
     </div>
     <p class="sub" style="margin:0.5rem 0 0">
       The fallback agent is used when the model field is blank or its name identifies neither CLI.
-      An unrecognized name is never guessed at — it goes to the fallback agent and is passed through,
-      so that CLI reports the bad model itself instead of silently running the wrong one.
+      An unrecognized name is passed through unchanged, so the CLI reports it.
     </p>
 
     {{/* .switch is an icon-only control (fixed 2.9rem box, knob absolutely

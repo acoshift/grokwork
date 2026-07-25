@@ -190,7 +190,7 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 
 	switch {
 	case started == 0:
-		msg := "no fix sessions started"
+		msg := "No fix sessions started"
 		if len(failMsgs) > 0 {
 			msg = strings.Join(failMsgs, "; ")
 		}
@@ -216,6 +216,24 @@ func pluralS(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// fixStatusFlash renders a FixStartResult.Status as a user-facing flash
+// sentence, shared by every dispatch redirect (Fix, Start, Continue, Address
+// CI/review) so the raw enum value never leaks into a query-param flash.
+// FixStatusPicker is included for completeness even though callers resolve
+// ErrPickerRequired into its own redirect before reaching this helper.
+func fixStatusFlash(status bot.FixStartStatus) string {
+	switch status {
+	case bot.FixStatusStarted:
+		return "Session started"
+	case bot.FixStatusQueued:
+		return "Queued — will start when a slot frees"
+	case bot.FixStatusPicker:
+		return "Multiple sessions match — pick one"
+	default:
+		return string(status)
+	}
 }
 
 // parseIssueNumbers dedupes positive ints from form multi-values (order preserved).
@@ -399,7 +417,7 @@ func (s *Server) handleFixResult(ctx *hime.Context, startErr error, res bot.FixS
 		s.invalidateIssueListCache(rc.Project, rc.Owner, rc.Repo)
 	}
 
-	ok := string(res.Status)
+	ok := fixStatusFlash(res.Status)
 	if res.DiscordOffline {
 		ok = ok + "&discord=offline"
 	}
@@ -586,7 +604,7 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 		if d.Flash != "" {
 			d.Flash += " · "
 		}
-		d.Flash += "Discord offline — run continues; no live thread updates"
+		d.Flash += "Discord is offline — this run is not mirrored there."
 	}
 	return s.viewPage(ctx, "session", d)
 }

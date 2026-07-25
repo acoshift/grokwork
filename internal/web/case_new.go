@@ -12,8 +12,9 @@ import (
 	"github.com/acoshift/grokwork/internal/bot"
 )
 
-// caseNewPage renders the case intake form: the web equivalent of
-// "@Grok /case [severity] [ref:ID] <title>" in a mapped channel. The page
+// caseNewPage renders the case intake form, the web entry point for a support
+// case (the Discord equivalent is "@Grok /case [severity] [ref:ID] <title>" in
+// a mapped channel, but neither surface is primary). The page
 // renders read-only when the viewer cannot open cases; the hard gate lives on
 // the POST (requireFeature + requireMember + per-project capability).
 func (s *Server) caseNewPage(ctx *hime.Context) error {
@@ -90,11 +91,11 @@ func (s *Server) postCaseNew(ctx *hime.Context) error {
 	}
 	s.auditAction(ctx, audit.ActionSessionStart, nil, detail)
 
-	ok := "case opened"
+	ok := "Case opened"
 	if notes != "" {
-		ok = "case opened · investigating"
+		ok = "Case opened · investigating"
 		if res.Status == bot.FixStatusQueued {
-			ok = "case opened · investigate queued"
+			ok = "Case opened · investigate queued"
 		}
 	}
 	if res.DiscordOffline {
