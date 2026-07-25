@@ -40,19 +40,26 @@ func (s *Server) casesPageData(ctx *hime.Context, project string) pageData {
 	if project != "" {
 		d.CanOpenCase = s.canOpenCase(d, project)
 	}
-	d.Cases = s.listCaseBoardVisible(ctx, project,
-		ctx.FormValue("phase"), ctx.FormValue("severity"), ctx.FormValue("scope"))
+	d.Cases = s.listCaseBoardVisible(ctx, project)
 	return d
 }
 
 // listCaseBoardVisible restricts the global board to the session's visible
 // projects (admins see everything); a named project filter passes through.
-func (s *Server) listCaseBoardVisible(ctx *hime.Context, projectFilter, phase, severity, scope string) bot.CaseBoard {
+func (s *Server) listCaseBoardVisible(ctx *hime.Context, projectFilter string) bot.CaseBoard {
 	_, role := s.sessionIdentity(ctx)
-	if config.RoleAtLeast(role, config.WebRoleAdmin) {
-		return s.bot.ListCaseBoard(projectFilter, phase, severity, scope)
+	q := bot.CaseBoardQuery{
+		Project:  projectFilter,
+		Phase:    ctx.FormValue("phase"),
+		Severity: ctx.FormValue("severity"),
+		Scope:    ctx.FormValue("scope"),
+		Owner:    ctx.FormValue("owner"),
+		ViewerID: s.fixActor(ctx).ID,
 	}
-	return s.bot.ListCaseBoardAmong(projectFilter, phase, severity, scope, s.filterProjectNames(ctx))
+	if !config.RoleAtLeast(role, config.WebRoleAdmin) {
+		q.Among = s.filterProjectNames(ctx)
+	}
+	return s.bot.ListCaseBoardQuery(q)
 }
 
 // casesPartialData resolves a fragment request: a named project needs

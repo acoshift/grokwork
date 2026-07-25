@@ -340,6 +340,125 @@ func TestStartInvestigatorHidesFixAndBlocksPOST(t *testing.T) {
 	}
 }
 
+// The model picker is builder-class only, and the gate is on the POST too — a page
+// that hides the field is not a permission check.
+func TestStartModelPickerBuilderClassOnly(t *testing.T) {
+	srv, cfg, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "investigator"); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/projects/proj/start")
+	if strings.Contains(body, `name="model"`) {
+		t.Fatal("investigator must not see the model field")
+	}
+	w := postFix(t, srv, "/projects/proj/start", sid, csrf, url.Values{
+		"prompt": {"look into this"},
+		"mode":   {"investigate"},
+		"model":  {"claude-opus-5"},
+	})
+	// Assert the *reason*, not just that something failed — "err= is present" passes
+	// for any unrelated breakage on this POST.
+	assertRedirectErr(t, w, "/projects/proj/start", "not allowed to pick a model")
+	// And nothing was started on the requested model.
+	for _, l := range srv.sessions.List() {
+		if l.Entry.Model != "" {
+			t.Fatalf("session %s stamped model %q despite denial", l.ThreadID, l.Entry.Model)
+		}
+	}
+}
+
+// assertRedirectErr asserts a redirect back to path carrying err= containing want.
+func assertRedirectErr(t *testing.T, w *httptest.ResponseRecorder, path, want string) {
+	t.Helper()
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, path) {
+		t.Fatalf("Location=%q want prefix %q", loc, path)
+	}
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("Location=%q: %v", loc, err)
+	}
+	got := u.Query().Get("err")
+	if !strings.Contains(got, want) {
+		t.Fatalf("err=%q want it to contain %q", got, want)
+	}
+}
+
+// A builder's pick is stamped on the session, and the agent follows the model —
+// the two cannot disagree, since a session id is not portable between CLIs.
+func TestStartModelPickStampsSession(t *testing.T) {
+	srv, cfg, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/projects/proj/start")
+	if !strings.Contains(body, `id="start-model"`) || !strings.Contains(body, `value="claude-opus-5"`) {
+		t.Fatal("builder must see the model field with curated options")
+	}
+	w := postFix(t, srv, "/projects/proj/start", sid, csrf, url.Values{
+		"prompt": {"ship it"},
+		"model":  {"claude-opus-5"},
+	})
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/sessions/") {
+		t.Fatalf("status=%d Location=%q", w.Code, loc)
+	}
+	tid := strings.TrimPrefix(loc, "/sessions/")
+	if i := strings.IndexAny(tid, "?&"); i >= 0 {
+		tid = tid[:i]
+	}
+	e, ok := srv.sessions.Get(tid)
+	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5" {
+		t.Fatalf("want claude stamped, got ok=%v agent=%q model=%q", ok, e.Agent, e.Model)
+	}
+}
+
+// An unknown name is rejected outright rather than handed to a CLI that has never
+// heard of it.
+func TestStartModelPickRejectsUnknownName(t *testing.T) {
+	srv, cfg, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/start", sid, csrf, url.Values{
+		"prompt": {"ship it"},
+		"model":  {"gpt-9"},
+	})
+	// The message must name the rejected model, so an operator can tell a typo from
+	// a permissions problem.
+	assertRedirectErr(t, w, "/projects/proj/start", "gpt-9")
+}
+
+func getPageBody(t *testing.T, srv *Server, sid, path string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET %s status=%d body=%s", path, w.Code, w.Body.String())
+	}
+	return w.Body.String()
+}
+
 // assertAuditDetailContains asserts today's audit log contains substr somewhere.
 func assertAuditDetailContains(t *testing.T, srv *Server, substr string) {
 	t.Helper()

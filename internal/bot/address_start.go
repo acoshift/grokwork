@@ -2,9 +2,9 @@ package bot
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
+	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -36,6 +36,10 @@ type AddressCIOpts struct {
 	Checks     string
 	Failed     []ghpr.Check
 	LogSnippet string
+	// Model applies only when this dispatch creates a session; a reused session
+	// keeps the agent it was stamped with. Empty takes the configured review
+	// model. Requires builder-class caps.
+	Model string
 }
 
 // StartAddressCI reuses a unit by PR or creates one, binds the PR, and StartTasks.
@@ -56,6 +60,11 @@ func (b *Bot) StartAddressCI(opts AddressCIOpts) (FixStartResult, error) {
 		return FixStartResult{}, ErrInvalidPR
 	}
 
+	cli, err := b.resolveDispatchCLI(project, opts.Actor, opts.Model)
+	if err != nil {
+		return FixStartResult{}, err
+	}
+
 	tracked := addressTrackedPR(opts)
 	prompt := BuildAddressCIPrompt(opts)
 
@@ -73,7 +82,21 @@ func (b *Bot) StartAddressCI(opts AddressCIOpts) (FixStartResult, error) {
 			return FixStartResult{Status: FixStatusPicker, Hits: hits}, ErrPickerRequired
 		}
 	}
-	return b.startPRCreate(project, cwd, tracked, prompt, opts.Actor, fmt.Sprintf("CI %s/%s#%d", opts.Owner, opts.Repo, opts.Number))
+	return b.startPRCreate(project, cwd, tracked, prompt, opts.Actor, cli, fmt.Sprintf("CI %s/%s#%d", opts.Owner, opts.Repo, opts.Number))
+}
+
+// resolveDispatchCLI is the shared model gate for the PR dispatch cards: authorize
+// a named model, then resolve it (or the configured review default). Called before
+// the reuse branches so an unauthorized or bogus model fails the request outright
+// rather than only on the create path, where the caller could not tell which of the
+// two it got.
+func (b *Bot) resolveDispatchCLI(project string, actor Actor, model string) (config.AgentCLI, error) {
+	if strings.TrimSpace(model) != "" {
+		if err := b.requireCanSelectModel(project, actor.ID, nil); err != nil {
+			return config.AgentCLI{}, err
+		}
+	}
+	return b.cfg.ReviewAgentCLI(model)
 }
 
 // ContinueOpts queues a freeform follow-up on an existing thread only.
@@ -169,6 +192,8 @@ type AddressReviewOpts struct {
 	URL    string
 	// Comments must be non-empty; caller fails closed if list failed.
 	Comments []ghpr.ReviewComment
+	// Model applies only when this dispatch creates a session — see AddressCIOpts.
+	Model string
 }
 
 // StartAddressReview reuses/creates a unit, binds PR, and runs with review prompt.
@@ -189,6 +214,10 @@ func (b *Bot) StartAddressReview(opts AddressReviewOpts) (FixStartResult, error)
 	}
 	if len(opts.Comments) == 0 {
 		return FixStartResult{}, ErrNoReviewComments
+	}
+	cli, err := b.resolveDispatchCLI(project, opts.Actor, opts.Model)
+	if err != nil {
+		return FixStartResult{}, err
 	}
 
 	tracked := sessionstore.TrackedPR{
@@ -215,7 +244,7 @@ func (b *Bot) StartAddressReview(opts AddressReviewOpts) (FixStartResult, error)
 			return FixStartResult{Status: FixStatusPicker, Hits: hits}, ErrPickerRequired
 		}
 	}
-	return b.startPRCreate(project, cwd, tracked, prompt, opts.Actor, fmt.Sprintf("Review %s/%s#%d", opts.Owner, opts.Repo, opts.Number))
+	return b.startPRCreate(project, cwd, tracked, prompt, opts.Actor, cli, fmt.Sprintf("Review %s/%s#%d", opts.Owner, opts.Repo, opts.Number))
 }
 
 func addressTrackedPR(opts AddressCIOpts) sessionstore.TrackedPR {
@@ -285,37 +314,39 @@ func (b *Bot) startPRReuse(threadID, project, cwd string, tracked sessionstore.T
 	}, nil
 }
 
-func (b *Bot) startPRCreate(project, cwd string, tracked sessionstore.TrackedPR, prompt string, actor Actor, titleHint string) (FixStartResult, error) {
-	if b.canCreateDiscordThread() {
-		channelID, err := b.cfg.PreferDiscordChannel(project)
-		if err != nil {
-			return FixStartResult{}, err
-		}
-		title := strings.TrimSpace(titleHint)
-		if title == "" {
-			title = tracked.Selector()
-		}
-		title = threadNameFromPrompt(title, actor.DisplayName)
-		starter := fmt.Sprintf("**Grok Work** · %s · started by %s (web)", tracked.Selector(), actor.String())
-		if u := strings.TrimSpace(tracked.URL); u != "" {
-			starter += "\n" + u
-		}
-		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
-		if err != nil {
-			log.Printf("address: create Discord thread failed project=%s: %v — web-native fallback", project, err)
-			return b.startWebNativeUnit(project, cwd, prompt, KindTask, actor, func(unitID string) error {
-				return b.bindTrackedPR(unitID, project, tracked, actor, "", true)
-			})
-		}
-		discordURL := DiscordThreadURL(b.cfg.ProjectDiscordGuildID(project), threadID)
-		if err := b.bindTrackedPR(threadID, project, tracked, actor, discordURL, true); err != nil {
-			return FixStartResult{}, err
-		}
-		return b.startWebTask(threadID, project, cwd, prompt, KindTask, actor, discordURL, true)
+// startPRCreate always allocates a web-native unit: a dispatch from the PR page
+// streams back onto the session page it redirects to, and the PR itself is already
+// the place the team watches this work. titleHint is kept for the session goal.
+func (b *Bot) startPRCreate(project, cwd string, tracked sessionstore.TrackedPR, prompt string, actor Actor, cli config.AgentCLI, titleHint string) (FixStartResult, error) {
+	goal := strings.TrimSpace(titleHint)
+	if goal == "" {
+		goal = tracked.Selector()
 	}
 	return b.startWebNativeUnit(project, cwd, prompt, KindTask, actor, func(unitID string) error {
-		return b.bindTrackedPR(unitID, project, tracked, actor, "", true)
+		if err := b.bindTrackedPR(unitID, project, tracked, actor, "", true); err != nil {
+			return err
+		}
+		if err := b.stampNewSessionCLI(unitID, cli); err != nil {
+			return err
+		}
+		return b.setSessionGoalIfEmpty(unitID, goal)
 	})
+}
+
+// setSessionGoalIfEmpty labels a freshly created unit. bindTrackedPR carries the PR
+// but no goal, and without a Discord thread name there is nothing else for the
+// sessions list to show.
+func (b *Bot) setSessionGoalIfEmpty(threadID, goal string) error {
+	goal = clampGoal(strings.TrimSpace(goal))
+	if b.sessions == nil || goal == "" {
+		return nil
+	}
+	_, _, err := b.sessions.Patch(threadID, func(e *sessionstore.Entry) {
+		if strings.TrimSpace(e.Goal) == "" {
+			e.Goal = goal
+		}
+	})
+	return err
 }
 
 func (b *Bot) bindTrackedPR(threadID, project string, tracked sessionstore.TrackedPR, actor Actor, discordURL string, isNew bool) error {

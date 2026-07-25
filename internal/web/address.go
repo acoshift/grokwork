@@ -56,15 +56,17 @@ func (s *Server) postPRAddressCI(ctx *hime.Context) error {
 	}
 
 	actor := s.fixActor(ctx)
+	model := strings.TrimSpace(ctx.PostFormValue("model"))
 	res, startErr := s.bot.StartAddressCI(bot.AddressCIOpts{
 		Project: project, Actor: actor, ForceNew: forceNew, ThreadID: pickThread,
 		Owner: owner, Repo: repo, Number: n,
 		Title: info.Title, URL: info.URL, State: info.State,
 		HeadSHA: info.HeadSHA, HeadRef: info.HeadRef, Checks: info.Checks,
 		Failed: failed, LogSnippet: snippet,
+		Model: model,
 	})
 	return s.handleAddressResult(ctx, startErr, res, addressRedirectContext{
-		Kind: "address_ci", Project: project, Owner: owner, Repo: repo, Number: n,
+		Kind: "address_ci", Project: project, Owner: owner, Repo: repo, Number: n, Model: model,
 	})
 }
 
@@ -117,13 +119,15 @@ func (s *Server) postPRAddressReview(ctx *hime.Context) error {
 	}
 
 	actor := s.fixActor(ctx)
+	model := strings.TrimSpace(ctx.PostFormValue("model"))
 	res, startErr := s.bot.StartAddressReview(bot.AddressReviewOpts{
 		Project: project, Actor: actor, ForceNew: forceNew, ThreadID: pickThread,
 		Owner: owner, Repo: repo, Number: n, Title: title, URL: prURL,
 		Comments: comments,
+		Model:    model,
 	})
 	return s.handleAddressResult(ctx, startErr, res, addressRedirectContext{
-		Kind: "address_review", Project: project, Owner: owner, Repo: repo, Number: n,
+		Kind: "address_review", Project: project, Owner: owner, Repo: repo, Number: n, Model: model,
 	})
 }
 
@@ -181,12 +185,16 @@ type addressRedirectContext struct {
 	Owner   string
 	Repo    string
 	Number  int
+	// Model is the model named on the dispatch (empty = config default). Audited so
+	// a forged-model denial records which model was attempted, like the start and
+	// commit-review paths do.
+	Model string
 }
 
 func (s *Server) handleAddressResult(ctx *hime.Context, startErr error, res bot.FixStartResult, rc addressRedirectContext) error {
 	detail := map[string]any{
 		"kind": rc.Kind, "project": rc.Project,
-		"owner": rc.Owner, "repo": rc.Repo, "number": rc.Number,
+		"owner": rc.Owner, "repo": rc.Repo, "number": rc.Number, "model": rc.Model,
 		"threadId": res.ThreadID, "status": string(res.Status),
 		"queuePos": res.QueuePos, "created": res.Created,
 	}

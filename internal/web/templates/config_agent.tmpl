@@ -3,11 +3,12 @@
 {{template "config_sub_header" $}}
 <h1>Coding agent</h1>
 <p class="sub">
-  Which CLI runs Discord tasks. The model name picks the CLI — <span class="mono">sonnet</span> runs
-  Claude, <span class="mono">grok-4.5</span> runs Grok. This page is the only place the choice is made —
-  Discord users cannot pick or change it. A thread stamps the agent and model it started on and keeps
-  them for life, since a session cannot be resumed by the other CLI, so changes here only affect
-  <strong>new</strong> sessions.
+  Which CLI runs a session, and on which model. The model name picks the CLI —
+  <span class="mono">sonnet</span> runs Claude, <span class="mono">grok-4.5</span> runs Grok.
+  Discord users never choose: for them these defaults decide, and there is no chat command for it.
+  In the web UI a builder may override the model when starting a task or dispatching a review.
+  Either way a session stamps the agent and model it started on and keeps them for life, since a
+  session cannot be resumed by the other CLI — so changes here only affect <strong>new</strong> sessions.
 </p>
 
 <div class="section card">
@@ -18,11 +19,12 @@
     <p class="sub" style="margin:0 0 0.65rem">
       Naming a thread is one tools-off turn that returns a few words, so it can run on a cheaper
       model than the tasks do — and even on the other CLI, since a title is not tied to the thread's
-      session. Blank title model falls back to the task model.
+      session. The review model is the default for sessions dispatched from a commit or pull request,
+      where a builder can still override it per session. Both blank fields fall back to the task model.
     </p>
-    {{/* Options are grouped by the CLI each name routes to, so the derived agent
-         is visible at the point of choice rather than only after saving. */}}
-    <div class="inline" style="grid-template-columns: 1fr 1fr;">
+    {{/* .inline bottom-aligns by default, which staggers these three labels as soon
+         as one field's note wraps to a second line. */}}
+    <div class="inline" style="grid-template-columns: 1fr 1fr 1fr;align-items:start">
       <div>
         <label for="model">Task model</label>
         <select id="model" name="model">
@@ -46,6 +48,19 @@
           {{if .Config.SummarizeModel}}
             {{if .Config.SummarizeAgentKnown}}→ runs on <strong>{{if eq .Config.SummarizeAgent "claude"}}Claude{{else}}Grok{{end}}</strong>
             {{else}}→ name not recognized, runs on the session's agent{{end}}
+          {{else}}→ same as the task model{{end}}
+        </p>
+      </div>
+      <div>
+        <label for="review-model">Review model</label>
+        <select id="review-model" name="reviewModel">
+          <option value="">Same as task model</option>
+          {{template "model_optgroups" .Config.ReviewModelGroups}}
+        </select>
+        <p class="sub" style="margin:0.35rem 0 0" id="review-agent">
+          {{if .Config.ReviewModel}}
+            {{if .Config.ReviewAgentKnown}}→ runs on <strong>{{if eq .Config.ReviewAgent "claude"}}Claude{{else}}Grok{{end}}</strong>
+            {{else}}→ name not recognized, using the fallback agent{{end}}
           {{else}}→ same as the task model{{end}}
         </p>
       </div>
@@ -99,13 +114,3 @@
 </div>
 </div>
 {{end}}
-
-{{define "model_optgroups"}}
-{{- range .}}
-<optgroup label="{{.Label}}">
-  {{- range .Choices}}
-  <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
-  {{- end}}
-</optgroup>
-{{- end}}
-{{- end}}

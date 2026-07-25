@@ -2,12 +2,11 @@ package bot
 
 import (
 	"fmt"
-	"log"
 	"strings"
 )
 
 // CommitReviewOpts starts a new work unit from the web Commit Review action.
-// Always creates a new Discord thread (or web-native unit); never reuses.
+// Always creates a new web-native session; never reuses, never opens a Discord thread.
 type CommitReviewOpts struct {
 	Project  string
 	Actor    Actor
@@ -19,11 +18,14 @@ type CommitReviewOpts struct {
 	Body     string // commit message body (optional)
 	Author   string // "Name <email>" display
 	Date     string // already formatted for humans
+	// Model overrides the configured review model for this session. Empty takes
+	// config's review model (then the task model). Requires builder-class caps.
+	Model string
 }
 
 // StartCommitReview creates a workflow unit and enqueues an agentic commit-review task.
-// Grok reviews the commit with full tools and opens GitHub issues itself (labels, commit
-// references, etc.). Prefer Discord when the gateway/threadAPI is available.
+// The agent reviews the commit with full tools and opens GitHub issues itself (labels,
+// commit references, etc.).
 func (b *Bot) StartCommitReview(opts CommitReviewOpts) (FixStartResult, error) {
 	if b == nil {
 		return FixStartResult{}, fmt.Errorf("bot is nil")
@@ -43,10 +45,30 @@ func (b *Bot) StartCommitReview(opts CommitReviewOpts) (FixStartResult, error) {
 		return FixStartResult{}, fmt.Errorf("owner, repo, and commit sha are required")
 	}
 
-	prompt := BuildCommitReviewPrompt(opts)
-	goal := commitReviewGoal(opts)
+	if strings.TrimSpace(opts.Model) != "" {
+		if err := b.requireCanSelectModel(project, opts.Actor.ID, nil); err != nil {
+			return FixStartResult{}, err
+		}
+	}
+	// Resolved and stamped here rather than left to run start: a review runs on the
+	// review model, which the run path would otherwise re-resolve as the task model.
+	cli, err := b.cfg.ReviewAgentCLI(opts.Model)
+	if err != nil {
+		return FixStartResult{}, err
+	}
 
-	return b.startCommitReviewCreate(project, cwd, prompt, goal, opts)
+	// Always a web-native unit, never a Discord thread. A review is read work that
+	// ends in GitHub issues, so the running commentary belongs on the session page
+	// that dispatched it — a Discord thread per reviewed commit is noise the reviewer
+	// never asked for.
+	goal := commitReviewGoal(opts)
+	return b.startWebNativeUnit(project, cwd, BuildCommitReviewPrompt(opts), KindTask, opts.Actor,
+		func(unitID string) error {
+			if err := b.bindWebStartedSession(unitID, project, goal, opts.Actor, "", true); err != nil {
+				return err
+			}
+			return b.stampNewSessionCLI(unitID, cli)
+		})
 }
 
 func commitReviewGoal(opts CommitReviewOpts) string {
@@ -68,77 +90,6 @@ func commitReviewGoal(opts CommitReviewOpts) string {
 		g = g[:117] + "…"
 	}
 	return g
-}
-
-func (b *Bot) startCommitReviewCreate(project, cwd, prompt, goal string, opts CommitReviewOpts) (FixStartResult, error) {
-	if b.canCreateDiscordThread() {
-		channelID, err := b.cfg.PreferDiscordChannel(project)
-		if err != nil {
-			return FixStartResult{}, err
-		}
-		title := commitReviewThreadTitle(opts)
-		starter := commitReviewStarter(opts)
-		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
-		if err != nil {
-			log.Printf("commit-review: create Discord thread failed project=%s: %v — web-native fallback", project, err)
-			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
-				return b.bindWebStartedSession(unitID, project, goal, opts.Actor, "", true)
-			})
-		}
-		discordURL := DiscordThreadURL(b.cfg.ProjectDiscordGuildID(project), threadID)
-		if err := b.bindWebStartedSession(threadID, project, goal, opts.Actor, discordURL, true); err != nil {
-			return FixStartResult{}, err
-		}
-		return b.startWebTask(threadID, project, cwd, prompt, KindTask, opts.Actor, discordURL, true)
-	}
-	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
-		return b.bindWebStartedSession(unitID, project, goal, opts.Actor, "", true)
-	})
-}
-
-func commitReviewThreadTitle(opts CommitReviewOpts) string {
-	short := strings.TrimSpace(opts.ShortSHA)
-	if short == "" {
-		sha := strings.TrimSpace(opts.SHA)
-		if len(sha) >= 7 {
-			short = sha[:7]
-		} else {
-			short = sha
-		}
-	}
-	summary := "Review " + short
-	if sub := strings.TrimSpace(opts.Subject); sub != "" {
-		summary = summary + " " + sub
-	}
-	name := threadNameFromPrompt(summary, opts.Actor.DisplayName)
-	if len(name) > 100 {
-		name = name[:97] + "…"
-	}
-	return name
-}
-
-func commitReviewStarter(opts CommitReviewOpts) string {
-	who := opts.Actor.DisplayName
-	if who == "" {
-		who = opts.Actor.ID
-	}
-	if who == "" {
-		who = "web"
-	}
-	short := strings.TrimSpace(opts.ShortSHA)
-	if short == "" {
-		sha := strings.TrimSpace(opts.SHA)
-		if len(sha) >= 7 {
-			short = sha[:7]
-		} else {
-			short = sha
-		}
-	}
-	line := fmt.Sprintf("**Grok Work** · Commit review `%s` · started by %s (web)", short, who)
-	if owner, repo, sha := strings.TrimSpace(opts.Owner), strings.TrimSpace(opts.Repo), strings.TrimSpace(opts.SHA); owner != "" && repo != "" && sha != "" {
-		line += fmt.Sprintf("\nhttps://github.com/%s/%s/commit/%s", owner, repo, sha)
-	}
-	return line
 }
 
 // BuildCommitReviewPrompt is the web-started agentic commit-review task body.

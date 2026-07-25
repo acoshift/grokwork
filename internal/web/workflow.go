@@ -518,6 +518,7 @@ func (s *Server) prDetailPageData(ctx *hime.Context, full bool) (pageData, error
 				d.ShowFixPicker = true
 			}
 		}
+		s.attachModelPicker(&d, project, s.cfg.EffectiveReviewModel())
 	} else if viewErr != nil {
 		d.Error = viewErr.Error()
 	}

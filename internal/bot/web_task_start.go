@@ -17,6 +17,10 @@ type StartWebTaskOpts struct {
 	Actor   Actor
 	Title   string // optional short title; falls back to threadNameFromPrompt(prompt)
 	Mode    string // "" | "fix" | "investigate" | "explain"
+	// Model names the model this session should run on, stamping the agent that
+	// owns it. Empty means "whatever config says", which stays unstamped so the
+	// existing resolve-at-run-start path applies. Requires builder-class caps.
+	Model string
 }
 
 // StartWebTask creates a workflow unit and enqueues a freeform Grok task.
@@ -60,17 +64,37 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 			return FixStartResult{}, err
 		}
 	}
+	// Same stance for a named model: reject rather than silently downgrade to the
+	// default, so a forged form value is visible instead of ignored.
+	model := strings.TrimSpace(opts.Model)
+	var cli config.AgentCLI
+	if model != "" {
+		if err := b.requireCanSelectModel(project, opts.Actor.ID, nil); err != nil {
+			return FixStartResult{}, err
+		}
+		var err error
+		if cli, err = b.cfg.RequestedAgentCLI(model); err != nil {
+			return FixStartResult{}, err
+		}
+	}
 
 	bind := func(threadID, discordURL string) error {
-		return b.bindWebStartedSession(threadID, project, goal, opts.Actor, discordURL, true)
+		if err := b.bindWebStartedSession(threadID, project, goal, opts.Actor, discordURL, true); err != nil {
+			return err
+		}
+		if model == "" {
+			return nil
+		}
+		return b.stampNewSessionCLI(threadID, cli)
 	}
 
 	if b.canCreateDiscordThread() {
 		channelID, err := b.cfg.PreferDiscordChannel(project)
 		if err != nil {
 			// Freeform web starts must not require a mapped Discord channel: fall back
-			// to a web-native unit (this deliberately differs from StartCommitReview,
-			// which errors when no channel is mapped).
+			// to a web-native unit. (A freeform start is the one web path that still
+			// prefers a Discord thread at all — the commit-review and PR dispatch cards
+			// are always web-native.)
 			log.Printf("web-task: no Discord channel for project=%s: %v — web-native fallback", project, err)
 			return b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, func(unitID string) error {
 				return bind(unitID, "")

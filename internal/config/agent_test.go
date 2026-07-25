@@ -258,6 +258,115 @@ func TestResolveSummarizeCLIAllEmpty(t *testing.T) {
 	}
 }
 
+// Like the title model, the review model is an override: unset means "use the task
+// model", so adding the field changes nothing for an existing config.
+func TestReviewAgentCLIFallsBackToTaskModel(t *testing.T) {
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := cfg.ReviewAgentCLI("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "grok-4.5" || got.Agent != grokrun.AgentGrok {
+		t.Fatalf("review cli=%+v want the task model", got)
+	}
+}
+
+// The review model chooses the CLI for a review session, and an explicit pick from
+// the dispatch modal beats it.
+func TestReviewAgentCLIPrecedence(t *testing.T) {
+	cfg, err := loadAgentConfig(t, `,
+		"model": "grok-4.5",
+		"reviewModel": "claude-opus-5",
+		"claudeBin": "/opt/claude"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, err := cfg.ReviewAgentCLI("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if def.Agent != grokrun.AgentClaude || def.Model != "claude-opus-5" || def.Bin != "/opt/claude" {
+		t.Fatalf("default review cli=%+v", def)
+	}
+	pick, err := cfg.ReviewAgentCLI("grok-4.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pick.Agent != grokrun.AgentGrok || pick.Model != "grok-4.5" {
+		t.Fatalf("explicit pick cli=%+v", pick)
+	}
+	if got := cfg.EffectiveReviewModel(); got != "claude-opus-5" {
+		t.Fatalf("effective review model=%q", got)
+	}
+}
+
+// A hand-edited reviewModel that is not curated must not break dispatch: reviews
+// fall back to the task default rather than failing. Crucially the *label* the
+// dispatch modal renders must fall back with it — a modal promising a model the run
+// will not use is worse than no label at all.
+func TestReviewAgentCLIToleratesUncuratedStoredName(t *testing.T) {
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4", "reviewModel": "gpt-9"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := cfg.ReviewAgentCLI("")
+	if err != nil {
+		t.Fatalf("stored name must not fail the dispatch: %v", err)
+	}
+	if got.Agent != grokrun.AgentGrok || got.Model != "grok-4" {
+		t.Fatalf("review cli=%+v want the task default", got)
+	}
+	if label := cfg.EffectiveReviewModel(); label != got.Model {
+		t.Fatalf("modal would advertise %q while the run uses %q", label, got.Model)
+	}
+}
+
+// The same agreement must hold for every combination, since the label and the run
+// are computed by different functions on different call paths.
+func TestEffectiveReviewModelMatchesWhatRuns(t *testing.T) {
+	for _, tc := range []struct{ name, extra string }{
+		{"both unset", ""},
+		{"task only", `, "model": "grok-4.5"`},
+		{"curated review model", `, "model": "grok-4.5", "reviewModel": "claude-opus-5"`},
+		{"uncurated review model", `, "model": "grok-4.5", "reviewModel": "gpt-9"`},
+		{"uncurated task model", `, "model": "grok-4-fast"`},
+		{"both uncurated", `, "model": "grok-4-fast", "reviewModel": "gpt-9"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := loadAgentConfig(t, tc.extra)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cli, err := cfg.ReviewAgentCLI("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if label := cfg.EffectiveReviewModel(); label != cli.Model {
+				t.Fatalf("label=%q but the run uses %q", label, cli.Model)
+			}
+		})
+	}
+}
+
+// A model named by a request is only accepted from the curated list — a forged form
+// value can never reach the CLI.
+func TestRequestedAgentCLIRejectsUncuratedName(t *testing.T) {
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cfg.RequestedAgentCLI("gpt-9"); err == nil {
+		t.Fatal("want rejection of an uncurated request")
+	}
+	got, err := cfg.RequestedAgentCLI("")
+	if err != nil || got.Model != "grok-4" {
+		t.Fatalf("empty request must use config: cli=%+v err=%v", got, err)
+	}
+}
+
 func TestSetAgentSettingsRoundTripsModels(t *testing.T) {
 	cfg, err := loadAgentConfig(t, "")
 	if err != nil {

@@ -210,6 +210,29 @@ func TestPublishAndClearRunActivity(t *testing.T) {
 	b.finishRun("th-act")
 }
 
+// writeFakeClaude is writeFakeGrok for the claude driver's stream shape. Any test
+// whose session can stamp agent=claude MUST set ClaudeBin to this: an unset
+// ClaudeBin normalizes to "claude" and execs the operator's real CLI — spending
+// real tokens, with --permission-mode bypassPermissions, and (on the default
+// 30-minute timeout) leaving an orphaned autonomous agent behind when the test
+// binary exits.
+func writeFakeClaude(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "fake-claude")
+	// claude --print --output-format stream-json: the reply lives in `result`, and
+	// only on subtype=success.
+	script := `#!/bin/sh
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"sess-fake-claude"}'
+printf '%s\n' '{"type":"result","subtype":"success","session_id":"sess-fake-claude","result":"hello from fake claude","num_turns":1,"usage":{"input_tokens":5,"output_tokens":5}}'
+exit 0
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func writeFakeGrok(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

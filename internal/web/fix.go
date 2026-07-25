@@ -719,5 +719,29 @@ func (s *Server) canStartSession(d pageData) bool {
 	return config.RoleAtLeast(config.WebRole(d.UserRole), config.WebRoleMember)
 }
 
+// attachModelPicker fills the model-picker fields for a page that can dispatch a
+// session. Gated on builder-class project caps, the same bar as Fix & ship: naming
+// a model names the spend.
+//
+// def is the model the dispatch uses when nothing is picked — the task model on the
+// start composer, the review model on the commit/PR cards. It is rendered on the
+// "Default" option so the two defaults are never confused for each other. The
+// options themselves carry no selection: a page can only ever start a *new*
+// session, never re-point an existing one.
+func (s *Server) attachModelPicker(d *pageData, project, def string) {
+	if d == nil || !d.CanStartSession {
+		return
+	}
+	if !s.cfg.ResolveCapabilities(project, d.UserID, nil).CanShip() {
+		return
+	}
+	d.CanSelectModel = true
+	d.ModelGroups = config.ModelGroups("")
+	d.ModelDefaultLabel = strings.TrimSpace(def)
+	if d.ModelDefaultLabel == "" {
+		d.ModelDefaultLabel = "CLI default"
+	}
+}
+
 // silence unused import if template-only types shift
 var _ sessionstore.Entry

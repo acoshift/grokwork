@@ -22,7 +22,10 @@ func testFixBot(t *testing.T) (*Bot, string) {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{
-		GrokBin:           writeFakeGrok(t),
+		GrokBin: writeFakeGrok(t),
+		// Never leave ClaudeBin unset: it normalizes to "claude" and execs the real
+		// CLI — see writeFakeClaude.
+		ClaudeBin:         writeFakeClaude(t),
 		Projects:          config.PathProjects(map[string]string{"app": proj}),
 		Channels:          map[string]string{"ch-app": "app"},
 		DiscordGuildID:    "guild-1",

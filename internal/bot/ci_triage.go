@@ -10,11 +10,24 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 const ciLogSnippetRunes = 1500
+
+// ciNotice posts a short operator-facing CI note. Web-native units have no Discord
+// channel, so the send is skipped rather than attempted and logged as a failure —
+// the poller reaches this path every cycle.
+func (b *Bot) ciNotice(s *discordgo.Session, threadID, content string) {
+	if gitworktree.IsWebUnitID(threadID) {
+		return
+	}
+	if _, err := discordSend(s, threadID, content); err != nil {
+		log.Printf("ci-triage: notice thread=%s: %v", threadID, err)
+	}
+}
 
 // maybeHandleCIFailure posts a debounced CI digest and optionally queues /fix-ci for one PR.
 func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info ghpr.Info) {
@@ -95,12 +108,22 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 		}
 	}
 
-	if _, err := discordSend(s, threadID, digest); err != nil {
+	// Web-native units have no Discord channel to post into, so the digest is
+	// skipped — but everything after it must still run. Returning early here (which
+	// a failed send used to do) left CINotifiedSHA unwritten, so the debounce never
+	// engaged and auto-fix was unreachable: the poller would re-derive the same
+	// failure every 90s forever. That is the common case now that the web PR
+	// dispatch is always web-native — i.e. exactly the sessions started to fix CI.
+	if gitworktree.IsWebUnitID(threadID) {
+		log.Printf("ci-triage: web-native unit thread=%s pr=%s sha=%s fails=%d — digest skipped, triage continues",
+			threadID, sel, shortSHA(headSHA), len(failed))
+	} else if _, err := discordSend(s, threadID, digest); err != nil {
 		log.Printf("ci-triage: digest thread=%s: %v", threadID, err)
 		return
+	} else {
+		log.Printf("ci-triage: digest posted thread=%s pr=%s sha=%s fails=%d",
+			threadID, sel, shortSHA(headSHA), len(failed))
 	}
-	log.Printf("ci-triage: digest posted thread=%s pr=%s sha=%s fails=%d",
-		threadID, sel, shortSHA(headSHA), len(failed))
 
 	prKey := pr.PRKey()
 	if prKey == "" {
@@ -138,12 +161,10 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 	if pr.CIAutoFixCount >= maxAttempts {
 		log.Printf("ci-triage: auto-fix cap reached thread=%s pr=%s count=%d max=%d",
 			threadID, sel, pr.CIAutoFixCount, maxAttempts)
-		if _, sendErr := discordSend(s, threadID, fmt.Sprintf(
+		b.ciNotice(s, threadID, fmt.Sprintf(
 			"Auto CI fix disabled for this PR (already tried %d/%d). Use `@Grok /fix-ci` manually.",
 			pr.CIAutoFixCount, maxAttempts,
-		)); sendErr != nil {
-			log.Printf("ci-triage: auto-cap notice: %v", sendErr)
-		}
+		))
 		return
 	}
 	if headSHA != "" && headSHA == pr.CIAutoFixSHA {
@@ -153,9 +174,7 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 	prompt := buildFixCIPrompt(info, branch, failed, snippet)
 	if err := b.queueSystemTask(s, threadID, prompt, "auto-fix-ci"); err != nil {
 		log.Printf("ci-triage: auto queue thread=%s: %v", threadID, err)
-		if _, sendErr := discordSend(s, threadID, "Could not queue auto CI fix: "+err.Error()); sendErr != nil {
-			log.Printf("ci-triage: auto queue notice: %v", sendErr)
-		}
+		b.ciNotice(s, threadID, "Could not queue auto CI fix: "+err.Error())
 		return
 	}
 	if _, _, pErr := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
@@ -174,11 +193,9 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 	}); pErr != nil {
 		log.Printf("ci-triage: patch auto-fix count thread=%s: %v", threadID, pErr)
 	}
-	if _, sendErr := discordSend(s, threadID, fmt.Sprintf(
+	b.ciNotice(s, threadID, fmt.Sprintf(
 		"Auto-queued CI fix for PR #%d (%d/%d)…", info.Number, pr.CIAutoFixCount+1, maxAttempts,
-	)); sendErr != nil {
-		log.Printf("ci-triage: auto-queued notice: %v", sendErr)
-	}
+	))
 }
 
 func (b *Bot) handleFixCI(s *discordgo.Session, m *discordgo.MessageCreate) {

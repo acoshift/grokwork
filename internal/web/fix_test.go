@@ -34,6 +34,12 @@ func fixEnabledServer(t *testing.T) (*Server, *config.Config, *bot.Bot) {
 	// Fake grok on bot
 	fakeGrok := writeWebFakeGrok(t)
 	cfg.GrokBin = fakeGrok
+	// A session can stamp agent=claude (the model picker), and an unset ClaudeBin
+	// normalizes to "claude" — the operator's real CLI, run with permissions
+	// bypassed and, on the default 30-minute timeout, orphaned when the test binary
+	// exits. Fake it, and cap the timeout so nothing can outlive the test.
+	cfg.ClaudeBin = writeWebFakeClaude(t)
+	cfg.TimeoutMs = 5000
 	// Isolation off for simpler runs
 	f := false
 	cfg.WorktreeIsolation = &f
@@ -63,6 +69,23 @@ func fixEnabledServer(t *testing.T) (*Server, *config.Config, *bot.Bot) {
 		return []byte("{}"), nil
 	}
 	return srv, cfg, srv.bot
+}
+
+// writeWebFakeClaude mirrors writeWebFakeGrok for the claude driver's stream shape
+// (the reply lives in `result`, and only on subtype=success).
+func writeWebFakeClaude(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "fake-claude")
+	script := `#!/bin/sh
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"sess-web-claude"}'
+printf '%s\n' '{"type":"result","subtype":"success","session_id":"sess-web-claude","result":"web claude ok","num_turns":1,"usage":{"input_tokens":3,"output_tokens":3}}'
+exit 0
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func writeWebFakeGrok(t *testing.T) string {

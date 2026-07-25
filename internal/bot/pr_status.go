@@ -746,6 +746,12 @@ func preserveModeFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	if next.EscalatedBy == "" {
 		next.EscalatedBy = prev.EscalatedBy
 	}
+	// Engineer assignment survives Set rebuilds like the rest of the escalation
+	// record. An intentional *clear* goes through Patch, which never rebuilds.
+	if next.EngineerID == "" {
+		next.EngineerID = prev.EngineerID
+		next.EngineerName = prev.EngineerName
+	}
 	if next.ReopenedAt == "" {
 		next.ReopenedAt = prev.ReopenedAt
 	}

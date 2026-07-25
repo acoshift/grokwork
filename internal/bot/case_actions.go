@@ -20,30 +20,90 @@ var (
 	ErrCaseEmptyTitle = fmt.Errorf("customer update empty after sanitizer")
 )
 
-// EscalateCase moves Mode=case → Phase=fixing (K17: Mode stays case).
-// Caps must be checked by the caller (FileEscalation / builder-class).
-func (b *Bot) EscalateCase(threadID, actorID, note string) error {
+// EscalateCaseOpts is one escalation. Caps must be checked by the caller
+// (FileEscalation / builder-class); TakeOwnership carries the part of that
+// decision the escalation itself depends on.
+type EscalateCaseOpts struct {
+	ThreadID string
+	Actor    Actor
+	Note     string
+	// TakeOwnership is true when the actor is builder-class: escalating is them
+	// picking the work up, so they become the case engineer. False is a support-side
+	// escalation — it *clears* the engineer, which is what puts the case on the
+	// "needs an engineer" filter instead of looking claimed by whoever filed it.
+	TakeOwnership bool
+}
+
+// EscalateOutcome reports what an escalation actually did to the engineer
+// assignment. Callers phrase their reply from this rather than from the caps they
+// passed in: the two disagree whenever there is no actor identity to assign (web
+// auth disabled), and a reply that claims "assigned to you" while the store says
+// nobody is the kind of drift nobody notices until triage goes wrong.
+type EscalateOutcome struct {
+	// PreviousEngineerID is who held the case before this escalation ("" = nobody).
+	PreviousEngineerID string
+	// EngineerID is who holds it after ("" = nobody).
+	EngineerID string
+	// Assigned is true when this escalation claimed the case for the actor.
+	Assigned bool
+	// Released is true when this escalation cleared someone else's assignment.
+	Released bool
+}
+
+// EscalateCase moves Mode=case → Phase=fixing (K17: Mode stays case) and settles
+// who owns the escalation. Shared by web and Discord so both surfaces assign the
+// engineer the same way.
+func (b *Bot) EscalateCase(opts EscalateCaseOpts) (EscalateOutcome, error) {
+	var out EscalateOutcome
 	if b == nil || b.sessions == nil {
-		return fmt.Errorf("bot unavailable")
+		return out, fmt.Errorf("bot unavailable")
 	}
-	threadID = strings.TrimSpace(threadID)
+	threadID := strings.TrimSpace(opts.ThreadID)
 	e, ok := b.sessions.Get(threadID)
 	if !ok {
-		return ErrCaseNoSession
+		return out, ErrCaseNoSession
 	}
 	if !e.IsCase() {
-		return ErrNotACase
+		return out, ErrNotACase
 	}
 	if e.IsCaseClosed() {
-		return ErrCaseClosed
+		return out, ErrCaseClosed
 	}
-	note = strings.TrimSpace(note)
+	note := strings.TrimSpace(opts.Note)
+	actorID := strings.TrimSpace(opts.Actor.ID)
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, _, err := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+		// Read the assignment decision off the entry as it stands, before this patch
+		// moves the phase.
+		alreadyWithEng := ent.Phase == sessionstore.PhaseFixing || ent.Phase == sessionstore.PhaseShipping
+		out = EscalateOutcome{PreviousEngineerID: ent.EngineerID, EngineerID: ent.EngineerID}
+		switch {
+		case opts.TakeOwnership && actorID != "":
+			ent.EngineerID = actorID
+			ent.EngineerName = opts.Actor.String()
+			out.EngineerID = actorID
+			out.Assigned = true
+		case opts.TakeOwnership:
+			// Builder-class but no identity to record (web auth disabled). Claiming is
+			// impossible, so leave the assignment exactly as it was rather than
+			// clearing it as a side effect of an unrelated deployment mode.
+		case alreadyWithEng && ent.EngineerID != "":
+			// Already with engineering and someone is on it: a support-side re-escalate
+			// is a nudge, not a reassignment. Yanking the engineer here would erase a
+			// name the escalator cannot even see on this page.
+		default:
+			// Entering engineering from the support side: hand it to engineering as a
+			// whole so the board shows it needs an engineer, rather than looking claimed
+			// by whoever filed it.
+			out.Released = ent.EngineerID != ""
+			out.EngineerID = ""
+			ent.EngineerID = ""
+			ent.EngineerName = ""
+		}
 		ent.Mode = ModeCase
 		ent.Phase = sessionstore.PhaseFixing
 		ent.EscalatedAt = now
-		ent.EscalatedBy = strings.TrimSpace(actorID)
+		ent.EscalatedBy = actorID
 		if note != "" {
 			if ent.Dossier == nil {
 				ent.Dossier = &sessionstore.Dossier{}
@@ -55,7 +115,10 @@ func (b *Bot) EscalateCase(threadID, actorID, note string) error {
 		}
 		_ = sessionstore.ClampCaseFields(ent)
 	})
-	return err
+	if err != nil {
+		return EscalateOutcome{}, err
+	}
+	return out, nil
 }
 
 // AnswerCase moves Mode=case → Phase=answered; optional note becomes customer update.

@@ -73,10 +73,30 @@ func TestAddressCIFeatureOff(t *testing.T) {
 	}
 }
 
+// webUnitFromLocation pulls the created unit id out of a /sessions/<id>?… redirect
+// and asserts it is web-native: dispatches from the PR and commit pages must not
+// open a Discord thread, so a t-prefixed id here is a regression.
+func webUnitFromLocation(t *testing.T, loc string) string {
+	t.Helper()
+	const prefix = "/sessions/"
+	if !strings.HasPrefix(loc, prefix) {
+		t.Fatalf("want session redirect, got %q", loc)
+	}
+	id := strings.TrimPrefix(loc, prefix)
+	if i := strings.IndexAny(id, "?&"); i >= 0 {
+		id = id[:i]
+	}
+	if !strings.HasPrefix(id, "w_") {
+		t.Fatalf("want web-native unit (no Discord thread), got %q", loc)
+	}
+	return id
+}
+
 func TestAddressCICreateRedirect(t *testing.T) {
 	srv, b := addressEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
-	bot.SetThreadAPIForTest(b, &bot.FakeThreadAPI{NextTh: "ci-web-1"})
+	fake := &bot.FakeThreadAPI{NextTh: "ci-web-1"}
+	bot.SetThreadAPIForTest(b, fake)
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
@@ -85,15 +105,85 @@ func TestAddressCICreateRedirect(t *testing.T) {
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/sessions/ci-web-1") {
-		t.Fatalf("Location=%q", loc)
-	}
-	e, ok := srv.sessions.Get("ci-web-1")
+	tid := webUnitFromLocation(t, w.Header().Get("Location"))
+	e, ok := srv.sessions.Get(tid)
 	if !ok || len(e.PRs) != 1 || e.PRs[0].Number != 9 {
 		t.Fatalf("PR bind: %+v", e)
 	}
 	assertAuditAction(t, srv, audit.ActionSessionStart, true)
+}
+
+// The PR card is the only dispatch surface with two buttons, so each carries its own
+// data-confirm-select. Both must be wired, and the caps gate must hold on both POSTs
+// — hidden UI is not a permission check.
+func TestPRDetailModelPickerWiringAndGate(t *testing.T) {
+	// addressEnabledServer, not fixEnabledServer: without its gh runner the
+	// address-review POST fails on "could not list review comments" *before* the
+	// model gate, so the denial assertion below would pass without testing anything.
+	srv, b := addressEnabledServer(t)
+	cfg := srv.cfg
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	_ = cfg.AddProjectAllowedUser("proj", "member-1")
+	_ = cfg.AddProjectAllowedUser("proj", "member-2")
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+	})
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/prs/acme/app/9?project=proj")
+	for _, want := range []string{
+		`<select name="model" hidden>`,
+		`data-confirm-title="Address CI"`,
+		`data-confirm-title="Address review"`,
+		// Both buttons feed the same field.
+		`id="btn-address-ci"`,
+		`id="btn-address-review"`,
+		`<option value="">Default (claude-opus-5)</option>`,
+		`<div class="rail-group-title">Agent</div>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("PR detail missing %q", want)
+		}
+	}
+	if strings.Count(body, `data-confirm-select="model"`) < 2 {
+		t.Fatal("both dispatch buttons must carry data-confirm-select")
+	}
+	if strings.Contains(body, "opens a Discord work unit") {
+		t.Fatal("stale Discord copy on the PR dispatch card")
+	}
+
+	// Same page, non-builder: no field, and the POST is refused for both actions.
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-2", "investigator"); err != nil {
+		t.Fatal(err)
+	}
+	sid2, csrf2, err := srv.LoginAs("member-2", "M2", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body2 := getPageBody(t, srv, sid2, "/prs/acme/app/9?project=proj"); strings.Contains(body2, `name="model"`) {
+		t.Fatal("investigator must not see the model field on the PR card")
+	}
+	for _, path := range []string{"/prs/acme/app/9/address-ci", "/prs/acme/app/9/address-review"} {
+		w := postFix(t, srv, path, sid2, csrf2, url.Values{
+			"project": {"proj"}, "force_new": {"1"}, "model": {"claude-opus-5"},
+		})
+		// Assert the model denial specifically — any other error here would mean the
+		// request never reached the gate.
+		assertRedirectErr(t, w, "/prs/acme/app/9", "not allowed to pick a model")
+	}
+	// And an empty model is still allowed for a non-builder: only *choosing* is gated.
+	w := postFix(t, srv, "/prs/acme/app/9/address-ci", sid2, csrf2, url.Values{
+		"project": {"proj"}, "force_new": {"1"},
+	})
+	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/sessions/") {
+		t.Fatalf("default model must stay available to non-builders, got %q", loc)
+	}
+	_ = csrf
 }
 
 func TestAddressCIReuseNoCreate(t *testing.T) {
@@ -236,12 +326,10 @@ func TestAddressReviewCreatePromptHasComment(t *testing.T) {
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	if !strings.HasPrefix(w.Header().Get("Location"), "/sessions/rev-web-1") {
-		t.Fatalf("loc=%s", w.Header().Get("Location"))
-	}
+	tid := webUnitFromLocation(t, w.Header().Get("Location"))
 	deadline := time.Now().Add(4 * time.Second)
 	for time.Now().Before(deadline) {
-		th, err := srv.history.Get("rev-web-1")
+		th, err := srv.history.Get(tid)
 		if err == nil && len(th.Turns) >= 1 {
 			p := th.Turns[0].Prompt
 			if !strings.Contains(p, "please handle nil") {

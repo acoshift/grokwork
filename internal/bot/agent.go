@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
@@ -75,14 +76,22 @@ func sameAgent(stored string, agent grokrun.Agent) bool {
 // stampSessionCLI records the agent and model a session is created with. Called
 // before the session has an id, so nothing is invalidated; from then on these are
 // what threadCLI reads and global config no longer reaches the thread.
-func (b *Bot) stampSessionCLI(threadID string, cli config.AgentCLI) {
-	_, _, err := b.sessions.Patch(threadID, func(e *sessionstore.Entry) {
+//
+// A missing entry is reported rather than swallowed: Patch is a silent no-op that
+// returns a nil error when the thread is unknown, and "the pin landed" is the one
+// thing this function exists to guarantee.
+func (b *Bot) stampSessionCLI(threadID string, cli config.AgentCLI) error {
+	_, ok, err := b.sessions.Patch(threadID, func(e *sessionstore.Entry) {
 		e.Agent = cli.Agent.String()
 		e.Model = cli.Model
 	})
 	if err != nil {
-		log.Printf("warn: stamp session cli thread=%s: %v", threadID, err)
+		return err
 	}
+	if !ok {
+		return fmt.Errorf("stamp agent/model: unknown session %q", threadID)
+	}
+	return nil
 }
 
 // ensureSessionCLI pins the agent and model on a session that has not stamped
@@ -100,7 +109,46 @@ func (b *Bot) ensureSessionCLI(threadID string, cli config.AgentCLI) {
 	if e, ok := b.session(threadID); ok && strings.TrimSpace(e.Agent) != "" {
 		return
 	}
-	b.stampSessionCLI(threadID, cli)
+	// Best-effort at run start: the run proceeds either way, and threadCLI already
+	// resolved the CLI it will use.
+	if err := b.stampSessionCLI(threadID, cli); err != nil {
+		log.Printf("warn: stamp session cli thread=%s: %v", threadID, err)
+	}
+}
+
+// A model chosen in the web UI reaches a run by being stamped on the session at
+// creation — the same stamp threadCLI already reads. Nothing else in the run path
+// learns about "requested" models, and the stamp is only ever written while the
+// session is new, so reusing a session can never re-point it at another CLI.
+
+// requireCanSelectModel fails when the actor lacks builder-class caps. Only
+// consult it when a model was actually named: an empty choice is the configured
+// default and is available to anyone who may start a session at all.
+// Fails closed without config, unlike requireCanStartFix: there is no legacy data
+// to be lenient about here, since nothing could have named a model before this
+// existed.
+func (b *Bot) requireCanSelectModel(project, userID string, roleIDs []string) error {
+	if b == nil || b.cfg == nil {
+		return ErrCannotSelectModel
+	}
+	if !b.cfg.ResolveCapabilities(project, userID, roleIDs).CanShip() {
+		return ErrCannotSelectModel
+	}
+	return nil
+}
+
+// stampNewSessionCLI pins agent+model on a session being created.
+//
+// Callers must invoke this before the first run is enqueued: executeTask stamps
+// the *config* default at run start (ensureSessionCLI), and whoever stamps first
+// wins. Stamping late would leave the run on the global model while the session
+// claimed the requested one. The error is returned rather than logged — a create
+// path that cannot pin the model must fail, not run on the wrong one.
+func (b *Bot) stampNewSessionCLI(threadID string, cli config.AgentCLI) error {
+	if b == nil || b.sessions == nil || strings.TrimSpace(threadID) == "" {
+		return nil
+	}
+	return b.stampSessionCLI(threadID, cli)
 }
 
 // looksLikeAgentChild reports whether pid is still the agent child this journal

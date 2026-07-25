@@ -20,6 +20,10 @@ var (
 	// ErrCannotStartFix is returned when the actor lacks builder-class ship caps
 	// (startSessions + githubWrites) for an explicit fix / Fix-with-Grok start.
 	ErrCannotStartFix = errors.New("you're not allowed to start fix tasks on this project (need startSessions and githubWrites)")
+	// ErrCannotSelectModel is returned when the actor names a model without
+	// builder-class caps. Choosing the model chooses the spend, so it sits behind
+	// the same gate as shipping rather than plain startSessions.
+	ErrCannotSelectModel = errors.New("you're not allowed to pick a model on this project (need startSessions and githubWrites)")
 )
 
 // FixKind selects GitHub vs Linear fix start.

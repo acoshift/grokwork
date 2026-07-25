@@ -3,6 +3,7 @@ package bot
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/acoshift/grokwork/internal/config"
@@ -134,6 +135,215 @@ func TestListCaseBoard(t *testing.T) {
 	if every.Shown != 6 {
 		t.Fatalf("all projects shown=%d", every.Shown)
 	}
+}
+
+// The owner filter is what makes the board usable for two different audiences:
+// an engineer looking for unclaimed escalations, and anyone looking for their own
+// cases. "Mine" spans engineer and thread ownership so neither has to know which
+// field their role lands in.
+func TestListCaseBoardOwnerFilter(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		Projects: config.PathProjects(map[string]string{"alpha": filepath.Join(dir, "alpha")}),
+		DataDir:  dir,
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "alpha"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := map[string]sessionstore.Entry{
+		// Escalated and claimed by the viewer.
+		"c-mine-eng": {
+			Project: "alpha", Mode: "case", Phase: "fixing",
+			CustomerTitle: "Mine as engineer", EngineerID: "u-eng", EngineerName: "eng",
+		},
+		// Escalated by support: no engineer, but the viewer filed it.
+		"c-mine-owner": {
+			Project: "alpha", Mode: "case", Phase: "fixing",
+			CustomerTitle: "Mine as reporter", OwnerID: "u-eng",
+		},
+		// Someone else's, and claimed.
+		"c-theirs": {
+			Project: "alpha", Mode: "case", Phase: "fixing",
+			CustomerTitle: "Theirs", EngineerID: "u-other", EngineerName: "other",
+			OwnerID: "u-support",
+		},
+		// Nobody's: the triage queue.
+		"c-open": {
+			Project: "alpha", Mode: "case", Phase: "fixing", CustomerTitle: "Unclaimed",
+		},
+		// Co-owner counts as mine.
+		"c-co": {
+			Project: "alpha", Mode: "case", Phase: "investigate",
+			CustomerTitle: "Co-owned", OwnerID: "u-support", CoOwnerIDs: []string{"u-eng"},
+			EngineerID: "u-other", EngineerName: "other",
+		},
+	}
+	for id, e := range seed {
+		if err := store.Set(id, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := New(cfg, store, hist)
+
+	ids := func(board CaseBoard) []string {
+		var out []string
+		for _, g := range board.Groups {
+			for _, r := range g.Rows {
+				out = append(out, r.ThreadID)
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+
+	mine := b.ListCaseBoardQuery(CaseBoardQuery{
+		Project: "alpha", Owner: CaseOwnerMine, ViewerID: "u-eng",
+	})
+	if got, want := ids(mine), []string{"c-co", "c-mine-eng", "c-mine-owner"}; !slices.Equal(got, want) {
+		t.Fatalf("mine=%v want %v", got, want)
+	}
+
+	unassigned := b.ListCaseBoardQuery(CaseBoardQuery{
+		Project: "alpha", Owner: CaseOwnerUnassigned, ViewerID: "u-eng",
+	})
+	if got, want := ids(unassigned), []string{"c-mine-owner", "c-open"}; !slices.Equal(got, want) {
+		t.Fatalf("unassigned=%v want %v", got, want)
+	}
+
+	// Counts are over the pre-filter set so the labels do not change as you filter.
+	if mine.Mine != 3 || mine.Unassigned != 2 || unassigned.Mine != 3 || unassigned.Unassigned != 2 {
+		t.Fatalf("counts mine=%+v unassigned=%+v", mine, unassigned)
+	}
+
+	// No viewer (unauthenticated / no identity) must not turn "mine" into
+	// "everything with no engineer".
+	anon := b.ListCaseBoardQuery(CaseBoardQuery{Project: "alpha", Owner: CaseOwnerMine})
+	if anon.Shown != 0 {
+		t.Fatalf("anonymous mine shown=%d want 0", anon.Shown)
+	}
+
+	// An unrecognized value falls back to no filter rather than hiding everything.
+	junk := b.ListCaseBoardQuery(CaseBoardQuery{Project: "alpha", Owner: "sql-injection", ViewerID: "u-eng"})
+	if junk.OwnerFilter != "" || junk.Shown != 5 {
+		t.Fatalf("junk owner filter=%q shown=%d", junk.OwnerFilter, junk.Shown)
+	}
+}
+
+// Escalating is a handoff: an engineer doing it takes the case, support doing it
+// leaves it for engineering to pick up. The outcome is returned rather than
+// re-derived from caps, because the two disagree when there is no actor id.
+func TestEscalateCaseOwnershipByRole(t *testing.T) {
+	newBot := func(t *testing.T) (*Bot, *sessionstore.Store) {
+		t.Helper()
+		dir := t.TempDir()
+		store, err := sessionstore.New(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := &config.Config{Projects: config.PathProjects(map[string]string{"app": filepath.Join(dir, "app")})}
+		return New(cfg, store, nil), store
+	}
+	seed := func(t *testing.T, store *sessionstore.Store, tid, phase, engID string) {
+		t.Helper()
+		e := sessionstore.Entry{
+			Project: "app", Mode: ModeCase, Phase: phase,
+			CustomerTitle: "Checkout fails", OwnerID: "u-support",
+		}
+		if engID != "" {
+			e.EngineerID, e.EngineerName = engID, "Prior Eng"
+		}
+		if err := store.Set(tid, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("builder claims an unassigned case", func(t *testing.T) {
+		b, store := newBot(t)
+		seed(t, store, "c1", sessionstore.PhaseIntake, "")
+		out, err := b.EscalateCase(EscalateCaseOpts{
+			ThreadID: "c1", Actor: Actor{ID: "u-eng", DisplayName: "Eng"}, TakeOwnership: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !out.Assigned || out.EngineerID != "u-eng" || out.Released {
+			t.Fatalf("outcome=%+v", out)
+		}
+		e, _ := store.Get("c1")
+		if e.EngineerID != "u-eng" || e.EngineerName == "" {
+			t.Fatalf("must claim: %+v", e)
+		}
+		// Thread ownership gates cancel/reset and is not the engineering assignment.
+		if e.OwnerID != "u-support" {
+			t.Fatalf("thread owner changed: %q", e.OwnerID)
+		}
+	})
+
+	t.Run("support handoff leaves it unassigned", func(t *testing.T) {
+		b, store := newBot(t)
+		seed(t, store, "c2", sessionstore.PhaseInvestigate, "")
+		out, err := b.EscalateCase(EscalateCaseOpts{
+			ThreadID: "c2", Actor: Actor{ID: "u-support", DisplayName: "Sup"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Assigned || out.EngineerID != "" {
+			t.Fatalf("outcome=%+v", out)
+		}
+		e, _ := store.Get("c2")
+		if e.EngineerID != "" || e.EscalatedBy != "u-support" || e.Phase != sessionstore.PhaseFixing {
+			t.Fatalf("entry=%+v", e)
+		}
+		if e.OwnerID != "u-support" {
+			t.Fatalf("thread owner must survive: %q", e.OwnerID)
+		}
+	})
+
+	// A support re-escalate on a case already with engineering is a nudge. Clearing
+	// the engineer here would erase a name the escalator cannot even see.
+	t.Run("support re-escalate keeps the current engineer", func(t *testing.T) {
+		b, store := newBot(t)
+		seed(t, store, "c3", sessionstore.PhaseFixing, "u-eng")
+		out, err := b.EscalateCase(EscalateCaseOpts{
+			ThreadID: "c3", Actor: Actor{ID: "u-support", DisplayName: "Sup"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Released || out.EngineerID != "u-eng" {
+			t.Fatalf("outcome=%+v", out)
+		}
+		if e, _ := store.Get("c3"); e.EngineerID != "u-eng" {
+			t.Fatalf("engineer yanked by a nudge: %+v", e)
+		}
+	})
+
+	// Web auth off: builder-class caps resolve true but there is no id to record.
+	// Claiming is impossible, so the assignment must be left alone — and the caller
+	// must not be told "assigned to you".
+	t.Run("no actor id neither claims nor clears", func(t *testing.T) {
+		b, store := newBot(t)
+		seed(t, store, "c4", sessionstore.PhaseIntake, "u-eng")
+		out, err := b.EscalateCase(EscalateCaseOpts{ThreadID: "c4", TakeOwnership: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Assigned || out.Released || out.EngineerID != "u-eng" {
+			t.Fatalf("outcome=%+v", out)
+		}
+		if e, _ := store.Get("c4"); e.EngineerID != "u-eng" {
+			t.Fatalf("assignment lost with no actor id: %+v", e)
+		}
+	})
 }
 
 func TestCaseSeverityTriageSort(t *testing.T) {

@@ -131,8 +131,11 @@ func (b *Bot) handleEscalate(s *discordgo.Session, m *discordgo.MessageCreate, p
 		return
 	}
 	roleIDs := memberRoles(m)
+	// Builder-class means the escalator is engineering and takes the case; anyone
+	// else is handing it to engineering, which leaves it unassigned.
+	var caps config.Capabilities
 	if b.cfg != nil {
-		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID, roleIDs)
+		caps = b.cfg.ResolveCapabilities(e.Project, m.Author.ID, roleIDs)
 		if !canEscalateCase(caps) {
 			replyText(s, m, "You're not allowed to escalate cases (need fileEscalation or builder caps).")
 			return
@@ -141,30 +144,28 @@ func (b *Bot) handleEscalate(s *discordgo.Session, m *discordgo.MessageCreate, p
 	note := strings.TrimSpace(parsed.Prompt)
 	// strip command prefix if present
 	note = stripCmdPrefix(note, "/escalate", "escalate")
-	now := time.Now().UTC().Format(time.RFC3339)
-	_, _, err := b.sessions.Patch(m.ChannelID, func(ent *sessionstore.Entry) {
-		ent.Mode = ModeCase // never clear
-		ent.Phase = sessionstore.PhaseFixing
-		ent.EscalatedAt = now
-		if m.Author != nil {
-			ent.EscalatedBy = m.Author.ID
-		}
-		if note != "" {
-			if ent.Dossier == nil {
-				ent.Dossier = &sessionstore.Dossier{}
-			}
-			ent.Dossier.NextActions = append(ent.Dossier.NextActions, "Escalate note: "+note)
-		}
-		if ent.Label == sessionstore.LabelBlocked || ent.Label == sessionstore.LabelOpen {
-			ent.Label = sessionstore.LabelInProgress
-		}
-		_ = sessionstore.ClampCaseFields(ent)
+	out, err := b.EscalateCase(EscalateCaseOpts{
+		ThreadID:      m.ChannelID,
+		Actor:         ActorFromUser(m.Author),
+		Note:          note,
+		TakeOwnership: caps.CanShip(),
 	})
 	if err != nil {
 		replyText(s, m, "Escalate failed: "+err.Error())
 		return
 	}
-	replyText(s, m, "Escalated → phase **fixing** (Mode stays **case**). Eng: freeform or `@Grok /start fix …` to implement. Escalation package will prefix the next ship run.")
+	// Phrased from the outcome, not from caps — see EscalateOutcome.
+	reply := "Escalated → phase **fixing** (Mode stays **case**)."
+	switch {
+	case out.Assigned:
+		reply += " Assigned to you."
+	case out.EngineerID != "":
+		reply += " Still assigned to the same engineer."
+	default:
+		reply += "\nNo engineer assigned yet — it shows on the case board under **needs an engineer**."
+	}
+	reply += "\nEng: freeform or `@Grok /start fix …` to implement. Escalation package will prefix the next ship run."
+	replyText(s, m, reply)
 }
 
 func (b *Bot) handleCloseCase(s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed) {

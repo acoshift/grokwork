@@ -24,7 +24,7 @@ func TestCaseActionsLifecycle(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.EscalateCase(tid, "u-eng", "stack in thread"); err != nil {
+	if _, err := b.EscalateCase(EscalateCaseOpts{ThreadID: tid, Actor: Actor{ID: "u-eng", DisplayName: "Eng"}, Note: "stack in thread", TakeOwnership: true}); err != nil {
 		t.Fatal(err)
 	}
 	e, _ := store.Get(tid)
@@ -49,7 +49,7 @@ func TestCaseActionsLifecycle(t *testing.T) {
 	if !e.IsCaseClosed() || e.Resolution != "answered" {
 		t.Fatalf("after close: %+v", e)
 	}
-	if err := b.EscalateCase(tid, "u-eng", ""); err != ErrCaseClosed {
+	if _, err := b.EscalateCase(EscalateCaseOpts{ThreadID: tid, Actor: Actor{ID: "u-eng"}}); err != ErrCaseClosed {
 		t.Fatalf("want ErrCaseClosed, got %v", err)
 	}
 	if err := b.AnswerCase(tid, "u1", ""); err != ErrCaseClosed {
@@ -83,7 +83,7 @@ func TestCaseActionsLifecycle(t *testing.T) {
 		t.Fatalf("label after reopen investigate: %q", e.Label)
 	}
 	// Closed gates open again.
-	if err := b.EscalateCase(tid, "u-eng", "still broken"); err != nil {
+	if _, err := b.EscalateCase(EscalateCaseOpts{ThreadID: tid, Actor: Actor{ID: "u-eng", DisplayName: "Eng"}, Note: "still broken", TakeOwnership: true}); err != nil {
 		t.Fatalf("escalate after reopen: %v", err)
 	}
 	e, _ = store.Get(tid)

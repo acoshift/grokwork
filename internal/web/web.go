@@ -582,6 +582,13 @@ type pageData struct {
 	// CanStartFixMode: project CanShip (startSessions + githubWrites). Hides Fix &
 	// ship in the start dropdown; POSTs hard-deny without these caps.
 	CanStartFixMode bool
+	// Model picker (start composer + commit/PR dispatch cards). CanSelectModel is
+	// the same builder-class gate as CanStartFixMode; ModelGroups holds the curated
+	// options grouped by CLI, and ModelDefaultLabel names what "Default" resolves
+	// to so the choice on offer is never a mystery.
+	CanSelectModel    bool
+	ModelGroups       []config.ModelGroup
+	ModelDefaultLabel string
 	// Case intake (/projects/{project}/cases/new + board CTAs): Discord /case
 	// parity — startSessions feature+role AND investigator-class capability.
 	CanOpenCase bool
@@ -1475,6 +1482,7 @@ func (s *Server) updateAgentSettings(ctx *hime.Context) error {
 		Agent:          strings.TrimSpace(ctx.PostFormValue("agent")),
 		Model:          strings.TrimSpace(ctx.PostFormValue("model")),
 		SummarizeModel: strings.TrimSpace(ctx.PostFormValue("summarizeModel")),
+		ReviewModel:    strings.TrimSpace(ctx.PostFormValue("reviewModel")),
 		GrokBin:        strings.TrimSpace(ctx.PostFormValue("grokBin")),
 		ClaudeBin:      strings.TrimSpace(ctx.PostFormValue("claudeBin")),
 		IncludeAnthropicEnv: ctx.PostFormValue("claudeIncludeAnthropicEnv") == "1" ||

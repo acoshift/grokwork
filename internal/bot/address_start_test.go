@@ -23,7 +23,10 @@ func testAddressBot(t *testing.T) (*Bot, string) {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{
-		GrokBin:           writeFakeGrok(t),
+		GrokBin: writeFakeGrok(t),
+		// Never leave ClaudeBin unset: it normalizes to "claude" and execs the real
+		// CLI — see writeFakeClaude.
+		ClaudeBin:         writeFakeClaude(t),
 		Projects:          config.PathProjects(map[string]string{"app": proj}),
 		Channels:          map[string]string{"ch-app": "app"},
 		DiscordGuildID:    "guild-1",
@@ -105,6 +108,9 @@ func TestBuildAddressReviewPromptNoMerge(t *testing.T) {
 	}
 }
 
+// A dispatch from the PR page creates a web-native session: it streams onto the
+// session page the POST redirects to, and the PR is already where the team watches
+// this work — so no Discord thread is opened even with the gateway up.
 func TestStartAddressCICreateUpsertsPR(t *testing.T) {
 	b, _ := testAddressBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
@@ -118,15 +124,64 @@ func TestStartAddressCICreateUpsertsPR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Created || res.ThreadID != "ci-th" {
-		t.Fatalf("%+v", res)
+	if !res.Created || !gitworktree.IsWebUnitID(res.ThreadID) {
+		t.Fatalf("want web-native created unit, got %+v", res)
 	}
-	if len(fake.starts) != 1 {
-		t.Fatal("create once")
+	if len(fake.starts) != 0 {
+		t.Fatalf("thread API must be untouched: %v", fake.starts)
 	}
-	e, ok := b.sessions.Get("ci-th")
+	e, ok := b.sessions.Get(res.ThreadID)
 	if !ok || len(e.PRs) != 1 || e.PRs[0].Number != 12 {
 		t.Fatalf("PR not bound: %+v", e)
+	}
+	// bindTrackedPR carries no goal, and there is no thread name to fall back on.
+	if !strings.Contains(e.Goal, "acme/app#12") {
+		t.Fatalf("goal=%q", e.Goal)
+	}
+}
+
+// A reused session keeps the agent it was stamped with: a session id cannot be
+// resumed by the other CLI, so a model named on the dispatch must not reach it.
+func TestStartAddressCIReuseKeepsPinnedModel(t *testing.T) {
+	b, _ := testAddressBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	e := sessionstore.Entry{Project: "app", Agent: "grok", Model: "grok-4.5", SessionID: "s-1"}
+	e.UpsertPR(sessionstore.TrackedPR{Owner: "acme", Repo: "app", Number: 5, State: "OPEN"})
+	if err := b.sessions.Set("exist-pinned", e); err != nil {
+		t.Fatal(err)
+	}
+	res, err := b.StartAddressCI(AddressCIOpts{
+		Project: "app", Owner: "acme", Repo: "app", Number: 5,
+		Actor: Actor{ID: "u", DisplayName: "U"}, Model: "claude-opus-5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ThreadID != "exist-pinned" {
+		t.Fatalf("want reuse, got %+v", res)
+	}
+	got, _ := b.sessions.Get("exist-pinned")
+	if got.Agent != "grok" || got.Model != "grok-4.5" {
+		t.Fatalf("reuse re-pinned the session: agent=%q model=%q", got.Agent, got.Model)
+	}
+}
+
+func TestStartAddressCICreateStampsReviewModel(t *testing.T) {
+	b, _ := testAddressBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+	})
+	res, err := b.StartAddressCI(AddressCIOpts{
+		Project: "app", Owner: "acme", Repo: "app", Number: 21,
+		Actor: Actor{ID: "u", DisplayName: "U"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := b.sessions.Get(res.ThreadID)
+	if got.Agent != "claude" || got.Model != "claude-opus-5" {
+		t.Fatalf("want review model stamped, got agent=%q model=%q", got.Agent, got.Model)
 	}
 }
 
@@ -246,10 +301,13 @@ func TestStartAddressReviewCreate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Created || res.ThreadID != "rev-th" {
-		t.Fatalf("%+v", res)
+	if !res.Created || !gitworktree.IsWebUnitID(res.ThreadID) {
+		t.Fatalf("want web-native created unit, got %+v", res)
 	}
-	e, _ := b.sessions.Get("rev-th")
+	if len(fake.starts) != 0 {
+		t.Fatalf("thread API must be untouched: %v", fake.starts)
+	}
+	e, _ := b.sessions.Get(res.ThreadID)
 	if len(e.PRs) != 1 || e.PRs[0].Number != 8 {
 		t.Fatalf("%+v", e.PRs)
 	}

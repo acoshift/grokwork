@@ -46,12 +46,34 @@ func (s *Server) postCaseEscalate(ctx *hime.Context) error {
 	}
 	note := strings.TrimSpace(ctx.PostFormValue("note"))
 	actor := s.fixActor(ctx)
-	escErr := s.bot.EscalateCase(threadID, actor.ID, note)
-	s.auditAction(ctx, "case.escalate", escErr, map[string]any{"threadId": threadID, "project": ent.Project})
+	// Builder-class escalation is engineering picking the case up; a support-side
+	// escalation hands it over and leaves it unassigned for the board to surface.
+	takes := s.cfg.ResolveCapabilities(ent.Project, actor.ID, nil).CanShip()
+	out, escErr := s.bot.EscalateCase(bot.EscalateCaseOpts{
+		ThreadID: threadID, Actor: actor, Note: note, TakeOwnership: takes,
+	})
+	s.auditAction(ctx, "case.escalate", escErr, map[string]any{
+		"threadId": threadID, "project": ent.Project,
+		"assigned": out.Assigned, "released": out.Released,
+		"engineerId": out.EngineerID, "previousEngineerId": out.PreviousEngineerID,
+	})
 	if escErr != nil {
 		return s.sessionRedirect(ctx, threadID, "", escErr.Error())
 	}
-	return s.sessionRedirect(ctx, threadID, "Escalated → fixing (Mode stays case).", "")
+	// Phrased from what was written, not from caps: with web auth off there is no
+	// actor id to assign, so a builder-class request still lands unassigned.
+	return s.sessionRedirect(ctx, threadID, escalateFlash(out), "")
+}
+
+func escalateFlash(out bot.EscalateOutcome) string {
+	switch {
+	case out.Assigned:
+		return "Escalated → fixing, assigned to you."
+	case out.EngineerID != "":
+		return "Escalated → fixing. Still assigned to the same engineer."
+	default:
+		return "Escalated → fixing. No engineer assigned yet."
+	}
 }
 
 func (s *Server) postCaseAnswer(ctx *hime.Context) error {

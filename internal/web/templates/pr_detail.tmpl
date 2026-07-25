@@ -223,9 +223,9 @@
 
 {{if .CanStartSession}}
 <div class="rail-group" id="pr-address-actions">
-  <div class="rail-group-title">Grok</div>
+  <div class="rail-group-title">Agent</div>
   {{if .ShowFixPicker}}
-  <p class="rail-note">Multiple sessions bind this PR — continue one:</p>
+  <p class="rail-note">Multiple sessions bind this PR — continue one (each keeps the model it started on):</p>
   {{range .FixHits}}
   <div class="grok-pick">
     <div class="grok-pick-head">
@@ -243,22 +243,28 @@
     </form>
   </div>
   {{end}}
-  <p class="rail-note">Or dispatch a fresh thread:</p>
+  <p class="rail-note">Or dispatch a fresh session:</p>
   {{end}}
+  {{/* Model is per-button so each modal names the action it is confirming. The
+       select is hidden: the modal clones its options, and with scripting off the
+       form still posts the default. */}}
   <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-ci" class="grok-dispatch">
     {{template "csrf" $}}
     <input type="hidden" name="project" value="{{.Project}}">
     {{if .ShowFixPicker}}
     <input type="hidden" name="force_new" value="1">
     {{else}}
-    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start a new thread</label>
+    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start a new session</label>
     {{end}}
+    {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
     <div class="btn-pair">
-      <button type="submit" class="btn-secondary" id="btn-address-ci">Address CI</button>
-      <button type="submit" class="btn-secondary" id="btn-address-review" formaction="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-review">Address review</button>
+      <button type="submit" class="btn-secondary" id="btn-address-ci"
+        {{- if .CanSelectModel}} data-confirm="Pushes fixes for the failing checks on this pull request. It never merges." data-confirm-title="Address CI" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address CI</button>
+      <button type="submit" class="btn-secondary" id="btn-address-review" formaction="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-review"
+        {{- if .CanSelectModel}} data-confirm="Works through the unresolved review comments on this pull request. It never merges." data-confirm-title="Address review" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address review</button>
     </div>
   </form>
-  <p class="rail-note">Reuses or opens a Discord work unit. Grok pushes fixes; it never merges.</p>
+  <p class="rail-note">Reuses a session already bound to this PR, or starts a new one — no Discord thread. A reused session keeps its own model. The agent pushes fixes; it never merges.</p>
 </div>
 {{end}}
 

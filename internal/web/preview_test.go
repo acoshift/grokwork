@@ -187,7 +187,10 @@ func TestPreviewServer(t *testing.T) {
 			SessionID: "case-e", Project: "webapp", Mode: "case", Phase: "shipping",
 			Severity: "critical", CustomerTitle: "Duplicate charges on retried payments",
 			CustomerRef: "ZD-4695", ReporterName: "beam", Origin: "discord",
-			OwnerName:      "mint",
+			OwnerName: "mint",
+			// Assigned to the preview's logged-in admin, so the board shows an "eng"
+			// chip and a non-zero "Mine" count next to case-d's "needs an engineer".
+			EngineerID: "111111111111111111", EngineerName: "mint",
 			CustomerUpdate: "Engineering has a fix in review; charges are deduplicated by idempotency key once it ships.",
 			PRs: []sessionstore.TrackedPR{{
 				URL: "https://github.com/acme/webapp/pull/133", Number: 133, State: "OPEN",

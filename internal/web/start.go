@@ -33,6 +33,7 @@ func (s *Server) startComposer(ctx *hime.Context) error {
 	}
 	// Fix & ship only when the actor can actually ship (builder-class caps).
 	d.CanStartFixMode = d.CanStartSession && s.cfg.ResolveCapabilities(project, d.UserID, nil).CanShip()
+	s.attachModelPicker(&d, project, s.cfg.TaskModel())
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e
@@ -73,11 +74,12 @@ func (s *Server) postStart(ctx *hime.Context) error {
 	}
 
 	actor := s.fixActor(ctx)
+	model := strings.TrimSpace(ctx.PostFormValue("model"))
 	res, startErr := s.bot.StartWebTask(bot.StartWebTaskOpts{
-		Project: project, Prompt: prompt, Actor: actor, Title: title, Mode: mode,
+		Project: project, Prompt: prompt, Actor: actor, Title: title, Mode: mode, Model: model,
 	})
 	detail := map[string]any{
-		"project": project, "origin": "web-start", "mode": mode,
+		"project": project, "origin": "web-start", "mode": mode, "model": model,
 		"threadId": res.ThreadID, "status": string(res.Status), "created": res.Created,
 	}
 	if startErr != nil {

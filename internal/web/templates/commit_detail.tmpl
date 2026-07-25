@@ -36,15 +36,19 @@
 <aside class="pr-rail">
 
 <div class="rail-group" id="commit-review-actions">
-  <div class="rail-group-title">Grok</div>
+  <div class="rail-group-title">Agent</div>
   {{if .CanReviewCommit}}
-  <form method="post" action="/projects/{{.Project}}/commits/{{.Commit.SHA}}/review" class="grok-dispatch" hx-boost="false">
+  {{/* The model select is hidden: it exists so the confirm modal can clone its
+       options, and so the form still posts a default with scripting off. */}}
+  <form method="post" action="/projects/{{.Project}}/commits/{{.Commit.SHA}}/review" class="grok-dispatch" hx-boost="false"
+    {{- if .CanSelectModel}} data-confirm="Reviews this commit in a new session and files an issue per confirmed finding." data-confirm-title="Review commit" data-confirm-ok="Start review" data-confirm-select="model" data-confirm-select-label="Review model"{{end}}>
     {{template "csrf" .}}
     <input type="hidden" name="owner" value="{{.ActiveOwner}}">
     <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
     <div class="form-actions"><button type="submit">Review in new session</button></div>
   </form>
-  <p class="rail-note">Starts a new Discord thread (or web session) so Grok can review this commit with full tools and open GitHub issues agentically — labels, commit links, related refs.</p>
+  <p class="rail-note">Starts a new session — no Discord thread — so the agent can review this commit with full tools and open GitHub issues agentically: labels, commit links, related refs.</p>
   {{else}}
   <p class="rail-note">Requires member role with <span class="mono">startSessions</span> enabled.</p>
   {{end}}

@@ -1094,8 +1094,59 @@ func TestCommitsListAndDetail(t *testing.T) {
 	}
 }
 
+// The dispatch card feeds the shared confirm modal: a hidden select the modal
+// clones its options from, and data-confirm-select naming that field so the pick is
+// written back before the submit is replayed. Without the hidden select the modal
+// would open with an empty dropdown.
+func TestCommitDetailModelConfirmWiring(t *testing.T) {
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.StartSessions = true
+	if err := cfg.SetProjectGitHubRepos("proj", []config.GitHubRepoRef{{Owner: "acme", Repo: "app"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+	})
+	const sha = "abcdef0123456789abcdef0123456789abcdef01"
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "git" && len(args) > 0 && args[0] == "show" && strings.Contains(joined, "-s") {
+			return []byte(sha + "\x1fFixture commit\x1fAlice\x1fa@ex.com\x1f2026-07-20T12:00:00Z\x1fbody note\n"), nil
+		}
+		if name == "git" && len(args) > 0 && args[0] == "rev-parse" {
+			return []byte(sha + "\n"), nil
+		}
+		return []byte(""), nil
+	}
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/projects/proj/commits/"+sha+"?owner=acme&repo=app")
+	for _, want := range []string{
+		`<select name="model" hidden>`,
+		`data-confirm-select="model"`,
+		`data-confirm-title="Review commit"`,
+		// Default names the review model, not the task model.
+		`<option value="">Default (claude-opus-5)</option>`,
+		`value="grok-4.5"`,
+		// Vendor-neutral card: the agent may be claude.
+		`<div class="rail-group-title">Agent</div>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("commit detail missing %q", want)
+		}
+	}
+	if strings.Contains(body, "Discord thread (or web session)") {
+		t.Fatal("stale Discord copy: commit review is session-only")
+	}
+}
+
 // TestCommitReviewStartsSession posts review and redirects into a new session
-// (Discord thread when threadAPI is set; otherwise web-native).
+// (always web-native — a review never opens a Discord thread).
 func TestCommitReviewStartsSession(t *testing.T) {
 	srv, cfg, _ := authOnServer(t)
 	cfg.WebAuth.Features.StartSessions = true
@@ -1136,11 +1187,8 @@ func TestCommitReviewStartsSession(t *testing.T) {
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s loc=%s", w.Code, w.Body.String(), w.Header().Get("Location"))
 	}
-	loc := w.Header().Get("Location")
-	if !strings.Contains(loc, "/sessions/th-commit-review") {
-		t.Fatalf("want session redirect, got %q", loc)
-	}
-	e, ok := srv.sessions.Get("th-commit-review")
+	tid := webUnitFromLocation(t, w.Header().Get("Location"))
+	e, ok := srv.sessions.Get(tid)
 	if !ok || e.Project != "proj" {
 		t.Fatalf("session missing: ok=%v %+v", ok, e)
 	}

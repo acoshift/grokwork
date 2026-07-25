@@ -1296,9 +1296,23 @@
       line-height: 1.5;
       overflow-wrap: break-word;
     }
+    .gw-confirm-field { margin-top: 0.9rem; }
+    .gw-confirm-field > label {
+      display: block;
+      margin-bottom: 0.3rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .gw-confirm-field > select { width: 100%; }
+    /* row-reverse + flex-start keeps the buttons packed right and Cancel on the
+       left, while Confirm stays first in DOM (the form's default button). */
     .gw-confirm-foot {
       display: flex;
-      justify-content: flex-end;
+      flex-direction: row-reverse;
+      justify-content: flex-start;
       gap: 0.5rem;
       margin-top: 1.1rem;
     }
@@ -1956,6 +1970,9 @@
       padding: 0 0.5rem;
     }
     .case-meta .case-proj:hover { text-decoration: none; border-color: var(--hover-border); }
+    /* Escalated with nobody on it — the one meta chip that is a call to action.
+       --warn already tracks the theme, so no per-scheme override is needed. */
+    .case-meta .case-unassigned { font-weight: 600; color: var(--warn); }
     .case-sev {
       text-transform: uppercase;
       letter-spacing: 0.06em;
@@ -3413,9 +3430,22 @@
       <p class="gw-confirm-eyebrow" id="gw-confirm-eyebrow">Confirm</p>
       <h2 class="gw-confirm-title" id="gw-confirm-title">Are you sure?</h2>
       <p class="gw-confirm-msg" id="gw-confirm-msg"></p>
+      {{/* One-choice field for data-confirm-select. Options are cloned from a
+           select the page already rendered, so the modal never invents a value
+           and the form still submits a sane default with scripting off. */}}
+      <div class="gw-confirm-field" id="gw-confirm-field" hidden>
+        <label for="gw-confirm-select" id="gw-confirm-field-label">Model</label>
+        <select id="gw-confirm-select"></select>
+      </div>
+      {{/* Confirm is FIRST in DOM so it is the dialog form's default button:
+           implicit submission — Enter pressed in the picker select, which is where
+           focus lands — must confirm, not cancel. With Cancel first, Enter silently
+           dismissed the dialog and dispatched nothing. .gw-confirm-foot reverses the
+           row so Cancel still renders on the left. Enter on a *focused* button
+           activates that button, so danger asks (focus on Cancel) still cancel. */}}
       <footer class="gw-confirm-foot">
-        <button type="submit" value="cancel" class="btn-secondary" id="gw-confirm-cancel">Cancel</button>
         <button type="submit" value="ok" id="gw-confirm-ok">Confirm</button>
+        <button type="submit" value="cancel" class="btn-secondary" id="gw-confirm-cancel">Cancel</button>
       </footer>
     </form>
   </dialog>
@@ -3761,8 +3791,13 @@
     var msgEl = document.getElementById("gw-confirm-msg");
     var cancelBtn = document.getElementById("gw-confirm-cancel");
     var okBtn = document.getElementById("gw-confirm-ok");
+    var fieldWrap = document.getElementById("gw-confirm-field");
+    var fieldLabel = document.getElementById("gw-confirm-field-label");
+    var fieldSelect = document.getElementById("gw-confirm-select");
     var pending = null; // resolver of the currently open dialog's Promise
 
+    // openModal resolves {ok, value} — value is the picked option when the caller
+    // passed opts.select, "" otherwise. appConfirm/appAlert flatten it to a bool.
     function openModal(kind, opts) {
       if (typeof opts === "string") opts = { message: opts };
       opts = opts || {};
@@ -3773,7 +3808,7 @@
         var stray = pending;
         pending = null;
         dlg.close();
-        if (stray) stray(false);
+        if (stray) stray({ ok: false, value: "" });
       }
       var danger = !!opts.danger;
       var isAlert = kind === "alert";
@@ -3784,12 +3819,26 @@
       msgEl.textContent = opts.message || "";
       okBtn.textContent = opts.ok || (isAlert ? "OK" : "Confirm");
       okBtn.classList.toggle("is-danger", danger);
+      var pick = opts.select && opts.select.from ? opts.select : null;
+      fieldWrap.hidden = !pick;
+      fieldSelect.textContent = "";
+      if (pick) {
+        fieldLabel.textContent = pick.label || "Model";
+        // cloneNode carries optgroups, so the modal shows the same grouping the
+        // page rendered without this script knowing what the options mean.
+        Array.prototype.forEach.call(pick.from.children, function (node) {
+          fieldSelect.appendChild(node.cloneNode(true));
+        });
+        fieldSelect.value = pick.from.value;
+      }
       return new Promise(function (resolve) {
         pending = resolve;
         dlg.returnValue = "";
         dlg.showModal();
         // Safe default focus: Enter cancels destructive asks, confirms the rest.
-        (danger && !isAlert ? cancelBtn : okBtn).focus();
+        // A picker focuses the choice instead — it is what the modal is asking.
+        if (pick && !danger) fieldSelect.focus();
+        else (danger && !isAlert ? cancelBtn : okBtn).focus();
       });
     }
 
@@ -3798,15 +3847,21 @@
       if (dlg.open) return; // stale queued close from a superseded open
       var resolve = pending;
       pending = null;
-      if (resolve) resolve(dlg.classList.contains("is-alert") || dlg.returnValue === "ok");
+      if (resolve) {
+        resolve({
+          ok: dlg.classList.contains("is-alert") || dlg.returnValue === "ok",
+          value: fieldSelect.value
+        });
+      }
     });
     // Click on the backdrop (the dialog element itself) = cancel.
     dlg.addEventListener("click", function (e) {
       if (e.target === dlg) dlg.close();
     });
 
-    window.appConfirm = function (opts) { return openModal("confirm", opts); };
-    window.appAlert = function (opts) { return openModal("alert", opts); };
+    function flatten(r) { return r.ok; }
+    window.appConfirm = function (opts) { return openModal("confirm", opts).then(flatten); };
+    window.appAlert = function (opts) { return openModal("alert", opts).then(flatten); };
 
     // Capture phase: runs before htmx's boost listener on the form, so
     // stopPropagation keeps the boosted request from ever being issued for
@@ -3825,13 +3880,20 @@
       }
       e.preventDefault();
       e.stopPropagation();
+      // data-confirm-select="<field name>" turns the confirm into a one-choice
+      // picker over a control the form already carries. The pick is written back
+      // before the submit is replayed, so the value travels as a normal field.
+      var pickName = src.dataset.confirmSelect;
+      var pickEl = pickName ? form.elements[pickName] : null;
       openModal("confirm", {
         title: src.dataset.confirmTitle,
         message: src.dataset.confirm,
         ok: src.dataset.confirmOk,
-        danger: src.hasAttribute("data-confirm-danger")
-      }).then(function (ok) {
-        if (!ok || !form.isConnected) return; // SSE swap may replace the form while open
+        danger: src.hasAttribute("data-confirm-danger"),
+        select: pickEl ? { label: src.dataset.confirmSelectLabel, from: pickEl } : null
+      }).then(function (r) {
+        if (!r.ok || !form.isConnected) return; // SSE swap may replace the form while open
+        if (pickEl && pickEl.isConnected) pickEl.value = r.value;
         form.dataset.gwConfirmed = "1";
         if (s && s.isConnected) form.requestSubmit(s);
         else form.requestSubmit();
@@ -4545,3 +4607,23 @@
 </html>
 {{end}}
 {{define "csrf"}}{{if .CSRF}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}{{end}}
+{{/* Model dropdowns. Options are grouped by the CLI each name routes to, so the
+     derived agent is visible at the point of choice rather than only after
+     saving. Defined here because both the config page and the dispatch pages
+     need them and each page is its own template set. */}}
+{{define "model_optgroups"}}
+{{- range .}}
+<optgroup label="{{.Label}}">
+  {{- range .Choices}}
+  <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+  {{- end}}
+</optgroup>
+{{- end}}
+{{- end}}
+{{/* model_picker_options is the dispatch-side list: no selection (a page can only
+     start a new session, never re-point an existing one) and a leading Default
+     naming what config would pick. Callers own the <select> — the start composer
+     shows it, the dispatch cards hide it and feed it to the confirm modal. */}}
+{{define "model_picker_options"}}<option value="">Default ({{.ModelDefaultLabel}})</option>
+{{- template "model_optgroups" .ModelGroups}}
+{{- end}}

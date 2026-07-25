@@ -69,8 +69,8 @@ type Config struct {
 	Channels            map[string]string `json:"channels"` // channel ID → project name
 	GrokBin             string            `json:"grokBin"`
 	// Agent is the default coding CLI for new sessions: "grok" (default) or
-	// "claude". Sessions stamp the agent they were created with and keep it;
-	// @Grok /agent <name> picks a different one per thread.
+	// "claude". Sessions stamp the agent they were created with and keep it,
+	// since a session id cannot be resumed by the other CLI.
 	Agent string `json:"agent,omitempty"`
 	// ClaudeBin is the claude CLI binary. Empty → "claude" on PATH.
 	ClaudeBin string `json:"claudeBin,omitempty"`
@@ -79,6 +79,12 @@ type Config struct {
 	// pointing at a cheap model. Like Model it takes a name from either vendor
 	// and the agent is inferred from it. Empty → Model.
 	SummarizeModel string `json:"summarizeModel,omitempty"`
+	// ReviewModel is the default model for review sessions started from the web
+	// (commit review, address CI/review) — read-heavy, judgement-heavy work worth
+	// pointing at a stronger model than everyday tasks. It is only a default: the
+	// dispatch UI can override it per session, and the choice is stamped on the
+	// session like any other. Empty → Model.
+	ReviewModel string `json:"reviewModel,omitempty"`
 	// ClaudeExtraArgs are extra claude CLI flags. ExtraArgs below is grok
 	// vocabulary and is never passed to claude.
 	ClaudeExtraArgs []string `json:"claudeExtraArgs,omitempty"`
@@ -225,21 +231,27 @@ type Snapshot struct {
 	// Agent is the default coding CLI for new sessions ("grok" or "claude").
 	Agent     string
 	ClaudeBin string
-	// SummarizeModel is the raw configured value (empty = "use Model"), not the
-	// effective one, so the config form shows a placeholder rather than a
-	// fabricated value.
+	// SummarizeModel / ReviewModel are the raw configured values (empty = "use
+	// Model"), not the effective ones, so the config form shows a placeholder
+	// rather than a fabricated value.
 	SummarizeModel string
-	// ModelAgent / SummarizeModelAgent are the agents inferred from those model
-	// names, and *Known is false when the name identifies neither. The config page
-	// renders these so the derived agent is visible rather than implicit.
+	ReviewModel    string
+	// ModelAgent / SummarizeModelAgent / ReviewModelAgent are the agents inferred
+	// from those model names, and *Known is false when the name identifies neither.
+	// The config page renders these so the derived agent is visible rather than
+	// implicit.
 	ModelAgent          string
 	ModelAgentKnown     bool
 	SummarizeAgent      string
 	SummarizeAgentKnown bool
-	// ModelGroups / SummarizeModelGroups are the dropdown options for each field,
-	// grouped by agent and including the configured value when it is not curated.
+	ReviewAgent         string
+	ReviewAgentKnown    bool
+	// ModelGroups / SummarizeModelGroups / ReviewModelGroups are the dropdown
+	// options for each field, grouped by agent and including the configured value
+	// when it is not curated.
 	ModelGroups               []ModelGroup
 	SummarizeModelGroups      []ModelGroup
+	ReviewModelGroups         []ModelGroup
 	ClaudeIncludeAnthropicEnv bool
 	MaxTurns                  int // effective (default 40)
 	TimeoutMs                 int // effective (default 1800000 = 30m)
@@ -602,6 +614,7 @@ func (c *Config) saveLocked() error {
 		Agent                     string                    `json:"agent,omitempty"`
 		ClaudeBin                 string                    `json:"claudeBin,omitempty"`
 		SummarizeModel            string                    `json:"summarizeModel,omitempty"`
+		ReviewModel               string                    `json:"reviewModel,omitempty"`
 		ClaudeExtraArgs           []string                  `json:"claudeExtraArgs,omitempty"`
 		ClaudeIncludeAnthropicEnv *bool                     `json:"claudeIncludeAnthropicEnv,omitempty"`
 		Yolo                      *bool                     `json:"yolo"`
@@ -644,6 +657,7 @@ func (c *Config) saveLocked() error {
 		Agent:                     c.Agent,
 		ClaudeBin:                 c.ClaudeBin,
 		SummarizeModel:            c.SummarizeModel,
+		ReviewModel:               c.ReviewModel,
 		ClaudeExtraArgs:           slices.Clone(c.ClaudeExtraArgs),
 		ClaudeIncludeAnthropicEnv: cloneBoolPtr(c.ClaudeIncludeAnthropicEnv),
 		Yolo:                      c.Yolo,
@@ -1198,6 +1212,10 @@ func (c *Config) Snapshot() Snapshot {
 	if !summarizeAgentKnown {
 		summarizeAgent = modelAgent
 	}
+	reviewAgent, reviewAgentKnown := grokrun.AgentForModel(c.ReviewModel)
+	if !reviewAgentKnown {
+		reviewAgent = modelAgent
+	}
 	claudeBin := strings.TrimSpace(c.ClaudeBin)
 	if claudeBin == "" {
 		claudeBin = grokrun.AgentClaude.DefaultBin()
@@ -1213,12 +1231,16 @@ func (c *Config) Snapshot() Snapshot {
 		Agent:                     agent.String(),
 		ClaudeBin:                 claudeBin,
 		SummarizeModel:            strings.TrimSpace(c.SummarizeModel),
+		ReviewModel:               strings.TrimSpace(c.ReviewModel),
 		ModelAgent:                modelAgent.String(),
 		ModelAgentKnown:           modelAgentKnown,
 		SummarizeAgent:            summarizeAgent.String(),
 		SummarizeAgentKnown:       summarizeAgentKnown,
+		ReviewAgent:               reviewAgent.String(),
+		ReviewAgentKnown:          reviewAgentKnown,
 		ModelGroups:               ModelGroups(c.Model),
 		SummarizeModelGroups:      ModelGroups(c.SummarizeModel),
+		ReviewModelGroups:         ModelGroups(c.ReviewModel),
 		ClaudeIncludeAnthropicEnv: c.ClaudeIncludeAnthropicEnv != nil && *c.ClaudeIncludeAnthropicEnv,
 		MaxTurns:                  maxTurns,
 		TimeoutMs:                 timeoutMs,

@@ -233,6 +233,7 @@ func (s *Server) commitDetail(ctx *hime.Context) error {
 		}
 	}
 	d.CanReviewCommit = d.CanStartSession
+	s.attachModelPicker(&d, project, s.cfg.EffectiveReviewModel())
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e
@@ -242,8 +243,8 @@ func (s *Server) commitDetail(ctx *hime.Context) error {
 	return s.viewPage(ctx, "commit_detail", d)
 }
 
-// postCommitReview starts a new Discord/web session that agentically reviews the
-// commit and opens GitHub issues (Grok owns gh issue create; bot does not file).
+// postCommitReview starts a new session that agentically reviews the commit and
+// opens GitHub issues (the agent owns gh issue create; the bot does not file).
 func (s *Server) postCommitReview(ctx *hime.Context) error {
 	if !s.cfg.FeatureStartSessions() {
 		return ctx.Status(http.StatusNotFound).Error("not found")
@@ -290,6 +291,7 @@ func (s *Server) postCommitReview(ctx *hime.Context) error {
 		date = detail.AuthorDate.UTC().Format("2006-01-02 15:04 UTC")
 	}
 
+	model := strings.TrimSpace(ctx.PostFormValue("model"))
 	res, startErr := s.bot.StartCommitReview(bot.CommitReviewOpts{
 		Project:  project,
 		Actor:    actor,
@@ -301,10 +303,11 @@ func (s *Server) postCommitReview(ctx *hime.Context) error {
 		Body:     detail.Body,
 		Author:   author,
 		Date:     date,
+		Model:    model,
 	})
 
 	detailMap := map[string]any{
-		"project": project, "owner": owner, "repo": repo, "sha": detail.SHA,
+		"project": project, "owner": owner, "repo": repo, "sha": detail.SHA, "model": model,
 		"threadId": res.ThreadID, "status": string(res.Status),
 		"queuePos": res.QueuePos, "created": res.Created,
 	}
@@ -314,29 +317,18 @@ func (s *Server) postCommitReview(ctx *hime.Context) error {
 	}
 	s.auditAction(ctx, audit.ActionCommitReviewStart, nil, detailMap)
 
-	ok := string(res.Status)
-	if res.DiscordOffline {
-		ok = ok + "&discord=offline"
-	}
-	return s.sessionRedirect(ctx, res.ThreadID, ok, "")
+	// No DiscordOffline branch: a commit review is always web-native, so there is no
+	// Discord destination to have promised and failed to deliver.
+	return s.sessionRedirect(ctx, res.ThreadID, string(res.Status), "")
 }
 
 func (s *Server) mapCommitReviewError(ctx *hime.Context, project, sha, owner, repo string, err error) error {
 	msg := err.Error()
-	switch {
-	case errors.Is(err, bot.ErrDiscordNotReady):
-		return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusServiceUnavailable)
-	case errors.Is(err, bot.ErrQueueFull):
-		return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusConflict)
-	case errors.Is(err, bot.ErrProjectRequired):
-		return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusBadRequest)
-	default:
-		low := strings.ToLower(msg)
-		if strings.Contains(low, "channel") || strings.Contains(low, "mapped") {
-			return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusBadRequest)
-		}
-		return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, http.StatusBadRequest)
+	status := http.StatusBadRequest
+	if errors.Is(err, bot.ErrQueueFull) {
+		status = http.StatusConflict
 	}
+	return s.commitReviewSourceRedirectStatus(ctx, project, sha, owner, repo, msg, status)
 }
 
 func (s *Server) commitReviewSourceRedirect(ctx *hime.Context, project, sha, owner, repo string, err error) error {

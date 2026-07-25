@@ -79,8 +79,9 @@ type Entry struct {
 	// Agent and Model are pinned when the session is created and never change.
 	// SessionID is issued by one CLI and is meaningless to the other, so the
 	// agent cannot move; the model is pinned with it so a thread's turns stay
-	// consistent and editing global config never alters a live session. Pick
-	// them on the message that opens the thread (@Grok /claude <task>).
+	// consistent and editing global config never alters a live session. Set from
+	// global config, or from a builder's pick on a web dispatch — Discord has no
+	// command for it.
 	//
 	// Agent empty on an entry that already has a SessionID is pre-agent data,
 	// which ran on grok. Model empty means the CLI chooses.
@@ -111,8 +112,18 @@ type Entry struct {
 	ResolvedBy     string `json:"resolvedBy,omitempty"`
 	EscalatedAt    string `json:"escalatedAt,omitempty"`
 	EscalatedBy    string `json:"escalatedBy,omitempty"`
-	ReopenedAt     string `json:"reopenedAt,omitempty"`
-	ReopenedBy     string `json:"reopenedBy,omitempty"`
+	// Engineer* is the engineer who owns an escalation, set when a builder-class
+	// actor escalates and cleared when a support-side actor does.
+	//
+	// Deliberately separate from OwnerID. A case is owned from the moment it is
+	// filed — by the support member who filed it — and OwnerID additionally gates
+	// cancel/reset. So OwnerID can never answer "has an engineer picked this up",
+	// and clearing it to mean "nobody yet" would strip the reporter of control over
+	// their own case.
+	EngineerID   string `json:"engineerId,omitempty"`
+	EngineerName string `json:"engineerName,omitempty"`
+	ReopenedAt   string `json:"reopenedAt,omitempty"`
+	ReopenedBy   string `json:"reopenedBy,omitempty"`
 
 	// Wave 2 IDE-free confidence.
 	Checkpoints   []CheckpointMeta `json:"checkpoints,omitempty"`

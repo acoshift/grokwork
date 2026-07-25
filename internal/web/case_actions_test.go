@@ -134,6 +134,121 @@ func TestPostCaseEscalate(t *testing.T) {
 	}
 }
 
+// Escalating is a handoff, and who ends up holding the case depends on the
+// escalator's role: an engineer claims it, support releases it to the queue.
+func TestPostCaseEscalateAssignsByRole(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		template  string
+		wantEng   string
+		wantFlash string
+	}{
+		{"builder claims", "builder", "member-1", "assigned to you"},
+		{"investigator releases", "investigator", "", "No engineer assigned"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, cfg, _ := fixEnabledServer(t)
+			_ = cfg.AddProjectAllowedUser("proj", "member-1")
+			if err := cfg.SetProjectCapabilityByUser("proj", "member-1", tc.template); err != nil {
+				t.Fatal(err)
+			}
+			// Pre-assigned so the release case proves it clears rather than no-ops.
+			if err := srv.sessions.Set("t-role", sessionstore.Entry{
+				Project: "proj", Mode: "case", Phase: sessionstore.PhaseIntake,
+				CustomerTitle: "Pay wall loops", OwnerID: "u-support",
+				EngineerID: "u-old", EngineerName: "old",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			sid, csrf, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := postFix(t, srv, "/sessions/t-role/case/escalate", sid, csrf, url.Values{})
+			if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			e, _ := srv.sessions.Get("t-role")
+			if e.EngineerID != tc.wantEng {
+				t.Fatalf("engineer=%q want %q", e.EngineerID, tc.wantEng)
+			}
+			if e.Phase != sessionstore.PhaseFixing {
+				t.Fatalf("phase=%q", e.Phase)
+			}
+			// Thread ownership gates cancel/reset and must not move either way.
+			if e.OwnerID != "u-support" {
+				t.Fatalf("thread owner changed: %q", e.OwnerID)
+			}
+			if loc := w.Header().Get("Location"); !strings.Contains(loc, url.QueryEscape(tc.wantFlash)) &&
+				!strings.Contains(loc, strings.ReplaceAll(tc.wantFlash, " ", "+")) {
+				t.Fatalf("Location=%q want flash %q", loc, tc.wantFlash)
+			}
+		})
+	}
+}
+
+// The board's owner filter is the other half: an engineer must be able to find
+// what nobody has picked up.
+func TestCaseBoardOwnerFilterPage(t *testing.T) {
+	srv, cfg, _ := fixEnabledServer(t)
+	_ = cfg.AddProjectAllowedUser("proj", "member-1")
+	seed := map[string]sessionstore.Entry{
+		"t-unassigned": {
+			Project: "proj", Mode: "case", Phase: sessionstore.PhaseFixing,
+			CustomerTitle: "Nobody on this",
+		},
+		"t-claimed": {
+			Project: "proj", Mode: "case", Phase: sessionstore.PhaseFixing,
+			CustomerTitle: "Someone else has it", EngineerID: "u-other", EngineerName: "other",
+		},
+		"t-mine": {
+			Project: "proj", Mode: "case", Phase: sessionstore.PhaseFixing,
+			CustomerTitle: "I have this", EngineerID: "member-1", EngineerName: "Member",
+		},
+	}
+	for id, e := range seed {
+		if err := srv.sessions.Set(id, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sid, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	all := getPageBody(t, srv, sid, "/projects/proj/cases")
+	for _, want := range []string{"Nobody on this", "Someone else has it", "I have this", `id="owner"`} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("unfiltered board missing %q", want)
+		}
+	}
+	// The unassigned row is called out inline, so the queue is visible without
+	// switching filters at all.
+	if !strings.Contains(all, "needs an engineer") {
+		t.Fatal("unassigned row must be flagged inline")
+	}
+
+	unassigned := getPageBody(t, srv, sid, "/projects/proj/cases?owner=unassigned")
+	if !strings.Contains(unassigned, "Nobody on this") {
+		t.Fatal("unassigned filter dropped the unassigned case")
+	}
+	if strings.Contains(unassigned, "Someone else has it") || strings.Contains(unassigned, "I have this") {
+		t.Fatal("unassigned filter must hide claimed cases")
+	}
+
+	mine := getPageBody(t, srv, sid, "/projects/proj/cases?owner=mine")
+	if !strings.Contains(mine, "I have this") {
+		t.Fatal("mine filter dropped my case")
+	}
+	if strings.Contains(mine, "Someone else has it") || strings.Contains(mine, "Nobody on this") {
+		t.Fatal("mine filter must hide other people's cases")
+	}
+	// Stage links keep the owner filter, or clicking a lane silently widens it.
+	if !strings.Contains(mine, "?phase=fixing&amp;owner=mine") {
+		t.Fatal("pipeline stage links must carry the owner filter")
+	}
+}
+
 func TestPostCaseClose(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	_ = srv.cfg.AddProjectAllowedUser("proj", "member-1")

@@ -36,6 +36,15 @@
       <p class="rail-note" style="margin-top:0.4rem">Fix &amp; ship requires builder-class project caps (<span class="mono">startSessions</span> + <span class="mono">githubWrites</span>). Investigate never opens PRs or ships.</p>
       {{end}}
     </div>
+    {{if .CanSelectModel}}
+    <div class="field">
+      <label for="start-model">Model</label>
+      <select id="start-model" name="model">
+        {{template "model_picker_options" $}}
+      </select>
+      <p class="rail-note" style="margin-top:0.4rem">The model picks the CLI, and the session keeps both for life — a thread cannot be resumed by the other CLI.</p>
+    </div>
+    {{end}}
     <div class="form-actions"><button type="submit" id="btn-start">Start task</button></div>
   </form>
 </div>
