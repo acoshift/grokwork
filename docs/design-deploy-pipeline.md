@@ -189,13 +189,21 @@ Path is `data/deploys/checkouts/<project>/<runID>`. Two things this gets right:
 
 Removed on terminal status; orphans swept at startup.
 
-### K10 — Own the kill path: `grokrun.KillProcessGroup` does **not** reap grandchildren
+### K10 — Own the kill path: `grokrun.KillProcessGroup` misses a SIGTERM-trapping grandchild
 
-Verified in `internal/grokrun/process_unix.go:19-35`. After `Kill(-pid, SIGTERM)` the 2 s loop polls
-`Kill(pid, 0)` — **the leader only** — and returns the instant the leader is gone, so the
-`Kill(-pid, SIGKILL)` on line 32 is unreachable in the normal case. Separately,
-`exec.CommandContext`'s default `Cancel` kills only `cmd.Process`. A timed-out `docker build` would
-leave buildkit children alive.
+Verified in `internal/grokrun/process_unix.go:19-35`, and pinned by a mutation test.
+
+It *does* send a group SIGTERM, so well-behaved grandchildren die there — the gap is narrower than
+"it does not reap grandchildren". After that SIGTERM the 2 s loop polls `Kill(pid, 0)` — **the leader
+only** — and returns the instant the leader is gone, so the `Kill(-pid, SIGKILL)` on line 32 is
+unreachable whenever the leader exits promptly, which is the normal case for `sh -c`. A grandchild
+that traps or ignores SIGTERM therefore survives the run. Build tools trap TERM to clean up, so this
+is a real case, not a theoretical one. Separately, `exec.CommandContext`'s default `Cancel` kills only
+`cmd.Process`.
+
+`TestRunStepTimeoutKillsGrandchild` uses a grandchild with `trap '' TERM` precisely so it fails when
+the group poll is swapped for a leader poll; an earlier version used a plain `sleep`, which the
+group SIGTERM alone already killed, and so passed against both implementations.
 
 The step runner therefore:
 
