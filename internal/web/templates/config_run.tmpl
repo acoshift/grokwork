@@ -6,9 +6,11 @@
   Per run: <span class="mono">maxTurns</span> is the tool/turn budget for
   the coding CLI; <span class="mono">timeout</span> kills the process after that duration.
   Defaults are <span class="mono">40</span> turns and <span class="mono">30m</span>. Applies to new runs only.
+  Concurrency: how many runs may be active at once, host-wide and per actor.
+  Leave either blank or set it to <span class="mono">0</span> for <strong>unlimited</strong> — that is the default.
 </p>
 <div class="section card">
-  <form class="inline" method="post" action="{{route "config.run"}}" style="grid-template-columns: 1fr 1fr auto;">
+  <form class="inline" method="post" action="{{route "config.run"}}" style="grid-template-columns: 1fr 1fr 1fr 1fr auto;">
     {{template "csrf" $}}
     <div>
       <label for="max-turns">Max turns</label>
@@ -17,6 +19,14 @@
     <div>
       <label for="timeout">Timeout</label>
       <input id="timeout" type="text" name="timeoutMs" required value="{{msDur .Config.TimeoutMs}}" autocomplete="off" placeholder="30m" spellcheck="false" title="Duration with unit: 30m, 1h, 45s (1 second–24 hours). Bare numbers are milliseconds.">
+    </div>
+    <div>
+      <label for="max-concurrent-runs">Max concurrent runs (host)</label>
+      <input id="max-concurrent-runs" type="number" name="maxConcurrentRuns" min="0" step="1" value="{{if .Config.MaxConcurrentRuns}}{{.Config.MaxConcurrentRuns}}{{end}}" autocomplete="off" placeholder="unlimited" title="0 or blank = unlimited">
+    </div>
+    <div>
+      <label for="max-concurrent-runs-user">Max concurrent runs (per user)</label>
+      <input id="max-concurrent-runs-user" type="number" name="maxConcurrentRunsUser" min="0" step="1" value="{{if .Config.MaxConcurrentRunsUser}}{{.Config.MaxConcurrentRunsUser}}{{end}}" autocomplete="off" placeholder="unlimited" title="0 or blank = unlimited">
     </div>
     <button type="submit">Save</button>
   </form>

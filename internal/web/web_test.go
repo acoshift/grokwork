@@ -195,6 +195,9 @@ func TestPagesRender(t *testing.T) {
 		{"/config/run", `name="maxTurns"`},
 		{"/config/run", `name="timeoutMs"`},
 		{"/config/run", `placeholder="30m"`},
+		{"/config/run", `name="maxConcurrentRuns"`},
+		{"/config/run", `name="maxConcurrentRunsUser"`},
+		{"/config/run", `placeholder="unlimited"`},
 		{"/config/agent", `id="page-config-agent"`},
 		{"/config/agent", `name="agent"`},
 		{"/config/agent", `name="claudeBin"`},
@@ -1546,6 +1549,101 @@ func TestConfigAddsPersist(t *testing.T) {
 	}
 	if cfg.TimeoutMsValue() != 900_000 {
 		t.Fatalf("run limits bare-ms timeout=%d", cfg.TimeoutMsValue())
+	}
+
+	// Settings: concurrency caps round-trip through the same run-limits form.
+	reqConc := httptest.NewRequest(http.MethodPost, "/config/run", strings.NewReader(url.Values{
+		"maxTurns":              {"55"},
+		"timeoutMs":             {"900000"},
+		"maxConcurrentRuns":     {"3"},
+		"maxConcurrentRunsUser": {"1"},
+	}.Encode()))
+	reqConc.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wConc := httptest.NewRecorder()
+	h.ServeHTTP(wConc, reqConc)
+	if wConc.Code != http.StatusSeeOther && wConc.Code != http.StatusFound {
+		t.Fatalf("concurrency settings status=%d body=%s", wConc.Code, wConc.Body.String())
+	}
+	if cfg.MaxConcurrentRunsValue() != 3 {
+		t.Fatalf("MaxConcurrentRunsValue=%d want 3", cfg.MaxConcurrentRunsValue())
+	}
+	if cfg.MaxConcurrentRunsUserValue() != 1 {
+		t.Fatalf("MaxConcurrentRunsUserValue=%d want 1", cfg.MaxConcurrentRunsUserValue())
+	}
+
+	// The page reflects the saved caps in the number inputs.
+	reqRunPage := httptest.NewRequest(http.MethodGet, "/config/run", nil)
+	wRunPage := httptest.NewRecorder()
+	h.ServeHTTP(wRunPage, reqRunPage)
+	runBody := wRunPage.Body.String()
+	for _, want := range []string{`name="maxConcurrentRuns" min="0" step="1" value="3"`, `name="maxConcurrentRunsUser" min="0" step="1" value="1"`} {
+		if !strings.Contains(runBody, want) {
+			t.Fatalf("run page missing %q in body:\n%s", want, runBody)
+		}
+	}
+
+	// Empty and "0" both mean unlimited and must persist as nil (not a pointer
+	// to 0), matching the *int tri-state pattern used elsewhere in config.
+	reqUnlimited := httptest.NewRequest(http.MethodPost, "/config/run", strings.NewReader(url.Values{
+		"maxTurns":              {"55"},
+		"timeoutMs":             {"900000"},
+		"maxConcurrentRuns":     {""},
+		"maxConcurrentRunsUser": {"0"},
+	}.Encode()))
+	reqUnlimited.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wUnlimited := httptest.NewRecorder()
+	h.ServeHTTP(wUnlimited, reqUnlimited)
+	if wUnlimited.Code != http.StatusSeeOther && wUnlimited.Code != http.StatusFound {
+		t.Fatalf("unlimited concurrency status=%d body=%s", wUnlimited.Code, wUnlimited.Body.String())
+	}
+	if cfg.MaxConcurrentRunsValue() != 0 {
+		t.Fatalf("MaxConcurrentRunsValue=%d want 0 (unlimited)", cfg.MaxConcurrentRunsValue())
+	}
+	if cfg.MaxConcurrentRunsUserValue() != 0 {
+		t.Fatalf("MaxConcurrentRunsUserValue=%d want 0 (unlimited)", cfg.MaxConcurrentRunsUserValue())
+	}
+	if cfg.MaxConcurrentRuns != nil {
+		t.Fatalf("MaxConcurrentRuns must be stored nil for unlimited, got %v", *cfg.MaxConcurrentRuns)
+	}
+	if cfg.MaxConcurrentRunsUser != nil {
+		t.Fatalf("MaxConcurrentRunsUser must be stored nil for unlimited, got %v", *cfg.MaxConcurrentRunsUser)
+	}
+
+	// The page falls back to an empty (placeholder-driven) box once unlimited.
+	reqRunPage2 := httptest.NewRequest(http.MethodGet, "/config/run", nil)
+	wRunPage2 := httptest.NewRecorder()
+	h.ServeHTTP(wRunPage2, reqRunPage2)
+	runBody2 := wRunPage2.Body.String()
+	for _, want := range []string{`name="maxConcurrentRuns" min="0" step="1" value=""`, `name="maxConcurrentRunsUser" min="0" step="1" value=""`} {
+		if !strings.Contains(runBody2, want) {
+			t.Fatalf("run page missing %q after clearing caps, body:\n%s", want, runBody2)
+		}
+	}
+
+	// Rejects a negative cap outright instead of silently clamping it, and
+	// must not half-save the rest of the same form (maxTurns here changes
+	// from 55 to 91, which must NOT stick when the cap field is invalid).
+	reqNeg := httptest.NewRequest(http.MethodPost, "/config/run", strings.NewReader(url.Values{
+		"maxTurns":              {"91"},
+		"timeoutMs":             {"900000"},
+		"maxConcurrentRuns":     {"-1"},
+		"maxConcurrentRunsUser": {""},
+	}.Encode()))
+	reqNeg.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	wNeg := httptest.NewRecorder()
+	h.ServeHTTP(wNeg, reqNeg)
+	if wNeg.Code != http.StatusSeeOther && wNeg.Code != http.StatusFound {
+		t.Fatalf("negative concurrency status=%d body=%s", wNeg.Code, wNeg.Body.String())
+	}
+	loc := wNeg.Result().Header.Get("Location")
+	if !strings.Contains(loc, "err=") {
+		t.Fatalf("expected redirect with err= for negative cap, got %q", loc)
+	}
+	if cfg.MaxConcurrentRuns != nil {
+		t.Fatalf("negative cap must not have been persisted, got %v", *cfg.MaxConcurrentRuns)
+	}
+	if cfg.MaxTurnsValue() != 55 {
+		t.Fatalf("maxTurns must not have been half-saved alongside the rejected cap, got %d", cfg.MaxTurnsValue())
 	}
 
 	// Settings: default coding agent

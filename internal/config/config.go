@@ -269,8 +269,12 @@ type Snapshot struct {
 	ClaudeIncludeAnthropicEnv bool
 	MaxTurns                  int // effective (default 40)
 	TimeoutMs                 int // effective (default 1800000 = 30m)
-	Yolo                      bool
-	WorktreeIsolation         bool
+	// MaxConcurrentRuns / MaxConcurrentRunsUser are the host-wide / per-actor
+	// active-run caps (0 = unlimited; nil and 0 collapse to the same value here).
+	MaxConcurrentRuns     int
+	MaxConcurrentRunsUser int
+	Yolo                  bool
+	WorktreeIsolation     bool
 	// WorktreeDir is the configured override (empty = default under DataDir).
 	WorktreeDir string
 	// WorktreesRoot is the effective absolute root for new worktrees.
@@ -823,6 +827,25 @@ func (c *Config) SetGrokRunLimits(maxTurns, timeoutMs int) error {
 	return c.saveLocked()
 }
 
+// SetConcurrencyLimits sets the host-wide and per-user active-run caps and
+// persists. Either may be nil (unlimited); a non-nil value must be >= 0 (0
+// also means unlimited — see MaxConcurrentRunsValue / MaxConcurrentRunsUserValue).
+// Callers that treat an empty/0 form input as "unlimited" should pass nil
+// rather than a pointer to 0, so config.json stays free of the field.
+func (c *Config) SetConcurrencyLimits(maxConcurrentRuns, maxConcurrentRunsUser *int) error {
+	if maxConcurrentRuns != nil && *maxConcurrentRuns < 0 {
+		return fmt.Errorf("maxConcurrentRuns must be >= 0")
+	}
+	if maxConcurrentRunsUser != nil && *maxConcurrentRunsUser < 0 {
+		return fmt.Errorf("maxConcurrentRunsUser must be >= 0")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.MaxConcurrentRuns = cloneIntPtr(maxConcurrentRuns)
+	c.MaxConcurrentRunsUser = cloneIntPtr(maxConcurrentRunsUser)
+	return c.saveLocked()
+}
+
 // WorktreesRoot returns the directory that contains <project>/<unitID> worktrees.
 // Empty WorktreeDir → <DataDir>/worktrees. Relative WorktreeDir is resolved
 // against the config file directory.
@@ -1324,6 +1347,8 @@ func (c *Config) Snapshot() Snapshot {
 		ClaudeIncludeAnthropicEnv: c.ClaudeIncludeAnthropicEnv != nil && *c.ClaudeIncludeAnthropicEnv,
 		MaxTurns:                  maxTurns,
 		TimeoutMs:                 timeoutMs,
+		MaxConcurrentRuns:         c.MaxConcurrentRunsValue(),
+		MaxConcurrentRunsUser:     c.MaxConcurrentRunsUserValue(),
 		Yolo:                      c.YoloEnabled(),
 		WorktreeIsolation:         c.WorktreeIsolationEnabled(),
 		WorktreeDir:               strings.TrimSpace(c.WorktreeDir),

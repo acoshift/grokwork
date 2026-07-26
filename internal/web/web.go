@@ -1630,6 +1630,16 @@ func (s *Server) updateRunSettings(ctx *hime.Context) error {
 	maxTurns, _ := strconv.Atoi(strings.TrimSpace(ctx.PostFormValue("maxTurns")))
 	timeoutMs, _ := parseTimeoutMs(ctx.PostFormValue("timeoutMs"))
 	msg := fmt.Sprintf("Run limits: maxTurns=%d, timeout=%s", maxTurns, formatMsDur(timeoutMs))
+	if maxConcurrent := s.cfg.MaxConcurrentRunsValue(); maxConcurrent > 0 {
+		msg += fmt.Sprintf(", host cap=%d", maxConcurrent)
+	} else {
+		msg += ", host cap=unlimited"
+	}
+	if maxConcurrentUser := s.cfg.MaxConcurrentRunsUserValue(); maxConcurrentUser > 0 {
+		msg += fmt.Sprintf(", per-user cap=%d", maxConcurrentUser)
+	} else {
+		msg += ", per-user cap=unlimited"
+	}
 	return s.configPageRedirect(ctx, "config.run", msg, nil)
 }
 
@@ -1783,6 +1793,29 @@ func (s *Server) updateResumeSettingsErr(ctx *hime.Context) error {
 	return s.cfg.SetResumeActiveRuns(enabled)
 }
 
+// parseOptionalCap parses a tri-state concurrency-cap form field: an empty
+// string or "0" means unlimited (nil), a negative number is an error, and a
+// positive number is stored as-is. Never returns a pointer to 0 — callers
+// that persist the result must be able to tell "unset" from "explicit zero"
+// via nil alone.
+func parseOptionalCap(raw string) (*int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return nil, fmt.Errorf("must be a whole number")
+	}
+	if n < 0 {
+		return nil, fmt.Errorf("must be >= 0")
+	}
+	if n == 0 {
+		return nil, nil
+	}
+	return &n, nil
+}
+
 func (s *Server) updateRunSettingsErr(ctx *hime.Context) error {
 	rawTurns := strings.TrimSpace(ctx.PostFormValue("maxTurns"))
 	if rawTurns == "" {
@@ -1796,7 +1829,21 @@ func (s *Server) updateRunSettingsErr(ctx *hime.Context) error {
 	if err != nil {
 		return err
 	}
-	return s.cfg.SetGrokRunLimits(maxTurns, timeoutMs)
+	// Parse (and validate) every field before persisting anything: maxTurns/
+	// timeoutMs and the two concurrency caps are one form and one "Save", so a
+	// bad concurrency value must not leave maxTurns/timeoutMs half-saved.
+	maxConcurrent, err := parseOptionalCap(ctx.PostFormValue("maxConcurrentRuns"))
+	if err != nil {
+		return fmt.Errorf("maxConcurrentRuns %v", err)
+	}
+	maxConcurrentUser, err := parseOptionalCap(ctx.PostFormValue("maxConcurrentRunsUser"))
+	if err != nil {
+		return fmt.Errorf("maxConcurrentRunsUser %v", err)
+	}
+	if err := s.cfg.SetGrokRunLimits(maxTurns, timeoutMs); err != nil {
+		return err
+	}
+	return s.cfg.SetConcurrencyLimits(maxConcurrent, maxConcurrentUser)
 }
 
 func (s *Server) updateCISettingsErr(ctx *hime.Context) error {

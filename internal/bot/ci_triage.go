@@ -9,6 +9,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -461,7 +462,14 @@ func (b *Bot) drainTaskQueue(ctx context.Context, cancel context.CancelFunc, ite
 			return
 		}
 		nextCtx, nextCancel := context.WithCancel(context.Background())
-		nextJob := &runJob{cancel: nextCancel, start: time.Now(), project: next.proj.Name}
+		nextJob := &runJob{
+			cancel:  nextCancel,
+			start:   time.Now(),
+			project: next.proj.Name,
+			// A promoted queued item is now an active run and must count
+			// against its actor's cap the same as a freshly claimed one.
+			actorID: config.NormalizeActorID(runActorID(next)),
+		}
 		b.replaceJob(next.threadID, nextJob)
 		nextTag := next.source
 		if next.m != nil {

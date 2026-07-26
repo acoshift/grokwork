@@ -35,6 +35,11 @@ type runJob struct {
 	cancel  context.CancelFunc
 	start   time.Time
 	project string
+	// actorID is the normalized (config.NormalizeActorID) id of whoever
+	// started this run, stamped once when the run is claimed/promoted and
+	// never mutated after — countActiveRunsByUser reads it without job.mu,
+	// same as project/start above.
+	actorID string
 	// Live phase/activity/stream for web StatusSnapshot (progressLoop + OnTextDelta).
 	mu       sync.Mutex
 	activity string
@@ -341,9 +346,11 @@ func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem
 		if max := b.cfg.MaxConcurrentRunsValue(); max > 0 && b.countActiveRuns() >= max {
 			return false, 0, fmt.Errorf("host concurrent run limit reached (%d)", max)
 		}
-		if maxU := b.cfg.MaxConcurrentRunsUserValue(); maxU > 0 && item.actor.ID != "" {
-			if b.countActiveRunsByUser(item.actor.ID) >= maxU {
-				return false, 0, fmt.Errorf("per-user concurrent run limit reached (%d)", maxU)
+		if maxU := b.cfg.MaxConcurrentRunsUserValue(); maxU > 0 {
+			if uid := runActorID(item); uid != "" {
+				if b.countActiveRunsByUser(uid) >= maxU {
+					return false, 0, fmt.Errorf("per-user concurrent run limit reached (%d)", maxU)
+				}
 			}
 		}
 	}
@@ -383,6 +390,7 @@ func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem
 		return false, len(st.queue), nil
 	}
 	st.job = job
+	job.actorID = config.NormalizeActorID(runActorID(item))
 	if err := b.saveJournalFromState(threadID, st, item, true); err != nil {
 		st.job = nil
 		if b.runs != nil {
@@ -391,6 +399,16 @@ func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem
 		return false, 0, err
 	}
 	return true, 0, nil
+}
+
+// runActorID resolves who is spending this run's budget, for the per-user
+// concurrency cap: item.actor.ID (set for both Discord and web origins),
+// falling back to item.authorID for paths that only carry the latter.
+func runActorID(item taskItem) string {
+	if item.actor.ID != "" {
+		return item.actor.ID
+	}
+	return item.authorID
 }
 
 func (b *Bot) finishRun(threadID string) (next taskItem, ok bool) {
@@ -483,9 +501,25 @@ func (b *Bot) countActiveRunsByUser(userID string) int {
 	if b == nil || userID == "" {
 		return 0
 	}
-	// Approximate: count threads where active journal actor matches (RAM-only best effort).
-	// Wave 1 light cap — prefers host-wide MaxConcurrentRuns.
-	return 0
+	target := config.NormalizeActorID(userID)
+	if target == "" {
+		return 0
+	}
+	n := 0
+	b.states.Range(func(_, v any) bool {
+		st, _ := v.(*threadState)
+		if st == nil {
+			return true
+		}
+		st.mu.Lock()
+		job := st.job
+		st.mu.Unlock()
+		if job != nil && job.actorID == target {
+			n++
+		}
+		return true
+	})
+	return n
 }
 
 // ErrQueueFull is returned when a thread's follow-up queue is at capacity.
