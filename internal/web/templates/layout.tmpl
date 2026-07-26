@@ -3726,31 +3726,66 @@
         letter-spacing: -0.015em;
         color: var(--text);
       }
-      /* iOS sheet dismiss — SF Symbol xmark.circle.fill: systemGray disc,
-         white xmark, no stroke. Hairline ring + typographic × was the oddity. */
+      /* iOS sheet dismiss (xmark.circle.fill). Must fully beat the global
+         `button` rule: its min-width:2.5rem + height:2.5rem made this an oval
+         pill, and button:hover painted it primary black. Colors match Apple's
+         exit control — soft gray disc + secondary-label xmark (not white-on-
+         systemGray). */
       .rail-sheet-x {
+        box-sizing: border-box;
         width: 1.875rem;
         height: 1.875rem;
+        min-width: 1.875rem;
+        max-width: 1.875rem;
+        min-height: 1.875rem;
         padding: 0;
+        margin: 0;
+        gap: 0;
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        flex-shrink: 0;
         border: none;
         border-radius: 50%;
-        background: #8e8e93;
-        color: #fff;
+        aspect-ratio: 1;
+        background: hsl(0 0% 93%);
+        color: hsl(0 0% 51%);
+        font-size: 0;
+        font-weight: 400;
+        line-height: 0;
+        white-space: nowrap;
         cursor: pointer;
+        -webkit-appearance: none;
+        appearance: none;
         -webkit-tap-highlight-color: transparent;
-        transition: opacity 0.12s ease, transform 0.12s ease;
+        transition: background 0.12s ease, color 0.12s ease, transform 0.12s ease;
       }
       .rail-sheet-x svg {
         display: block;
-        width: 0.7rem;
-        height: 0.7rem;
+        /* SF exit control scales the xmark to ~0.416 of the disc. */
+        width: 0.78rem;
+        height: 0.78rem;
       }
+      .rail-sheet-x:hover,
       .rail-sheet-x:active {
-        opacity: 0.72;
-        transform: scale(0.94);
+        background: hsl(0 0% 88%);
+        color: hsl(0 0% 40%);
+      }
+      .rail-sheet-x:active { transform: scale(0.94); }
+      .rail-sheet-x:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px var(--ring-strong);
+      }
+      @media (prefers-color-scheme: dark) {
+        .rail-sheet-x {
+          background: hsl(0 0% 19%);
+          color: hsl(0 0% 62%);
+        }
+        .rail-sheet-x:hover,
+        .rail-sheet-x:active {
+          background: hsl(0 0% 26%);
+          color: hsl(0 0% 72%);
+        }
       }
       /* Rail cards lose their own frame inside the sheet — the sheet is the
          surface, and nested cards on a small screen read as clutter. */
@@ -5656,9 +5691,9 @@
   <span class="rail-sheet-grip" aria-hidden="true"></span>
   <span class="rail-sheet-title">Actions</span>
   <button type="button" class="rail-sheet-x" data-rail-close aria-label="Close actions">
-    {{/* SF Symbol xmark proportions — medium weight, round caps. */}}
+    {{/* SF Symbol xmark — bold weight, round caps (matches system exit control). */}}
     <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-      <path d="M2.2 2.2l7.6 7.6M9.8 2.2l-7.6 7.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
     </svg>
   </button>
 </div>
