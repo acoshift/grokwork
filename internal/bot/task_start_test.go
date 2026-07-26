@@ -691,10 +691,18 @@ func TestExecuteTaskDiscordOriginUsesActor(t *testing.T) {
 
 func TestExecuteTaskCancelledStillRecordsHistory(t *testing.T) {
 	b, projPath := testBotWithData(t)
-	// Slow fake grok so we can cancel mid-run.
+	// Slow fake grok so we can cancel mid-run. It touches a marker file
+	// before sleeping so the test can wait for the process to actually be
+	// running instead of guessing a fixed delay: executeTask does real
+	// synchronous store/journal writes (owner bind, ship-mode/CLI stamp,
+	// auto-label) before it ever execs grok, and how long those take is not
+	// something this test controls or should have to assume a bound on — a
+	// fixed sleep here would just be a race with a different-looking timeout.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "slow-grok")
+	marker := filepath.Join(dir, "started")
 	script := `#!/bin/sh
+touch "` + marker + `"
 sleep 30
 printf '%s\n' '{"type":"end","sessionId":"x","stopReason":"EndTurn","num_turns":1}'
 `
@@ -723,7 +731,16 @@ printf '%s\n' '{"type":"end","sessionId":"x","stopReason":"EndTurn","num_turns":
 		defer close(done)
 		b.executeTask(ctx, item, job)
 	}()
-	time.Sleep(50 * time.Millisecond)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("slow-grok never started")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	cancel()
 	select {
 	case <-done:

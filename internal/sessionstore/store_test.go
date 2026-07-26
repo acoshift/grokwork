@@ -1,6 +1,8 @@
 package sessionstore
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -161,5 +163,96 @@ func TestPatchPRFields(t *testing.T) {
 	}
 	if _, ok, err := s.Patch("missing", func(*Entry) {}); err != nil || ok {
 		t.Fatalf("missing: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestSaveAtomicNoLeftoverTmpAndPerm(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("t1", Entry{SessionID: "s1", Project: "p"}); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(dir, "sessions.json")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("perm = %v, want 0600", info.Mode().Perm())
+	}
+
+	matches, err := filepath.Glob(filepath.Join(dir, "*.tmp-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("leftover temp files after successful save: %v", matches)
+	}
+}
+
+// TestSaveFailurePreservesPreviousContent simulates a crash mid-write by
+// making the temp-file create fail (read-only parent directory) and asserts
+// the previous sessions.json survives untouched rather than being
+// truncated — the whole point of writing to a temp file and renaming
+// instead of writing the target in place.
+func TestSaveFailurePreservesPreviousContent(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("t1", Entry{SessionID: "s1", Project: "p"}); err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(dir, "sessions.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Read-only directory: os.CreateTemp cannot create the temp file, so the
+	// write must fail before sessions.json is ever touched.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+
+	if err := s.Set("t2", Entry{SessionID: "s2", Project: "q"}); err == nil {
+		t.Fatal("expected error saving to a read-only directory")
+	}
+
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("failed save altered file on disk:\nbefore=%s\nafter=%s", before, after)
+	}
+	var entries map[string]Entry
+	if err := json.Unmarshal(after, &entries); err != nil {
+		t.Fatalf("previous content no longer parses: %v", err)
+	}
+	if _, ok := entries["t1"]; !ok {
+		t.Fatalf("expected original entry t1 preserved: %+v", entries)
+	}
+	if _, ok := entries["t2"]; ok {
+		t.Fatalf("t2 should not have been persisted by the failed save: %+v", entries)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(dir, "*.tmp-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("leftover temp files after failed save: %v", matches)
 	}
 }

@@ -8,7 +8,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 )
 
@@ -20,7 +22,13 @@ import (
 // exists to pin.
 func generateServer(t *testing.T, manifest string) (*Server, *config.Config) {
 	t.Helper()
-	srv, cfg, _ := fixEnabledServer(t)
+	srv, cfg, b := fixEnabledServer(t)
+	// Every generate/dispatch test in this file posts a form that kicks off an
+	// async session and returns immediately (redirect only, run streams in the
+	// background). Without this, a test whose assertions finish before the run
+	// does can have t.TempDir() cleanup delete the run's cwd/session-store
+	// directories out from under a goroutine that is still writing to them.
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
 	projPath, ok := cfg.ProjectPath("proj")
 	if !ok {
 		t.Fatal("proj path missing")

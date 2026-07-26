@@ -662,3 +662,93 @@ func TestTerminalSessionTTLDays(t *testing.T) {
 		t.Fatal("expected reject negative")
 	}
 }
+
+func TestSaveAtomicNoLeftoverTmpAndPerm(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{
+		Projects:   ProjectsMap{},
+		Channels:   map[string]string{},
+		ConfigPath: filepath.Join(dir, "config.json"),
+		MaxTurns:   DefaultMaxTurns,
+		TimeoutMs:  DefaultTimeoutMs,
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(cfg.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("perm = %v, want 0600", info.Mode().Perm())
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "*.tmp-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("leftover temp files after successful save: %v", matches)
+	}
+}
+
+// TestSaveFailurePreservesPreviousConfig simulates a crash mid-write by
+// making the temp-file create fail (read-only parent directory) and asserts
+// the previous config.json survives untouched rather than being truncated —
+// the whole point of writing to a temp file and renaming instead of writing
+// the target in place.
+func TestSaveFailurePreservesPreviousConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{
+		Projects:   ProjectsMap{},
+		Channels:   map[string]string{},
+		ConfigPath: filepath.Join(dir, "config.json"),
+		MaxTurns:   DefaultMaxTurns,
+		TimeoutMs:  DefaultTimeoutMs,
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Read-only directory: os.CreateTemp cannot create the temp file, so the
+	// write must fail before config.json is ever touched.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+
+	cfg.MaxTurns = 999
+	if err := cfg.Save(); err == nil {
+		t.Fatal("expected error saving to a read-only directory")
+	}
+
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("failed save altered file on disk:\nbefore=%s\nafter=%s", before, after)
+	}
+	if strings.Contains(string(after), `"maxTurns": 999`) {
+		t.Fatalf("failed save leaked the new value onto disk: %s", after)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(after, &parsed); err != nil {
+		t.Fatalf("previous config no longer parses: %v", err)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(dir, "*.tmp-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("leftover temp files after failed save: %v", matches)
+	}
+}
