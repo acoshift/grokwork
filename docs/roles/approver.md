@@ -35,7 +35,7 @@ Everything a **builder** can do for ship/PR/direct (when project allows), **plus
 |--------|-------|
 | Builtin `merge` capability | Admin template only; bot never runs `gh pr merge` |
 | Web config / host admin | Requires **web admin** role |
-| Close cases they do not own | Still need owner, co-owner, or Discord mod |
+| Close cases they do not own | Still need owner, co-owner, or project admin |
 | Bypass project allowlist | Membership is separate from capability templates |
 
 ---

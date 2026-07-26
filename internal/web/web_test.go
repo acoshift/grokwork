@@ -1465,17 +1465,30 @@ func TestConfigAddsPersist(t *testing.T) {
 			path: "/config/projects/users",
 			form: url.Values{"name": {"proj"}, "id": {"user-added"}},
 			check: func(t *testing.T) {
-				if !cfg.AccessAllowed("proj", "user-added", nil) {
+				if !cfg.AccessAllowed("proj", "user-added") {
 					t.Fatal("runtime user missing")
 				}
 			},
 		},
 		{
-			path: "/config/projects/roles",
-			form: url.Values{"name": {"proj"}, "id": {"role-added"}},
+			path: "/config/projects/teams",
+			form: url.Values{"name": {"proj"}, "key": {"eng"}, "label": {"Engineering"}, "capabilities": {"builder"}},
 			check: func(t *testing.T) {
-				if !cfg.AccessAllowed("proj", "x", []string{"role-added"}) {
-					t.Fatal("runtime role missing")
+				if _, ok := cfg.ProjectTeams("proj")["eng"]; !ok {
+					t.Fatalf("runtime team missing: %+v", cfg.ProjectTeams("proj"))
+				}
+			},
+		},
+		{
+			path: "/config/projects/teams/members",
+			form: url.Values{"name": {"proj"}, "key": {"eng"}, "id": {"team-added"}},
+			check: func(t *testing.T) {
+				// Team membership is the grant: access AND the team's template.
+				if !cfg.AccessAllowed("proj", "team-added") {
+					t.Fatal("runtime team member missing")
+				}
+				if !cfg.ResolveCapabilities("proj", "team-added").CanShip() {
+					t.Fatal("team member did not inherit the builder template")
 				}
 			},
 		},
@@ -1517,7 +1530,7 @@ func TestConfigAddsPersist(t *testing.T) {
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	pbody := w.Body.String()
-	for _, want := range []string{"user-added", "role-added", "Members"} {
+	for _, want := range []string{"user-added", "team-added", "Engineering", "Members", `id="team-roster"`} {
 		if !strings.Contains(pbody, want) {
 			t.Fatalf("project config missing %q", want)
 		}
@@ -1782,17 +1795,26 @@ func TestConfigAddsPersist(t *testing.T) {
 			path: "/config/projects/users/remove",
 			form: url.Values{"name": {"proj"}, "id": {"user-added"}},
 			check: func(t *testing.T) {
-				if cfg.AccessAllowed("proj", "user-added", nil) {
+				if cfg.AccessAllowed("proj", "user-added") {
 					t.Fatal("user still allowed")
 				}
 			},
 		},
 		{
-			path: "/config/projects/roles/remove",
-			form: url.Values{"name": {"proj"}, "id": {"role-added"}},
+			path: "/config/projects/teams/members/remove",
+			form: url.Values{"name": {"proj"}, "key": {"eng"}, "id": {"team-added"}},
 			check: func(t *testing.T) {
-				if cfg.AccessAllowed("proj", "x", []string{"role-added"}) {
-					t.Fatal("role still allowed")
+				if cfg.AccessAllowed("proj", "team-added") {
+					t.Fatal("team member still allowed")
+				}
+			},
+		},
+		{
+			path: "/config/projects/teams/remove",
+			form: url.Values{"name": {"proj"}, "key": {"eng"}},
+			check: func(t *testing.T) {
+				if _, ok := cfg.ProjectTeams("proj")["eng"]; ok {
+					t.Fatalf("team still present: %+v", cfg.ProjectTeams("proj"))
 				}
 			},
 		},
@@ -1834,7 +1856,6 @@ func TestConfigAddsPersist(t *testing.T) {
 		Projects       config.ProjectsMap `json:"projects"`
 		Channels       map[string]string  `json:"channels"`
 		AllowedUserIDs []string           `json:"allowedUserIds"`
-		AllowedRoleIDs []string           `json:"allowedRoleIds"`
 	}
 	if err := json.Unmarshal(raw, &disk); err != nil {
 		t.Fatal(err)
@@ -1844,6 +1865,9 @@ func TestConfigAddsPersist(t *testing.T) {
 	}
 	if _, ok := disk.Channels["ch-added"]; ok {
 		t.Fatalf("disk still has channel: %+v", disk.Channels)
+	}
+	if _, ok := disk.Projects["proj"].Teams["eng"]; ok {
+		t.Fatalf("disk still has removed team: %+v", disk.Projects["proj"].Teams)
 	}
 	// project members removed — check via AccessAllowed already above
 	_ = disk
@@ -2002,7 +2026,7 @@ func TestProjectConfigPage(t *testing.T) {
 	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
 		t.Fatalf("map user status=%d", w.Code)
 	}
-	caps := cfg.ResolveCapabilities("proj", "u-builder", nil)
+	caps := cfg.ResolveCapabilities("proj", "u-builder")
 	if !caps.CanShip() {
 		t.Fatalf("mapped builder cannot ship: %+v", caps)
 	}
@@ -2035,6 +2059,7 @@ func TestProjectConfigPage(t *testing.T) {
 			`name="safeTeamMode"`,
 			"checked",
 			`id="member-roster"`,
+			`id="project-teams"`,
 			"u-builder",
 			"builder",
 			"not on member list", // capability map without allowlist → inert row
@@ -2214,7 +2239,7 @@ func TestProjectMemberRoster(t *testing.T) {
 	h := srv.Handler()
 
 	// Add member with an explicit role in one post: allowlist + capability map.
-	form := url.Values{"name": {"proj"}, "kind": {"user"}, "id": {"u-new"}, "template": {"builder"}}
+	form := url.Values{"name": {"proj"}, "id": {"u-new"}, "template": {"builder"}}
 	req := httptest.NewRequest(http.MethodPost, "/config/projects/members", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -2225,24 +2250,35 @@ func TestProjectMemberRoster(t *testing.T) {
 	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/config/projects/proj?") || !strings.Contains(loc, "ok=") {
 		t.Fatalf("add member Location=%q", loc)
 	}
-	if !cfg.AccessAllowed("proj", "u-new", nil) {
+	if !cfg.AccessAllowed("proj", "u-new") {
 		t.Fatal("added member not allowlisted")
 	}
-	if !cfg.ResolveCapabilities("proj", "u-new", nil).CanShip() {
+	if !cfg.ResolveCapabilities("proj", "u-new").CanShip() {
 		t.Fatal("added member missing builder template")
 	}
 
-	// Role added without a template stays on the default fallback.
-	form = url.Values{"name": {"proj"}, "kind": {"role"}, "id": {"r-eng"}, "template": {""}}
+	// A member added without a template stays on the default fallback.
+	form = url.Values{"name": {"proj"}, "id": {"u-plain"}, "template": {""}}
 	req = httptest.NewRequest(http.MethodPost, "/config/projects/members", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
-		t.Fatalf("add role status=%d", w.Code)
+		t.Fatalf("add plain member status=%d", w.Code)
 	}
-	if !cfg.AccessAllowed("proj", "x", []string{"r-eng"}) {
-		t.Fatal("added role not allowlisted")
+	if !cfg.AccessAllowed("proj", "u-plain") {
+		t.Fatal("added member not allowlisted")
+	}
+	snapPlain := cfg.Snapshot()
+	for _, p := range snapPlain.Projects {
+		if p.Name != "proj" {
+			continue
+		}
+		for _, m := range p.CapabilityByUser {
+			if m.ID == "u-plain" {
+				t.Fatalf("empty template must not write a capability map: %+v", m)
+			}
+		}
 	}
 
 	// Roster role select posting an empty template resets to default.
@@ -2278,7 +2314,7 @@ func TestProjectMemberRoster(t *testing.T) {
 	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
 		t.Fatalf("remove member status=%d", w.Code)
 	}
-	if cfg.AccessAllowed("proj", "u-new", nil) {
+	if cfg.AccessAllowed("proj", "u-new") {
 		t.Fatal("removed member still allowlisted")
 	}
 	snap = cfg.Snapshot()

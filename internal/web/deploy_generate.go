@@ -29,7 +29,7 @@ func (s *Server) postDeployGenerate(ctx *hime.Context) error {
 	}
 	// Same money/risk gate as every other session start.
 	userID, _ := s.sessionIdentity(ctx)
-	if !s.cfg.ResolveCapabilities(project, userID, nil).CanShip() {
+	if !s.cfg.ResolveCapabilities(project, userID).CanShip() {
 		return s.deployRedirect(ctx, project, "", "",
 			errors.New("you do not have permission to start sessions for this project"))
 	}

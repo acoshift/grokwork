@@ -137,13 +137,13 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.addProjectMember":            "/config/projects/members",
 		"config.setProjectCapabilityUser":    "/config/projects/capabilities/users",
 		"config.removeProjectCapabilityUser": "/config/projects/capabilities/users/remove",
-		"config.setProjectCapabilityRole":    "/config/projects/capabilities/roles",
-		"config.removeProjectCapabilityRole": "/config/projects/capabilities/roles/remove",
+		"config.setProjectTeam":              "/config/projects/teams",
+		"config.removeProjectTeam":           "/config/projects/teams/remove",
+		"config.addProjectTeamMember":        "/config/projects/teams/members",
+		"config.removeProjectTeamMember":     "/config/projects/teams/members/remove",
 		"config.setGuild":                    "/config/guild",
 		"config.addProjectUser":              "/config/projects/users",
 		"config.removeProjectUser":           "/config/projects/users/remove",
-		"config.addProjectRole":              "/config/projects/roles",
-		"config.removeProjectRole":           "/config/projects/roles/remove",
 		"config.addChannel":                  "/config/channels",
 		"config.removeChannel":               "/config/channels/remove",
 		"config.setGitHubIdentity":           "/config/github-identities",
@@ -437,13 +437,13 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/verify/generate", s.requireAdmin(hime.Handler(s.generateProjectVerify)))
 	mux.Handle("POST /config/projects/capabilities/users", s.requireAdmin(hime.Handler(s.setProjectCapabilityUser)))
 	mux.Handle("POST /config/projects/capabilities/users/remove", s.requireAdmin(hime.Handler(s.removeProjectCapabilityUser)))
-	mux.Handle("POST /config/projects/capabilities/roles", s.requireAdmin(hime.Handler(s.setProjectCapabilityRole)))
-	mux.Handle("POST /config/projects/capabilities/roles/remove", s.requireAdmin(hime.Handler(s.removeProjectCapabilityRole)))
+	mux.Handle("POST /config/projects/teams", s.requireAdmin(hime.Handler(s.setProjectTeam)))
+	mux.Handle("POST /config/projects/teams/remove", s.requireAdmin(hime.Handler(s.removeProjectTeam)))
+	mux.Handle("POST /config/projects/teams/members", s.requireAdmin(hime.Handler(s.addProjectTeamMember)))
+	mux.Handle("POST /config/projects/teams/members/remove", s.requireAdmin(hime.Handler(s.removeProjectTeamMember)))
 	mux.Handle("POST /config/guild", s.requireAdmin(hime.Handler(s.setGuild)))
 	mux.Handle("POST /config/projects/users", s.requireAdmin(hime.Handler(s.addProjectUser)))
 	mux.Handle("POST /config/projects/users/remove", s.requireAdmin(hime.Handler(s.removeProjectUser)))
-	mux.Handle("POST /config/projects/roles", s.requireAdmin(hime.Handler(s.addProjectRole)))
-	mux.Handle("POST /config/projects/roles/remove", s.requireAdmin(hime.Handler(s.removeProjectRole)))
 	mux.Handle("POST /config/channels", s.requireAdmin(hime.Handler(s.addChannel)))
 	mux.Handle("POST /config/channels/remove", s.requireAdmin(hime.Handler(s.removeChannel)))
 	mux.Handle("POST /config/github-identities", s.requireAdmin(hime.Handler(s.setGitHubIdentity)))
@@ -535,7 +535,8 @@ type pageData struct {
 	ProjectItem      config.ProjectItem
 	DiscordUserNames map[string]string // Discord user id → display name (best-effort)
 	ProjectTab       string            // access | workflow | integrations | danger
-	Members          []memberRow       // Access: unified allowlist + role roster
+	Members          []memberRow       // Access: direct-member roster
+	TeamRoster       []teamRosterRow   // Access: teams + their members
 	CapMatrix        []capMatrixRow    // Access: role → capability legend
 	CapNames         []string          // Access: legend column labels
 	// Effective role for roster members without an explicit one (safe team
@@ -1422,29 +1423,55 @@ func (s *Server) removeProjectCapabilityUser(ctx *hime.Context) error {
 	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Removed capability map for user %s", id), err)
 }
 
-func (s *Server) setProjectCapabilityRole(ctx *hime.Context) error {
+// setProjectTeam creates a team or edits an existing one's label / capability
+// template. Members are managed by their own routes so the roster's per-member
+// × does not have to round-trip the whole team.
+func (s *Server) setProjectTeam(ctx *hime.Context) error {
 	name := ctx.PostFormValue("name")
-	id := ctx.PostFormValue("id")
-	tpl := ctx.PostFormValue("template")
-	err := s.cfg.SetProjectCapabilityByRole(name, id, tpl)
-	s.auditAction(ctx, "config.set_project_capability_role", err, map[string]any{
-		"name": name, "id": id, "template": tpl,
+	key := ctx.PostFormValue("key")
+	label := ctx.PostFormValue("label")
+	caps := ctx.PostFormValue("capabilities")
+	err := s.cfg.SetProjectTeam(name, key, label, caps)
+	s.auditAction(ctx, audit.ActionConfigSetTeam, err, map[string]any{
+		"project": name, "key": key, "label": label, "capabilities": caps,
 	})
-	msg := fmt.Sprintf("Reset Discord role %s to the default role", id)
-	if strings.TrimSpace(tpl) != "" {
-		msg = fmt.Sprintf("Set role %s for Discord role %s", tpl, id)
+	msg := fmt.Sprintf("Saved team %s with no role — members fall back to the default", key)
+	if strings.TrimSpace(caps) != "" {
+		msg = fmt.Sprintf("Saved team %s as %s", key, caps)
 	}
 	return s.projectConfigRedirect(ctx, name, msg, err)
 }
 
-func (s *Server) removeProjectCapabilityRole(ctx *hime.Context) error {
+func (s *Server) removeProjectTeam(ctx *hime.Context) error {
 	name := ctx.PostFormValue("name")
-	id := ctx.PostFormValue("id")
-	err := s.cfg.RemoveProjectCapabilityByRole(name, id)
-	s.auditAction(ctx, "config.remove_project_capability_role", err, map[string]any{
-		"name": name, "id": id,
+	key := ctx.PostFormValue("key")
+	err := s.cfg.RemoveProjectTeam(name, key)
+	s.auditAction(ctx, audit.ActionConfigRemoveTeam, err, map[string]any{
+		"project": name, "key": key,
 	})
-	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Removed capability map for role %s", id), err)
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Removed team %s and every grant it carried", key), err)
+}
+
+func (s *Server) addProjectTeamMember(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	key := ctx.PostFormValue("key")
+	id := ctx.PostFormValue("id")
+	err := s.cfg.AddProjectTeamMember(name, key, id)
+	s.auditAction(ctx, audit.ActionConfigAddTeamMember, err, map[string]any{
+		"project": name, "key": key, "id": id,
+	})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Added %s to team %s", id, key), err)
+}
+
+func (s *Server) removeProjectTeamMember(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	key := ctx.PostFormValue("key")
+	id := ctx.PostFormValue("id")
+	err := s.cfg.RemoveProjectTeamMember(name, key, id)
+	s.auditAction(ctx, audit.ActionConfigRemoveTeamMember, err, map[string]any{
+		"project": name, "key": key, "id": id,
+	})
+	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Removed %s from team %s", id, key), err)
 }
 
 func (s *Server) setGuild(ctx *hime.Context) error {
@@ -1475,53 +1502,23 @@ func (s *Server) removeProjectUser(ctx *hime.Context) error {
 	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Removed user %s", id), err)
 }
 
-func (s *Server) addProjectRole(ctx *hime.Context) error {
-	name := ctx.PostFormValue("name")
-	id := ctx.PostFormValue("id")
-	err := s.cfg.AddProjectAllowedRole(name, id)
-	s.auditAction(ctx, audit.ActionConfigAddRole, err, map[string]any{"project": name, "id": id})
-	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Added role %s", id), err)
-}
-
-func (s *Server) removeProjectRole(ctx *hime.Context) error {
-	name := ctx.PostFormValue("name")
-	id := ctx.PostFormValue("id")
-	err := s.cfg.RemoveProjectAllowedRole(name, id)
-	if err == nil {
-		err = s.cfg.RemoveProjectCapabilityByRole(name, id)
-	}
-	s.auditAction(ctx, audit.ActionConfigRemoveRole, err, map[string]any{"project": name, "id": id})
-	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Removed role %s", id), err)
-}
-
-// addProjectMember adds one roster principal in a single post: allowlist
-// entry plus an optional explicit role (capability template).
+// addProjectMember adds one direct member in a single post: allowlist entry
+// plus an optional explicit role (capability template). "Direct" means not via
+// a team — a per-person grant that no other project shares.
 func (s *Server) addProjectMember(ctx *hime.Context) error {
 	name := ctx.PostFormValue("name")
-	kind := ctx.PostFormValue("kind")
 	id := ctx.PostFormValue("id")
 	tpl := strings.TrimSpace(ctx.PostFormValue("template"))
-	var err error
-	switch kind {
-	case "user":
-		err = s.cfg.AddProjectAllowedUser(name, id)
-		if err == nil && tpl != "" {
-			err = s.cfg.SetProjectCapabilityByUser(name, id, tpl)
-		}
-	case "role":
-		err = s.cfg.AddProjectAllowedRole(name, id)
-		if err == nil && tpl != "" {
-			err = s.cfg.SetProjectCapabilityByRole(name, id, tpl)
-		}
-	default:
-		err = fmt.Errorf("kind must be user or role")
+	err := s.cfg.AddProjectAllowedUser(name, id)
+	if err == nil && tpl != "" {
+		err = s.cfg.SetProjectCapabilityByUser(name, id, tpl)
 	}
 	s.auditAction(ctx, "config.add_project_member", err, map[string]any{
-		"project": name, "kind": kind, "id": id, "template": tpl,
+		"project": name, "id": id, "template": tpl,
 	})
-	msg := fmt.Sprintf("Added %s %s", kind, id)
+	msg := fmt.Sprintf("Added %s", id)
 	if tpl != "" {
-		msg = fmt.Sprintf("Added %s %s as %s", kind, id, tpl)
+		msg = fmt.Sprintf("Added %s as %s", id, tpl)
 	}
 	return s.projectConfigRedirect(ctx, name, msg, err)
 }

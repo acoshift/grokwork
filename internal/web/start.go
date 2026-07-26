@@ -33,7 +33,7 @@ func (s *Server) startComposer(ctx *hime.Context) error {
 		d.StartDefaultMode = "fix"
 	}
 	// Fix & ship only when the actor can actually ship (builder-class caps).
-	d.CanStartFixMode = d.CanStartSession && s.cfg.ResolveCapabilities(project, d.UserID, nil).CanShip()
+	d.CanStartFixMode = d.CanStartSession && s.cfg.ResolveCapabilities(project, d.UserID).CanShip()
 	s.attachModelPicker(&d, project, s.cfg.TaskModel())
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {

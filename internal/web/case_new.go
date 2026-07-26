@@ -43,7 +43,7 @@ func (s *Server) canOpenCase(d pageData, project string) bool {
 	if !d.CanStartSession {
 		return false
 	}
-	caps := s.cfg.ResolveCapabilities(project, d.UserID, nil)
+	caps := s.cfg.ResolveCapabilities(project, d.UserID)
 	return caps.Investigate || caps.FileEscalation || caps.StartSessions
 }
 
@@ -56,7 +56,7 @@ func (s *Server) postCaseNew(ctx *hime.Context) error {
 		return forbiddenProject(ctx, err)
 	}
 	actor := s.fixActor(ctx)
-	caps := s.cfg.ResolveCapabilities(project, actor.ID, nil)
+	caps := s.cfg.ResolveCapabilities(project, actor.ID)
 	if !caps.Investigate && !caps.FileEscalation && !caps.StartSessions {
 		return ctx.Status(http.StatusForbidden).Error("forbidden: not allowed to open cases on this project")
 	}

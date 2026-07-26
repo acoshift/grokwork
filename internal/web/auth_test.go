@@ -31,8 +31,8 @@ func authOnServer(t *testing.T) (*Server, *config.Config, *FakeDiscordOAuth) {
 		DiscordClientSecret: "client-secret",
 		WebPublicBaseURL:    "http://127.0.0.1:8787",
 		Projects: config.ProjectsMap{
-			// member-1 / viewer-1 must be on the project allowlist: web Member role
-			// alone does not grant CanAccessProject (project ACL is allowlist-based).
+			// member-1 / viewer-1 must be on the project: web Member role alone
+			// does not grant CanAccessProject (project ACL is allowlist/team-based).
 			"proj": {Path: proj, AllowedUserIDs: []string{"allow-user", "member-1", "viewer-1"}},
 		},
 		Channels:   map[string]string{"ch": "proj"},

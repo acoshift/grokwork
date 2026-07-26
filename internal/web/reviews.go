@@ -433,20 +433,21 @@ func (s *Server) canRequestReviewer(project, reviewerID string) bool {
 	return false
 }
 
-// eligibleReviewer is true when the user can access the project (allowlist or
-// web admin) and resolves to builder-class capabilities (StartSessions +
-// GithubWrites). Role-mapped caps without a user map entry are not visible
-// here (web has no Discord roles for other users) — same as start-session gates.
+// eligibleReviewer is true when the user is on the project (directly, via a
+// team, or as a web admin) and resolves to builder-class capabilities
+// (StartSessions + GithubWrites).
 func (s *Server) eligibleReviewer(project, userID string) bool {
 	if !s.reviewerOnProject(project, userID) {
 		return false
 	}
-	return s.cfg.ResolveCapabilities(project, userID, nil).CanShip()
+	return s.cfg.ResolveCapabilities(project, userID).CanShip()
 }
 
 func (s *Server) reviewerOnProject(project, userID string) bool {
 	for _, id := range s.cfg.WebAuthAdminIDs() {
-		if id == userID {
+		// SameActor, not ==: an admin list written as "discord:123" has to match
+		// a runtime snowflake, the same way containsID compares everywhere else.
+		if config.SameActor(id, userID) {
 			return true
 		}
 	}
@@ -464,17 +465,31 @@ func (s *Server) displayNameFor(discordID string) string {
 func (s *Server) reviewerOptions(project string) []reviewerOption {
 	project = strings.TrimSpace(project)
 	ids := map[string]struct{}{}
+	// MemberIDs, not AllowedUserIDs: a member who is on the project only through
+	// a team is just as pickable, and reading the direct list alone made every
+	// team-only builder invisible to the reviewer dropdown.
+	//
+	// Discord actors only, reduced to the bare snowflake: a review request is
+	// mapped to a GitHub login and mentioned in Discord by that id
+	// (ResolveMappedGitHubLogin, the "discord:%s" note line), and reviewstore
+	// compares reviewer ids verbatim. A non-Discord actor has neither mapping,
+	// so offering one would create a request nobody can act on.
+	collect := func(p config.ProjectItem) {
+		for _, id := range p.MemberIDs {
+			if !config.IsDiscordActor(id) {
+				continue
+			}
+			if sub := config.ActorSubject(id); sub != "" {
+				ids[sub] = struct{}{}
+			}
+		}
+	}
 	if project != "" {
 		for _, p := range s.cfg.Snapshot().Projects {
 			if !strings.EqualFold(p.Name, project) {
 				continue
 			}
-			for _, id := range p.AllowedUserIDs {
-				id = strings.TrimSpace(id)
-				if id != "" {
-					ids[id] = struct{}{}
-				}
-			}
+			collect(p)
 		}
 	} else {
 		for _, name := range s.cfg.ProjectNames() {
@@ -482,12 +497,7 @@ func (s *Server) reviewerOptions(project string) []reviewerOption {
 				if p.Name != name {
 					continue
 				}
-				for _, id := range p.AllowedUserIDs {
-					id = strings.TrimSpace(id)
-					if id != "" {
-						ids[id] = struct{}{}
-					}
-				}
+				collect(p)
 			}
 		}
 	}
@@ -499,7 +509,7 @@ func (s *Server) reviewerOptions(project string) []reviewerOption {
 	for id := range ids {
 		// Builder-class only (builder / approver / admin templates via CanShip).
 		if project != "" {
-			if !s.cfg.ResolveCapabilities(project, id, nil).CanShip() {
+			if !s.cfg.ResolveCapabilities(project, id).CanShip() {
 				continue
 			}
 		} else if !s.canRequestReviewer("", id) {

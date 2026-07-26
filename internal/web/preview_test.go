@@ -47,24 +47,36 @@ func TestPreviewServer(t *testing.T) {
 		DiscordToken:    "tok",
 		DiscordClientID: "424242424242424242",
 		Projects: config.ProjectsMap{
-			// webapp exercises the full Access roster: safe team on, explicit
-			// user/role templates, an unmapped member on the default fallback,
-			// and an inert capability map (no allowlist entry).
+			// webapp exercises the full Access tab: safe team on, a builder team
+			// and an access-only team, an explicit direct-member template, an
+			// unmapped direct member on the default fallback, and an inert
+			// capability map (no membership at all).
 			"webapp": {
 				Path:           mkProj("webapp"),
 				AllowedUserIDs: []string{"111111111111111111", "222222222222222222"},
-				AllowedRoleIDs: []string{"333333333333333333"},
 				SafeTeamMode:   &safeOn,
 				CapabilityByUser: map[string]string{
 					"111111111111111111": "admin",
 					"444444444444444444": "approver",
 				},
-				CapabilityByRole: map[string]string{"333333333333333333": "builder"},
+				Teams: map[string]config.TeamConfig{
+					"eng": {
+						Label:        "Engineering",
+						Members:      []string{"discord:555555555555555555", "666666666666666666"},
+						Capabilities: "builder",
+					},
+					"support": {
+						Label:   "Support",
+						Members: []string{"oidc:alice"},
+					},
+				},
 			},
 			"api": {
 				Path:           mkProj("api"),
 				AllowedUserIDs: []string{"111111111111111111", "222222222222222222"},
-				AllowedRoleIDs: []string{"333333333333333333"},
+				Teams: map[string]config.TeamConfig{
+					"eng": {Label: "Engineering", Members: []string{"discord:555555555555555555"}, Capabilities: "builder"},
+				},
 			},
 		},
 		Channels: map[string]string{

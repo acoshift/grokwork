@@ -263,8 +263,8 @@ On the project settings page (**Safe team mode**):
 1. Enable **Safe team mode**.  
 2. Set **Default mode** to `case` for support channels.  
 3. Leave **Default template** as `investigator` (or `operator`).  
-4. Map support Discord roles → `investigator` (optional if default is already investigator).  
-5. **Map eng roles → `builder` before enabling**, or eng will be demoted to investigator.
+4. Put support in a team with `capabilities: "investigator"` (optional if the default is already investigator).  
+5. **Put eng in a team with `capabilities: "builder"` before enabling**, or eng will be demoted to investigator.
 
 ---
 

@@ -13,7 +13,7 @@ import (
 )
 
 func (s *Server) resolveCaseCaps(ctx *hime.Context, project string) (canOpen, canEscalate, canDraft bool) {
-	caps := s.cfg.ResolveCapabilities(project, s.fixActor(ctx).ID, nil)
+	caps := s.cfg.ResolveCapabilities(project, s.fixActor(ctx).ID)
 	return caps.Investigate || caps.FileEscalation || caps.StartSessions,
 		bot.CanEscalateCaseCaps(caps),
 		bot.CanDraftCaseCaps(caps)
@@ -26,7 +26,7 @@ func (s *Server) canReopenCase(ctx *hime.Context, ent sessionstore.Entry) bool {
 	if s.canControlSession(ctx, ent) {
 		return true
 	}
-	caps := s.cfg.ResolveCapabilities(ent.Project, s.fixActor(ctx).ID, nil)
+	caps := s.cfg.ResolveCapabilities(ent.Project, s.fixActor(ctx).ID)
 	return bot.CanReopenCaseCaps(caps)
 }
 
@@ -48,7 +48,7 @@ func (s *Server) postCaseEscalate(ctx *hime.Context) error {
 	actor := s.fixActor(ctx)
 	// Builder-class escalation is engineering picking the case up; a support-side
 	// escalation hands it over and leaves it unassigned for the board to surface.
-	takes := s.cfg.ResolveCapabilities(ent.Project, actor.ID, nil).CanShip()
+	takes := s.cfg.ResolveCapabilities(ent.Project, actor.ID).CanShip()
 	out, escErr := s.bot.EscalateCase(bot.EscalateCaseOpts{
 		ThreadID: threadID, Actor: actor, Note: note, TakeOwnership: takes,
 	})

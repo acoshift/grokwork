@@ -25,7 +25,7 @@ You need the project’s Discord allowlist (user or role) and a channel mapped t
 - Draft sanitized **customer updates** (`/customer-update`)  
 - Mark the knowledge path **answered** (`/answer`)  
 - **Escalate** a case to engineering (`/escalate` → phase `fixing`)  
-- Close a case they **own** (or as co-owner / Discord mod): `/close`  
+- Close a case they **own** (or as co-owner / project admin): `/close`  
 - Use continuity tools: `/status`, `/brief`, `/board cases`, `/claim`, `/hand-off`, queue helpers  
 - Attach logs/screenshots on Discord messages for Grok to read  
 

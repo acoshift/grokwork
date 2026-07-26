@@ -146,7 +146,8 @@ func TestLiveHTTPLaunch(t *testing.T) {
 	}{
 		{"/config/projects", url.Values{"name": {"liveproj"}, "path": {newProj}}},
 		{"/config/projects/users", url.Values{"name": {"proj"}, "id": {"live-user"}}},
-		{"/config/projects/roles", url.Values{"name": {"proj"}, "id": {"live-role"}}},
+		{"/config/projects/teams", url.Values{"name": {"proj"}, "key": {"live-team"}, "label": {"Live Team"}, "capabilities": {"builder"}}},
+		{"/config/projects/teams/members", url.Values{"name": {"proj"}, "key": {"live-team"}, "id": {"live-teammate"}}},
 	}
 	for _, p := range posts {
 		res, err := client.PostForm(base+p.path, p.form)
@@ -163,15 +164,22 @@ func TestLiveHTTPLaunch(t *testing.T) {
 	if p, ok := cfg.ProjectPath("liveproj"); !ok || p != newProj {
 		t.Fatalf("runtime project missing: %q %v", p, ok)
 	}
-	if !cfg.AccessAllowed("proj", "live-user", nil) || !cfg.AccessAllowed("proj", "x", []string{"live-role"}) {
+	// Both grants go through the real HTTP server: a direct member and a team
+	// member, whose access comes only from the team.
+	if !cfg.AccessAllowed("proj", "live-user") || !cfg.AccessAllowed("proj", "live-teammate") {
 		t.Fatal("runtime project members missing after POST")
+	}
+	if !cfg.ResolveCapabilities("proj", "live-teammate").CanShip() {
+		t.Fatal("team member missing the team's builder template")
 	}
 	raw, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "liveproj") || !strings.Contains(string(raw), "live-user") || !strings.Contains(string(raw), "live-role") {
-		t.Fatalf("config file missing adds: %s", raw)
+	for _, want := range []string{"liveproj", "live-user", "live-team", "live-teammate"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("config file missing %q: %s", want, raw)
+		}
 	}
 
 	// SSE: read first event

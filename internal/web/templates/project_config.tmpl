@@ -33,7 +33,7 @@
         <option value="{{.}}" {{if eq . $curTpl}}selected{{end}}>{{.}}</option>
         {{end}}
       </select>
-      <span class="muted" style="font-size:0.75rem">Assign eng members <span class="mono">builder</span> below so they can still ship.</span>
+      <span class="muted" style="font-size:0.75rem">Put eng in a <span class="mono">builder</span> team below so they can still ship.</span>
     </div>
     {{else}}
     <input type="hidden" name="safeTeamDefaultTemplate" value="{{.ProjectItem.SafeTeamDefaultTemplate}}">
@@ -42,16 +42,129 @@
   </form>
 </div>
 
+<div class="section card" id="project-teams">
+  <h2>Teams</h2>
+  <p class="sub" style="margin-top:0">
+    A team grants project access <em>and</em> a role in one place — being on a team is the
+    membership. Members are actor ids: <span class="mono">discord:123</span>, or a bare
+    snowflake, which still means Discord.
+  </p>
+  <p class="sub note-dup">
+    Teams belong to this project only. The same “support” team on eight projects is eight
+    member lists to keep in sync — for one person on many projects, a direct member below is
+    less to maintain.
+  </p>
+
+  {{if .TeamRoster}}
+  <div id="team-roster">
+    {{range .TeamRoster}}
+    <div class="team-card">
+      <div class="team-head">
+        <span class="team-id">
+          <span class="team-label">{{.Label}}</span>
+          <span class="snowflake">{{.Key}} · {{len .Members}} member{{if ne (len .Members) 1}}s{{end}}</span>
+        </span>
+        <form class="team-edit" method="post" action="{{route "config.setProjectTeam"}}">
+          {{template "csrf" $}}
+          <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+          <input type="hidden" name="key" value="{{.Key}}">
+          <input type="text" name="label" value="{{.Label}}" placeholder="{{.Key}}" aria-label="Label for team {{.Key}}" autocomplete="off">
+          {{$team := .}}
+          <select name="capabilities" {{if not .Capabilities}}class="is-default"{{end}} aria-label="Role for team {{.Key}}">
+            <option value="" {{if not .Capabilities}}selected{{end}}>default → {{$.DefaultRoleFallback}}</option>
+            {{range $.ProjectItem.CapabilityTemplateNames}}
+            <option value="{{.}}" {{if eq . $team.Capabilities}}selected{{end}}>{{.}}</option>
+            {{end}}
+            {{if .TemplateUnknown}}<option value="{{.Capabilities}}" selected>{{.Capabilities}} (unknown)</option>{{end}}
+          </select>
+          <button type="submit" class="btn-secondary">Save</button>
+        </form>
+        <span class="caps">
+          {{$row := .}}
+          {{range .Caps}}<span class="cap{{if eq . "admin"}} danger-cap{{else if and $row.Capabilities (not $row.TemplateUnknown)}} hi{{end}}">{{.}}</span>{{end}}
+        </span>
+        <form class="row-x-form" method="post" action="{{route "config.removeProjectTeam"}}" data-confirm="Remove team {{.Key}}? Its members lose access to this project unless they are also direct members." data-confirm-title="Remove team" data-confirm-ok="Remove" data-confirm-danger>
+          {{template "csrf" $}}
+          <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+          <input type="hidden" name="key" value="{{.Key}}">
+          <button type="submit" class="row-x" title="Remove team">×</button>
+        </form>
+      </div>
+      {{if .TemplateUnknown}}
+      <div class="team-warn">⚠ role <span class="mono">{{.Capabilities}}</span> is not a known template — members fall back to <span class="mono">{{$.DefaultRoleFallback}}</span>.</div>
+      {{end}}
+      {{if .Members}}
+      <div class="team-members">
+        {{$key := .Key}}
+        {{range .Members}}
+        <span class="team-member">
+          <span class="avatar">{{.Initials}}</span>
+          <span class="id-wrap">
+            <span class="name">{{if .Name}}{{.Name}}{{else}}<span class="mono">{{.ID}}</span>{{end}}</span>
+            {{if .Name}}<span class="snowflake">{{.ID}}</span>{{end}}
+          </span>
+          <form class="row-x-form" method="post" action="{{route "config.removeProjectTeamMember"}}" data-confirm="Remove {{.ID}} from team {{$key}}?" data-confirm-title="Remove team member" data-confirm-ok="Remove" data-confirm-danger>
+            {{template "csrf" $}}
+            <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+            <input type="hidden" name="key" value="{{$key}}">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button type="submit" class="row-x" title="Remove from team">×</button>
+          </form>
+        </span>
+        {{end}}
+      </div>
+      {{else}}
+      <div class="team-warn">No members — this team grants nothing yet.</div>
+      {{end}}
+      <form class="inline team-add-member" method="post" action="{{route "config.addProjectTeamMember"}}">
+        {{template "csrf" $}}
+        <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+        <input type="hidden" name="key" value="{{.Key}}">
+        <div>
+          <label for="team-{{.Key}}-add">Actor ID</label>
+          <input id="team-{{.Key}}-add" type="text" name="id" placeholder="discord:123 or a bare snowflake" required autocomplete="off">
+        </div>
+        <button type="submit" class="btn-secondary">Add to {{.Label}}</button>
+      </form>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  <form class="inline" method="post" action="{{route "config.setProjectTeam"}}" style="grid-template-columns: 10rem 1fr 13rem auto; margin-top:0.85rem;">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div>
+      <label for="team-key">Team ID</label>
+      <input id="team-key" type="text" name="key" placeholder="support" required autocomplete="off">
+    </div>
+    <div>
+      <label for="team-label">Label</label>
+      <input id="team-label" type="text" name="label" placeholder="Support" autocomplete="off">
+    </div>
+    <div>
+      <label for="team-caps">Role</label>
+      <select id="team-caps" name="capabilities">
+        <option value="">default → {{.DefaultRoleFallback}}</option>
+        {{range .ProjectItem.CapabilityTemplateNames}}
+        <option value="{{.}}">{{.}}</option>
+        {{end}}
+      </select>
+    </div>
+    <button type="submit">Add team</button>
+  </form>
+</div>
+
 <div class="section card" id="project-members">
   <h2>Members</h2>
   <p class="sub" style="margin-top:0">
-    Who can start work on this project, and their role. Applies to the web UI and to
-    <span class="mono">@Grok</span> in mapped Discord channels. Role changes save immediately;
-    Discord roles apply in chat only.
+    Direct members: access for one person on this project only, outside any team. Their role
+    can be set per member. Applies to the web UI and to <span class="mono">@Grok</span> in
+    mapped Discord channels; changes save immediately.
   </p>
-  {{if not .ProjectItem.AllowedUserIDs}}{{if not .ProjectItem.AllowedRoleIDs}}
-  <div class="flash err" style="margin-bottom:0.85rem;">No members — add at least one user or role or nobody can use Grok on this project (fail-closed).</div>
-  {{end}}{{end}}
+  {{if not .ProjectItem.MemberIDs}}
+  <div class="flash err" style="margin-bottom:0.85rem;">No members — add a team member above or a direct member below, or nobody can use Grok on this project (fail-closed).</div>
+  {{end}}
 
   {{if .Members}}
   <div class="roster" id="member-roster">
@@ -61,14 +174,14 @@
     {{range .Members}}
     <div class="roster-row{{if .Inert}} attention{{end}}">
       <span class="who">
-        <span class="avatar{{if .IsRole}} role-badge{{end}}">{{.Initials}}</span>
+        <span class="avatar">{{.Initials}}</span>
         <span class="id-wrap">
-          <span class="name">{{if .Name}}{{.Name}}{{else}}<span class="mono">{{.ID}}</span>{{end}}{{if .IsRole}}<span class="kind-tag">role</span>{{end}}</span>
+          <span class="name">{{if .Name}}{{.Name}}{{else}}<span class="mono">{{.ID}}</span>{{end}}</span>
           {{if .Name}}<span class="snowflake">{{.ID}}</span>{{else if .Inert}}<span class="snowflake">not on member list</span>{{end}}
         </span>
       </span>
       <span class="role-cell">
-        <form method="post" action="{{if .IsRole}}{{route "config.setProjectCapabilityRole"}}{{else}}{{route "config.setProjectCapabilityUser"}}{{end}}">
+        <form method="post" action="{{route "config.setProjectCapabilityUser"}}">
           {{template "csrf" $}}
           <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
           <input type="hidden" name="id" value="{{.ID}}">
@@ -85,7 +198,7 @@
       </span>
       {{if .Inert}}
       <span class="attention-note">⚠ has a role but no membership — cannot use Grok.
-        <form method="post" action="{{if .IsRole}}{{route "config.addProjectRole"}}{{else}}{{route "config.addProjectUser"}}{{end}}">
+        <form method="post" action="{{route "config.addProjectUser"}}">
           {{template "csrf" $}}
           <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
           <input type="hidden" name="id" value="{{.ID}}">
@@ -99,14 +212,14 @@
       </span>
       {{end}}
       {{if .Inert}}
-      <form class="row-x-form" method="post" action="{{if .IsRole}}{{route "config.removeProjectCapabilityRole"}}{{else}}{{route "config.removeProjectCapabilityUser"}}{{end}}" data-confirm="Remove role assignment for {{.ID}}?" data-confirm-title="Remove assignment" data-confirm-ok="Remove" data-confirm-danger>
+      <form class="row-x-form" method="post" action="{{route "config.removeProjectCapabilityUser"}}" data-confirm="Remove role assignment for {{.ID}}?" data-confirm-title="Remove assignment" data-confirm-ok="Remove" data-confirm-danger>
         {{template "csrf" $}}
         <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
         <input type="hidden" name="id" value="{{.ID}}">
         <button type="submit" class="row-x" title="Remove role assignment">×</button>
       </form>
       {{else}}
-      <form class="row-x-form" method="post" action="{{if .IsRole}}{{route "config.removeProjectRole"}}{{else}}{{route "config.removeProjectUser"}}{{end}}" data-confirm="Remove {{if .IsRole}}role{{else}}user{{end}} {{.ID}} from this project?" data-confirm-title="Remove member" data-confirm-ok="Remove" data-confirm-danger>
+      <form class="row-x-form" method="post" action="{{route "config.removeProjectUser"}}" data-confirm="Remove {{.ID}} from this project?" data-confirm-title="Remove member" data-confirm-ok="Remove" data-confirm-danger>
         {{template "csrf" $}}
         <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
         <input type="hidden" name="id" value="{{.ID}}">
@@ -118,19 +231,12 @@
   </div>
   {{end}}
 
-  <form class="inline" method="post" action="{{route "config.addProjectMember"}}" style="grid-template-columns: 7rem 1fr 11rem auto; margin-top:0.85rem;">
+  <form class="inline" method="post" action="{{route "config.addProjectMember"}}" style="grid-template-columns: 1fr 11rem auto; margin-top:0.85rem;">
     {{template "csrf" $}}
     <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
     <div>
-      <label for="member-kind">Type</label>
-      <select id="member-kind" name="kind">
-        <option value="user">User</option>
-        <option value="role">Role</option>
-      </select>
-    </div>
-    <div>
-      <label for="member-id">Discord ID</label>
-      <input id="member-id" type="text" name="id" placeholder="user or role snowflake" required autocomplete="off">
+      <label for="member-id">Actor ID</label>
+      <input id="member-id" type="text" name="id" placeholder="discord:123 or a bare snowflake" required autocomplete="off">
     </div>
     <div>
       <label for="member-tpl">Role</label>

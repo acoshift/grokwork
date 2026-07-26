@@ -153,11 +153,12 @@
         <span class="drill-s mono">{{.Path}}</span>
       </span>
       <span class="drill-v">
-        {{$mu := len .AllowedUserIDs}}{{$mr := len .AllowedRoleIDs}}
-        {{if or $mu $mr}}{{add $mu $mr}} member{{if ne (add $mu $mr) 1}}s{{end}}{{else}}no members{{end}}
+        {{$m := len .MemberIDs}}
+        {{if $m}}{{$m}} member{{if ne $m 1}}s{{end}}{{else}}no members{{end}}
+        {{if .Teams}}· {{len .Teams}} team{{if ne (len .Teams) 1}}s{{end}}{{end}}
         · {{if .ChannelOptions}}{{len .ChannelOptions}} ch{{else}}no ch{{end}}
       </span>
-      {{if not (or (len .AllowedUserIDs) (len .AllowedRoleIDs))}}<span class="badge status-warn">fail-closed</span>{{end}}
+      {{if not .MemberIDs}}<span class="badge status-warn">fail-closed</span>{{end}}
     </a>
     {{end}}
   </div>

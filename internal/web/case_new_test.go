@@ -249,7 +249,7 @@ func TestCaseCreateInvestigatorCapability(t *testing.T) {
 	if err := cfg.SetProjectSafeTeam("proj", true, "investigator", ""); err != nil {
 		t.Fatal(err)
 	}
-	caps := cfg.ResolveCapabilities("proj", "member-1", nil)
+	caps := cfg.ResolveCapabilities("proj", "member-1")
 	if caps.GithubWrites || caps.StartSessions {
 		t.Fatalf("test setup: investigator must not have builder caps: %+v", caps)
 	}

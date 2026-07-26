@@ -169,7 +169,14 @@ func (s *Server) fpConfig() string {
 	fmt.Fprintf(&b, "risky=%s\n", snap.RiskyPathGlobsText)
 	fmt.Fprintf(&b, "invite=%s|%s\n", snap.ClientID, snap.InviteURL)
 	for _, p := range snap.Projects {
-		fmt.Fprintf(&b, "p|%s|%s|%v|%v\n", p.Name, p.Path, p.AllowedUserIDs, p.AllowedRoleIDs)
+		// MemberIDs unions direct members with every team's members, so adding
+		// someone to a team moves the digest. The team rows are still needed on
+		// top of it: renaming a team or changing its capability template alters
+		// no membership, and the Access tab renders both.
+		fmt.Fprintf(&b, "p|%s|%s|%v\n", p.Name, p.Path, p.MemberIDs)
+		for _, t := range p.Teams {
+			fmt.Fprintf(&b, "t|%s|%s|%s|%s\n", p.Name, t.Key, t.Label, t.Capabilities)
+		}
 	}
 	for _, c := range snap.Channels {
 		fmt.Fprintf(&b, "c|%s|%s\n", c.ChannelID, c.Project)

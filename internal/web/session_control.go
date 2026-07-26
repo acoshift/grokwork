@@ -19,10 +19,12 @@ var errControlForbidden = errors.New("forbidden: not authorized to control this 
 
 // canControlSession is the web mirror of the Discord canControlThread gate for
 // cancel/reset/dequeue: unowned units are soft-open to any project member, owned
-// units require owner/co-owner, and a web admin (the substitute for a Discord
-// moderator) always passes. Pure ownership check — the feature+role gate is
-// applied upstream by requireFeature/requireMember (and 404s in auth-off LAN
-// mode before any handler runs).
+// units require owner/co-owner, and a web admin always passes. That bypass is a
+// web-auth role — who administers this server, so a host admin can always stop a
+// run — and is deliberately not the Discord side's project-admin capability.
+// Pure ownership check — the feature+role gate is applied upstream by
+// requireFeature/requireMember (and 404s in auth-off LAN mode before any
+// handler runs).
 func (s *Server) canControlSession(ctx *hime.Context, ent sessionstore.Entry) bool {
 	userID, role := s.sessionIdentity(ctx)
 	if config.RoleAtLeast(role, config.WebRoleAdmin) {

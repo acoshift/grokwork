@@ -63,7 +63,7 @@ func (s *Server) postDeploy(ctx *hime.Context) error {
 		Service: service, Env: env, Ref: ref,
 		ExpectSHA: strings.TrimSpace(ctx.PostFormValue("expect_sha")),
 		Actor:     deploy.Actor{ID: userID, Name: name},
-		Caps:      s.cfg.ResolveCapabilities(project, userID, nil),
+		Caps:      s.cfg.ResolveCapabilities(project, userID),
 	})
 	s.auditAction(ctx, "deploy.trigger", err, map[string]any{
 		"project": project, "service": service, "env": env, "ref": ref, "sha": run.SHA, "runId": run.ID,
@@ -120,7 +120,7 @@ func (s *Server) postDeployRedeploy(ctx *hime.Context) error {
 		Project: project, Repo: slug, RepoPath: repoPath,
 		Service: src.Service, Env: src.Env,
 		Actor:      deploy.Actor{ID: userID, Name: name},
-		Caps:       s.cfg.ResolveCapabilities(project, userID, nil),
+		Caps:       s.cfg.ResolveCapabilities(project, userID),
 		RedeployOf: runID,
 	})
 	s.auditAction(ctx, "deploy.redeploy", err, map[string]any{
@@ -189,7 +189,7 @@ func (s *Server) canDeploy(ctx *hime.Context, project, env string) bool {
 		return false
 	}
 	userID, _ := s.sessionIdentity(ctx)
-	caps := s.cfg.ResolveCapabilities(project, userID, nil)
+	caps := s.cfg.ResolveCapabilities(project, userID)
 	required := ""
 	if envCfg, ok := s.cfg.ProjectDeployEnv(project, env); ok {
 		required = envCfg.RequireCapability

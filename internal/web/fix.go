@@ -787,7 +787,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 	// On eng phases (fixing/shipping), hide support desk actions (investigate,
 	// escalate, answer); keep customer-update + close and the Grok continue box.
 	if d.SessionEntry.IsCase() && d.CanStartSession {
-		caps := s.cfg.ResolveCapabilities(d.SessionEntry.Project, d.UserID, nil)
+		caps := s.cfg.ResolveCapabilities(d.SessionEntry.Project, d.UserID)
 		closed := d.SessionEntry.IsCaseClosed()
 		shipPhase := d.SessionEntry.IsCaseShipPhase()
 		d.CanCaseEscalate = !closed && !shipPhase && bot.CanEscalateCaseCaps(caps)
@@ -845,7 +845,7 @@ func (s *Server) attachModelPicker(d *pageData, project, def string) {
 	if d == nil || !d.CanStartSession {
 		return
 	}
-	if !s.cfg.ResolveCapabilities(project, d.UserID, nil).CanShip() {
+	if !s.cfg.ResolveCapabilities(project, d.UserID).CanShip() {
 		return
 	}
 	d.CanSelectModel = true

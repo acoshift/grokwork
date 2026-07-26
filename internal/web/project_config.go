@@ -17,14 +17,13 @@ import (
 // repo fetch), and Danger (remove project). POSTs land back on their tab via
 // projectConfigTabRedirect.
 
-// memberRow is one principal (user or role) on the Access roster: allowlist
-// membership plus optional explicit capability template, with the effective
-// capabilities ResolveCapabilities would grant on Discord.
+// memberRow is one actor on the Access roster: membership (direct or via a
+// team) plus optional explicit capability template, with the effective
+// capabilities ResolveCapabilities would grant.
 type memberRow struct {
 	ID       string
-	Name     string // display name (users only; best-effort)
-	Initials string // avatar fallback ("@" for roles)
-	IsRole   bool
+	Name     string   // display name (best-effort)
+	Initials string   // avatar fallback
 	Template string   // explicit template; "" = default fallback
 	Explicit bool     // Template != ""
 	Caps     []string // effective capability chips
@@ -36,6 +35,17 @@ type memberRow struct {
 	// hand-edited config) — the bot never grants these access, so the roster
 	// surfaces them for cleanup instead of hiding them.
 	Inert bool
+}
+
+// teamRosterRow is one team on the Access tab: the capability template it
+// grants, the effective capabilities of that template, and its members.
+type teamRosterRow struct {
+	Key             string
+	Label           string // display; falls back to Key
+	Capabilities    string // template name; "" = default fallback
+	TemplateUnknown bool
+	Caps            []string // effective capability chips for the template
+	Members         []memberRow
 }
 
 // capMatrixRow is one template line in the "what each role can do" legend.
@@ -90,64 +100,103 @@ func memberInitials(name, id string) string {
 	return strings.ToLower(string(r))
 }
 
-// buildMemberRoster merges the allowlist and capability maps into one roster:
-// members first (users then roles, config order), then inert map-only rows.
+// displayName resolves an actor id to a name. Lookup is keyed by bare Discord
+// snowflake, so a namespaced id has to be reduced first; a non-Discord actor has
+// no directory to ask, so its row renders the full namespaced id instead.
+func displayName(names map[string]string, id string) string {
+	if !config.IsDiscordActor(id) {
+		return ""
+	}
+	return names[config.ActorSubject(id)]
+}
+
+// buildMemberRoster merges the direct allowlist and the capabilityByUser map
+// into one roster: direct members in config order, then inert map-only rows.
+// Team members are NOT here — they live on the team roster, because their grant
+// belongs to the team and removing it means leaving the team.
 func (s *Server) buildMemberRoster(item *config.ProjectItem, names map[string]string) []memberRow {
 	tplByUser := make(map[string]string, len(item.CapabilityByUser))
 	for _, m := range item.CapabilityByUser {
 		tplByUser[m.ID] = m.Template
-	}
-	tplByRole := make(map[string]string, len(item.CapabilityByRole))
-	for _, m := range item.CapabilityByRole {
-		tplByRole[m.ID] = m.Template
 	}
 	known := make(map[string]bool, len(item.CapabilityTemplateNames))
 	for _, n := range item.CapabilityTemplateNames {
 		known[n] = true
 	}
 	var rows []memberRow
-	member := make(map[string]bool, len(item.AllowedUserIDs)+len(item.AllowedRoleIDs))
+	member := make(map[string]bool, len(item.AllowedUserIDs))
 	for _, id := range item.AllowedUserIDs {
-		member["u:"+id] = true
+		member[config.NormalizeActorID(id)] = true
 		tpl := tplByUser[id]
+		name := displayName(names, id)
 		rows = append(rows, memberRow{
 			ID:              id,
-			Name:            names[id],
-			Initials:        memberInitials(names[id], id),
+			Name:            name,
+			Initials:        memberInitials(name, id),
 			Template:        tpl,
 			Explicit:        tpl != "",
 			TemplateUnknown: tpl != "" && !known[tpl],
-			Caps:            capChips(s.cfg.ResolveCapabilities(item.Name, id, nil)),
-		})
-	}
-	for _, id := range item.AllowedRoleIDs {
-		member["r:"+id] = true
-		tpl := tplByRole[id]
-		rows = append(rows, memberRow{
-			ID:              id,
-			Initials:        "@",
-			IsRole:          true,
-			Template:        tpl,
-			Explicit:        tpl != "",
-			TemplateUnknown: tpl != "" && !known[tpl],
-			Caps:            capChips(s.cfg.ResolveCapabilities(item.Name, "", []string{id})),
+			Caps:            capChips(s.cfg.ResolveCapabilities(item.Name, id)),
 		})
 	}
 	for _, m := range item.CapabilityByUser {
-		if !member["u:"+m.ID] {
+		if !member[config.NormalizeActorID(m.ID)] {
 			rows = append(rows, memberRow{
-				ID: m.ID, Name: names[m.ID], Initials: "?",
+				ID: m.ID, Name: displayName(names, m.ID), Initials: "?",
 				Template: m.Template, Explicit: true, Inert: true,
 			})
 		}
 	}
-	for _, m := range item.CapabilityByRole {
-		if !member["r:"+m.ID] {
-			rows = append(rows, memberRow{
-				ID: m.ID, Initials: "@", IsRole: true,
-				Template: m.Template, Explicit: true, Inert: true,
+	return rows
+}
+
+// defaultRoleFallback is the template members without an explicit role resolve
+// to: the policy default under safe team, else builder (backward compat).
+func defaultRoleFallback(item *config.ProjectItem) string {
+	if item.SafeTeamMode {
+		return item.SafeTeamDefaultTemplate
+	}
+	return "builder"
+}
+
+// buildTeamRoster renders one row per team with the capabilities its template
+// grants and its members. A team naming no template (or an unknown one) shows
+// the policy fallback's capabilities, which is what its members actually get.
+func (s *Server) buildTeamRoster(item *config.ProjectItem, names map[string]string) []teamRosterRow {
+	if len(item.Teams) == 0 {
+		return nil
+	}
+	fallback := defaultRoleFallback(item)
+	rows := make([]teamRosterRow, 0, len(item.Teams))
+	for _, t := range item.Teams {
+		tpl := t.Capabilities
+		if tpl == "" || t.TemplateUnknown {
+			tpl = fallback
+		}
+		caps, _ := s.cfg.ResolveTemplate(item.Name, tpl)
+		row := teamRosterRow{
+			Key:             t.Key,
+			Label:           t.Label,
+			Capabilities:    t.Capabilities,
+			TemplateUnknown: t.TemplateUnknown,
+			Caps:            capChips(caps),
+		}
+		if row.Label == "" {
+			row.Label = t.Key
+		}
+		for _, id := range t.Members {
+			name := displayName(names, id)
+			row.Members = append(row.Members, memberRow{
+				// Normalized for display: a hand-written config may spell the
+				// same person "123" and "discord:123", and the roster should not
+				// suggest those are different kinds of member when every match
+				// goes through SameActor. Any write normalizes anyway.
+				ID:       config.NormalizeActorID(id),
+				Name:     name,
+				Initials: memberInitials(name, config.ActorSubject(id)),
 			})
 		}
+		rows = append(rows, row)
 	}
 	return rows
 }
@@ -200,25 +249,34 @@ func (s *Server) projectConfigTab(ctx *hime.Context, tab, tmpl string, fill func
 	return s.viewPage(ctx, tmpl, d)
 }
 
-// projectConfigPage is the Access tab (default): team policy + member roster.
+// projectConfigPage is the Access tab (default): team policy, teams, and the
+// direct-member roster.
 func (s *Server) projectConfigPage(ctx *hime.Context) error {
 	return s.projectConfigTab(ctx, "access", "project_config", func(d *pageData) {
 		item := &d.ProjectItem
-		nameIDs := append([]string{}, item.AllowedUserIDs...)
+		// The name directory is keyed by bare Discord snowflake, so every id
+		// asked about is reduced to its subject and non-Discord actors are not
+		// asked about at all.
+		var nameIDs []string
+		want := func(id string) {
+			if config.IsDiscordActor(id) {
+				nameIDs = append(nameIDs, config.ActorSubject(id))
+			}
+		}
+		for _, id := range item.MemberIDs {
+			want(id)
+		}
 		for _, m := range item.CapabilityByUser {
-			nameIDs = append(nameIDs, m.ID)
+			want(m.ID)
 		}
 		names := s.resolveDiscordUserNames(nameIDs)
 		d.DiscordUserNames = names
 		d.Members = s.buildMemberRoster(item, names)
+		d.TeamRoster = s.buildTeamRoster(item, names)
 		d.CapMatrix, d.CapNames = s.buildCapMatrix(item)
 		// Effective role for members without an explicit one: safe team off
 		// falls back to builder (backward compat), on → the default template.
-		if item.SafeTeamMode {
-			d.DefaultRoleFallback = item.SafeTeamDefaultTemplate
-		} else {
-			d.DefaultRoleFallback = "builder"
-		}
+		d.DefaultRoleFallback = defaultRoleFallback(item)
 	})
 }
 
