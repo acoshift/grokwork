@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/gitworktree"
 )
 
 // gitRepo builds a real git repo with a manifest committed at HEAD. The engine
@@ -856,5 +857,143 @@ func TestRedeployStillChecksCapability(t *testing.T) {
 		Caps: builderCaps(), RedeployOf: first.ID,
 	}); err == nil {
 		t.Fatal("redeploy bypassed the capability gate")
+	}
+}
+
+// cloneRepo makes `origin` a real remote, so remote-tracking refs behave the way
+// they do in production: they move only on fetch.
+func cloneRepo(t *testing.T, origin string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "clone")
+	cmd := exec.Command("git", "clone", "-q", origin, dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v\n%s", err, out)
+	}
+	return dir
+}
+
+func headSHA(t *testing.T, repo string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// TestTriggerFetchesBeforeResolvingRef is the staleness bug.
+//
+// PrimaryStartRef resolves through origin/<primary>, a remote-tracking ref that
+// only moves on fetch. Without a fetch at trigger time, "deploy main" deploys
+// whatever the last background fetch saw — stale by up to
+// repoFetchIntervalMinutes, and unbounded when an operator disables idle fetch.
+// A pull is never needed: the local branch is not consulted at all.
+func TestTriggerFetchesBeforeResolvingRef(t *testing.T) {
+	skipOnWindows(t)
+	manifest := `version: 1
+environments: [dev]
+services:
+  api:
+    steps:
+      - { name: ok, run: "true" }
+`
+	origin := gitRepo(t, manifest)
+	clone := cloneRepo(t, origin)
+
+	cfg := engineConfig(t, clone)
+	if err := cfg.SetProjectDeployEnabled("app", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectDeployEnvPolicy("app", "dev", config.DeployEnvPolicy{AllowedRefs: []string{"*"}}); err != nil {
+		t.Fatal(err)
+	}
+	eng, err := NewEngine(cfg, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		eng.Stop(ctx)
+	})
+
+	// Someone pushes to the origin. The clone has not fetched, so its
+	// origin/main still points at the old commit.
+	mustEmptyCommit(t, origin)
+	want := headSHA(t, origin)
+	stale, err := gitworktree.ResolveRefSHA(context.Background(), clone, "origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale == want {
+		t.Fatal("clone already saw the new commit; the test cannot detect a missing fetch")
+	}
+
+	run, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: clone, Service: "api", Env: "dev", Caps: builderCaps(),
+	})
+	if err != nil {
+		t.Fatalf("trigger: %v", err)
+	}
+	if run.SHA != want {
+		t.Fatalf("deployed %s, want the current remote tip %s (trigger did not fetch)", run.SHA[:7], want[:7])
+	}
+	waitTerminal(t, eng, run.ID)
+}
+
+// TestRedeployDoesNotNeedTheNetwork: a redeploy replays a pinned SHA, so it must
+// not depend on a reachable remote — that is exactly when a rollback is needed.
+func TestRedeployDoesNotNeedTheNetwork(t *testing.T) {
+	skipOnWindows(t)
+	manifest := `version: 1
+environments: [dev]
+services:
+  api:
+    steps:
+      - { name: ok, run: "true" }
+`
+	origin := gitRepo(t, manifest)
+	clone := cloneRepo(t, origin)
+	cfg := engineConfig(t, clone)
+	if err := cfg.SetProjectDeployEnabled("app", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectDeployEnvPolicy("app", "dev", config.DeployEnvPolicy{AllowedRefs: []string{"*"}}); err != nil {
+		t.Fatal(err)
+	}
+	eng, err := NewEngine(cfg, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		eng.Stop(ctx)
+	})
+	first, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: clone, Service: "api", Env: "dev", Caps: builderCaps(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitTerminal(t, eng, first.ID)
+
+	// Break the remote entirely.
+	if err := os.RemoveAll(origin); err != nil {
+		t.Fatal(err)
+	}
+	again, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: clone, Service: "api", Env: "dev",
+		Caps: builderCaps(), RedeployOf: first.ID,
+	})
+	if err != nil {
+		t.Fatalf("redeploy needed the remote: %v", err)
+	}
+	if again.SHA != first.SHA {
+		t.Fatalf("redeploy SHA = %s, want the pinned %s", again.SHA, first.SHA)
+	}
+	got := waitTerminal(t, eng, again.ID)
+	if got.Status != StatusSucceeded {
+		t.Fatalf("redeploy status = %q: %s", got.Status, got.Error)
 	}
 }

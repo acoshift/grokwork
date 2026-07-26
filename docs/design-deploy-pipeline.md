@@ -77,6 +77,36 @@ in memory (`internal/ghpr/ghpr.go:34-53`): checking a 64 KiB cap after reading w
 `ls-tree` also exits 0 with empty output for a path that does not exist, so "no manifest" is a value
 (`ErrNoManifest`) rather than an error string to pattern-match.
 
+### K2b — Fetch, never pull; and fetch at trigger time
+
+Everything reads through **remote-tracking refs**: `PrimaryStartRef`
+(`internal/gitworktree/fetch.go:89`) resolves `refs/remotes/origin/HEAD`, then
+`origin/main`, `origin/master`, … and only falls back to `HEAD`. Those move on
+`git fetch` alone, so **a pull is never required** and the local branch is never
+consulted — which is what stops a stale local checkout from deciding what
+production runs.
+
+The corollary is that a fetch *is* required, and the background idle fetch is not
+enough to rely on: it is throttled by `repoFetchIntervalMinutes` (default 5) and
+an operator may set it to `0`, at which point the remote-tracking ref can be
+arbitrarily old. `Trigger` therefore runs `FetchOrigin` before resolving the ref.
+Without it, "deploy main" silently deploys whatever the last fetch saw — always
+wrong in the stale direction, which is the worst shape for a deploy.
+`TestTriggerFetchesBeforeResolvingRef` pins this against a real clone and fails
+when the fetch is removed.
+
+Two deliberate exceptions:
+
+- **A fetch failure is not fatal.** It is logged and the run proceeds on what is
+  already known. A rollback during a GitHub outage still has to work, and the
+  SHA that actually ran is recorded on the run either way.
+- **Redeploy never fetches.** Its SHA is pinned, so there is nothing to refresh
+  and it must work with the remote unreachable — exactly when a rollback is
+  needed. `TestRedeployDoesNotNeedTheNetwork` deletes the origin and pins it.
+
+The board fetches too, throttled by the project's own interval so a page load
+stays cheap and an operator who disabled idle fetch keeps that choice.
+
 ### K3 — Two composition mechanisms, because environments need different pipelines
 
 Real environments do not differ by a variable: dev applies straight from a branch, stag gates on a

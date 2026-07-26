@@ -175,6 +175,21 @@ func (e *Engine) Trigger(ctx context.Context, req TriggerRequest) (Run, error) {
 			}
 		}
 	} else {
+		// Fetch before resolving. PrimaryStartRef and a bare "main" both resolve
+		// through remote-tracking refs, which only move on fetch — so without
+		// this, "deploy main" deploys whatever the last background fetch saw.
+		// That is stale by up to repoFetchIntervalMinutes, and unbounded when an
+		// operator has set it to 0. Silent, and always wrong in the stale
+		// direction, which is the worst shape for a deploy.
+		//
+		// A failure is logged and not fatal: a rollback during a GitHub outage
+		// still needs to work, and the resolved SHA is recorded on the run
+		// either way. Redeploys skip this entirely — their SHA is pinned.
+		if err := gitworktree.FetchOrigin(ctx, req.RepoPath); err != nil {
+			log.Printf("warn: deploy fetch %s: %v", req.Project, err)
+		} else {
+			gitworktree.NoteFetched(req.RepoPath)
+		}
 		if refUsed == "" {
 			refUsed = gitworktree.PrimaryStartRef(ctx, req.RepoPath)
 		}

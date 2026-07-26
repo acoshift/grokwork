@@ -2,8 +2,10 @@ package web
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/moonrhythm/hime"
 
@@ -102,6 +104,15 @@ func (s *Server) deploysPage(ctx *hime.Context) error {
 		return s.viewPage(ctx, "deploys", d)
 	}
 
+	// Refresh remote-tracking refs before reading the tip, throttled by the
+	// project's own interval so a page load is cheap and an operator who
+	// disabled idle fetch keeps that choice. The board reads origin/<primary>,
+	// so a fetch is enough — no pull, and the local branch is never consulted.
+	if mins := s.cfg.ProjectRepoFetchIntervalMinutes(project); mins > 0 {
+		if _, err := gitworktree.MaybeFetch(ctx.Context(), repoPath, time.Duration(mins)*time.Minute); err != nil {
+			log.Printf("warn: deploys page fetch %s: %v", project, err)
+		}
+	}
 	ref := gitworktree.PrimaryStartRef(ctx.Context(), repoPath)
 	d.DeployRef = ref
 	if sha, err := gitworktree.ResolveRefSHA(ctx.Context(), repoPath, ref); err == nil {
