@@ -123,6 +123,20 @@ type Entry struct {
 	Dossier        *Dossier `json:"dossier,omitempty"`
 	CustomerUpdate string   `json:"customerUpdate,omitempty"`
 
+	// SLA clocks (RFC3339, see sla.go). OpenedAt is when the case was filed and
+	// ReopenedAt below starts a fresh round; FirstResponseAt is the first
+	// customer-facing reply of the current round; AnsweredAt is the last time
+	// the case was handed back to the customer, which is where the resolution
+	// clock freezes while we wait on them.
+	//
+	// Only timestamps live here. The per-severity targets are project policy
+	// (config.SLATarget) and breach state is computed at render time
+	// (internal/bot/case_sla.go) — a stored flag would be wrong the moment a
+	// deadline passed with no writer running.
+	OpenedAt        string `json:"openedAt,omitempty"`
+	FirstResponseAt string `json:"firstResponseAt,omitempty"`
+	AnsweredAt      string `json:"answeredAt,omitempty"`
+
 	Resolution     string `json:"resolution,omitempty"` // answered|fixed|duplicate|wontfix|escalated_external
 	ResolutionNote string `json:"resolutionNote,omitempty"`
 	ResolvedAt     string `json:"resolvedAt,omitempty"`

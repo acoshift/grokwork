@@ -3,6 +3,7 @@ package bot
 import (
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -37,6 +38,15 @@ type CaseRow struct {
 	DossierSummary string // internal investigation summary
 	Resolution     string // answered|fixed|duplicate|wontfix|escalated_external
 
+	// SLA standing, computed for this render (never stored — see case_sla.go).
+	// SLABadge is empty when the case has no SLA at all, which is what the
+	// template keys off.
+	SLA         CaseSLA
+	SLABreached bool
+	SLAHeld     bool
+	SLABadge    string
+	SLADetail   string
+
 	// Primary tracked PR (escalated cases in fixing/shipping).
 	PRNumber        int
 	PRState         string // display state: OPEN, DRAFT, MERGED, CLOSED
@@ -62,9 +72,10 @@ type CaseBoard struct {
 	SeverityFilter string
 	Scope          string // "open" (default: hide closed) | "all"
 	OwnerFilter    string // "" | mine | unassigned
+	SLAFilter      string // "" | breached
 
 	Groups []CaseGroup
-	Shown  int // rows after phase/severity/scope/owner filters
+	Shown  int // rows after phase/severity/scope/owner/SLA filters
 
 	// Pipeline counts over the project's cases (pre phase/severity/scope filters).
 	Intake      int
@@ -75,12 +86,15 @@ type CaseBoard struct {
 	Closed      int
 	OpenTotal   int
 	Total       int
-	// Mine / Unassigned label the owner filter's options, so unlike the phase counts
+	// Mine / Unassigned / Breached label filter options, so unlike the phase counts
 	// above they are counted *after* the other filters — the number has to equal the
-	// rows selecting it would show. They overlap each other: an unassigned case its
-	// reporter owns is both.
+	// rows selecting it would show. Each is counted after every filter *except its
+	// own*, since a dropdown label must not depend on the value currently picked in
+	// that same dropdown. They overlap: an unassigned case its reporter owns and
+	// which is late is all three.
 	Mine       int
 	Unassigned int
+	Breached   int
 }
 
 // CasePhaseOrder is pipeline display order (open stages, then closed).
@@ -175,6 +189,12 @@ const (
 	CaseOwnerUnassigned = "unassigned"
 )
 
+// CaseSLABreached is the only value CaseBoardQuery.SLA takes: cases past a
+// first-response or resolution target. There is deliberately no "met" or
+// "at risk" option — a board filter earns its place by answering "what needs me
+// now", and everything else is already the default view.
+const CaseSLABreached = "breached"
+
 // CaseBoardQuery is one case-board request. Grouped into a struct because the
 // filters travel together from the query string and kept growing as positional
 // arguments.
@@ -185,6 +205,8 @@ type CaseBoardQuery struct {
 	Scope    string // "open" (default: hide closed) | "all"
 	// Owner is "" (everyone), CaseOwnerMine, or CaseOwnerUnassigned.
 	Owner string
+	// SLA is "" (any) or CaseSLABreached.
+	SLA string
 	// ViewerID is who "mine" means. An empty id makes "mine" match nothing rather
 	// than matching every unassigned case.
 	ViewerID string
@@ -225,6 +247,10 @@ func (b *Bot) ListCaseBoardQuery(q CaseBoardQuery) CaseBoard {
 	if ownerFilter != CaseOwnerMine && ownerFilter != CaseOwnerUnassigned {
 		ownerFilter = ""
 	}
+	slaFilter := strings.ToLower(strings.TrimSpace(q.SLA))
+	if slaFilter != CaseSLABreached {
+		slaFilter = ""
+	}
 	viewerID := strings.TrimSpace(q.ViewerID)
 	board := CaseBoard{
 		ProjectFilter:  strings.TrimSpace(q.Project),
@@ -232,10 +258,15 @@ func (b *Bot) ListCaseBoardQuery(q CaseBoardQuery) CaseBoard {
 		SeverityFilter: severityFilter,
 		Scope:          scope,
 		OwnerFilter:    ownerFilter,
+		SLAFilter:      slaFilter,
 	}
 	if b == nil || b.sessions == nil {
 		return board
 	}
+	// One instant for the whole board: evaluating each row against its own
+	// time.Now() would let two rows on one page disagree about which deadlines
+	// have passed.
+	now := time.Now()
 
 	var allowed map[string]struct{}
 	if q.Among != nil {
@@ -286,28 +317,36 @@ func (b *Bot) ListCaseBoardQuery(q CaseBoardQuery) CaseBoard {
 		if phaseFilter == "" && scope != "all" && phase == sessionstore.PhaseClosed {
 			continue
 		}
-		// Counted here — after every filter except the owner one — so "Mine (3)" is
-		// exactly what selecting Mine will show. Counting earlier (like the phase
-		// counters, which are deliberately project-wide) made the labels drift from
-		// the rows as the closed archive grew. The two overlap rather than partition:
-		// a case I filed that nobody has picked up is both.
-		if needsEngineer(e, phase) {
-			board.Unassigned++
-		}
-		if viewerID != "" && caseIsMine(e, viewerID) {
-			board.Mine++
-		}
+		// Counted here — after the phase/severity/scope filters, and each one after
+		// every filter except its own — so "Mine (3)" is exactly what selecting Mine
+		// will show. Counting earlier (like the phase counters, which are deliberately
+		// project-wide) made the labels drift from the rows as the closed archive grew.
+		// They overlap rather than partition: a case I filed that nobody has picked up
+		// is both mine and unassigned.
+		sla := b.caseSLAAt(e, now)
+		passOwner := true
 		switch ownerFilter {
 		case CaseOwnerMine:
-			if viewerID == "" || !caseIsMine(e, viewerID) {
-				continue
-			}
+			passOwner = viewerID != "" && caseIsMine(e, viewerID)
 		case CaseOwnerUnassigned:
-			if !needsEngineer(e, phase) {
-				continue
+			passOwner = needsEngineer(e, phase)
+		}
+		passSLA := slaFilter != CaseSLABreached || sla.Breached
+		if passSLA {
+			if needsEngineer(e, phase) {
+				board.Unassigned++
+			}
+			if viewerID != "" && caseIsMine(e, viewerID) {
+				board.Mine++
 			}
 		}
-		rows = append(rows, b.caseRowFrom(listed.ThreadID, e, phase))
+		if passOwner && sla.Breached {
+			board.Breached++
+		}
+		if !passOwner || !passSLA {
+			continue
+		}
+		rows = append(rows, b.caseRowFrom(listed.ThreadID, e, phase, sla))
 	}
 	board.OpenTotal = board.Intake + board.Investigate + board.Answered + board.Fixing + board.Shipping
 	board.Total = board.OpenTotal + board.Closed
@@ -328,9 +367,14 @@ func (b *Bot) ListCaseBoardQuery(q CaseBoardQuery) CaseBoard {
 	return board
 }
 
-func (b *Bot) caseRowFrom(threadID string, e sessionstore.Entry, phase string) CaseRow {
+func (b *Bot) caseRowFrom(threadID string, e sessionstore.Entry, phase string, sla CaseSLA) CaseRow {
 	title := caseRowTitle(e)
 	row := CaseRow{
+		SLA:            sla,
+		SLABreached:    sla.Breached,
+		SLAHeld:        sla.Held,
+		SLABadge:       sla.Badge,
+		SLADetail:      sla.Detail,
 		ThreadID:       threadID,
 		Project:        e.Project,
 		CaseKey:        strings.TrimSpace(e.CaseKey),

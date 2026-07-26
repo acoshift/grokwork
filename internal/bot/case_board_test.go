@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/history"
@@ -234,6 +235,150 @@ func TestListCaseBoardOwnerFilter(t *testing.T) {
 	junk := b.ListCaseBoardQuery(CaseBoardQuery{Project: "alpha", Owner: "sql-injection", ViewerID: "u-eng"})
 	if junk.OwnerFilter != "" || junk.Shown != 5 {
 		t.Fatalf("junk owner filter=%q shown=%d", junk.OwnerFilter, junk.Shown)
+	}
+}
+
+// The breach filter is a lead's "what is late" view, and its dropdown label has
+// to equal the rows picking it returns — the same property the owner counters
+// have, now that two filters can narrow the same board.
+func TestListCaseBoardSLAFilter(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "alpha")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	minutes := func(n int) *int { return &n }
+	cfg := &config.Config{
+		Projects: config.ProjectsMap{"alpha": {
+			Path: proj,
+			// One hour to first response, four to resolve; low has no SLA at all.
+			SLA: map[string]config.SLATarget{
+				"critical": {FirstResponseMinutes: minutes(60), ResolutionMinutes: minutes(240)},
+				"high":     {FirstResponseMinutes: minutes(60)},
+			},
+		}},
+		DataDir: dir,
+		// The last case clears the SLA table through the real setter, which
+		// persists.
+		ConfigPath: filepath.Join(dir, "config.json"),
+	}
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().UTC().Add(-5 * time.Hour).Format(time.RFC3339)
+	recent := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
+	seed := map[string]sessionstore.Entry{
+		// Late, unclaimed, and the viewer's: counts for every filter.
+		"c-late-mine": {
+			Project: "alpha", Mode: "case", Phase: "fixing", Severity: "critical",
+			CustomerTitle: "Late and mine", OwnerID: "u-me", OpenedAt: old,
+		},
+		// Late but someone else's.
+		"c-late-theirs": {
+			Project: "alpha", Mode: "case", Phase: "fixing", Severity: "high",
+			CustomerTitle: "Late, theirs", OwnerID: "u-other",
+			EngineerID: "u-other", EngineerName: "other", OpenedAt: old,
+		},
+		// Filed five minutes ago: inside both targets.
+		"c-fresh": {
+			Project: "alpha", Mode: "case", Phase: "fixing", Severity: "critical",
+			CustomerTitle: "Fresh", OwnerID: "u-me", OpenedAt: recent,
+		},
+		// Old, but its severity has no target — never late.
+		"c-no-target": {
+			Project: "alpha", Mode: "case", Phase: "fixing", Severity: "low",
+			CustomerTitle: "No SLA", OwnerID: "u-me", OpenedAt: old,
+		},
+		// Old and critical, but answered in time and now waiting on the customer:
+		// the resolution clock is frozen, so it is not late either.
+		"c-held": {
+			Project: "alpha", Mode: "case", Phase: "answered", Severity: "critical",
+			CustomerTitle: "On hold", OwnerID: "u-me", OpenedAt: old,
+			FirstResponseAt: time.Now().UTC().Add(-4*time.Hour - 30*time.Minute).Format(time.RFC3339),
+			AnsweredAt:      time.Now().UTC().Add(-4*time.Hour - 30*time.Minute).Format(time.RFC3339),
+		},
+	}
+	for id, e := range seed {
+		if err := store.Set(id, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := New(cfg, store, hist)
+
+	ids := func(board CaseBoard) []string {
+		var out []string
+		for _, g := range board.Groups {
+			for _, r := range g.Rows {
+				out = append(out, r.ThreadID)
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+
+	all := b.ListCaseBoardQuery(CaseBoardQuery{Project: "alpha", ViewerID: "u-me"})
+	if got, want := ids(all), []string{"c-fresh", "c-held", "c-late-mine", "c-late-theirs", "c-no-target"}; !slices.Equal(got, want) {
+		t.Fatalf("unfiltered=%v want %v", got, want)
+	}
+	if all.Breached != 2 {
+		t.Fatalf("breached count = %d want 2 (%+v)", all.Breached, ids(all))
+	}
+
+	breached := b.ListCaseBoardQuery(CaseBoardQuery{Project: "alpha", SLA: CaseSLABreached, ViewerID: "u-me"})
+	if got, want := ids(breached), []string{"c-late-mine", "c-late-theirs"}; !slices.Equal(got, want) {
+		t.Fatalf("breached=%v want %v", got, want)
+	}
+	// The label equals the rows: this is the invariant, checked against the rows
+	// themselves rather than a hardcoded number.
+	if breached.Breached != breached.Shown || breached.Shown != len(ids(breached)) {
+		t.Fatalf("count %d != shown %d", breached.Breached, breached.Shown)
+	}
+	// Every row that survived the filter carries a breach chip.
+	for _, g := range breached.Groups {
+		for _, r := range g.Rows {
+			if !r.SLABreached || r.SLABadge == "" {
+				t.Fatalf("row %s missing its badge: %+v", r.ThreadID, r.SLA)
+			}
+		}
+	}
+
+	// Cross-filter counters: Mine is counted after the SLA filter (2 of the 3
+	// mine-cases are not late), and Breached after the owner filter.
+	both := b.ListCaseBoardQuery(CaseBoardQuery{
+		Project: "alpha", SLA: CaseSLABreached, Owner: CaseOwnerMine, ViewerID: "u-me",
+	})
+	if got, want := ids(both), []string{"c-late-mine"}; !slices.Equal(got, want) {
+		t.Fatalf("mine+breached=%v want %v", got, want)
+	}
+	if both.Mine != 1 {
+		t.Fatalf("Mine=%d want 1 — the label must count only late cases while the SLA filter is on", both.Mine)
+	}
+	if both.Breached != 1 {
+		t.Fatalf("Breached=%d want 1 — the label must respect the owner filter", both.Breached)
+	}
+	// Phase counters stay project-wide regardless of either filter.
+	if both.Total != 5 || both.Fixing != 4 {
+		t.Fatalf("pipeline counts moved: %+v", both)
+	}
+
+	// An unrecognized value falls back to no filter rather than hiding the board.
+	junk := b.ListCaseBoardQuery(CaseBoardQuery{Project: "alpha", SLA: "; drop table", ViewerID: "u-me"})
+	if junk.SLAFilter != "" || junk.Shown != 5 {
+		t.Fatalf("junk sla filter=%q shown=%d", junk.SLAFilter, junk.Shown)
+	}
+
+	// A project with no SLA table badges nothing, so the filter selects nothing.
+	if err := cfg.SetProjectSLA("alpha", nil); err != nil {
+		t.Fatal(err)
+	}
+	none := b.ListCaseBoardQuery(CaseBoardQuery{Project: "alpha", SLA: CaseSLABreached, ViewerID: "u-me"})
+	if none.Shown != 0 || none.Breached != 0 {
+		t.Fatalf("no targets configured: shown=%d breached=%d", none.Shown, none.Breached)
 	}
 }
 

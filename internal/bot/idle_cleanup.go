@@ -178,7 +178,7 @@ func (b *Bot) ListWorktrees() []WorktreeInfo {
 		}
 		if !c.last.IsZero() {
 			info.LastActiveAt = c.last.UTC().Format(time.RFC3339)
-			info.IdleFor = formatIdleFor(now.Sub(c.last))
+			info.IdleFor = formatCoarseDuration(now.Sub(c.last))
 			if !cutoff.IsZero() && !c.last.After(cutoff) {
 				info.IdlePastTTL = true
 			}
@@ -560,7 +560,10 @@ func formatLast(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-func formatIdleFor(d time.Duration) string {
+// formatCoarseDuration is chip-sized duration text ("<1m", "45m", "3h", "2d").
+// Shared by the worktrees board's idle column and the case SLA badges so the
+// two do not phrase the same span two ways.
+func formatCoarseDuration(d time.Duration) string {
 	if d < 0 {
 		d = 0
 	}

@@ -232,7 +232,12 @@ type ProjectItem struct {
 	SafeTeamDefaultTemplate string // effective (default "investigator")
 	DefaultMode             string // empty = legacy fix
 	// CaseKey is the configured case-id prefix override, empty when derived.
-	CaseKey                 string
+	CaseKey string
+	// SLA is one settings-form row per severity (SLASeverities order); empty
+	// minutes mean that clock has no target. SLAConfigured is true when at
+	// least one row has one.
+	SLA                     []SLAItem
+	SLAConfigured           bool
 	CapabilityByUser        []CapabilityMapItem
 	UnmappedUserIDs         []string // allowlisted users with no capabilityByUser entry
 	CapabilityTemplateNames []string // builtin + project overlay names for selects
@@ -1303,6 +1308,8 @@ func (c *Config) Snapshot() Snapshot {
 			SafeTeamDefaultTemplate:  defaultTpl,
 			DefaultMode:              strings.TrimSpace(strings.ToLower(pc.DefaultMode)),
 			CaseKey:                  strings.TrimSpace(pc.CaseKey),
+			SLA:                      slaItems(pc.SLA),
+			SLAConfigured:            slaConfigured(pc.SLA),
 			CapabilityByUser:         capabilityMapItems(pc.CapabilityByUser),
 			UnmappedUserIDs:          unmappedIDs(pc.AllowedUserIDs, pc.CapabilityByUser),
 			CapabilityTemplateNames:  capabilityTemplateNames(pc.CapabilityTemplates),

@@ -265,6 +265,36 @@ On the project settings page (**Safe team mode**):
 3. Leave **Default template** as `investigator` (or `operator`).  
 4. Put support in a team with `capabilities: "investigator"` (optional if the default is already investigator).  
 5. **Put eng in a team with `capabilities: "builder"` before enabling**, or eng will be demoted to investigator.
+6. Optionally set **Case SLA targets** (same tab) — minutes per severity, empty
+   means no deadline for that clock. Leaving them empty is a valid answer: cases
+   simply carry no SLA.
+
+---
+
+## SLA clocks (if your project has them)
+
+Ops can set per-severity deadlines (project settings → **Workflow** → *Case SLA
+targets*). When they are set, each case carries two clocks:
+
+| Clock | Starts | Stops |
+|---|---|---|
+| **First response** | when the case is filed (or reopened) | the first `/customer-update` or `/answer` |
+| **Resolution** | same | `/close` |
+
+Three things worth knowing:
+
+- **`/escalate` is not a response.** It tells engineering, not the customer. Only
+  customer-facing text stops the first-response clock.
+- **`answered` pauses the resolution clock.** While the case waits on the
+  customer, the board shows *on hold* instead of counting up — that wait is
+  theirs. If the case comes back to you, the clock runs again.
+- **`/reopen` starts a fresh round.** The customer is waiting again, so the case
+  needs a new first response.
+
+Late cases wear a red **SLA** chip on the case board and on the case page, and
+the board's **SLA → Breached** filter shows only those. Nothing is stored as
+"breached": it is worked out from the timestamps each time a page is drawn, so a
+target changed in settings re-judges every open case immediately.
 
 ---
 

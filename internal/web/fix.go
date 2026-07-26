@@ -808,6 +808,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 	}
 	if d.SessionEntry.IsCase() && s.bot != nil {
 		d.CaseLinks = s.bot.RelatedCaseLinks(threadID)
+		d.CaseSLA = s.bot.CaseSLAFor(d.SessionEntry)
 	}
 	return d
 }

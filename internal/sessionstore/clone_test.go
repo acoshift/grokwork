@@ -12,17 +12,23 @@ import (
 // instead of silently reintroducing the write-through Store.Get used to have.
 func TestEntryCloneDetachesEveryField(t *testing.T) {
 	orig := Entry{
-		SessionID:     "s1",
-		Project:       "p",
-		CoOwnerIDs:    []string{"a", "b"},
-		Issues:        []TrackedIssue{{Number: 1, Owner: "o", Repo: "r"}},
-		PRs:           []TrackedPR{{Number: 2, Owner: "o", Repo: "r"}},
-		RelatedCases:  []string{"WEBAPP-1"},
-		Checkpoints:   []CheckpointMeta{{ID: "c1", Ref: "refs/x", SHA: "abc"}},
-		WatcherIDs:    []string{"w1"},
-		OpenQuestions: []OpenQuestion{{ID: "q1", Text: "t", Options: []string{"yes", "no"}}},
-		Discord:       &DiscordRef{ThreadID: "th", URL: "u"},
-		LastVerify:    &LastVerify{Name: "unit", OK: true},
+		SessionID: "s1",
+		Project:   "p",
+		// SLA clocks are scalars, so the detachment walk below has nothing to
+		// check for them — the DeepEqual is what proves clone() still carries
+		// them, which is the way a new Entry field usually gets lost.
+		OpenedAt:        "2026-07-27T09:00:00Z",
+		FirstResponseAt: "2026-07-27T09:20:00Z",
+		AnsweredAt:      "2026-07-27T11:00:00Z",
+		CoOwnerIDs:      []string{"a", "b"},
+		Issues:          []TrackedIssue{{Number: 1, Owner: "o", Repo: "r"}},
+		PRs:             []TrackedPR{{Number: 2, Owner: "o", Repo: "r"}},
+		RelatedCases:    []string{"WEBAPP-1"},
+		Checkpoints:     []CheckpointMeta{{ID: "c1", Ref: "refs/x", SHA: "abc"}},
+		WatcherIDs:      []string{"w1"},
+		OpenQuestions:   []OpenQuestion{{ID: "q1", Text: "t", Options: []string{"yes", "no"}}},
+		Discord:         &DiscordRef{ThreadID: "th", URL: "u"},
+		LastVerify:      &LastVerify{Name: "unit", OK: true},
 		Dossier: &Dossier{
 			Summary:      "s",
 			ReproSteps:   []string{"step"},

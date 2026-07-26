@@ -55,6 +55,13 @@ func TestPreviewServer(t *testing.T) {
 				Path:           mkProj("webapp"),
 				AllowedUserIDs: []string{"111111111111111111", "222222222222222222"},
 				SafeTeamMode:   &safeOn,
+				// SLA targets so the case board shows breached / on-hold chips
+				// and the Workflow tab renders a filled-in form.
+				SLA: map[string]config.SLATarget{
+					"critical": {FirstResponseMinutes: previewMinutes(60), ResolutionMinutes: previewMinutes(480)},
+					"high":     {FirstResponseMinutes: previewMinutes(240), ResolutionMinutes: previewMinutes(2880)},
+					"medium":   {FirstResponseMinutes: previewMinutes(1440)},
+				},
 				CapabilityByUser: map[string]string{
 					"111111111111111111": "admin",
 					"444444444444444444": "approver",
@@ -188,6 +195,9 @@ func TestPreviewServer(t *testing.T) {
 			Severity: "critical", CustomerTitle: "Checkout 500s for EU Visa cards",
 			CustomerRef: "ZD-4821", ReporterName: "beam", Origin: "discord",
 			OwnerID: "222222222222222222", OwnerName: "poon",
+			// Filed three hours ago and still unanswered: past the one-hour
+			// critical first-response target, so this row wears the breach chip.
+			OpenedAt: previewStamp(-3 * time.Hour),
 		},
 		"1390000000000000022": {
 			SessionID: "case-b", Project: "webapp", Mode: "case", Phase: "investigate",
@@ -197,8 +207,10 @@ func TestPreviewServer(t *testing.T) {
 			OwnerID: "111111111111111111", OwnerName: "mint",
 			// Cross-reference to the older duplicate-charge case: same root
 			// cause, different module. Renders outbound here, inbound there.
-			RelatedCases:   []string{"WEBAPP-25"},
-			CustomerUpdate: "We reproduced the duplicate retries on staging and are tracing the debounce window now — next update within the hour.",
+			RelatedCases:    []string{"WEBAPP-25"},
+			OpenedAt:        previewStamp(-6 * time.Hour),
+			FirstResponseAt: previewStamp(-5 * time.Hour),
+			CustomerUpdate:  "We reproduced the duplicate retries on staging and are tracing the debounce window now — next update within the hour.",
 			Dossier: &sessionstore.Dossier{
 				Summary: "Retry queue re-enqueues per webhook event instead of per order; burst of events → duplicate settle jobs.",
 			},
@@ -208,9 +220,14 @@ func TestPreviewServer(t *testing.T) {
 			CaseKey:  "WEBAPP-23",
 			Severity: "medium", CustomerTitle: "How do refunds settle across currencies?",
 			CustomerRef: "ZD-4790", ReporterName: "beam", Origin: "web",
-			OwnerName:      "poon",
-			CustomerUpdate: "Refunds settle in the original charge currency at the captured FX rate; a worked example is in the reply draft.",
-			Label:          "blocked",
+			OwnerName: "poon",
+			// Answered two days ago: the resolution clock is frozen while the
+			// customer has it, so this shows "on hold" rather than a breach.
+			OpenedAt:        previewStamp(-50 * time.Hour),
+			FirstResponseAt: previewStamp(-48 * time.Hour),
+			AnsweredAt:      previewStamp(-48 * time.Hour),
+			CustomerUpdate:  "Refunds settle in the original charge currency at the captured FX rate; a worked example is in the reply draft.",
+			Label:           "blocked",
 		},
 		"1390000000000000024": {
 			SessionID: "case-d", Project: "webapp", Mode: "case", Phase: "fixing",
@@ -715,4 +732,14 @@ func previewRate(in, out, cacheRead, cacheWrite float64) config.ModelRate {
 		InputPerMTok: &in, OutputPerMTok: &out,
 		CacheReadPerMTok: &cacheRead, CacheWritePerMTok: &cacheWrite,
 	}
+}
+
+// previewMinutes / previewStamp keep the seeded SLA data readable: minutes are
+// pointers (unset must stay distinguishable from zero) and the case clocks are
+// relative to now, so the preview shows a breach and a hold no matter when it
+// runs.
+func previewMinutes(n int) *int { return &n }
+
+func previewStamp(d time.Duration) string {
+	return time.Now().UTC().Add(d).Format(time.RFC3339)
 }

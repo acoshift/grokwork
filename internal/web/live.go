@@ -126,9 +126,13 @@ func (s *Server) fpCases() string {
 	fmt.Fprintf(&b, "total=%d open=%d closed=%d\n", board.Total, board.OpenTotal, board.Closed)
 	for _, g := range board.Groups {
 		for _, r := range g.Rows {
-			fmt.Fprintf(&b, "%s|%s|%s|%s|%s|%v|%d|%s|%s|%s|%v\n",
+			// SLA standing rides along even though nothing wrote it: a case
+			// crossing its deadline changes no stored byte, so without this the
+			// badge would only appear on the next navigation or store write.
+			fmt.Fprintf(&b, "%s|%s|%s|%s|%s|%v|%d|%s|%s|%s|%v|%v|%v\n",
 				r.ThreadID, r.Project, r.Phase, r.Severity, r.Title,
-				r.Running, r.Queue, r.UpdatedAt, r.PRState, r.Resolution, r.PRChecksFailing)
+				r.Running, r.Queue, r.UpdatedAt, r.PRState, r.Resolution, r.PRChecksFailing,
+				r.SLABreached, r.SLAHeld)
 		}
 	}
 	return hashFingerprint(b.String())

@@ -136,6 +136,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.generateProjectVerify":       "/config/projects/verify/generate",
 		"config.setProjectMode":              "/config/projects/mode",
 		"config.setProjectCaseKey":           "/config/projects/case-key",
+		"config.setProjectSLA":               "/config/projects/sla",
 		"config.addProjectMember":            "/config/projects/members",
 		"config.setProjectCapabilityUser":    "/config/projects/capabilities/users",
 		"config.removeProjectCapabilityUser": "/config/projects/capabilities/users/remove",
@@ -446,6 +447,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/safe-team", s.requireAdmin(hime.Handler(s.setProjectSafeTeam)))
 	mux.Handle("POST /config/projects/mode", s.requireAdmin(hime.Handler(s.setProjectMode)))
 	mux.Handle("POST /config/projects/case-key", s.requireAdmin(hime.Handler(s.setProjectCaseKey)))
+	mux.Handle("POST /config/projects/sla", s.requireAdmin(hime.Handler(s.setProjectSLA)))
 	mux.Handle("POST /config/projects/members", s.requireAdmin(hime.Handler(s.addProjectMember)))
 	mux.Handle("POST /config/projects/verify", s.requireAdmin(hime.Handler(s.setProjectVerify)))
 	mux.Handle("POST /config/projects/verify/generate", s.requireAdmin(hime.Handler(s.generateProjectVerify)))
@@ -638,6 +640,9 @@ type pageData struct {
 	// Related cases, outbound then inbound (see bot.RelatedCaseLinks).
 	CaseLinks   []bot.CaseLink
 	CanLinkCase bool
+	// CaseSLA is this case's standing against its project's SLA targets,
+	// computed for this render (bot.CaseSLAFor).
+	CaseSLA bot.CaseSLA
 	// Diff review UI (commit / session / PR diff pages + per-file fragments)
 	DiffReview *diffReviewData
 	FileFrag   *fileFragData
@@ -1284,6 +1289,40 @@ func (s *Server) setProjectCaseKey(ctx *hime.Context) error {
 		"name": name, "caseKey": key,
 	})
 	return s.projectConfigTabRedirect(ctx, name, "workflow", fmt.Sprintf("Updated case id prefix for project %q", name), err)
+}
+
+// setProjectSLA saves the Workflow tab's per-severity case deadlines. One form
+// covers every severity, so a save is a full replacement: an emptied box clears
+// that target rather than leaving the old value behind, which is the only way to
+// turn an SLA back off from the UI.
+func (s *Server) setProjectSLA(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	targets := make(map[string]config.SLATarget, len(config.SLASeverities))
+	for _, sev := range config.SLASeverities {
+		first, err := config.ParseSLAMinutes(ctx.PostFormValue("first_" + sev))
+		if err != nil {
+			return s.projectConfigTabRedirect(ctx, name, "workflow", "", fmt.Errorf("%s first response: %w", sev, err))
+		}
+		resolution, err := config.ParseSLAMinutes(ctx.PostFormValue("resolution_" + sev))
+		if err != nil {
+			return s.projectConfigTabRedirect(ctx, name, "workflow", "", fmt.Errorf("%s resolution: %w", sev, err))
+		}
+		if first == nil && resolution == nil {
+			continue
+		}
+		targets[sev] = config.SLATarget{FirstResponseMinutes: first, ResolutionMinutes: resolution}
+	}
+	err := s.cfg.SetProjectSLA(name, targets)
+	// Minutes are policy, not customer data — log what was set so a "why did this
+	// case go red" question has an answer.
+	s.auditAction(ctx, "config.set_project_sla", err, map[string]any{
+		"name": name, "severities": len(targets),
+	})
+	msg := fmt.Sprintf("Updated SLA targets for project %q", name)
+	if len(targets) == 0 {
+		msg = fmt.Sprintf("Cleared SLA targets for project %q", name)
+	}
+	return s.projectConfigTabRedirect(ctx, name, "workflow", msg, err)
 }
 
 func (s *Server) setProjectVerify(ctx *hime.Context) error {

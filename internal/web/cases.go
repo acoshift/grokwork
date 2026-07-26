@@ -61,6 +61,7 @@ func casesBoardURL(project string, b bot.CaseBoard) string {
 		"phase":    b.PhaseFilter,
 		"severity": b.SeverityFilter,
 		"owner":    b.OwnerFilter,
+		"sla":      b.SLAFilter,
 	} {
 		if val != "" {
 			q.Set(key, val)
@@ -85,6 +86,7 @@ func (s *Server) listCaseBoardVisible(ctx *hime.Context, projectFilter string) b
 		Severity: ctx.FormValue("severity"),
 		Scope:    ctx.FormValue("scope"),
 		Owner:    ctx.FormValue("owner"),
+		SLA:      ctx.FormValue("sla"),
 		ViewerID: s.fixActor(ctx).ID,
 	}
 	if !config.RoleAtLeast(role, config.WebRoleAdmin) {

@@ -371,6 +371,7 @@
     <span class="badge">case</span>
     {{if .SessionEntry.Phase}}<span class="badge">{{.SessionEntry.Phase}}</span>{{end}}
     {{if .SessionEntry.Severity}}<span class="badge sev-{{.SessionEntry.Severity}}">{{.SessionEntry.Severity}}</span>{{end}}
+    {{if .CaseSLA.Badge}}<span class="badge{{if .CaseSLA.Breached}} status-error{{else if .CaseSLA.Held}} status-warn{{end}}" id="session-case-sla" title="{{.CaseSLA.Detail}}">{{.CaseSLA.Badge}}</span>{{end}}
     {{if .SessionEntry.IsCaseClosed}}<span class="badge">closed</span>{{end}}
   </p>
   {{if .CaseLinks}}

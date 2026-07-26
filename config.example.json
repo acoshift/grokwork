@@ -24,6 +24,12 @@
       "discordChannelId": "",
       "discordGuildId": "",
       "repoFetchIntervalMinutes": 5,
+      "sla": {
+        "critical": { "firstResponseMinutes": 60, "resolutionMinutes": 480 },
+        "high": { "firstResponseMinutes": 240, "resolutionMinutes": 2880 },
+        "medium": { "firstResponseMinutes": 1440 },
+        "low": {}
+      },
       "github": {
         "repos": [
           { "owner": "your-org", "repo": "app" }

@@ -142,6 +142,9 @@ func (b *Bot) AnswerCase(threadID, actorID, note string) error {
 		ent.Mode = ModeCase
 		ent.Phase = sessionstore.PhaseAnswered
 		ent.Label = sessionstore.LabelBlocked
+		// Answering is both a response and a handoff: it stops the first-response
+		// clock and holds the resolution one while the customer has it.
+		sessionstore.MarkCaseWaitingOnCustomer(ent, time.Now())
 		if note != "" {
 			clean, _ := SanitizeCustomerUpdate(note)
 			if clean != "" {
@@ -243,6 +246,9 @@ func (b *Bot) ReopenCase(threadID, actorID, phase string) error {
 		ent.ResolvedBy = ""
 		ent.ReopenedAt = now
 		ent.ReopenedBy = actorID
+		// A reopen starts a fresh SLA round from ReopenedAt: the customer is
+		// waiting again and has to be responded to again.
+		sessionstore.ResetCaseSLARound(ent)
 		ent.Label = label
 		// Leave LabelManual as-is so a prior manual label can still be cleared via /label auto.
 		_ = sessionstore.ClampCaseFields(ent)
@@ -278,6 +284,8 @@ func (b *Bot) SetCaseCustomerUpdate(threadID, text string) (clean string, hits [
 	}
 	_, _, err = b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
 		ent.CustomerUpdate = clean
+		// Customer-facing text is what the first-response clock measures.
+		sessionstore.MarkCaseResponded(ent, time.Now())
 		_ = sessionstore.ClampCaseFields(ent)
 	})
 	return clean, hits, err

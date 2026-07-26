@@ -753,6 +753,18 @@ func preserveModeFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	if next.CustomerUpdate == "" {
 		next.CustomerUpdate = prev.CustomerUpdate
 	}
+	// SLA clocks: a Set rebuild must not restart a case's deadlines. An
+	// intentional *clear* (a reopen starting a fresh round) goes through Patch,
+	// which never rebuilds.
+	if next.OpenedAt == "" {
+		next.OpenedAt = prev.OpenedAt
+	}
+	if next.FirstResponseAt == "" {
+		next.FirstResponseAt = prev.FirstResponseAt
+	}
+	if next.AnsweredAt == "" {
+		next.AnsweredAt = prev.AnsweredAt
+	}
 	if next.Resolution == "" {
 		next.Resolution = prev.Resolution
 	}

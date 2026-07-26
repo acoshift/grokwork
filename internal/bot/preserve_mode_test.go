@@ -19,6 +19,11 @@ func TestPreserveModeAndShipMode(t *testing.T) {
 		},
 		OpenQuestions: []sessionstore.OpenQuestion{{ID: "q1", Text: "ok?"}},
 		VerifyMsgID:   "vm1",
+		// SLA clocks: a rebuild that dropped these would silently restart every
+		// deadline on the case.
+		OpenedAt:        "2026-01-01T00:00:00Z",
+		FirstResponseAt: "2026-01-01T00:30:00Z",
+		AnsweredAt:      "2026-01-01T02:00:00Z",
 	}
 	next := sessionstore.Entry{
 		SessionID: "s1",
@@ -39,6 +44,10 @@ func TestPreserveModeAndShipMode(t *testing.T) {
 	}
 	if len(next.Checkpoints) != 1 || next.VerifyMsgID != "vm1" || len(next.OpenQuestions) != 1 {
 		t.Fatalf("wave2 fields lost: %+v", next)
+	}
+	if next.OpenedAt != "2026-01-01T00:00:00Z" || next.FirstResponseAt != "2026-01-01T00:30:00Z" ||
+		next.AnsweredAt != "2026-01-01T02:00:00Z" {
+		t.Fatalf("SLA clocks lost: opened=%q first=%q answered=%q", next.OpenedAt, next.FirstResponseAt, next.AnsweredAt)
 	}
 	// Explicit next.Mode wins
 	next2 := sessionstore.Entry{Mode: "fix"}

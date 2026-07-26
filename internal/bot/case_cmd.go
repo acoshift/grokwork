@@ -142,6 +142,8 @@ func (b *Bot) ensureCaseShell(threadID, project string, actor Actor, severity, r
 	e.ReporterID = actor.ID
 	e.ReporterName = actor.String()
 	e.IntakeSource = source
+	// The SLA round starts at intake, and only the first one: see MarkCaseOpened.
+	sessionstore.MarkCaseOpened(&e, time.Now())
 	// Minted once, here, because this is the one funnel both intake surfaces
 	// pass through. Never re-minted: a second /case on the same thread (a
 	// re-file with a corrected title) must not renumber a case someone has
@@ -323,6 +325,8 @@ func (b *Bot) handleCustomerUpdate(s *discordgo.Session, m *discordgo.MessageCre
 	}
 	_, _, err := b.sessions.Patch(m.ChannelID, func(ent *sessionstore.Entry) {
 		ent.CustomerUpdate = clean
+		// Customer-facing text is what the first-response clock measures.
+		sessionstore.MarkCaseResponded(ent, time.Now())
 		_ = sessionstore.ClampCaseFields(ent)
 	})
 	// The customer-facing text itself is the one thing this command is about and
@@ -437,6 +441,9 @@ func (b *Bot) handleAnswer(s *discordgo.Session, m *discordgo.MessageCreate, par
 		ent.Mode = ModeCase
 		ent.Phase = sessionstore.PhaseAnswered
 		ent.Label = sessionstore.LabelBlocked // waiting on customer / knowledge close pending
+		// Answering is both a response and a handoff: it stops the first-response
+		// clock and holds the resolution one while the customer has it.
+		sessionstore.MarkCaseWaitingOnCustomer(ent, time.Now())
 		if note != "" {
 			clean, _ := SanitizeCustomerUpdate(note)
 			if clean != "" {

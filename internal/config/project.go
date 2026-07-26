@@ -45,7 +45,11 @@ type ProjectConfig struct {
 	DefaultMode             string `json:"defaultMode,omitempty"`             // investigate|fix|… empty=legacy
 	// CaseKey overrides the prefix new case keys take. Empty derives it from
 	// the project name (see ProjectCaseKeyPrefix).
-	CaseKey             string                  `json:"caseKey,omitempty"`
+	CaseKey string `json:"caseKey,omitempty"`
+	// SLA are this project's per-severity case deadlines, keyed by severity
+	// (see sla.go). Absent or empty means this project has no SLAs, which is
+	// deliberately different from having ones nobody can meet.
+	SLA                 map[string]SLATarget    `json:"sla,omitempty"`
 	CapabilityTemplates map[string]Capabilities `json:"capabilityTemplates,omitempty"`
 	CapabilityByUser    map[string]string       `json:"capabilityByUser,omitempty"` // actor ID → template
 	InvestigateTools    string                  `json:"investigateTools,omitempty"` // comma tools allowlist
@@ -112,6 +116,11 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("projects[%q]: %w", name, err)
 		}
 		pc.Teams = teams
+		sla, err := normalizeSLA(pc.SLA)
+		if err != nil {
+			return fmt.Errorf("projects[%q]: %w", name, err)
+		}
+		pc.SLA = sla
 		if pc.Linear != nil {
 			pc.Linear.TeamKey = strings.TrimSpace(pc.Linear.TeamKey)
 			pc.Linear.APIKey = strings.TrimSpace(pc.Linear.APIKey)
@@ -151,6 +160,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		SafeTeamDefaultTemplate  string                  `json:"safeTeamDefaultTemplate,omitempty"`
 		DefaultMode              string                  `json:"defaultMode,omitempty"`
 		CaseKey                  string                  `json:"caseKey,omitempty"`
+		SLA                      map[string]SLATarget    `json:"sla,omitempty"`
 		CapabilityTemplates      map[string]Capabilities `json:"capabilityTemplates,omitempty"`
 		CapabilityByUser         map[string]string       `json:"capabilityByUser,omitempty"`
 		InvestigateTools         string                  `json:"investigateTools,omitempty"`
@@ -173,6 +183,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			SafeTeamDefaultTemplate:  pc.SafeTeamDefaultTemplate,
 			DefaultMode:              pc.DefaultMode,
 			CaseKey:                  pc.CaseKey,
+			SLA:                      cloneSLA(pc.SLA),
 			CapabilityTemplates:      cloneCapabilitiesMap(pc.CapabilityTemplates),
 			CapabilityByUser:         cloneStringMap(pc.CapabilityByUser),
 			InvestigateTools:         pc.InvestigateTools,
@@ -218,6 +229,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			SafeTeamDefaultTemplate:  v.SafeTeamDefaultTemplate,
 			DefaultMode:              v.DefaultMode,
 			CaseKey:                  v.CaseKey,
+			SLA:                      cloneSLA(v.SLA),
 			CapabilityTemplates:      cloneCapabilitiesMap(v.CapabilityTemplates),
 			CapabilityByUser:         cloneStringMap(v.CapabilityByUser),
 			InvestigateTools:         v.InvestigateTools,

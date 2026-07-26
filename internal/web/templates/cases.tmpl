@@ -12,7 +12,7 @@
 {{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
      id="live-cases-pipeline"
-     hx-get="{{route "partial.cases.pipeline"}}?project={{urlquery .Project}}&amp;phase={{urlquery .Cases.PhaseFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}&amp;scope={{urlquery .Cases.Scope}}&amp;owner={{urlquery .Cases.OwnerFilter}}"
+     hx-get="{{route "partial.cases.pipeline"}}?project={{urlquery .Project}}&amp;phase={{urlquery .Cases.PhaseFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}&amp;scope={{urlquery .Cases.Scope}}&amp;owner={{urlquery .Cases.OwnerFilter}}&amp;sla={{urlquery .Cases.SLAFilter}}"
      hx-trigger="sse:cases"
      hx-target="this"
      hx-select="unset"
@@ -53,6 +53,13 @@
     </select>
   </div>
   <div class="field">
+    <label for="sla">SLA</label>
+    <select id="sla" name="sla" data-autosubmit>
+      <option value="" {{if eq .Cases.SLAFilter ""}}selected{{end}}>Any</option>
+      <option value="breached" {{if eq .Cases.SLAFilter "breached"}}selected{{end}}>Breached ({{.Cases.Breached}})</option>
+    </select>
+  </div>
+  <div class="field">
     <label for="scope">Show</label>
     <select id="scope" name="scope" data-autosubmit>
       <option value="open" {{if eq .Cases.Scope "open"}}selected{{end}}>Open cases (default)</option>
@@ -64,7 +71,7 @@
 
 <div class="live-region"
      id="live-cases-list"
-     hx-get="{{route "partial.cases.list"}}?project={{urlquery .Project}}&amp;phase={{urlquery .Cases.PhaseFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}&amp;scope={{urlquery .Cases.Scope}}&amp;owner={{urlquery .Cases.OwnerFilter}}"
+     hx-get="{{route "partial.cases.list"}}?project={{urlquery .Project}}&amp;phase={{urlquery .Cases.PhaseFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}&amp;scope={{urlquery .Cases.Scope}}&amp;owner={{urlquery .Cases.OwnerFilter}}&amp;sla={{urlquery .Cases.SLAFilter}}"
      hx-trigger="sse:cases"
      hx-target="this"
      hx-select="unset"
@@ -81,6 +88,7 @@
 {{define "cases_qs"}}
 {{- if .SeverityFilter}}&amp;severity={{urlquery .SeverityFilter}}{{end}}
 {{- if .OwnerFilter}}&amp;owner={{urlquery .OwnerFilter}}{{end}}
+{{- if .SLAFilter}}&amp;sla={{urlquery .SLAFilter}}{{end}}
 {{- end}}
 
 {{define "cases_pipeline"}}
@@ -170,6 +178,9 @@
           {{end}}
         </div>
         <div class="case-side">
+          {{/* Computed at render time, so it is current for this page rather
+               than for whenever the case was last written (bot.CaseSLAFor). */}}
+          {{if .SLABadge}}<span class="badge{{if .SLABreached}} status-error{{else if .SLAHeld}} status-warn{{end}}" title="{{.SLADetail}}">{{.SLABadge}}</span>{{end}}
           {{if .Running}}<span class="badge live">running</span>{{end}}
           {{if gt .Queue 0}}<span class="badge">queue {{.Queue}}</span>{{end}}
           {{if .Resolution}}
