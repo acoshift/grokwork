@@ -1,6 +1,6 @@
 # Unmapped members and Safe Team Mode
 
-How Grok Work chooses capabilities when a user is allowlisted on a project but **not** listed in `capabilityByUser` or `capabilityByRole`.
+How Grok Work chooses capabilities when an actor is allowlisted on a project but named by neither `capabilityByUser` nor a team that carries a `capabilities` template.
 
 Source: `Config.ResolveCapabilities` in `internal/config/capabilities.go`.
 
@@ -10,8 +10,8 @@ Source: `Config.ResolveCapabilities` in `internal/config/capabilities.go`.
 
 Caller must already pass `AccessAllowed` (project allowlist). Then:
 
-1. If Discord **user id** maps in `capabilityByUser` → resolve that template (project overlay, then builtin).  
-2. Else/also: each Discord **role id** in `capabilityByRole` → OR-merge flags.  
+1. If the **actor id** maps in `capabilityByUser` → resolve that template (project overlay, then builtin).  
+2. Else/also: every **team** the actor belongs to, in sorted-key order → OR-merge the flags of its `capabilities` template. A team with no `capabilities` grants access only and is not a hit.  
 3. If any map hit → return merged caps.  
 4. **Unmapped:**  
    - **Safe Team Mode on** → `safeTeamDefaultTemplate` (default **`investigator`**). Unknown template name → **zero caps** (fail closed).  
@@ -28,7 +28,7 @@ Multiple templates OR-merge boolean flags (any true wins).
 | Unmapped allowlisted users | Get investigator-class caps (unless default template overridden) |
 | No silent eng elevation | Eng **must** be mapped to `builder` / `approver` / `admin` |
 | Queued tasks | Execute-time re-check can **tighten** already-queued work (PR/token off) when caps demote |
-| Config UI | Warns on unmapped user/role IDs when Safe Team is enabled |
+| Config UI | Warns on unmapped member IDs when Safe Team is enabled |
 
 **Default template** is configurable (`safeTeamDefaultTemplate`). Common choices:
 
@@ -51,22 +51,22 @@ Turn Safe Team Mode **on** for mixed support+eng projects.
 
 ## Rollout checklist
 
-1. Map eng Discord roles → `builder` (or higher).  
-2. Map support roles → `investigator` or `operator` (optional if default is already investigator).  
+1. Put eng on a team with `capabilities: "builder"` (or higher).  
+2. Give the support team `investigator` or `operator` (optional if the default is already investigator).  
 3. Review **Unmapped members** warning on project config.  
 4. Enable Safe Team Mode.  
 5. Spot-check: support freeform does not open PRs; eng freeform still ships.  
 
 ---
 
-## Web path caveat
+## Web and Discord resolve identically
 
-Web handlers call `ResolveCapabilities(project, userID, nil)` — **no guild role list**.
+Both call `ResolveCapabilities(project, userID)`. There is no guild-role lookup on either path, so a team membership means the same thing in chat and in the web UI.
 
 | Implication | Action |
 |-------------|--------|
-| Role-only maps do not apply on pure web starts | Also set `capabilityByUser` for web operators |
-| Unmapped web user under Safe Team | Gets default template (investigator) even if their Discord role would be builder in chat |
+| Nothing is Discord-only any more | One team grant covers both surfaces |
+| Unmapped actor under Safe Team | Gets the default template (investigator) on both paths |
 
 ---
 

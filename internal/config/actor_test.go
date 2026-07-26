@@ -78,27 +78,27 @@ func TestAccessAllowedAcceptsNamespacedAllowlist(t *testing.T) {
 	c := &Config{Projects: ProjectsMap{
 		"p": {AllowedUserIDs: []string{"discord:111", "oidc:alice"}},
 	}}
-	if !c.AccessAllowed("p", "111", nil) {
+	if !c.AccessAllowed("p", "111") {
 		t.Error("bare runtime id must match a discord:-namespaced allowlist entry")
 	}
-	if !c.AccessAllowed("p", "discord:111", nil) {
+	if !c.AccessAllowed("p", "discord:111") {
 		t.Error("namespaced runtime id must match")
 	}
-	if !c.AccessAllowed("p", "oidc:alice", nil) {
+	if !c.AccessAllowed("p", "oidc:alice") {
 		t.Error("a local (non-Discord) actor must be grantable — this was impossible before")
 	}
-	if c.AccessAllowed("p", "222", nil) {
+	if c.AccessAllowed("p", "222") {
 		t.Error("unrelated id allowed")
 	}
-	if c.AccessAllowed("p", "oidc:bob", nil) {
+	if c.AccessAllowed("p", "oidc:bob") {
 		t.Error("unrelated local id allowed")
 	}
 	// Legacy config with bare snowflakes keeps working unchanged.
 	legacy := &Config{Projects: ProjectsMap{"p": {AllowedUserIDs: []string{"111"}}}}
-	if !legacy.AccessAllowed("p", "111", nil) {
+	if !legacy.AccessAllowed("p", "111") {
 		t.Error("legacy bare allowlist broke")
 	}
-	if !legacy.AccessAllowed("p", "discord:111", nil) {
+	if !legacy.AccessAllowed("p", "discord:111") {
 		t.Error("legacy bare allowlist must also accept the namespaced spelling")
 	}
 }
@@ -110,7 +110,7 @@ func TestResolveCapabilitiesAcceptsNamespacedKeys(t *testing.T) {
 			CapabilityByUser: map[string]string{"discord:111": "builder"},
 		},
 	}}
-	if !c.ResolveCapabilities("p", "111", nil).CanShip() {
+	if !c.ResolveCapabilities("p", "111").CanShip() {
 		t.Error("bare runtime id must hit a namespaced capabilityByUser key")
 	}
 
@@ -121,7 +121,7 @@ func TestResolveCapabilitiesAcceptsNamespacedKeys(t *testing.T) {
 			CapabilityByUser: map[string]string{"111": "builder"},
 		},
 	}}
-	if !c2.ResolveCapabilities("p", "discord:111", nil).CanShip() {
+	if !c2.ResolveCapabilities("p", "discord:111").CanShip() {
 		t.Error("namespaced runtime id must hit a bare capabilityByUser key")
 	}
 }

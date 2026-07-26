@@ -10,13 +10,13 @@ func TestResolveCapabilitiesSafeTeamUnmapped(t *testing.T) {
 	cfg := &Config{
 		Projects: ProjectsMap{
 			"app": {
-				Path:         "/tmp/app",
-				SafeTeamMode: &on,
+				Path:           "/tmp/app",
+				SafeTeamMode:   &on,
 				AllowedUserIDs: []string{"u1"},
 			},
 		},
 	}
-	caps := cfg.ResolveCapabilities("app", "u1", nil)
+	caps := cfg.ResolveCapabilities("app", "u1")
 	if caps.CanShip() {
 		t.Fatalf("unmapped under SafeTeamMode must not ship: %+v", caps)
 	}
@@ -31,28 +31,9 @@ func TestResolveCapabilitiesBuilderWhenSafeOff(t *testing.T) {
 			"app": {Path: "/tmp/app", AllowedUserIDs: []string{"u1"}},
 		},
 	}
-	caps := cfg.ResolveCapabilities("app", "u1", nil)
+	caps := cfg.ResolveCapabilities("app", "u1")
 	if !caps.CanShip() {
 		t.Fatalf("legacy default builder: %+v", caps)
-	}
-}
-
-func TestResolveCapabilitiesByRole(t *testing.T) {
-	on := true
-	cfg := &Config{
-		Projects: ProjectsMap{
-			"app": {
-				Path:         "/tmp/app",
-				SafeTeamMode: &on,
-				CapabilityByRole: map[string]string{
-					"role-eng": "builder",
-				},
-			},
-		},
-	}
-	caps := cfg.ResolveCapabilities("app", "u1", []string{"role-eng"})
-	if !caps.CanShip() {
-		t.Fatalf("mapped eng role: %+v", caps)
 	}
 }
 
@@ -65,8 +46,10 @@ func TestProjectConfigCapabilityMarshalRoundTrip(t *testing.T) {
 			SafeTeamDefaultTemplate: "investigator",
 			DefaultMode:             "investigate",
 			CapabilityByUser:        map[string]string{"u1": "builder"},
-			CapabilityByRole:        map[string]string{"r1": "investigator"},
-			InvestigateTools:        "read_file,grep",
+			Teams: map[string]TeamConfig{
+				"support": {Label: "Support", Members: []string{"discord:9"}, Capabilities: "investigator"},
+			},
+			InvestigateTools: "read_file,grep",
 			CapabilityTemplates: map[string]Capabilities{
 				"custom": {Investigate: true, StartSessions: true, GithubWrites: true},
 			},
@@ -90,9 +73,12 @@ func TestProjectConfigCapabilityMarshalRoundTrip(t *testing.T) {
 	if !pc.CapabilityTemplates["custom"].GithubWrites {
 		t.Fatalf("templates lost: %+v", pc.CapabilityTemplates)
 	}
+	if tm := pc.Teams["support"]; tm.Capabilities != "investigator" || len(tm.Members) != 1 {
+		t.Fatalf("team lost in round trip: %+v", pc.Teams)
+	}
 	// clone
 	m3 := cloneProjectsMap(m)
-	if m3["app"].CapabilityByRole["r1"] != "investigator" {
+	if m3["app"].Teams["support"].Label != "Support" {
 		t.Fatalf("clone failed: %+v", m3["app"])
 	}
 }
@@ -116,7 +102,7 @@ func TestConfigFileRoundTripCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := &Config{Projects: m2}
-	caps := cfg.ResolveCapabilities("p", "u", nil)
+	caps := cfg.ResolveCapabilities("p", "u")
 	if !caps.CanShip() {
 		t.Fatalf("loaded builder map: %+v", caps)
 	}

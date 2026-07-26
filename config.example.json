@@ -9,7 +9,18 @@
       "allowedUserIds": [
         "YOUR_DISCORD_USER_ID"
       ],
-      "allowedRoleIds": [],
+      "teams": {
+        "support": {
+          "label": "Support",
+          "members": ["discord:ANOTHER_DISCORD_USER_ID"],
+          "capabilities": "investigator"
+        },
+        "eng": {
+          "label": "Engineering",
+          "members": [],
+          "capabilities": "builder"
+        }
+      },
       "discordChannelId": "",
       "discordGuildId": "",
       "repoFetchIntervalMinutes": 5,

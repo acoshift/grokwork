@@ -117,12 +117,12 @@ Without OAuth (open LAN), write features stay off (fail-closed).
 
 ## How an admin assigns this role
 
-1. Project allowlist: Discord user ID and/or role ID.  
+1. Project allowlist: a `teams` entry (preferred) or a direct `allowedUserIds` id.  
 2. **Config → project → Safe team mode:** enable; keep default template `investigator` (or set it).  
-3. **Capability maps:**  
-   - User: Discord snowflake → template `investigator`  
-   - Role: Discord role ID → `investigator`  
+3. **Capabilities:**  
+   - Team: `capabilities: "investigator"` on the support team  
+   - Or per-person: `capabilityByUser` actor id → `investigator`  
 4. Optional: project **default mode** = `case` for support channels.  
-5. Map eng to `builder` **before** enabling Safe Team Mode on mixed channels.
+5. Put eng on a `builder` team **before** enabling Safe Team Mode on mixed channels.
 
-Multiple template hits (user + roles) are **OR-merged** (any true flag wins).
+Multiple template hits (`capabilityByUser` + every team) are **OR-merged** (any true flag wins).

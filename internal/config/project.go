@@ -21,34 +21,36 @@ type ProjectLinearConfig struct {
 
 // ProjectConfig is one named project entry (path + optional integrations).
 type ProjectConfig struct {
-	Path             string               `json:"path"`
-	DiscordChannelID string               `json:"discordChannelId,omitempty"` // preferred channel for web-created threads
-	DiscordGuildID   string               `json:"discordGuildId,omitempty"`   // Discord server for deep links (multi-guild)
-	// AllowedUserIDs / AllowedRoleIDs are this project's Discord allowlist.
-	// Empty both → fail-closed (no one may @Grok on this project's channels).
-	AllowedUserIDs []string             `json:"allowedUserIds,omitempty"`
-	AllowedRoleIDs []string             `json:"allowedRoleIds,omitempty"`
+	Path             string `json:"path"`
+	DiscordChannelID string `json:"discordChannelId,omitempty"` // preferred channel for web-created threads
+	DiscordGuildID   string `json:"discordGuildId,omitempty"`   // Discord server for deep links (multi-guild)
+	// AllowedUserIDs are this project's direct members (namespaced actor ids;
+	// a bare id still means Discord). Together with Teams they are the whole
+	// allowlist: no members and no team with members → fail-closed (no one may
+	// @Grok on this project's channels).
+	AllowedUserIDs []string `json:"allowedUserIds,omitempty"`
+	// Teams grant access + capabilities. Key is a stable id, lowercased.
+	Teams map[string]TeamConfig `json:"teams,omitempty"`
 	// RepoFetchIntervalMinutes controls idle background git fetch for this
 	// project's main checkout. nil/omitted → DefaultRepoFetchIntervalMinutes (5).
 	// 0 disables idle auto-fetch. New worktrees always fetch with a short
 	// hardcoded throttle (see gitworktree.CreateFetchThrottle).
-	RepoFetchIntervalMinutes *int                 `json:"repoFetchIntervalMinutes,omitempty"`
+	RepoFetchIntervalMinutes *int `json:"repoFetchIntervalMinutes,omitempty"`
 	// DirectToPrimary, when true, new sessions stamp ShipMode=direct and ship
 	// via fast-forward push to the project primary (no PR). nil/false = PR mode.
-	DirectToPrimary *bool                 `json:"directToPrimary,omitempty"`
+	DirectToPrimary *bool `json:"directToPrimary,omitempty"`
 	// SafeTeamMode enables capability templates (K16). nil/false → legacy builder default.
-	SafeTeamMode            *bool                    `json:"safeTeamMode,omitempty"`
-	SafeTeamDefaultTemplate string                   `json:"safeTeamDefaultTemplate,omitempty"` // default investigator
-	DefaultMode             string                   `json:"defaultMode,omitempty"`             // investigate|fix|… empty=legacy
+	SafeTeamMode            *bool  `json:"safeTeamMode,omitempty"`
+	SafeTeamDefaultTemplate string `json:"safeTeamDefaultTemplate,omitempty"` // default investigator
+	DefaultMode             string `json:"defaultMode,omitempty"`             // investigate|fix|… empty=legacy
 	// CaseKey overrides the prefix new case keys take. Empty derives it from
 	// the project name (see ProjectCaseKeyPrefix).
-	CaseKey                 string                   `json:"caseKey,omitempty"`
-	CapabilityTemplates     map[string]Capabilities  `json:"capabilityTemplates,omitempty"`
-	CapabilityByRole        map[string]string        `json:"capabilityByRole,omitempty"` // Discord role ID → template
-	CapabilityByUser        map[string]string        `json:"capabilityByUser,omitempty"` // Discord user ID → template
-	InvestigateTools        string                   `json:"investigateTools,omitempty"` // comma tools allowlist
+	CaseKey             string                  `json:"caseKey,omitempty"`
+	CapabilityTemplates map[string]Capabilities `json:"capabilityTemplates,omitempty"`
+	CapabilityByUser    map[string]string       `json:"capabilityByUser,omitempty"` // actor ID → template
+	InvestigateTools    string                  `json:"investigateTools,omitempty"` // comma tools allowlist
 	// VerifyCommands are project shell checks run by @Grok /verify (no Grok).
-	VerifyCommands []VerifyCommand `json:"verifyCommands,omitempty"`
+	VerifyCommands []VerifyCommand      `json:"verifyCommands,omitempty"`
 	GitHub         *ProjectGitHubConfig `json:"github,omitempty"`
 	Linear         *ProjectLinearConfig `json:"linear,omitempty"`
 	// Deploy is per-project deploy policy and credentials. The pipeline itself
@@ -105,7 +107,7 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 		pc.DiscordChannelID = strings.TrimSpace(pc.DiscordChannelID)
 		pc.DiscordGuildID = strings.TrimSpace(pc.DiscordGuildID)
 		pc.AllowedUserIDs = cleanIDList(pc.AllowedUserIDs)
-		pc.AllowedRoleIDs = cleanIDList(pc.AllowedRoleIDs)
+		pc.Teams = normalizeTeams(pc.Teams)
 		if pc.Linear != nil {
 			pc.Linear.TeamKey = strings.TrimSpace(pc.Linear.TeamKey)
 			pc.Linear.APIKey = strings.TrimSpace(pc.Linear.APIKey)
@@ -138,14 +140,13 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		DiscordChannelID         string                  `json:"discordChannelId,omitempty"`
 		DiscordGuildID           string                  `json:"discordGuildId,omitempty"`
 		AllowedUserIDs           []string                `json:"allowedUserIds,omitempty"`
-		AllowedRoleIDs           []string                `json:"allowedRoleIds,omitempty"`
+		Teams                    map[string]TeamConfig   `json:"teams,omitempty"`
 		RepoFetchIntervalMinutes *int                    `json:"repoFetchIntervalMinutes,omitempty"`
 		DirectToPrimary          *bool                   `json:"directToPrimary,omitempty"`
 		SafeTeamMode             *bool                   `json:"safeTeamMode,omitempty"`
 		SafeTeamDefaultTemplate  string                  `json:"safeTeamDefaultTemplate,omitempty"`
 		DefaultMode              string                  `json:"defaultMode,omitempty"`
 		CapabilityTemplates      map[string]Capabilities `json:"capabilityTemplates,omitempty"`
-		CapabilityByRole         map[string]string       `json:"capabilityByRole,omitempty"`
 		CapabilityByUser         map[string]string       `json:"capabilityByUser,omitempty"`
 		InvestigateTools         string                  `json:"investigateTools,omitempty"`
 		VerifyCommands           []VerifyCommand         `json:"verifyCommands,omitempty"`
@@ -160,14 +161,13 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			DiscordChannelID:         pc.DiscordChannelID,
 			DiscordGuildID:           pc.DiscordGuildID,
 			AllowedUserIDs:           slices.Clone(pc.AllowedUserIDs),
-			AllowedRoleIDs:           slices.Clone(pc.AllowedRoleIDs),
+			Teams:                    cloneTeams(pc.Teams),
 			RepoFetchIntervalMinutes: cloneIntPtr(pc.RepoFetchIntervalMinutes),
 			DirectToPrimary:          cloneBoolPtr(pc.DirectToPrimary),
 			SafeTeamMode:             cloneBoolPtr(pc.SafeTeamMode),
 			SafeTeamDefaultTemplate:  pc.SafeTeamDefaultTemplate,
 			DefaultMode:              pc.DefaultMode,
 			CapabilityTemplates:      cloneCapabilitiesMap(pc.CapabilityTemplates),
-			CapabilityByRole:         cloneStringMap(pc.CapabilityByRole),
 			CapabilityByUser:         cloneStringMap(pc.CapabilityByUser),
 			InvestigateTools:         pc.InvestigateTools,
 			VerifyCommands:           cloneVerifyCommands(pc.VerifyCommands),
@@ -205,14 +205,13 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			DiscordChannelID:         v.DiscordChannelID,
 			DiscordGuildID:           v.DiscordGuildID,
 			AllowedUserIDs:           slices.Clone(v.AllowedUserIDs),
-			AllowedRoleIDs:           slices.Clone(v.AllowedRoleIDs),
+			Teams:                    cloneTeams(v.Teams),
 			RepoFetchIntervalMinutes: cloneIntPtr(v.RepoFetchIntervalMinutes),
 			DirectToPrimary:          cloneBoolPtr(v.DirectToPrimary),
 			SafeTeamMode:             cloneBoolPtr(v.SafeTeamMode),
 			SafeTeamDefaultTemplate:  v.SafeTeamDefaultTemplate,
 			DefaultMode:              v.DefaultMode,
 			CapabilityTemplates:      cloneCapabilitiesMap(v.CapabilityTemplates),
-			CapabilityByRole:         cloneStringMap(v.CapabilityByRole),
 			CapabilityByUser:         cloneStringMap(v.CapabilityByUser),
 			InvestigateTools:         v.InvestigateTools,
 			VerifyCommands:           cloneVerifyCommands(v.VerifyCommands),
@@ -649,26 +648,15 @@ func (c *Config) SetProjectDefaultMode(name, defaultMode string) error {
 // SetProjectCapabilityByUser sets or clears a user → template map entry.
 // template empty removes the mapping.
 func (c *Config) SetProjectCapabilityByUser(name, userID, template string) error {
-	return c.setProjectCapabilityMap(name, true, userID, template)
-}
-
-// SetProjectCapabilityByRole sets or clears a role → template map entry.
-// template empty removes the mapping.
-func (c *Config) SetProjectCapabilityByRole(name, roleID, template string) error {
-	return c.setProjectCapabilityMap(name, false, roleID, template)
+	return c.setProjectCapabilityMap(name, userID, template)
 }
 
 // RemoveProjectCapabilityByUser removes a user capability map entry.
 func (c *Config) RemoveProjectCapabilityByUser(name, userID string) error {
-	return c.setProjectCapabilityMap(name, true, userID, "")
+	return c.setProjectCapabilityMap(name, userID, "")
 }
 
-// RemoveProjectCapabilityByRole removes a role capability map entry.
-func (c *Config) RemoveProjectCapabilityByRole(name, roleID string) error {
-	return c.setProjectCapabilityMap(name, false, roleID, "")
-}
-
-func (c *Config) setProjectCapabilityMap(name string, byUser bool, id, template string) error {
+func (c *Config) setProjectCapabilityMap(name, id, template string) error {
 	name = strings.TrimSpace(name)
 	id = strings.TrimSpace(id)
 	template = strings.TrimSpace(strings.ToLower(template))
@@ -676,10 +664,7 @@ func (c *Config) setProjectCapabilityMap(name string, byUser bool, id, template 
 		return fmt.Errorf("project name is required")
 	}
 	if id == "" {
-		if byUser {
-			return fmt.Errorf("user id is required")
-		}
-		return fmt.Errorf("role id is required")
+		return fmt.Errorf("user id is required")
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -692,12 +677,7 @@ func (c *Config) setProjectCapabilityMap(name string, byUser bool, id, template 
 			return fmt.Errorf("unknown capability template %q", template)
 		}
 	}
-	var m map[string]string
-	if byUser {
-		m = cloneStringMap(pc.CapabilityByUser)
-	} else {
-		m = cloneStringMap(pc.CapabilityByRole)
-	}
+	m := cloneStringMap(pc.CapabilityByUser)
 	if template == "" {
 		delete(m, id)
 	} else {
@@ -706,11 +686,7 @@ func (c *Config) setProjectCapabilityMap(name string, byUser bool, id, template 
 	if len(m) == 0 {
 		m = nil
 	}
-	if byUser {
-		pc.CapabilityByUser = m
-	} else {
-		pc.CapabilityByRole = m
-	}
+	pc.CapabilityByUser = m
 	c.Projects[name] = pc
 	return c.saveLocked()
 }

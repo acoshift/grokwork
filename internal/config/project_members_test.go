@@ -7,21 +7,21 @@ import (
 func TestAccessAllowedProjectOnly(t *testing.T) {
 	cfg := &Config{
 		Projects: ProjectsMap{
-			"a": {Path: "/a", AllowedUserIDs: []string{"u-a"}, AllowedRoleIDs: []string{"r-a"}},
+			"a": {Path: "/a", AllowedUserIDs: []string{"u-a"}},
 			"b": {Path: "/b", AllowedUserIDs: []string{"u-b"}},
 			"c": {Path: "/c"},
 		},
 	}
-	if !cfg.AccessAllowed("a", "u-a", nil) {
+	if !cfg.AccessAllowed("a", "u-a") {
 		t.Fatal("u-a on a")
 	}
-	if cfg.AccessAllowed("b", "u-a", nil) {
+	if cfg.AccessAllowed("b", "u-a") {
 		t.Fatal("u-a must not access b")
 	}
-	if !cfg.AccessAllowed("a", "other", []string{"r-a"}) {
-		t.Fatal("role r-a on a")
+	if cfg.AccessAllowed("a", "other") {
+		t.Fatal("a non-member must not access a")
 	}
-	if cfg.AccessAllowed("c", "u-a", nil) {
+	if cfg.AccessAllowed("c", "u-a") {
 		t.Fatal("empty project fail-closed")
 	}
 }

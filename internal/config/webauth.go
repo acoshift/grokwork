@@ -30,8 +30,12 @@ type WebAuthFeatures struct {
 // WebAuthConfig is optional private-web authentication (Discord OAuth).
 // When Enabled is false or WebAuth is nil, the web UI stays open LAN mode (legacy).
 type WebAuthConfig struct {
-	Enabled          bool            `json:"enabled"`
-	SessionSecret    string          `json:"sessionSecret,omitempty"`
+	Enabled       bool   `json:"enabled"`
+	SessionSecret string `json:"sessionSecret,omitempty"`
+	// AdminDiscordIDs / MemberDiscordIDs / ViewerDiscordIDs are namespaced actor
+	// ids: a bare snowflake still means Discord, and "oidc:alice" works too. The
+	// JSON keys keep their historical names so no config has to be rewritten —
+	// matching goes through containsID/SameActor, never a raw string compare.
 	AdminDiscordIDs  []string        `json:"adminDiscordIds,omitempty"`
 	MemberDiscordIDs []string        `json:"memberDiscordIds,omitempty"`
 	ViewerDiscordIDs []string        `json:"viewerDiscordIds,omitempty"`
@@ -229,10 +233,11 @@ func (c *Config) ResolveWebRoleForConfig(discordUserID string) (WebRole, bool) {
 	}
 	set := map[string]struct{}{}
 	for _, pc := range c.Projects {
-		for _, uid := range pc.AllowedUserIDs {
-			if n := NormalizeActorID(uid); n != "" {
-				set[n] = struct{}{}
-			}
+		// Teams are a membership grant like allowedUserIds, so they have to seed
+		// this set too: a team-only member would otherwise be unable to log in at
+		// all, no matter what the project pages later allow them to see.
+		for _, id := range projectActorIDsLocked(pc) {
+			set[id] = struct{}{}
 		}
 	}
 	in.ProjectUserSet = set

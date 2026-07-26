@@ -41,8 +41,8 @@ cp config.example.json config.json
 |--------|---------|
 | `discordToken` | Bot token (or `DISCORD_BOT_TOKEN` env) |
 | `discordClientId` | Optional application/client ID for the install URL (decoded from the token when empty) |
-| `projects.<name>.allowedUserIds` / `allowedRoleIds` | Per-project Discord allowlist (fail-closed when both empty). |
-| `allowedRoleIds` | Optional role allowlist |
+| `projects.<name>.allowedUserIds` | Per-project direct members. Namespaced actor ids (`discord:123`, `oidc:alice`); a bare id still means Discord. |
+| `projects.<name>.teams` | `{ "<key>": { "label", "members", "capabilities" } }`. Team membership grants **both** project access and the named capability template. Fail-closed when there are no `allowedUserIds` and no team with members. Replaces the removed `allowedRoleIds` / `capabilityByRole`. |
 | `projects` | Name → **absolute** path string, or object `{ "path", "github", "linear", "discordChannelId", "discordGuildId", "repoFetchIntervalMinutes" }` |
 | `channels` | Discord channel ID → project name (**required**; only way to select a project) |
 | `yolo` | Auto-approve Grok tools (needed for unattended fix/investigate) |

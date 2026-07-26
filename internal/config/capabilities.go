@@ -150,21 +150,35 @@ func (c *Config) ProjectInvestigateTools(project string) string {
 	return strings.TrimSpace(pc.InvestigateTools)
 }
 
-// ResolveCapabilities maps membership + templates → flags (K12 Discord path).
+// ResolveCapabilities maps membership + templates → flags.
 // Caller must already have passed AccessAllowed.
+//
+// capabilityByUser and every team the actor belongs to OR together, so a person
+// on both Support and Engineering gets the union. A team with no capabilities
+// named grants access only and lands in the unmapped path below, exactly like an
+// allowedUserIds-only member.
 // SafeTeamMode off → builder default for unmapped (backward compat).
 // SafeTeamMode on → unmapped → safeTeamDefaultTemplate (default investigator) (K16).
-func (c *Config) ResolveCapabilities(project, userID string, roleIDs []string) Capabilities {
+func (c *Config) ResolveCapabilities(project, userID string) Capabilities {
 	if c == nil {
 		return BuiltinCapabilityTemplates["builder"]
 	}
+	uid := NormalizeActorID(userID)
 	c.mu.RLock()
 	pc, ok := c.Projects[project]
 	safe := pc.SafeTeamMode != nil && *pc.SafeTeamMode
 	defaultTpl := strings.TrimSpace(pc.SafeTeamDefaultTemplate)
 	byUser := pc.CapabilityByUser
-	byRole := pc.CapabilityByRole
 	overlays := pc.CapabilityTemplates
+	// Resolve team membership under the lock: teamsForActor reads the Teams map,
+	// and sorted-key order is what makes the merge deterministic.
+	var teamTemplates []string
+	for _, tm := range teamsForActor(pc, uid) {
+		if tm.Capabilities == "" {
+			continue // access-only team
+		}
+		teamTemplates = append(teamTemplates, tm.Capabilities)
+	}
 	c.mu.RUnlock()
 	if !ok {
 		return Capabilities{}
@@ -175,7 +189,6 @@ func (c *Config) ResolveCapabilities(project, userID string, roleIDs []string) C
 
 	var caps Capabilities
 	var any bool
-	uid := NormalizeActorID(userID)
 	if uid != "" && byUser != nil {
 		// Keys may be written bare or namespaced; normalize both sides.
 		if name, hit := normalizeActorKeys(byUser)[uid]; hit {
@@ -185,16 +198,10 @@ func (c *Config) ResolveCapabilities(project, userID string, roleIDs []string) C
 			}
 		}
 	}
-	for _, rid := range roleIDs {
-		rid = strings.TrimSpace(rid)
-		if rid == "" || byRole == nil {
-			continue
-		}
-		if name, hit := byRole[rid]; hit {
-			if t, ok := lookupTemplate(name, overlays); ok {
-				caps = caps.Or(t)
-				any = true
-			}
+	for _, name := range teamTemplates {
+		if t, ok := lookupTemplate(name, overlays); ok {
+			caps = caps.Or(t)
+			any = true
 		}
 	}
 	if any {
@@ -279,5 +286,3 @@ func cloneCapabilitiesMap(m map[string]Capabilities) map[string]Capabilities {
 	}
 	return out
 }
-
-

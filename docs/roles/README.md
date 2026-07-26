@@ -9,7 +9,7 @@ There are two separate permission systems:
 | **Capability templates** (Safe Team Mode) | Discord bot (and web case/start checks that re-resolve caps) | Investigate vs ship, escalate, customer draft, approve, project-admin flags |
 | **Web roles** | Private web UI when Discord OAuth is enabled | Login, project visibility, config access, host-level write feature flags |
 
-Membership still comes first: a user must be on the project’s Discord allowlist (`allowedUserIds` / `allowedRoleIds`) before capability templates apply. Empty allowlists are fail-closed for that project.
+Membership still comes first: an actor must be on the project’s allowlist — either directly (`allowedUserIds`) or as a member of one of its `teams` — before capability templates apply. A project with no direct members and no team that names anyone is fail-closed. Discord-role authorization (`allowedRoleIds` / `capabilityByRole`) has been removed; a team’s `capabilities` field names the template its members get.
 
 ---
 
@@ -46,14 +46,14 @@ Built-in flag matrix (source: `internal/config/capabilities.go`):
 
 | Safe Team Mode | Unmapped allowlisted user | Effective template |
 |----------------|---------------------------|--------------------|
-| **On** | No `capabilityByUser` / `capabilityByRole` hit | `safeTeamDefaultTemplate` (**default `investigator`**) |
+| **On** | No `capabilityByUser` hit and no team naming a template | `safeTeamDefaultTemplate` (**default `investigator`**) |
 | **Off** / unset | Same | Builtin **`builder`** (legacy eng-only deploys) |
 
 Details and rollout warnings: [safe-team-unmapped.md](./safe-team-unmapped.md).
 
-**Rollout:** map eng Discord roles → `builder` (or higher) **before** enabling Safe Team Mode, or engineers are demoted immediately—including already-queued tasks.
+**Rollout:** put engineers on a team whose `capabilities` is `builder` (or higher) **before** enabling Safe Team Mode, or engineers are demoted immediately—including already-queued tasks.
 
-Configure under web: **Config → project → Safe team mode** and **Capability maps**.
+Configure under web: **Config → project → Safe team mode**, **Teams**, and **Capability maps**.
 
 ---
 

@@ -186,26 +186,39 @@ type GitHubIdentity struct {
 	Email string `json:"email,omitempty"` // optional; default id+login@users.noreply.github.com
 }
 
-// CapabilityMapItem is a user/role → template row for the project config UI.
+// CapabilityMapItem is a user → template row for the project config UI.
 type CapabilityMapItem struct {
 	ID       string
 	Template string
 }
 
+// TeamItem is one team row for the project config UI.
+type TeamItem struct {
+	Key             string
+	Label           string // display; falls back to Key when empty
+	Capabilities    string // template name; "" = default fallback
+	TemplateUnknown bool   // named a template that resolves to nothing
+	Members         []string
+}
+
 // ProjectItem is a project row for the config UI.
 type ProjectItem struct {
-	Name                     string
-	Path                     string
-	LinearEnabled            bool
-	LinearTeamKey            string
-	LinearAPIKeySet          bool   // true when config or env has a key (never expose the secret)
-	LinearEnvHint            string // e.g. LINEAR_API_KEY_HOMECONNECT
-	DiscordChannelID         string
-	DiscordGuildID           string
-	GitHubReposText          string   // "owner/repo" lines for config form
-	ChannelOptions           []string // channel IDs mapped to this project (preferred dropdown)
-	AllowedUserIDs           []string
-	AllowedRoleIDs           []string
+	Name             string
+	Path             string
+	LinearEnabled    bool
+	LinearTeamKey    string
+	LinearAPIKeySet  bool   // true when config or env has a key (never expose the secret)
+	LinearEnvHint    string // e.g. LINEAR_API_KEY_HOMECONNECT
+	DiscordChannelID string
+	DiscordGuildID   string
+	GitHubReposText  string   // "owner/repo" lines for config form
+	ChannelOptions   []string // channel IDs mapped to this project (preferred dropdown)
+	AllowedUserIDs   []string
+	// Teams are this project's teams, sorted by key.
+	Teams []TeamItem
+	// MemberIDs is the union of allowedUserIds and every team's members
+	// (normalized, sorted, deduped) — "who is on this project".
+	MemberIDs                []string
 	RepoFetchIntervalMinutes int  // effective minutes (default when unset; 0 = disabled)
 	DirectToPrimary          bool // true when project ships without PRs
 	// Safe team / capabilities (K16)
@@ -215,9 +228,7 @@ type ProjectItem struct {
 	// CaseKey is the configured case-id prefix override, empty when derived.
 	CaseKey                 string
 	CapabilityByUser        []CapabilityMapItem
-	CapabilityByRole        []CapabilityMapItem
 	UnmappedUserIDs         []string // allowlisted users with no capabilityByUser entry
-	UnmappedRoleIDs         []string // allowlisted roles with no capabilityByRole entry
 	CapabilityTemplateNames []string // builtin + project overlay names for selects
 	// VerifyCommandsText is the config form body: "name | command [| timeoutMs]" per line.
 	VerifyCommandsText string
@@ -515,6 +526,41 @@ func (c *Config) ListenAddr() string {
 	return defaultHTTPListen
 }
 
+// legacyRoleGrantProjects returns the names of projects in raw config JSON that
+// still use the removed allowedRoleIds / capabilityByRole keys, sorted.
+//
+// It reads the raw bytes because the parsed Config no longer has those fields —
+// there is nothing left to inspect after json.Unmarshal.
+//
+// Roles are deliberately NOT expanded to members: guild role membership needs a
+// Discord call this process may not be able to make, and guessing would either
+// grant the wrong people or fail at a moment nobody is watching.
+func legacyRoleGrantProjects(raw []byte) []string {
+	var top struct {
+		Projects map[string]json.RawMessage `json:"projects"`
+	}
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return nil // the real parse already reported this
+	}
+	var out []string
+	for name, rb := range top.Projects {
+		var legacy struct {
+			AllowedRoleIDs   []string          `json:"allowedRoleIds"`
+			CapabilityByRole map[string]string `json:"capabilityByRole"`
+		}
+		// A string-form entry ("app": "/path") fails to decode into a struct and
+		// simply has no role keys to warn about.
+		if err := json.Unmarshal(rb, &legacy); err != nil {
+			continue
+		}
+		if len(legacy.AllowedRoleIDs) > 0 || len(legacy.CapabilityByRole) > 0 {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 func Load() (*Config, error) {
 	path := EnvWork("CONFIG")
 	if path == "" {
@@ -533,6 +579,19 @@ func Load() (*Config, error) {
 	var c Config
 	if err := json.Unmarshal(raw, &c); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	// allowedRoleIds / capabilityByRole no longer exist as fields, so the parse
+	// above silently dropped them. Say so loudly: a project whose only grant was
+	// a Discord role is now fail-closed, and that has to be explained rather than
+	// discovered when somebody cannot @Grok.
+	for _, name := range legacyRoleGrantProjects(raw) {
+		fmt.Fprintf(os.Stderr,
+			"[warn] project %q: allowedRoleIds / capabilityByRole are no longer supported and were IGNORED. "+
+				"Discord-role authorization is replaced by per-project teams — add those people to "+
+				"projects.%s.teams.<team>.members (namespaced actor ids, e.g. \"discord:123\") "+
+				"or to allowedUserIds. Until then nobody gains access to %q from a Discord role.\n",
+			name, name, name)
 	}
 
 	if token := os.Getenv("DISCORD_BOT_TOKEN"); token != "" {
@@ -1209,7 +1268,8 @@ func (c *Config) Snapshot() Snapshot {
 			DiscordChannelID:         strings.TrimSpace(pc.DiscordChannelID),
 			DiscordGuildID:           strings.TrimSpace(pc.DiscordGuildID),
 			AllowedUserIDs:           slices.Clone(pc.AllowedUserIDs),
-			AllowedRoleIDs:           slices.Clone(pc.AllowedRoleIDs),
+			Teams:                    teamItems(pc),
+			MemberIDs:                projectActorIDsLocked(pc),
 			RepoFetchIntervalMinutes: fetchMins,
 			DirectToPrimary:          pc.DirectToPrimary != nil && *pc.DirectToPrimary,
 			SafeTeamMode:             pc.SafeTeamMode != nil && *pc.SafeTeamMode,
@@ -1217,9 +1277,7 @@ func (c *Config) Snapshot() Snapshot {
 			DefaultMode:              strings.TrimSpace(strings.ToLower(pc.DefaultMode)),
 			CaseKey:                  strings.TrimSpace(pc.CaseKey),
 			CapabilityByUser:         capabilityMapItems(pc.CapabilityByUser),
-			CapabilityByRole:         capabilityMapItems(pc.CapabilityByRole),
 			UnmappedUserIDs:          unmappedIDs(pc.AllowedUserIDs, pc.CapabilityByUser),
-			UnmappedRoleIDs:          unmappedIDs(pc.AllowedRoleIDs, pc.CapabilityByRole),
 			CapabilityTemplateNames:  capabilityTemplateNames(pc.CapabilityTemplates),
 			VerifyCommandsText:       FormatVerifyCommandsText(pc.VerifyCommands),
 		}
@@ -1462,14 +1520,40 @@ func (c *Config) ChannelCount() int {
 	return len(c.Channels)
 }
 
-func toSet(ids []string) map[string]struct{} {
-	m := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		if id != "" {
-			m[id] = struct{}{}
-		}
+// teamItems renders a project's teams for the config UI, sorted by key.
+// TemplateUnknown is resolved with the already-held lock's overlay map rather
+// than ResolveTemplate, which would take c.mu.RLock again and deadlock.
+// Caller holds c.mu.
+func teamItems(pc ProjectConfig) []TeamItem {
+	if len(pc.Teams) == 0 {
+		return nil
 	}
-	return m
+	keys := make([]string, 0, len(pc.Teams))
+	for k := range pc.Teams {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	out := make([]TeamItem, 0, len(keys))
+	for _, k := range keys {
+		t := pc.Teams[k]
+		label := strings.TrimSpace(t.Label)
+		if label == "" {
+			label = k
+		}
+		item := TeamItem{
+			Key:          k,
+			Label:        label,
+			Capabilities: t.Capabilities,
+			Members:      slices.Clone(t.Members),
+		}
+		if t.Capabilities != "" {
+			if _, ok := lookupTemplate(t.Capabilities, pc.CapabilityTemplates); !ok {
+				item.TemplateUnknown = true
+			}
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func cloneStringMap(m map[string]string) map[string]string {

@@ -83,9 +83,9 @@ With OAuth **member+** (or admin) and host features:
 
 Also: project **Ship** board, sessions, commits, issues, Linear (if enabled), worktrees, history.
 
-Project visibility: Discord user id must be on that project’s `allowedUserIds` (web **admin** sees all projects).
+Project visibility: the actor must be on that project’s `allowedUserIds` or one of its `teams` (web **admin** sees all projects).
 
-Web capability resolution for start/case uses **user id** only—map builders in `capabilityByUser` if they use web without Discord role context.
+Capability resolution is the same on web and in Discord: `capabilityByUser` plus every team the actor is on.
 
 ---
 
@@ -119,8 +119,8 @@ Web capability resolution for start/case uses **user id** only—map builders in
 
 ## How an admin assigns this role
 
-1. Project allowlist eng Discord roles/users.  
-2. **Capability maps:** role ID or user ID → **`builder`**.  
+1. Put engineers on a project **team** whose `capabilities` is **`builder`** (that grants access too), or allowlist them directly.  
+2. Optional: **Capability maps:** user ID → **`builder`** for a one-off.  
 3. Enable **Safe Team Mode** only **after** eng maps exist.  
 4. Optional: leave project default mode empty (legacy fix) for eng channels; use `case` only for support projects.  
-5. For web-first eng: ensure Discord user id is in project `allowedUserIds` (or webAuth member/admin lists) and map `capabilityByUser` → `builder`.
+5. For web-first eng: a `builder` team membership is enough — it grants login, project visibility and ship caps in one place.

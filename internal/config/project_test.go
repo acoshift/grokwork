@@ -66,7 +66,6 @@ func TestProjectSafeTeam(t *testing.T) {
 			"support": {
 				Path:           filepath.Join(dir, "support"),
 				AllowedUserIDs: []string{"u1", "u2"},
-				AllowedRoleIDs: []string{"r-eng"},
 			},
 		},
 		ConfigPath: filepath.Join(dir, "config.json"),
@@ -87,19 +86,22 @@ func TestProjectSafeTeam(t *testing.T) {
 		t.Fatalf("default tpl=%q", cfg.SafeTeamDefaultTemplate("support"))
 	}
 	// Unmapped under safe → investigator, cannot ship.
-	if cfg.ResolveCapabilities("support", "u1", nil).CanShip() {
+	if cfg.ResolveCapabilities("support", "u1").CanShip() {
 		t.Fatal("unmapped must not ship under SafeTeamMode")
 	}
-	if err := cfg.SetProjectCapabilityByRole("support", "r-eng", "builder"); err != nil {
+	if err := cfg.SetProjectTeam("support", "eng", "Engineering", "builder"); err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.ResolveCapabilities("support", "anyone", []string{"r-eng"}).CanShip() {
-		t.Fatal("mapped eng role should ship")
+	if err := cfg.AddProjectTeamMember("support", "eng", "eng-1"); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ResolveCapabilities("support", "eng-1").CanShip() {
+		t.Fatal("builder team member should ship")
 	}
 	if err := cfg.SetProjectCapabilityByUser("support", "u2", "approver"); err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.ResolveCapabilities("support", "u2", nil).Approve {
+	if !cfg.ResolveCapabilities("support", "u2").Approve {
 		t.Fatal("user map approver")
 	}
 	snap := cfg.Snapshot()
@@ -116,11 +118,14 @@ func TestProjectSafeTeam(t *testing.T) {
 	if len(item.UnmappedUserIDs) != 1 || item.UnmappedUserIDs[0] != "u1" {
 		t.Fatalf("unmapped users: %v", item.UnmappedUserIDs)
 	}
-	if len(item.UnmappedRoleIDs) != 0 {
-		t.Fatalf("unmapped roles: %v", item.UnmappedRoleIDs)
+	if len(item.Teams) != 1 || item.Teams[0].Key != "eng" || item.Teams[0].Capabilities != "builder" {
+		t.Fatalf("teams: %+v", item.Teams)
 	}
-	if len(item.CapabilityByRole) != 1 || item.CapabilityByRole[0].Template != "builder" {
-		t.Fatalf("cap by role: %+v", item.CapabilityByRole)
+	if item.Teams[0].Label != "Engineering" || item.Teams[0].TemplateUnknown {
+		t.Fatalf("team row: %+v", item.Teams[0])
+	}
+	if len(item.MemberIDs) != 3 {
+		t.Fatalf("member union: %v", item.MemberIDs)
 	}
 	if err := cfg.SetProjectSafeTeam("support", false, "", ""); err != nil {
 		t.Fatal(err)
@@ -138,8 +143,15 @@ func TestProjectSafeTeam(t *testing.T) {
 	if err := cfg.RemoveProjectCapabilityByUser("support", "u2"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.RemoveProjectCapabilityByRole("support", "r-eng"); err != nil {
+	if err := cfg.RemoveProjectTeam("support", "eng"); err != nil {
 		t.Fatal(err)
+	}
+	// The grant goes with the team: eng-1 loses both access and capabilities.
+	if len(cfg.ProjectTeams("support")) != 0 {
+		t.Fatalf("team survived removal: %+v", cfg.ProjectTeams("support"))
+	}
+	if cfg.AccessAllowed("support", "eng-1") {
+		t.Fatal("removing the team must remove the access it granted")
 	}
 }
 

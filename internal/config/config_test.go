@@ -48,7 +48,7 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 	if cfg.ListenAddr() != "127.0.0.1:9876" {
 		t.Fatalf("ListenAddr = %q, want 127.0.0.1:9876", cfg.ListenAddr())
 	}
-	if !cfg.AccessAllowed("existing", "user-1", nil) {
+	if !cfg.AccessAllowed("existing", "user-1") {
 		t.Fatal("expected user-1 allowed on existing project")
 	}
 
@@ -66,15 +66,18 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 	if err := cfg.AddProjectAllowedUser("existing", "user-2"); err != nil {
 		t.Fatalf("AddProjectAllowedUser: %v", err)
 	}
-	if !cfg.AccessAllowed("existing", "user-2", nil) {
+	if !cfg.AccessAllowed("existing", "user-2") {
 		t.Fatal("user-2 should be allowed on existing")
 	}
 
-	if err := cfg.AddProjectAllowedRole("existing", "role-9"); err != nil {
-		t.Fatalf("AddProjectAllowedRole: %v", err)
+	if err := cfg.SetProjectTeam("existing", "eng", "Engineering", "builder"); err != nil {
+		t.Fatalf("SetProjectTeam: %v", err)
 	}
-	if !cfg.AccessAllowed("existing", "other", []string{"role-9"}) {
-		t.Fatal("role-9 should allow access on existing")
+	if err := cfg.AddProjectTeamMember("existing", "eng", "user-9"); err != nil {
+		t.Fatalf("AddProjectTeamMember: %v", err)
+	}
+	if !cfg.AccessAllowed("existing", "user-9") {
+		t.Fatal("team member should be allowed on existing")
 	}
 
 	// Re-read file and assert persistence (shipped Save path).
@@ -94,8 +97,8 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 	if !contains(parsed.Projects["existing"].AllowedUserIDs, "user-2") {
 		t.Fatalf("disk project members missing user-2: %v", parsed.Projects["existing"].AllowedUserIDs)
 	}
-	if !contains(parsed.Projects["existing"].AllowedRoleIDs, "role-9") {
-		t.Fatalf("disk project roles missing role-9: %v", parsed.Projects["existing"].AllowedRoleIDs)
+	if !contains(parsed.Projects["existing"].Teams["eng"].Members, "discord:user-9") {
+		t.Fatalf("disk project team missing user-9: %+v", parsed.Projects["existing"].Teams)
 	}
 
 	snap := cfg.Snapshot()
@@ -115,7 +118,7 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 			break
 		}
 	}
-	if snapExisting == nil || !contains(snapExisting.AllowedUserIDs, "user-2") || !contains(snapExisting.AllowedRoleIDs, "role-9") {
+	if snapExisting == nil || !contains(snapExisting.AllowedUserIDs, "user-2") || !contains(snapExisting.MemberIDs, "discord:user-9") {
 		t.Fatalf("snapshot project members: %+v", snap.Projects)
 	}
 
@@ -129,14 +132,14 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 	if err := cfg.RemoveProjectAllowedUser("existing", "user-2"); err != nil {
 		t.Fatalf("RemoveProjectAllowedUser: %v", err)
 	}
-	if cfg.AccessAllowed("existing", "user-2", nil) {
+	if cfg.AccessAllowed("existing", "user-2") {
 		t.Fatal("user-2 still allowed")
 	}
-	if err := cfg.RemoveProjectAllowedRole("existing", "role-9"); err != nil {
-		t.Fatalf("RemoveProjectAllowedRole: %v", err)
+	if err := cfg.RemoveProjectTeamMember("existing", "eng", "user-9"); err != nil {
+		t.Fatalf("RemoveProjectTeamMember: %v", err)
 	}
-	if cfg.AccessAllowed("existing", "other", []string{"role-9"}) {
-		t.Fatal("role-9 still allowed")
+	if cfg.AccessAllowed("existing", "user-9") {
+		t.Fatal("user-9 still allowed")
 	}
 	if err := cfg.RemoveChannel("ch-new"); err != nil {
 		t.Fatalf("RemoveChannel: %v", err)
@@ -173,7 +176,8 @@ func TestAddProjectUserRolePersistAndRuntime(t *testing.T) {
 	if _, ok := parsed2.Projects["newproj"]; ok {
 		t.Fatalf("disk still has newproj: %+v", parsed2.Projects)
 	}
-	if contains(parsed2.Projects["existing"].AllowedUserIDs, "user-2") || contains(parsed2.Projects["existing"].AllowedRoleIDs, "role-9") {
+	if contains(parsed2.Projects["existing"].AllowedUserIDs, "user-2") ||
+		contains(parsed2.Projects["existing"].Teams["eng"].Members, "discord:user-9") {
 		t.Fatalf("disk still has removed project members: %+v", parsed2.Projects["existing"])
 	}
 	if _, ok := parsed2.Channels["ch-new"]; ok {

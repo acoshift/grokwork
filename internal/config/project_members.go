@@ -6,12 +6,14 @@ import (
 	"strings"
 )
 
-// projectHasAllowlist reports whether the project has any members or roles.
+// projectHasAllowlist reports whether the project grants access to anyone: a
+// direct member, or a team that actually names someone. A team declared with an
+// empty members list is not a grant — it must stay fail-closed.
 func projectHasAllowlist(pc ProjectConfig) bool {
-	return len(pc.AllowedUserIDs) > 0 || len(pc.AllowedRoleIDs) > 0
+	return len(pc.AllowedUserIDs) > 0 || projectTeamsHaveMembers(pc)
 }
 
-// ProjectHasAllowlist reports whether the named project has any user or role members.
+// ProjectHasAllowlist reports whether the named project grants access to anyone.
 func (c *Config) ProjectHasAllowlist(name string) bool {
 	if c == nil {
 		return false
@@ -22,9 +24,10 @@ func (c *Config) ProjectHasAllowlist(name string) bool {
 	return ok && projectHasAllowlist(pc)
 }
 
-// AccessAllowed reports whether userID (or any of roleIDs) may use Grok on project.
-// Empty project allowlist is fail-closed (false). Unknown project is false.
-func (c *Config) AccessAllowed(project, userID string, roleIDs []string) bool {
+// AccessAllowed reports whether userID may use Grok on project. Access comes
+// from a direct allowedUserIds entry or from membership of one of the project's
+// teams. Empty project allowlist is fail-closed (false). Unknown project is false.
+func (c *Config) AccessAllowed(project, userID string) bool {
 	if c == nil || strings.TrimSpace(project) == "" || strings.TrimSpace(userID) == "" {
 		return false
 	}
@@ -37,19 +40,11 @@ func (c *Config) AccessAllowed(project, userID string, roleIDs []string) bool {
 	if containsID(pc.AllowedUserIDs, userID) {
 		return true
 	}
-	if len(pc.AllowedRoleIDs) == 0 || len(roleIDs) == 0 {
-		return false
-	}
-	roleSet := toSet(pc.AllowedRoleIDs)
-	for _, r := range roleIDs {
-		if _, ok := roleSet[r]; ok {
-			return true
-		}
-	}
-	return false
+	return teamsContainActor(pc, userID)
 }
 
-// UserOnAnyProject reports whether discordUserID appears on any project's user allowlist.
+// UserOnAnyProject reports whether the actor is a direct member or a team member
+// of any project.
 func (c *Config) UserOnAnyProject(discordUserID string) bool {
 	if c == nil {
 		return false
@@ -61,7 +56,7 @@ func (c *Config) UserOnAnyProject(discordUserID string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for _, pc := range c.Projects {
-		if containsID(pc.AllowedUserIDs, id) {
+		if containsID(pc.AllowedUserIDs, id) || teamsContainActor(pc, id) {
 			return true
 		}
 	}
@@ -69,7 +64,8 @@ func (c *Config) UserOnAnyProject(discordUserID string) bool {
 }
 
 // ProjectsVisibleTo returns project names the user may see in the web UI.
-// Admins see all projects; others see only projects that list their Discord user ID.
+// Admins see all projects; others see projects that list them directly or
+// through a team.
 func (c *Config) ProjectsVisibleTo(discordUserID string, role WebRole) []string {
 	if c == nil {
 		return nil
@@ -90,7 +86,8 @@ func (c *Config) ProjectsVisibleTo(discordUserID string, role WebRole) []string 
 	}
 	out := make([]string, 0, len(names))
 	for _, n := range names {
-		if containsID(c.Projects[n].AllowedUserIDs, id) {
+		pc := c.Projects[n]
+		if containsID(pc.AllowedUserIDs, id) || teamsContainActor(pc, id) {
 			out = append(out, n)
 		}
 	}
@@ -98,7 +95,7 @@ func (c *Config) ProjectsVisibleTo(discordUserID string, role WebRole) []string 
 }
 
 // CanAccessProject reports whether the user may open a project in the web UI.
-// Admins always can; others need their Discord user ID on the project list.
+// Admins always can; others need to be a direct member or on one of its teams.
 func (c *Config) CanAccessProject(project, discordUserID string, role WebRole) bool {
 	if c == nil {
 		return false
@@ -115,7 +112,10 @@ func (c *Config) CanAccessProject(project, discordUserID string, role WebRole) b
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	pc, ok := c.Projects[project]
-	return ok && containsID(pc.AllowedUserIDs, discordUserID)
+	if !ok {
+		return false
+	}
+	return containsID(pc.AllowedUserIDs, discordUserID) || teamsContainActor(pc, discordUserID)
 }
 
 // AddProjectAllowedUser adds a Discord user ID to a project's allowlist and persists.
@@ -162,54 +162,6 @@ func (c *Config) RemoveProjectAllowedUser(project, id string) error {
 		return fmt.Errorf("user %q not found on project %q", id, project)
 	}
 	pc.AllowedUserIDs = removeString(pc.AllowedUserIDs, id)
-	c.Projects[project] = pc
-	return c.saveLocked()
-}
-
-// AddProjectAllowedRole adds a Discord role ID to a project's allowlist and persists.
-func (c *Config) AddProjectAllowedRole(project, id string) error {
-	project = strings.TrimSpace(project)
-	id = strings.TrimSpace(id)
-	if project == "" {
-		return fmt.Errorf("project name is required")
-	}
-	if id == "" {
-		return fmt.Errorf("role id is required")
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	pc, ok := c.Projects[project]
-	if !ok {
-		return fmt.Errorf("project %q not found", project)
-	}
-	if containsID(pc.AllowedRoleIDs, id) {
-		return nil
-	}
-	pc.AllowedRoleIDs = append(slices.Clone(pc.AllowedRoleIDs), id)
-	c.Projects[project] = pc
-	return c.saveLocked()
-}
-
-// RemoveProjectAllowedRole removes a Discord role ID from a project's allowlist.
-func (c *Config) RemoveProjectAllowedRole(project, id string) error {
-	project = strings.TrimSpace(project)
-	id = strings.TrimSpace(id)
-	if project == "" {
-		return fmt.Errorf("project name is required")
-	}
-	if id == "" {
-		return fmt.Errorf("role id is required")
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	pc, ok := c.Projects[project]
-	if !ok {
-		return fmt.Errorf("project %q not found", project)
-	}
-	if !containsID(pc.AllowedRoleIDs, id) {
-		return fmt.Errorf("role %q not found on project %q", id, project)
-	}
-	pc.AllowedRoleIDs = removeString(pc.AllowedRoleIDs, id)
 	c.Projects[project] = pc
 	return c.saveLocked()
 }

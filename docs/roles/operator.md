@@ -98,9 +98,9 @@ If code must change: ping someone with **investigator** (escalate) or **builder*
 
 ## How an admin assigns this role
 
-1. Ensure user/role is on the project allowlist.  
-2. **Config → project → Capability maps:** set Discord user or role → template **`operator`**.  
+1. Ensure the actor is on the project allowlist (a team or `allowedUserIds`).  
+2. Set the team’s `capabilities` to **`operator`**, or map the actor in **Capability maps** → **`operator`**.  
 3. With Safe Team Mode on, either leave default as investigator and map operators explicitly, **or** set default template to `operator` if the whole project should not escalate by default.  
-4. Map eng to `builder` / `approver` / `admin` as needed.
+4. Put eng on a `builder` / `approver` / `admin` team as needed.
 
-OR-merge: if the user also has a Discord role mapped to `investigator`, they gain `fileEscalation` from that role.
+OR-merge: if the actor is also on a team mapped to `investigator`, they gain `fileEscalation` from that team.

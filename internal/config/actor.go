@@ -72,6 +72,21 @@ func ActorKind(id string) string {
 	return kind
 }
 
+// ActorSubject returns the subject half of an actor id ("discord:123" → "123").
+// The web UI resolves display names by raw Discord snowflake, so a namespaced id
+// has to be reduced before it can be looked up.
+func ActorSubject(id string) string {
+	n := NormalizeActorID(id)
+	if n == "" {
+		return ""
+	}
+	_, subject, found := strings.Cut(n, ":")
+	if !found {
+		return n
+	}
+	return subject
+}
+
 // IsDiscordActor reports whether an id denotes a Discord user — the only kind
 // that can be sent a DM or looked up for guild roles.
 func IsDiscordActor(id string) bool {
