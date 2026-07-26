@@ -53,10 +53,11 @@
         <span class="m-row-t"><span class="mono">{{.Project}}</span> · <span class="mono">{{.Service}}</span> → <span class="mono">{{.Env}}</span></span>
         <span class="m-row-s">
           {{if .HasCurrent}}<span class="mono">{{.ShortSHA}}</span>{{if .Age}} · {{.Age}}{{end}}{{if .Actor}} · {{.Actor}}{{end}}
+          {{else if .CurrentUnknown}}no successful deploy in the scanned window
           {{else}}never deployed{{end}}
         </span>
         <span class="m-row-s">
-          {{if .HasCurrent}}<span class="badge status-done">live</span>{{else}}<span class="badge status-error">no deploy</span>{{end}}
+          {{if .HasCurrent}}<span class="badge status-done">live</span>{{else if .CurrentUnknown}}<span class="badge">no deploy in window</span>{{else}}<span class="badge status-error">no deploy</span>{{end}}
           {{if .LatestStatus}}{{template "deploy_status_badge" .LatestStatus}}{{end}}
         </span>
       </span>
@@ -93,6 +94,10 @@
         <td>
           {{if .HasCurrent}}
           <span class="badge status-done">live</span>
+          {{else if .CurrentUnknown}}
+          {{/* Neutral, not red: the scan stopped before this lane's history, so
+               "never deployed" would be a claim the board cannot make. */}}
+          <span class="badge" title="No successful deploy among the {{$b.ScanLimit}} most recently updated runs — this lane's last success may be older than that.">no deploy in window</span>
           {{else}}
           <span class="badge status-error">never deployed</span>
           {{end}}
@@ -113,7 +118,9 @@
   {{if $b.Truncated}}
   <p class="sub">
     Showing lanes seen in the {{$b.ScanLimit}} most recently updated deploy runs.
-    A service that has not been deployed in a long time may be missing here —
+    A service that has not been deployed in a long time may be missing here, and
+    a lane whose last success is older than that window shows
+    <span class="badge">no deploy in window</span> rather than a commit —
     its project's own Deploys page still lists every run.
   </p>
   {{end}}

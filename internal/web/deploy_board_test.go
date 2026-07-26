@@ -3,8 +3,11 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/deploy"
@@ -24,6 +27,17 @@ func seedDeployRun(t *testing.T, srv *Server, r deploy.Run) deploy.Run {
 		t.Fatal(err)
 	}
 	return r
+}
+
+// touchDeployRun pins a run record's mtime. LaneStates scans newest-modified
+// first, so this is how a test decides which records fall inside a clipped
+// window instead of leaving it to the filesystem's timestamp resolution.
+func touchDeployRun(t *testing.T, srv *Server, id string, mod time.Time) {
+	t.Helper()
+	p := filepath.Join(srv.Deploys().Store().Dir(), id+".json")
+	if err := os.Chtimes(p, mod, mod); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestDeploysBoardListsCurrentPerLane is the board's whole contract: one row
@@ -303,6 +317,72 @@ func TestDeploysBoardSaysWhenItClipped(t *testing.T) {
 	}
 	if !strings.Contains(full, "abcdef1") {
 		t.Fatal("complete board lost its only lane")
+	}
+}
+
+// TestDeploysBoardNeverClaimsNeverDeployedOnAClippedScan is the difference
+// between "nothing ever shipped here" and "this lane's success is older than
+// the scan window". LaneStates reports both as HasCurrent false, and the board
+// must not turn the second one into a statement about production.
+//
+// The shape is the realistic one: nothing prunes the run store, a lane last
+// succeeded weeks ago (its record untouched since — markSuperseded never ran on
+// it), other lanes have been busy since, and one recent attempt on this lane is
+// inside the window. Reading "never deployed" for a live production lane, in
+// red, in the attention count, is worse than reading nothing.
+func TestDeploysBoardNeverClaimsNeverDeployedOnAClippedScan(t *testing.T) {
+	srv, _, _ := testServer(t)
+	srv.deployScanLimit = 1
+
+	old := seedDeployRun(t, srv, deploy.Run{
+		Project: "proj", Service: "api", Env: "prod",
+		SHA: "0ldl1ve", ShortSHA: "0ldl1ve", Status: deploy.StatusSucceeded,
+		QueuedAt: "2026-06-01T00:00:00Z", EndedAt: "2026-06-01T00:05:00Z",
+		ActorName: "Dana Ops",
+	})
+	inFlight := seedDeployRun(t, srv, deploy.Run{
+		Project: "proj", Service: "api", Env: "prod",
+		SHA: "n3wshaa", ShortSHA: "n3wshaa", Status: deploy.StatusRunning,
+		QueuedAt: "2026-07-20T00:00:00Z",
+		ActorName: "Dana Ops",
+	})
+	// Pin the scan order: the six-week-old success falls outside the window,
+	// the recent attempt does not. Filesystem timestamp resolution must not get
+	// a vote.
+	touchDeployRun(t, srv, old.ID, time.Now().Add(-42*24*time.Hour))
+	touchDeployRun(t, srv, inFlight.ID, time.Now())
+
+	body := getBody(t, srv.Handler(), "/deploys")
+	if !strings.Contains(body, "2 most recently updated deploy runs") &&
+		!strings.Contains(body, "1 most recently updated deploy runs") {
+		t.Fatalf("clipped board did not say so:\n%s", body)
+	}
+	if strings.Contains(body, "never deployed") || strings.Contains(body, ">no deploy<") {
+		t.Fatalf("clipped board asserted a lane never shipped:\n%s", body)
+	}
+	if !strings.Contains(body, "no successful deploy in the scanned window") {
+		t.Fatalf("clipped lane did not say what it actually knows:\n%s", body)
+	}
+	// Not attention-worthy either: the newest run is merely in flight, and the
+	// missing success is unproven, so the counter must stay at zero.
+	if !strings.Contains(body, "all settled") {
+		t.Fatalf("a clipped-out success was counted as an unshipped lane:\n%s", body)
+	}
+
+	// The honest claim survives on a board that read everything: here the lane
+	// really has never succeeded, and the board says so in red.
+	srv2, _, _ := testServer(t)
+	seedDeployRun(t, srv2, deploy.Run{
+		Project: "proj", Service: "api", Env: "prod",
+		SHA: "fa1led0", ShortSHA: "fa1led0", Status: deploy.StatusFailed,
+		QueuedAt: "2026-07-20T00:00:00Z", EndedAt: "2026-07-20T00:01:00Z",
+	})
+	full := getBody(t, srv2.Handler(), "/deploys")
+	if !strings.Contains(full, "never deployed") {
+		t.Fatalf("an unclipped board must still name a lane that never shipped:\n%s", full)
+	}
+	if strings.Contains(full, "no deploy in window") {
+		t.Fatalf("complete board hedged a fact it had read:\n%s", full)
 	}
 }
 

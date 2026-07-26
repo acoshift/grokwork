@@ -28,6 +28,17 @@ type deployBoardRow struct {
 	Age        string
 	At         string
 
+	// CurrentUnknown separates the two things !HasCurrent can mean once the
+	// fold clipped: "nothing ever shipped here" and "this lane's last success
+	// is older than the scan window". A lane last deployed six weeks ago, with
+	// one failed attempt since, has its success record outside the newest-N
+	// window and its failure inside it — LaneStates then reports HasCurrent
+	// false for a lane that is very much live. Saying "never deployed" there is
+	// a false statement about production, so a clipped board says only what it
+	// can see, and the row is neither counted as live nor chased as an
+	// unshipped lane.
+	CurrentUnknown bool
+
 	// The newest run when it is not the live one: a deploy in flight, or a
 	// failed attempt sitting on top of a good deploy. Both mean the SHA in the
 	// row is still what is running, and both are why an operator opened this
@@ -40,12 +51,17 @@ type deployBoardRow struct {
 // NeedsAttention marks a lane nobody should walk away from: one that has never
 // had a successful deploy, or whose newest run failed, was cancelled, or was
 // interrupted by a restart — as opposed to one that is merely mid-deploy.
+//
+// The "never shipped" arm requires knowing that nothing shipped. On a clipped
+// board a missing success is unproven (CurrentUnknown), and a lane that is
+// quietly live must not be handed to an operator as unshipped work; a bad
+// newest run still counts, because that one was seen.
 func (r deployBoardRow) NeedsAttention() bool {
 	switch deploy.Status(r.LatestStatus) {
 	case deploy.StatusFailed, deploy.StatusCancelled, deploy.StatusInterrupted:
 		return true
 	}
-	return !r.HasCurrent
+	return !r.HasCurrent && !r.CurrentUnknown
 }
 
 // deployBoard backs the global /deploys lead view.
@@ -114,6 +130,12 @@ func (s *Server) buildDeployBoard(ctx *hime.Context) (deployBoard, error) {
 			row.At = deployRunStamp(cur)
 			row.Age = relativeAge(row.At)
 		}
+		// A clip is a property of the whole fold, so every lane it left without
+		// a success is suspect. That over-marks the lane that genuinely never
+		// shipped, which is the safe direction: the row still renders and still
+		// shows its failed newest run, it just stops asserting a history the
+		// scan did not read.
+		row.CurrentUnknown = board.Truncated && !st.HasCurrent
 		if st.Unsettled() {
 			row.LatestRunID = st.Latest.ID
 			row.LatestStatus = string(st.Latest.Status)
