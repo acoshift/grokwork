@@ -21,10 +21,18 @@ import (
 	"github.com/acoshift/grokwork/internal/timeline"
 )
 
-// Default Fix-with-Grok rate limit: max starts per actor per window.
+// Default session-start rate limit: max starts per actor per window. Shared by
+// every route that can launch an agent session (Fix, Start composer, case
+// intake, commit/PR review, Address CI/review, Continue, deploy pipeline
+// generation, …) — each spawns a real coding-CLI child process, so this is a
+// cost gate, not a Fix-specific quirk.
+//
+// startRateMax must be >= fixBulkMax: bulk Fix consumes budget proportional to
+// its batch size (see postIssuesBulkFix), so a single full-size bulk request
+// has to fit in one window or the feature would be unusable at its own limit.
 const (
-	fixStartRateMax    = 5
-	fixStartRateWindow = time.Minute
+	startRateMax    = fixBulkMax
+	startRateWindow = time.Minute
 )
 
 // startRateLimiter is a simple sliding-window per-actor limiter.
@@ -38,10 +46,10 @@ type startRateLimiter struct {
 
 func newStartRateLimiter(max int, window time.Duration) *startRateLimiter {
 	if max <= 0 {
-		max = fixStartRateMax
+		max = startRateMax
 	}
 	if window <= 0 {
-		window = fixStartRateWindow
+		window = startRateWindow
 	}
 	return &startRateLimiter{
 		hits:   make(map[string][]time.Time),
@@ -51,10 +59,23 @@ func newStartRateLimiter(max int, window time.Duration) *startRateLimiter {
 	}
 }
 
-// Allow reports whether actor may start now and records the hit when allowed.
+// Allow reports whether actor may start one more now and records the hit when
+// allowed. Equivalent to AllowN(actor, 1).
 func (l *startRateLimiter) Allow(actor string) bool {
+	return l.AllowN(actor, 1)
+}
+
+// AllowN reports whether actor may start n more sessions now and records all n
+// hits when allowed. All-or-nothing: a batch that would not entirely fit in the
+// window is refused outright rather than partially admitted, so a bulk starter
+// consumes budget proportional to its batch size instead of a single token
+// covering the whole batch (which would let bulk trivially bypass the limit).
+func (l *startRateLimiter) AllowN(actor string, n int) bool {
 	if l == nil {
 		return true
+	}
+	if n <= 0 {
+		n = 1
 	}
 	actor = strings.TrimSpace(actor)
 	if actor == "" {
@@ -71,20 +92,23 @@ func (l *startRateLimiter) Allow(actor string) bool {
 			kept = append(kept, t)
 		}
 	}
-	if len(kept) >= l.max {
+	if len(kept)+n > l.max {
 		l.hits[actor] = kept
 		return false
 	}
-	l.hits[actor] = append(kept, now)
+	for range n {
+		kept = append(kept, now)
+	}
+	l.hits[actor] = kept
 	return true
 }
 
-func (s *Server) fixLimiter() *startRateLimiter {
+func (s *Server) startLimiter() *startRateLimiter {
 	if s == nil {
 		return nil
 	}
 	if s.startLimit == nil {
-		s.startLimit = newStartRateLimiter(fixStartRateMax, fixStartRateWindow)
+		s.startLimit = newStartRateLimiter(startRateMax, startRateWindow)
 	}
 	return s.startLimit
 }
@@ -121,7 +145,10 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 			fmt.Sprintf("too many issues (max %d per bulk Fix)", fixBulkMax))
 	}
 
-	if err := s.checkFixRate(ctx); err != nil {
+	// Consume budget proportional to the batch size: one bulk request that starts
+	// N sessions must cost N, not 1 — otherwise repeated bulk Fix trivially
+	// bypasses the whole per-actor limit.
+	if err := s.checkStartRateN(ctx, len(numbers)); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
 			"project": project, "kind": "github-bulk", "owner": owner, "repo": repo, "count": len(numbers),
 		})
@@ -296,7 +323,7 @@ func (s *Server) postIssueFix(ctx *hime.Context) error {
 	}
 	owner, repo = ref.Owner, ref.Repo
 
-	if err := s.checkFixRate(ctx); err != nil {
+	if err := s.checkStartRate(ctx); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
 			"project": project, "kind": "github", "owner": owner, "repo": repo, "number": n,
 		})
@@ -343,7 +370,7 @@ func (s *Server) postLinearFix(ctx *hime.Context) error {
 	forceNew := formBool(ctx.PostFormValue("force_new"))
 	pickThread := strings.TrimSpace(ctx.PostFormValue("thread_id"))
 
-	if err := s.checkFixRate(ctx); err != nil {
+	if err := s.checkStartRate(ctx); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
 			"project": project, "kind": "linear", "identifier": identifier,
 		})
@@ -556,10 +583,28 @@ func (s *Server) sessionRedirect(ctx *hime.Context, threadID, ok, errMsg string)
 	return ctx.Redirect(loc)
 }
 
-func (s *Server) checkFixRate(ctx *hime.Context) error {
+// checkStartRate is the single gate for every route that launches an agent
+// session (Fix, Start composer, case intake/investigate, commit/PR review,
+// Address CI/review, Continue, deploy pipeline generation, …): each spawns a
+// real coding-CLI child process that costs API money, so one shared per-actor
+// limiter covers all of them rather than each route rolling its own.
+func (s *Server) checkStartRate(ctx *hime.Context) error {
+	return s.checkStartRateN(ctx, 1)
+}
+
+// checkStartRateN is checkStartRate for a request that starts n sessions at
+// once (bulk Fix): the whole batch must fit the actor's remaining budget, or
+// it is refused outright — see startRateLimiter.AllowN.
+func (s *Server) checkStartRateN(ctx *hime.Context, n int) error {
+	if n <= 0 {
+		n = 1
+	}
 	actor, _ := s.auditActor(ctx)
-	if !s.fixLimiter().Allow(actor) {
-		return fmt.Errorf("rate limit exceeded: max %d Fix starts per minute", fixStartRateMax)
+	if !s.startLimiter().AllowN(actor, n) {
+		if n > 1 {
+			return fmt.Errorf("rate limit exceeded: max %d session starts per minute (this request would start %d)", startRateMax, n)
+		}
+		return fmt.Errorf("rate limit exceeded: max %d session starts per minute", startRateMax)
 	}
 	return nil
 }

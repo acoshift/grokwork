@@ -33,7 +33,7 @@ func (s *Server) postDeployGenerate(ctx *hime.Context) error {
 		return s.deployRedirect(ctx, project, "", "",
 			errors.New("you do not have permission to start sessions for this project"))
 	}
-	if err := s.checkFixRate(ctx); err != nil {
+	if err := s.checkStartRate(ctx); err != nil {
 		return s.deployRedirect(ctx, project, "", "", err)
 	}
 

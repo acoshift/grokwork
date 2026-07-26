@@ -67,7 +67,7 @@ func (s *Server) postCaseNew(ctx *hime.Context) error {
 	if title == "" {
 		return s.caseNewRedirect(ctx, project, "customer-facing title is required")
 	}
-	if err := s.checkFixRate(ctx); err != nil {
+	if err := s.checkStartRate(ctx); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
 			"project": project, "origin": "web-case", "severity": severity,
 		})

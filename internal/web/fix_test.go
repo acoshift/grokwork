@@ -394,6 +394,76 @@ func TestFixRateLimit429(t *testing.T) {
 	}
 }
 
+// TestBulkFixRateLimitConsumesBatchBudget proves a bulk Fix consumes budget
+// proportional to its batch size rather than a single token for the whole
+// request. Without that, an actor could spam bulk Fix and start unbounded
+// sessions while the per-actor limiter only ever ticks once per request.
+func TestBulkFixRateLimitConsumesBatchBudget(t *testing.T) {
+	srv, _, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	spy := &bot.FakeThreadAPI{NextMsg: "m1", NextTh: "budget-th"}
+	bot.SetThreadAPIForTest(b, spy)
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := name + " " + strings.Join(args, " ")
+		if strings.Contains(joined, "issue view") {
+			n := "0"
+			for i, a := range args {
+				if a == "view" && i+1 < len(args) {
+					n = args[i+1]
+					break
+				}
+			}
+			return []byte(`{
+				"number":` + n + `,"title":"Bug ` + n + `","body":"body","url":"https://github.com/acme/app/issues/` + n + `",
+				"state":"OPEN","author":{"login":"z"},"labels":[],"comments":[]
+			}`), nil
+		}
+		return []byte("{}"), nil
+	}
+	// Budget of 6: a 5-issue bulk batch must consume exactly 5, leaving room for
+	// exactly one more single start before the limiter trips.
+	srv.startLimit = newStartRateLimiter(6, time.Minute)
+	sid, csrf, err := srv.LoginAs("admin-1", "A", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := postFix(t, srv, "/projects/proj/issues/fix", sid, csrf, url.Values{
+		"owner":   {"acme"},
+		"repo":    {"app"},
+		"numbers": {"1", "2", "3", "4", "5"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("bulk status=%d body=%s", w.Code, w.Body.String())
+	}
+	if spy.StartCount() != 5 {
+		t.Fatalf("bulk create count=%d want 5 (proportional to batch size)", spy.StartCount())
+	}
+
+	// 6th start overall: exactly at budget, must still be allowed.
+	w = postFix(t, srv, "/projects/proj/issues/6/fix", sid, csrf, url.Values{
+		"owner": {"acme"}, "repo": {"app"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("6th start status=%d body=%s", w.Code, w.Body.String())
+	}
+	if spy.StartCount() != 6 {
+		t.Fatalf("create count=%d want 6", spy.StartCount())
+	}
+
+	// 7th start overall: if the bulk batch had only consumed 1 (the bug this
+	// guards against), this would still succeed. It must trip the limiter.
+	w = postFix(t, srv, "/projects/proj/issues/7/fix", sid, csrf, url.Values{
+		"owner": {"acme"}, "repo": {"app"},
+	})
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("7th start status=%d want 429 body=%s", w.Code, w.Body.String())
+	}
+	if spy.StartCount() != 6 {
+		t.Fatalf("rejected start must not create a thread: count=%d want 6", spy.StartCount())
+	}
+}
+
 func TestFixLinearDisabled400(t *testing.T) {
 	srv, cfg, _ := fixEnabledServer(t)
 	// Linear not enabled for proj

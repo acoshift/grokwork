@@ -6,7 +6,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -503,5 +505,36 @@ func TestPostCaseReopenForbiddenWithoutCaps(t *testing.T) {
 	e, _ := srv.sessions.Get("t-reopen-deny")
 	if !e.IsCaseClosed() {
 		t.Fatalf("denied reopen must not mutate: %+v", e)
+	}
+}
+
+// TestPostCaseInvestigateRateLimit429 covers the case board's Investigate
+// action, which starts a real agent run via bot.StartContinue. It previously
+// had no rate gate at all — every other route that launches a session already
+// shares the limiter, and this one was the odd unthrottled one out.
+func TestPostCaseInvestigateRateLimit429(t *testing.T) {
+	srv, _, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	_ = srv.cfg.AddProjectAllowedUser("proj", "member-1")
+	seedCaseSession(t, srv, "t-case-rl", "member-1")
+	// Tight limiter: unit under test is the HTTP gate + limiter, not grok.
+	srv.startLimit = newStartRateLimiter(2, time.Minute)
+	sid, csrf, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"notes": {"dig deeper"}}
+	for i := 0; i < 2; i++ {
+		w := postFix(t, srv, "/sessions/t-case-rl/case/investigate", sid, csrf, form)
+		if w.Code == http.StatusTooManyRequests {
+			t.Fatalf("early 429 at %d body=%s", i, w.Body.String())
+		}
+		if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+			t.Fatalf("start %d status=%d body=%s", i, w.Code, w.Body.String())
+		}
+	}
+	w := postFix(t, srv, "/sessions/t-case-rl/case/investigate", sid, csrf, form)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("status=%d want 429 body=%s", w.Code, w.Body.String())
 	}
 }

@@ -203,6 +203,12 @@ func (s *Server) postCaseInvestigate(ctx *hime.Context) error {
 	if !canOpen && !s.canControlSession(ctx, ent) {
 		return ctx.Status(http.StatusForbidden).Error("forbidden: not allowed to investigate this case")
 	}
+	if err := s.checkStartRate(ctx); err != nil {
+		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
+			"threadId": threadID, "origin": "web-case-investigate",
+		})
+		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
+	}
 	notes := strings.TrimSpace(ctx.PostFormValue("notes"))
 	if notes == "" {
 		notes = "Investigate this case further."

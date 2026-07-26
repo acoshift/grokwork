@@ -49,7 +49,7 @@ func (s *Server) postPRAddressCI(ctx *hime.Context) error {
 	}
 	owner, repo = ref.Owner, ref.Repo
 
-	if err := s.checkFixRate(ctx); err != nil {
+	if err := s.checkStartRate(ctx); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
 			"kind": "address_ci", "project": project, "owner": owner, "repo": repo, "number": n,
 		})
@@ -103,7 +103,7 @@ func (s *Server) postPRAddressReview(ctx *hime.Context) error {
 	}
 	owner, repo = ref.Owner, ref.Repo
 
-	if err := s.checkFixRate(ctx); err != nil {
+	if err := s.checkStartRate(ctx); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
 			"kind": "address_review", "project": project, "owner": owner, "repo": repo, "number": n,
 		})
@@ -171,7 +171,7 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 	if ent, ok := s.sessions.Get(threadID); ok && ent.IsCaseClosed() {
 		return s.sessionRedirect(ctx, threadID, "", "case is closed — use /reopen first")
 	}
-	if err := s.checkFixRate(ctx); err != nil {
+	if err := s.checkStartRate(ctx); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
 			"kind": "continue", "threadId": threadID,
 		})

@@ -262,7 +262,7 @@ func (s *Server) postCommitReview(ctx *hime.Context) error {
 	}
 	owner, repo = ref.Owner, ref.Repo
 
-	if err := s.checkFixRate(ctx); err != nil {
+	if err := s.checkStartRate(ctx); err != nil {
 		s.auditAction(ctx, audit.ActionCommitReviewStart, err, map[string]any{
 			"project": project, "owner": owner, "repo": repo, "sha": sha,
 		})

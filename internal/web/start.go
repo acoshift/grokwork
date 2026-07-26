@@ -67,7 +67,7 @@ func (s *Server) postStart(ctx *hime.Context) error {
 	if prompt == "" {
 		return s.startRedirect(ctx, project, "", "prompt is required")
 	}
-	if err := s.checkFixRate(ctx); err != nil {
+	if err := s.checkStartRate(ctx); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
 			"project": project, "origin": "web-start", "mode": mode,
 		})
