@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,87 @@ func NormalizeMergeMethod(m string) MergeMethod {
 	default:
 		return MergeSquash
 	}
+}
+
+// ReviewVerdict is a gh pr review action. Unlike a grokwork team review
+// (internal/reviewstore), a review submitted through here is a *real* GitHub
+// review by the authenticated gh user, so an approval can satisfy branch
+// protection. The values are spelled exactly as gh's flag names so the flag is
+// derived from the verdict rather than mapped in a second switch that could
+// drift (and turn a request-changes into an approve).
+type ReviewVerdict string
+
+const (
+	ReviewApprove        ReviewVerdict = "approve"
+	ReviewRequestChanges ReviewVerdict = "request-changes"
+	// ReviewCommentOnly is named around the ReviewComment struct above; its
+	// value is still gh's "comment" flag name.
+	ReviewCommentOnly ReviewVerdict = "comment"
+)
+
+// NormalizeReviewVerdict maps loose input (a form value, a reviewstore verdict)
+// onto a gh review action. Unrecognized input returns "" and is never defaulted:
+// every default here is a wrong review submitted under the bot's identity.
+func NormalizeReviewVerdict(v string) ReviewVerdict {
+	switch strings.ToLower(strings.ReplaceAll(strings.TrimSpace(v), "_", "-")) {
+	case "approve", "approved":
+		return ReviewApprove
+	case "request-changes", "changes-requested", "request-change":
+		return ReviewRequestChanges
+	case "comment", "commented", "comment-only":
+		return ReviewCommentOnly
+	}
+	return ""
+}
+
+// SubmitReview submits a GitHub pull request review as the authenticated gh user.
+func SubmitReview(ctx context.Context, repoDir, owner, repo string, number int, verdict ReviewVerdict, body string) error {
+	return SubmitReviewWith(ctx, defaultRunner, repoDir, owner, repo, number, verdict, body)
+}
+
+// SubmitReviewWith is SubmitReview with an injectable runner.
+// Equivalent to: gh pr review N --approve|--request-changes|--comment
+// [--body-file …] [--repo owner/repo]
+func SubmitReviewWith(ctx context.Context, run Runner, repoDir, owner, repo string, number int, verdict ReviewVerdict, body string) error {
+	if run == nil {
+		run = defaultRunner
+	}
+	if number <= 0 {
+		return fmt.Errorf("invalid PR number")
+	}
+	v := NormalizeReviewVerdict(string(verdict))
+	if v == "" {
+		return fmt.Errorf("invalid review verdict %q", truncateForErr(string(verdict), 40))
+	}
+	body = strings.TrimSpace(body)
+	// gh refuses --request-changes and --comment without a body. Refusing here
+	// names the missing field; letting gh do it surfaces an argument error that
+	// reads like a bug in the caller.
+	if body == "" && v != ReviewApprove {
+		return fmt.Errorf("a %q review requires a body", v)
+	}
+	args := []string{"pr", "review", strconv.Itoa(number), "--" + string(v)}
+	if body != "" {
+		// Body via temp file, never argv: a review body is arbitrary prose and
+		// routinely carries backticks, `#`, and newlines.
+		path, cleanup, err := writeBodyFile(body)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		args = append(args, "--body-file", path)
+	}
+	if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
+		args = append(args, "--repo", o+"/"+r)
+	}
+	if _, err := run(ctx, repoDir, "gh", args...); err != nil {
+		// gh's stderr is the entire diagnostic — "not a collaborator", "can not
+		// approve your own pull request", a protected-branch refusal — and it is
+		// what the PR page shows, so it is kept rather than replaced. Bounded so
+		// one verbose refusal cannot fill a flash message.
+		return errors.New(truncateForErr(err.Error(), 500))
+	}
+	return nil
 }
 
 // CreateIssueOpts is input for gh issue create.

@@ -187,7 +187,10 @@ func formatReviewMirrorComment(r reviewstore.Review) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n---\n")
-	b.WriteString("_Team process review via Grok Work. Not a GitHub user review — does not satisfy branch protection._\n")
+	// Accurate now that a real `gh pr review` is one click away on the same page:
+	// this comment is still only a mirror, and saying so has to keep working
+	// whether or not the same person also filed a GitHub review.
+	b.WriteString("_Team process review via Grok Work — an internal process verdict mirrored here as a comment. It is not a GitHub review; branch protection counts only a GitHub review, which is submitted separately._\n")
 	return b.String()
 }
 

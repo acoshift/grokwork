@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-
 func TestCreateIssueWithURL(t *testing.T) {
 	var saw []string
 	var bodyPath string
@@ -423,5 +422,183 @@ func TestRequestReviewersRejectsEmpty(t *testing.T) {
 	}
 	if err := RequestReviewersWith(context.Background(), run, "/r", "o", "r", 0, "x"); err == nil {
 		t.Fatal("expected invalid PR number")
+	}
+}
+
+// --- gh pr review (real GitHub review, satisfies branch protection) ---
+
+// TestSubmitReviewVerdictFlags pins each verdict to its gh flag. A verdict that
+// silently mapped to the wrong flag would file an approval where changes were
+// requested, under the bot's GitHub identity.
+func TestSubmitReviewVerdictFlags(t *testing.T) {
+	cases := []struct {
+		in       string
+		wantFlag string
+		notFlags []string
+	}{
+		{"approve", "--approve", []string{"--request-changes", "--comment"}},
+		{"approved", "--approve", []string{"--request-changes", "--comment"}},
+		{"request-changes", "--request-changes", []string{"--approve", "--comment"}},
+		{"changes_requested", "--request-changes", []string{"--approve", "--comment"}},
+		{"comment", "--comment", []string{"--approve", "--request-changes"}},
+		{"commented", "--comment", []string{"--approve", "--request-changes"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			var saw []string
+			run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+				saw = append([]string{name}, args...)
+				return []byte("ok"), nil
+			}
+			v := NormalizeReviewVerdict(tc.in)
+			if v == "" {
+				t.Fatalf("verdict %q did not normalize", tc.in)
+			}
+			if err := SubmitReviewWith(context.Background(), run, "/repo", "acme", "app", 9, v, "note"); err != nil {
+				t.Fatal(err)
+			}
+			joined := strings.Join(saw, " ")
+			if !strings.Contains(joined, "gh pr review 9") {
+				t.Fatalf("want gh pr review 9: %v", saw)
+			}
+			if !strings.Contains(joined, tc.wantFlag) {
+				t.Fatalf("want %s: %v", tc.wantFlag, saw)
+			}
+			for _, no := range tc.notFlags {
+				if strings.Contains(joined, no) {
+					t.Fatalf("must not pass %s: %v", no, saw)
+				}
+			}
+			if !strings.Contains(joined, "--repo acme/app") {
+				t.Fatalf("want repo: %v", saw)
+			}
+			for _, a := range saw {
+				if strings.Contains(a, "--admin") || strings.Contains(a, "bypass") {
+					t.Fatalf("must never pass protection-bypass args: %v", saw)
+				}
+			}
+		})
+	}
+}
+
+// TestSubmitReviewBodyViaTempFile: the body is prose that routinely carries
+// backticks and newlines, so it must reach gh through --body-file, never argv.
+func TestSubmitReviewBodyViaTempFile(t *testing.T) {
+	const body = "Looks good.\n\nBut see `cmd/#main` — & retry?"
+	var saw []string
+	var bodyPath string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		saw = append([]string{name}, args...)
+		for i, a := range args {
+			if a == "--body-file" && i+1 < len(args) {
+				bodyPath = args[i+1]
+				b, err := os.ReadFile(bodyPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(b) != body {
+					t.Fatalf("body file=%q", b)
+				}
+			}
+		}
+		return []byte("ok"), nil
+	}
+	if err := SubmitReviewWith(context.Background(), run, "/repo", "o", "r", 3, ReviewApprove, body); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(saw, " ")
+	if !strings.Contains(joined, "--body-file") {
+		t.Fatalf("want --body-file: %v", saw)
+	}
+	if strings.Contains(joined, "--body ") || strings.Contains(joined, body) {
+		t.Fatalf("body must not reach argv: %v", saw)
+	}
+	if bodyPath == "" {
+		t.Fatal("no body file")
+	}
+	if _, err := os.Stat(bodyPath); !os.IsNotExist(err) {
+		t.Fatalf("body file should be removed: %v", err)
+	}
+}
+
+func TestSubmitReviewApproveWithoutBodyOmitsBodyFile(t *testing.T) {
+	var saw []string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		saw = append([]string{name}, args...)
+		return []byte("ok"), nil
+	}
+	if err := SubmitReviewWith(context.Background(), run, "/repo", "o", "r", 3, ReviewApprove, "   "); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(saw, " "), "--body-file") {
+		t.Fatalf("bare approve needs no body file: %v", saw)
+	}
+}
+
+// gh rejects --comment / --request-changes without a body; refuse before exec so
+// the caller learns which field is missing instead of reading an argument error.
+func TestSubmitReviewRequiresBodyForNonApprove(t *testing.T) {
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		t.Fatal("should not run")
+		return nil, nil
+	}
+	for _, v := range []ReviewVerdict{ReviewCommentOnly, ReviewRequestChanges} {
+		if err := SubmitReviewWith(context.Background(), run, "/r", "o", "r", 1, v, "  "); err == nil {
+			t.Fatalf("%s with empty body must fail", v)
+		}
+	}
+}
+
+// An unrecognized verdict is never defaulted: guessing files the wrong review.
+func TestSubmitReviewRejectsUnknownVerdict(t *testing.T) {
+	if v := NormalizeReviewVerdict("lgtm-ish"); v != "" {
+		t.Fatalf("unknown verdict normalized to %q", v)
+	}
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		t.Fatal("should not run")
+		return nil, nil
+	}
+	if err := SubmitReviewWith(context.Background(), run, "/r", "o", "r", 1, "lgtm-ish", "b"); err == nil {
+		t.Fatal("expected error for unknown verdict")
+	}
+	if err := SubmitReviewWith(context.Background(), run, "/r", "o", "r", 1, "", "b"); err == nil {
+		t.Fatal("expected error for empty verdict")
+	}
+	if err := SubmitReviewWith(context.Background(), run, "/r", "o", "r", 0, ReviewApprove, "b"); err == nil {
+		t.Fatal("expected invalid PR number")
+	}
+}
+
+// A refused review (self-approval, not a collaborator) must surface gh's reason,
+// not be swallowed into a silent success.
+func TestSubmitReviewSurfacesGHFailure(t *testing.T) {
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("gh pr review 9 --approve: can not approve your own pull request")
+	}
+	err := SubmitReviewWith(context.Background(), run, "/r", "o", "r", 9, ReviewApprove, "")
+	if err == nil {
+		t.Fatal("expected gh failure to surface")
+	}
+	if !strings.Contains(err.Error(), "can not approve your own pull request") {
+		t.Fatalf("lost gh reason: %v", err)
+	}
+}
+
+// gh can be verbose; the reason is kept but bounded so one refusal cannot fill a
+// flash message.
+func TestSubmitReviewTruncatesLongFailure(t *testing.T) {
+	long := strings.Repeat("x", 4000)
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		return nil, fmt.Errorf("gh pr review: %s", long)
+	}
+	err := SubmitReviewWith(context.Background(), run, "/r", "o", "r", 9, ReviewApprove, "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if len(err.Error()) > 600 {
+		t.Fatalf("error not truncated: %d bytes", len(err.Error()))
+	}
+	if !strings.HasSuffix(err.Error(), "…") {
+		t.Fatalf("want truncation marker: %q", err.Error()[max(0, len(err.Error())-20):])
 	}
 }

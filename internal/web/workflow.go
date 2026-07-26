@@ -530,6 +530,9 @@ func (s *Server) prDetailPageData(ctx *hime.Context, full bool) (pageData, error
 			}
 		}
 		s.attachModelPicker(&d, project, s.cfg.EffectiveReviewModel())
+		// Mirrors postPRGitHubReview's gate: feature + web role (CanGitHubWrite)
+		// AND the per-project githubWrites capability.
+		d.CanGitHubReview = d.CanGitHubWrite && s.cfg.ResolveCapabilities(project, d.UserID).GithubWrites
 	} else if viewErr != nil {
 		d.Error = viewErr.Error()
 	}

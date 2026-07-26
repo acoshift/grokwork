@@ -362,6 +362,12 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("merge", s.requireMember(hime.Handler(s.postPRMerge))))
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/reviews",
 		s.requireFeature("prReviews", s.requireMember(hime.Handler(s.postPRReview))))
+	// A real `gh pr review` as the host gh user — the one review that can satisfy
+	// branch protection. Gated by githubWrites (not prReviews) because it spends
+	// the GitHub credential, and kept separate from POST …/reviews above, which
+	// only records a grokwork-local team verdict.
+	mux.Handle("POST /prs/{owner}/{repo}/{n}/github-reviews",
+		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postPRGitHubReview))))
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/review-requests",
 		s.requireFeature("prReviews", s.requireMember(hime.Handler(s.postPRReviewRequest))))
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/review-requests/cancel",
@@ -676,6 +682,11 @@ type pageData struct {
 	CanMerge        bool
 	CanStartSession bool
 	CanPRReview     bool
+	// CanGitHubReview gates the PR rail's *real* GitHub review action. Narrower
+	// than CanGitHubWrite (feature + web role): it also requires the per-project
+	// githubWrites capability, the same gate postPRGitHubReview enforces, so the
+	// affordance is never offered where the POST would 403.
+	CanGitHubReview bool
 	WebMergeMethod  string
 	// Team PR reviews
 	TeamReviews         []teamReviewRow

@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1 id="page-reviews">{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· my reviews</span>{{else}}My reviews{{end}}</h1>
-<p class="sub">Team review is local to Grok Work and does not satisfy GitHub branch protection.</p>
+<p class="sub">Team review is local to Grok Work — an internal process verdict. Branch protection counts only a GitHub review, submitted from the pull request page.</p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 

@@ -76,7 +76,7 @@
       {{end}}
     </div>
   </div>
-  <p class="sub team-review-blurb">Does not satisfy GitHub branch protection.</p>
+  <p class="sub team-review-blurb">An internal process verdict, recorded in Grok Work.{{if and .CanGitHubReview $open}} Branch protection is satisfied by <span class="mono">Submit GitHub review</span> in the rail, which posts to GitHub.{{else}} It is not a GitHub review, so it does not satisfy GitHub branch protection.{{end}}</p>
 
   {{if .TeamReviews}}
   <div class="table-scroll team-review-history">
@@ -187,10 +187,11 @@
 
 {{if and .CanPRReview $open}}
 <div class="rail-group" id="pr-review-actions">
-  <div class="rail-group-title">Review</div>
+  <div class="rail-group-title">Team review</div>
   <details class="action">
-    <summary><span class="action-title">Submit review</span></summary>
+    <summary><span class="action-title">Submit team review</span></summary>
     <div class="action-body">
+      <p class="rail-note">Records an internal process verdict in Grok Work. It never reaches GitHub as a review{{if .CanGitHubReview}} — for that, use <span class="mono">Submit GitHub review</span> under GitHub below{{end}}.</p>
       <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/reviews" id="pr-review-form">
         {{template "csrf" $}}
         <input type="hidden" name="project" value="{{.Project}}">
@@ -307,6 +308,32 @@
 {{if .CanGitHubWrite}}
 <div class="rail-group" id="pr-comment-form">
   <div class="rail-group-title">GitHub</div>
+  {{if and .CanGitHubReview $open}}
+  <details class="action" id="pr-github-review-form">
+    <summary><span class="action-title">Submit GitHub review</span></summary>
+    <div class="action-body">
+      <p class="rail-note">A real GitHub review, filed as the authenticated <span class="mono">gh</span> user — an approval here counts toward branch protection. Separate from the team review above, which stays inside Grok Work.</p>
+      <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/github-reviews"
+            data-confirm="This files a review on GitHub as the gh user this bot is authenticated as. An approval can satisfy branch protection." data-confirm-title="Submit GitHub review" data-confirm-ok="Submit to GitHub">
+        {{template "csrf" $}}
+        <input type="hidden" name="project" value="{{.Project}}">
+        <div class="field">
+          <label for="gh-verdict">Verdict</label>
+          <select id="gh-verdict" name="verdict" required>
+            <option value="comment">Comment</option>
+            <option value="approve">Approve</option>
+            <option value="request-changes">Request changes</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="gh-review-body">Message</label>
+          <textarea id="gh-review-body" name="body" rows="4" placeholder="Optional for approve; required for comment and request changes"></textarea>
+        </div>
+        <div class="form-actions"><button type="submit" id="btn-submit-github-review">Submit to GitHub</button></div>
+      </form>
+    </div>
+  </details>
+  {{end}}
   <details class="action">
     <summary><span class="action-title">Add comment</span></summary>
     <div class="action-body">
