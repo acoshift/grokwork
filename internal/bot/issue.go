@@ -9,6 +9,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -238,6 +239,7 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		}
 		return
 	case arg == "clear" || arg == "none" || arg == "reset":
+		cleared := len(e.Issues)
 		e.ClearIssues()
 		if m.Author != nil {
 			ensureSessionOwner(&e, m.Author.ID, m.Author.String())
@@ -248,7 +250,12 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 				e.Project = p.Name
 			}
 		}
-		if err := b.sessions.Set(threadID, e); err != nil {
+		err := b.sessions.Set(threadID, e)
+		b.auditCmdMsg(audit.ActionSessionIssueUnlink, m, e.Project, err, map[string]any{
+			"scope": "all",
+			"count": cleared,
+		})
+		if err != nil {
 			if _, sendErr := discordReply(s, threadID, "Could not clear issues: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply link-clear: %v", sendErr)
 			}
@@ -270,13 +277,22 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			}
 			return
 		}
+		// Resolve the stored ref before removing it, so the audit record names the
+		// ticket that was actually unbound rather than echoing back whatever the
+		// user typed to select it.
+		removedRef := ""
+		if match, found := e.FindIssue(unlinkArg); found {
+			removedRef = match.DisplayRef()
+		}
 		if !e.RemoveIssue(unlinkArg) {
 			if _, err := discordReply(s, threadID, fmt.Sprintf("No linked issue matching `%s`.", unlinkArg), ref(m)); err != nil {
 				log.Printf("error: reply unlink-miss: %v", err)
 			}
 			return
 		}
-		if err := b.sessions.Set(threadID, e); err != nil {
+		err := b.sessions.Set(threadID, e)
+		b.auditCmdMsg(audit.ActionSessionIssueUnlink, m, e.Project, err, map[string]any{"ref": removedRef})
+		if err != nil {
 			if _, sendErr := discordReply(s, threadID, "Could not save: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply unlink-save: %v", sendErr)
 			}
@@ -349,7 +365,16 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	if e.Project == "" {
 		e.Project = projName
 	}
-	if err := b.sessions.Set(threadID, e); err != nil {
+	err := b.sessions.Set(threadID, e)
+	bound := make([]string, 0, len(refs))
+	for _, iss := range refs {
+		bound = append(bound, iss.DisplayRef())
+	}
+	b.auditCmdMsg(audit.ActionSessionIssueLink, m, e.Project, err, map[string]any{
+		"refs":    bound,
+		"keyword": keyword,
+	})
+	if err != nil {
 		if _, sendErr := discordReply(s, threadID, "Could not save issues: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply link-save: %v", sendErr)
 		}

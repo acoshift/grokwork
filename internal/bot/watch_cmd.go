@@ -1,12 +1,14 @@
 package bot
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -34,6 +36,12 @@ func (b *Bot) handleWatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var added bool
 	e, ok, err := b.sessions.Patch(m.ChannelID, func(ent *sessionstore.Entry) {
 		added = ent.AddWatcher(m.Author.ID)
+	})
+	// A vanished unit (Patch found nothing) is a failure, not a silent success:
+	// nobody was added, so the row must not claim otherwise.
+	b.auditCmdMsg(audit.ActionSessionWatch, m, e.Project, watchAuditErr(err, ok), map[string]any{
+		"added":    added,
+		"watchers": len(e.WatcherIDs),
 	})
 	if err != nil {
 		if _, sendErr := discordReply(s, m.ChannelID, "Could not update watch list: "+err.Error(), ref(m)); sendErr != nil {
@@ -85,8 +93,12 @@ func (b *Bot) handleUnwatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 	var removed bool
-	_, ok, err := b.sessions.Patch(m.ChannelID, func(ent *sessionstore.Entry) {
+	e, ok, err := b.sessions.Patch(m.ChannelID, func(ent *sessionstore.Entry) {
 		removed = ent.RemoveWatcher(m.Author.ID)
+	})
+	b.auditCmdMsg(audit.ActionSessionUnwatch, m, e.Project, watchAuditErr(err, ok), map[string]any{
+		"removed":  removed,
+		"watchers": len(e.WatcherIDs),
 	})
 	if err != nil {
 		if _, sendErr := discordReply(s, m.ChannelID, "Could not update watch list: "+err.Error(), ref(m)); sendErr != nil {
@@ -107,6 +119,18 @@ func (b *Bot) handleUnwatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply unwatch-ok: %v", err)
 	}
+}
+
+// watchAuditErr reports the Patch outcome as one error: a store failure, or a
+// unit that no longer exists between the guard above and the write.
+func watchAuditErr(err error, found bool) error {
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("unknown work unit")
+	}
+	return nil
 }
 
 func formatWatcherStatusLine(e sessionstore.Entry) string {

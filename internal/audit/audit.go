@@ -48,9 +48,28 @@ const (
 	ActionSessionLabel            = "session.label"
 	ActionSessionGoal             = "session.goal"
 	ActionSessionClaim            = "session.claim"
+	ActionSessionHandOff          = "session.handoff"
+	ActionSessionWatch            = "session.watch"
+	ActionSessionUnwatch          = "session.unwatch"
+	ActionSessionIssueLink        = "session.issue.link"   // bind a GitHub/Linear ticket to a unit
+	ActionSessionIssueUnlink      = "session.issue.unlink" // drop one binding (or all, detail.scope=all)
 	ActionCommitReviewStart       = "commit.review.start"
 	ActionPRReviewStart           = "pr.review.start" // agentic PR review → PR comment
 	ActionGitFetch                = "git.fetch"
+	ActionGitSync                 = "git.sync"               // fetch + merge origin primary into a unit branch
+	ActionGitCheckpoint           = "git.checkpoint"         // bot-owned local checkpoint ref
+	ActionGitCheckpointRestore    = "git.checkpoint_restore" // hard reset a unit worktree to a checkpoint
+	ActionVerifyRun               = "verify.run"             // project verify commands (shell, no model)
+	ActionAccessDeny              = "access.deny"            // refused before any command ran
+	// Case actions. Both surfaces write these strings; keep them here so the
+	// Discord and web halves of one workflow cannot drift into two action names.
+	ActionCaseEscalate       = "case.escalate"
+	ActionCaseAnswer         = "case.answer"
+	ActionCaseClose          = "case.close"
+	ActionCaseReopen         = "case.reopen"
+	ActionCaseCustomerUpdate = "case.customer_update"
+	ActionCaseLink           = "case.link"
+	ActionCaseUnlink         = "case.unlink"
 )
 
 // ActorAnonymous is used when web auth is off or no session is present.

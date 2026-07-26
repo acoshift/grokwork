@@ -8,9 +8,26 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
+
+// caseAuditDetail stamps the case's own identifiers onto an audit detail map.
+//
+// CaseKey is the quotable id an operator will search by, and phase says what the
+// case was when the command arrived — which is what makes a denial legible ("they
+// tried to close an already-closed case"). CustomerTitle and CustomerUpdate are
+// never included: they are the customer's words.
+func caseAuditDetail(e sessionstore.Entry, extra map[string]any) map[string]any {
+	d := make(map[string]any, len(extra)+2)
+	for k, v := range extra {
+		d[k] = v
+	}
+	d["caseKey"] = e.CaseKey
+	d["phase"] = e.CasePhase()
+	return d
+}
 
 // handleCase: @Grok /case [severity] <title>  or  /case ref:ID <title>
 func (b *Bot) handleCase(s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed) {
@@ -24,6 +41,8 @@ func (b *Bot) handleCase(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	if b.cfg != nil {
 		caps := b.cfg.ResolveCapabilities(proj.Name, m.Author.ID)
 		if !caps.Investigate && !caps.FileEscalation && !caps.StartSessions {
+			b.auditCmdMsg(audit.ActionSessionStart, m, proj.Name, errAuditDeniedCapability,
+				map[string]any{"origin": "discord-case"})
 			replyText(s, m, "You're not allowed to open cases on this project.")
 			return
 		}
@@ -62,11 +81,19 @@ func (b *Bot) handleCase(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		}
 	}
 	actor := ActorFromUser(m.Author)
+	// Detail carries the case's own ids and severity, never the customer-facing
+	// title — that is the one field of an intake guaranteed to be their words.
+	caseDetail := map[string]any{"origin": "discord-case", "severity": severity, "ref": ref}
 	if err := b.ensureCaseShell(threadID, proj.Name, actor, severity, ref, title, "discord"); err != nil {
+		b.auditCmd(audit.ActionSessionStart, actor, threadID, proj.Name, err, caseDetail)
 		replyText(s, m, "Could not open case: "+err.Error())
 		return
 	}
 	b.bindThreadOwnerActor(threadID, proj.Name, actor)
+	if e, ok := b.sessions.Get(threadID); ok {
+		caseDetail["caseKey"] = e.CaseKey
+	}
+	b.auditCmd(audit.ActionSessionStart, actor, threadID, proj.Name, nil, caseDetail)
 
 	body := formatCaseCard(severity, title, ref, sessionstore.PhaseIntake, "")
 	msg, err := s.ChannelMessageSend(threadID, sanitizeDiscordContent(body))
@@ -161,6 +188,7 @@ func (b *Bot) handleEscalate(s *discordgo.Session, m *discordgo.MessageCreate, p
 	if b.cfg != nil {
 		caps = b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
 		if !canEscalateCase(caps) {
+			b.auditCmdMsg(audit.ActionCaseEscalate, m, e.Project, errAuditDeniedCapability, caseAuditDetail(e, nil))
 			replyText(s, m, "You're not allowed to escalate cases (need fileEscalation or builder caps).")
 			return
 		}
@@ -174,6 +202,13 @@ func (b *Bot) handleEscalate(s *discordgo.Session, m *discordgo.MessageCreate, p
 		Note:          note,
 		TakeOwnership: caps.CanShip(),
 	})
+	// The note is the escalator's free text and stays out of the log; who now holds
+	// the case is the part an operator needs.
+	b.auditCmdMsg(audit.ActionCaseEscalate, m, e.Project, err, caseAuditDetail(e, map[string]any{
+		"assigned":   out.Assigned,
+		"released":   out.Released,
+		"engineerId": out.EngineerID,
+	}))
 	if err != nil {
 		replyText(s, m, "Escalate failed: "+err.Error())
 		return
@@ -205,6 +240,7 @@ func (b *Bot) handleCloseCase(s *discordgo.Session, m *discordgo.MessageCreate, 
 	if !b.canControlThread(m, e) {
 		// Investigators who own the case can close
 		if e.OwnerID != "" && m.Author != nil && e.OwnerID != m.Author.ID {
+			b.auditCmdMsg(audit.ActionCaseClose, m, e.Project, errAuditDeniedControl, caseAuditDetail(e, nil))
 			replyText(s, m, "Only the case owner, co-owner, or a project admin can close.")
 			return
 		}
@@ -234,6 +270,12 @@ func (b *Bot) handleCloseCase(s *discordgo.Session, m *discordgo.MessageCreate, 
 		// K18: do NOT set LabelManual — closed phase freezes auto-label in sessionstore.
 		_ = sessionstore.ClampCaseFields(ent)
 	})
+	// resolution/label are our own enums; the close note is the operator's prose
+	// about a customer and is not logged.
+	b.auditCmdMsg(audit.ActionCaseClose, m, e.Project, err, caseAuditDetail(e, map[string]any{
+		"resolution": res,
+		"label":      label,
+	}))
 	if err != nil {
 		replyText(s, m, "Close failed: "+err.Error())
 		return
@@ -258,6 +300,7 @@ func (b *Bot) handleCustomerUpdate(s *discordgo.Session, m *discordgo.MessageCre
 	if b.cfg != nil && m.Author != nil {
 		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
 		if !caps.DraftCustomerReply && !canEscalateCase(caps) {
+			b.auditCmdMsg(audit.ActionCaseCustomerUpdate, m, e.Project, errAuditDeniedCapability, caseAuditDetail(e, nil))
 			replyText(s, m, "You're not allowed to draft customer updates (need draftCustomerReply).")
 			return
 		}
@@ -282,6 +325,12 @@ func (b *Bot) handleCustomerUpdate(s *discordgo.Session, m *discordgo.MessageCre
 		ent.CustomerUpdate = clean
 		_ = sessionstore.ClampCaseFields(ent)
 	})
+	// The customer-facing text itself is the one thing this command is about and
+	// the one thing that must not be copied here: it is written *to* a customer.
+	// What the sanitizer had to redact is worth knowing, so the count travels.
+	b.auditCmdMsg(audit.ActionCaseCustomerUpdate, m, e.Project, err, caseAuditDetail(e, map[string]any{
+		"redactions": len(hits),
+	}))
 	if err != nil {
 		replyText(s, m, "Save failed: "+err.Error())
 		return
@@ -314,6 +363,7 @@ func (b *Bot) handleReopenCase(s *discordgo.Session, m *discordgo.MessageCreate,
 		allowed = CanReopenCaseCaps(caps)
 	}
 	if !allowed {
+		b.auditCmdMsg(audit.ActionCaseReopen, m, e.Project, errAuditDeniedCapability, caseAuditDetail(e, nil))
 		replyText(s, m, "You're not allowed to reopen cases (need investigate / fileEscalation / startSessions, or own the case).")
 		return
 	}
@@ -326,7 +376,11 @@ func (b *Bot) handleReopenCase(s *discordgo.Session, m *discordgo.MessageCreate,
 	if m.Author != nil {
 		actorID = m.Author.ID
 	}
-	if err := b.ReopenCase(m.ChannelID, actorID, phase); err != nil {
+	err := b.ReopenCase(m.ChannelID, actorID, phase)
+	// toPhase, not phase: caseAuditDetail owns "phase" and it means the phase the
+	// case was in when the command arrived (closed, here).
+	b.auditCmdMsg(audit.ActionCaseReopen, m, e.Project, err, caseAuditDetail(e, map[string]any{"toPhase": phase}))
+	if err != nil {
 		if err == ErrCaseBadPhase {
 			replyText(s, m, "Usage: `@Grok /reopen [investigate|fixing]` (default investigate).")
 			return
@@ -373,6 +427,7 @@ func (b *Bot) handleAnswer(s *discordgo.Session, m *discordgo.MessageCreate, par
 	if b.cfg != nil && m.Author != nil {
 		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
 		if !caps.DraftCustomerReply && !canEscalateCase(caps) {
+			b.auditCmdMsg(audit.ActionCaseAnswer, m, e.Project, errAuditDeniedCapability, caseAuditDetail(e, nil))
 			replyText(s, m, "You're not allowed to mark cases answered (need draftCustomerReply or escalate caps).")
 			return
 		}
@@ -390,6 +445,7 @@ func (b *Bot) handleAnswer(s *discordgo.Session, m *discordgo.MessageCreate, par
 		}
 		_ = sessionstore.ClampCaseFields(ent)
 	})
+	b.auditCmdMsg(audit.ActionCaseAnswer, m, e.Project, err, caseAuditDetail(e, nil))
 	if err != nil {
 		replyText(s, m, "Answer failed: "+err.Error())
 		return

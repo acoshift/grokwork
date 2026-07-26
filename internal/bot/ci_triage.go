@@ -9,6 +9,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/runjournal"
@@ -332,6 +333,12 @@ func (b *Bot) handleFixCI(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 
+	// Audited as a session start (same action web's Address CI writes), because
+	// that is what it is: a model run this actor put on the thread's branch.
+	b.auditCmdMsg(audit.ActionSessionStart, m, e.Project, nil, map[string]any{
+		"origin": "discord-fix-ci",
+		"prs":    len(targets),
+	})
 	go b.handleTask(s, m, Parsed{Kind: KindTask, Prompt: strings.TrimSpace(bld.String())})
 }
 

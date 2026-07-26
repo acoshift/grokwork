@@ -41,7 +41,7 @@ func (s *Server) postCaseEscalate(ctx *hime.Context) error {
 	}
 	_, canEsc, _ := s.resolveCaseCaps(ctx, ent.Project)
 	if !canEsc {
-		s.auditAction(ctx, "case.escalate", bot.ErrCaseForbidden, map[string]any{"threadId": threadID})
+		s.auditAction(ctx, audit.ActionCaseEscalate, bot.ErrCaseForbidden, map[string]any{"threadId": threadID})
 		return ctx.Status(http.StatusForbidden).Error("forbidden: not allowed to escalate cases")
 	}
 	note := strings.TrimSpace(ctx.PostFormValue("note"))
@@ -52,7 +52,7 @@ func (s *Server) postCaseEscalate(ctx *hime.Context) error {
 	out, escErr := s.bot.EscalateCase(bot.EscalateCaseOpts{
 		ThreadID: threadID, Actor: actor, Note: note, TakeOwnership: takes,
 	})
-	s.auditAction(ctx, "case.escalate", escErr, map[string]any{
+	s.auditAction(ctx, audit.ActionCaseEscalate, escErr, map[string]any{
 		"threadId": threadID, "project": ent.Project,
 		"assigned": out.Assigned, "released": out.Released,
 		"engineerId": out.EngineerID, "previousEngineerId": out.PreviousEngineerID,
@@ -87,13 +87,13 @@ func (s *Server) postCaseAnswer(ctx *hime.Context) error {
 	}
 	_, _, canDraft := s.resolveCaseCaps(ctx, ent.Project)
 	if !canDraft {
-		s.auditAction(ctx, "case.answer", bot.ErrCaseForbidden, map[string]any{"threadId": threadID})
+		s.auditAction(ctx, audit.ActionCaseAnswer, bot.ErrCaseForbidden, map[string]any{"threadId": threadID})
 		return ctx.Status(http.StatusForbidden).Error("forbidden: not allowed to mark cases answered")
 	}
 	note := strings.TrimSpace(ctx.PostFormValue("note"))
 	actor := s.fixActor(ctx)
 	ansErr := s.bot.AnswerCase(threadID, actor.ID, note)
-	s.auditAction(ctx, "case.answer", ansErr, map[string]any{"threadId": threadID})
+	s.auditAction(ctx, audit.ActionCaseAnswer, ansErr, map[string]any{"threadId": threadID})
 	if ansErr != nil {
 		return s.sessionRedirect(ctx, threadID, "", ansErr.Error())
 	}
@@ -110,14 +110,14 @@ func (s *Server) postCaseClose(ctx *hime.Context) error {
 		return s.sessionRedirect(ctx, threadID, "", bot.ErrCaseClosed.Error())
 	}
 	if !s.canControlSession(ctx, ent) {
-		s.auditAction(ctx, "case.close", errControlForbidden, map[string]any{"threadId": threadID})
+		s.auditAction(ctx, audit.ActionCaseClose, errControlForbidden, map[string]any{"threadId": threadID})
 		return ctx.Status(http.StatusForbidden).Error(errControlForbidden.Error())
 	}
 	res := strings.TrimSpace(ctx.PostFormValue("resolution"))
 	note := strings.TrimSpace(ctx.PostFormValue("note"))
 	actor := s.fixActor(ctx)
 	closeErr := s.bot.CloseCase(threadID, actor.ID, res, note)
-	s.auditAction(ctx, "case.close", closeErr, map[string]any{
+	s.auditAction(ctx, audit.ActionCaseClose, closeErr, map[string]any{
 		"threadId": threadID, "resolution": res,
 	})
 	if closeErr != nil {
@@ -137,7 +137,7 @@ func (s *Server) postCaseCustomerUpdate(ctx *hime.Context) error {
 	}
 	_, _, canDraft := s.resolveCaseCaps(ctx, ent.Project)
 	if !canDraft {
-		s.auditAction(ctx, "case.customer_update", bot.ErrCaseForbidden, map[string]any{"threadId": threadID})
+		s.auditAction(ctx, audit.ActionCaseCustomerUpdate, bot.ErrCaseForbidden, map[string]any{"threadId": threadID})
 		return ctx.Status(http.StatusForbidden).Error("forbidden: not allowed to draft customer updates")
 	}
 	text := strings.TrimSpace(ctx.PostFormValue("text"))
@@ -145,7 +145,7 @@ func (s *Server) postCaseCustomerUpdate(ctx *hime.Context) error {
 		return s.sessionRedirect(ctx, threadID, "", "customer update text is required")
 	}
 	clean, hits, setErr := s.bot.SetCaseCustomerUpdate(threadID, text)
-	s.auditAction(ctx, "case.customer_update", setErr, map[string]any{
+	s.auditAction(ctx, audit.ActionCaseCustomerUpdate, setErr, map[string]any{
 		"threadId": threadID, "redacted": hits, "len": len(clean),
 	})
 	if setErr != nil {
@@ -168,13 +168,13 @@ func (s *Server) postCaseReopen(ctx *hime.Context) error {
 		return s.sessionRedirect(ctx, threadID, "", bot.ErrCaseNotClosed.Error())
 	}
 	if !s.canReopenCase(ctx, ent) {
-		s.auditAction(ctx, "case.reopen", bot.ErrCaseForbidden, map[string]any{"threadId": threadID})
+		s.auditAction(ctx, audit.ActionCaseReopen, bot.ErrCaseForbidden, map[string]any{"threadId": threadID})
 		return ctx.Status(http.StatusForbidden).Error("forbidden: not allowed to reopen cases")
 	}
 	phase := strings.TrimSpace(ctx.PostFormValue("phase"))
 	actor := s.fixActor(ctx)
 	reopenErr := s.bot.ReopenCase(threadID, actor.ID, phase)
-	s.auditAction(ctx, "case.reopen", reopenErr, map[string]any{
+	s.auditAction(ctx, audit.ActionCaseReopen, reopenErr, map[string]any{
 		"threadId": threadID, "phase": phase, "project": ent.Project,
 	})
 	if reopenErr != nil {

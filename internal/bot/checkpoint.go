@@ -11,6 +11,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -33,12 +34,20 @@ func (b *Bot) handleCheckpoint(s *discordgo.Session, m *discordgo.MessageCreate,
 	if !b.canControlThread(m, e) {
 		// builders may also checkpoint
 		if !b.actorCanShip(m, e.Project) {
+			b.auditCmdMsg(audit.ActionGitCheckpoint, m, e.Project, errAuditDeniedControl, nil)
 			b.denyControl(s, m, e, "checkpoint")
 			return
 		}
 	}
 	label := stripCmdPrefix(parsed.Prompt, "/checkpoint", "checkpoint")
 	meta, err := b.createCheckpoint(m.ChannelID, e, ActorFromUser(m.Author), label)
+	// The label is free text the user typed and stays out; the ref and sha are what
+	// a later "who reset this worktree to what" question needs. No cwd — that is a path.
+	b.auditCmdMsg(audit.ActionGitCheckpoint, m, e.Project, err, map[string]any{
+		"checkpointId": meta.ID,
+		"sha":          shortSHA(meta.SHA),
+		"branch":       e.WorktreeBranch,
+	})
 	if err != nil {
 		replyText(s, m, "Checkpoint failed: "+err.Error())
 		return
@@ -65,7 +74,18 @@ func (b *Bot) handleUndo(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	}
 	// Optional: /undo force to skip dirty check — not default.
 	force := strings.Contains(strings.ToLower(parsed.Prompt), "force")
-	if err := b.restoreCheckpoint(s, m, e, cp, force); err != nil {
+	err := b.restoreCheckpoint(s, m, e, cp, force)
+	// restoreCheckpoint owns its own permission check and returns the refusal as an
+	// error, so a denied /undo lands here as OK=false with that reason — one call
+	// site covers both denial and failure.
+	b.auditCmdMsg(audit.ActionGitCheckpointRestore, m, e.Project, err, map[string]any{
+		"checkpointId": cp.ID,
+		"sha":          shortSHA(cp.SHA),
+		"branch":       e.WorktreeBranch,
+		"force":        force,
+		"via":          "undo",
+	})
+	if err != nil {
 		replyText(s, m, "Undo failed: "+err.Error())
 		return
 	}
@@ -110,7 +130,15 @@ func (b *Bot) handleRestore(s *discordgo.Session, m *discordgo.MessageCreate, pa
 		replyText(s, m, msg)
 		return
 	}
-	if err := b.restoreCheckpoint(s, m, e, cp, force); err != nil {
+	err := b.restoreCheckpoint(s, m, e, cp, force)
+	b.auditCmdMsg(audit.ActionGitCheckpointRestore, m, e.Project, err, map[string]any{
+		"checkpointId": cp.ID,
+		"sha":          shortSHA(cp.SHA),
+		"branch":       e.WorktreeBranch,
+		"force":        force,
+		"via":          "restore",
+	})
+	if err != nil {
 		replyText(s, m, "Restore failed: "+err.Error())
 		return
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -54,7 +55,12 @@ func (b *Bot) handleLabel(s *discordgo.Session, m *discordgo.MessageCreate, pars
 		return
 	case arg == "auto":
 		e.ClearLabelManual()
-		if err := b.sessions.Set(threadID, e); err != nil {
+		err := b.sessions.Set(threadID, e)
+		b.auditCmdMsg(audit.ActionSessionLabel, m, e.Project, err, map[string]any{
+			"label": e.EffectiveLabel(),
+			"mode":  "auto",
+		})
+		if err != nil {
 			if _, sendErr := discordReply(s, threadID, "Could not save label: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply label-save: %v", sendErr)
 			}
@@ -96,7 +102,12 @@ func (b *Bot) handleLabel(s *discordgo.Session, m *discordgo.MessageCreate, pars
 			e.Project = p.Name
 		}
 	}
-	if err := b.sessions.Set(threadID, e); err != nil {
+	err := b.sessions.Set(threadID, e)
+	b.auditCmdMsg(audit.ActionSessionLabel, m, e.Project, err, map[string]any{
+		"label": lab,
+		"mode":  "manual",
+	})
+	if err != nil {
 		if _, sendErr := discordReply(s, threadID, "Could not save label: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply label-save: %v", sendErr)
 		}

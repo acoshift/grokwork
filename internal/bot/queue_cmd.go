@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
+
+	"github.com/acoshift/grokwork/internal/audit"
 )
 
 func (b *Bot) handleQueue(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -56,6 +58,9 @@ func (b *Bot) handleDequeue(s *discordgo.Session, m *discordgo.MessageCreate, pa
 	if m.Author != nil {
 		uid = m.Author.ID
 	}
+	// Resolved before the lock: projectForThread can hit the Discord API to find a
+	// thread's parent channel, and st.mu gates the run/drain path.
+	project := b.projectForThread(s, m.ChannelID)
 	st := b.stateFor(m.ChannelID)
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -74,10 +79,12 @@ func (b *Bot) handleDequeue(s *discordgo.Session, m *discordgo.MessageCreate, pa
 			can = b.canControlThread(m, e)
 		} else {
 			// No session yet, so no Entry.Project — resolve it from the channel map.
-			can = b.actorAdminsProject(b.projectForThread(s, m.ChannelID), uid)
+			can = b.actorAdminsProject(project, uid)
 		}
 	}
 	if !can {
+		b.auditCmdMsg(audit.ActionSessionDequeue, m, project, errAuditDeniedQueueItem,
+			map[string]any{"position": n, "taskId": it.taskID})
 		if _, err := discordReply(s, m.ChannelID, "You can only dequeue your own items (or the thread owner / a project admin).", ref(m)); err != nil {
 			log.Printf("error: reply dequeue-deny: %v", err)
 		}
@@ -85,6 +92,10 @@ func (b *Bot) handleDequeue(s *discordgo.Session, m *discordgo.MessageCreate, pa
 	}
 	oldID := it.taskID
 	st.queue = append(st.queue[:idx], st.queue[idx+1:]...)
+	b.auditCmdMsg(audit.ActionSessionDequeue, m, project, nil, map[string]any{
+		"position": n,
+		"taskId":   oldID,
+	})
 	if err := b.saveJournalFromState(m.ChannelID, st, taskItem{}, false); err != nil {
 		log.Printf("warn: journal dequeue: %v", err)
 	}
@@ -110,6 +121,7 @@ func (b *Bot) handleCancelMine(s *discordgo.Session, m *discordgo.MessageCreate)
 	if uid == "" {
 		return
 	}
+	project := b.projectForThread(s, m.ChannelID)
 	st := b.stateFor(m.ChannelID)
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -131,6 +143,12 @@ func (b *Bot) handleCancelMine(s *discordgo.Session, m *discordgo.MessageCreate)
 			log.Printf("warn: journal cancel-mine: %v", err)
 		}
 	}
+	// Same action as /dequeue — it is the same mutation, in bulk. scope tells the
+	// two apart without a second action name to keep in sync.
+	b.auditCmdMsg(audit.ActionSessionDequeue, m, project, nil, map[string]any{
+		"scope":   "mine",
+		"removed": removed,
+	})
 	if _, err := discordReply(s, m.ChannelID, fmt.Sprintf("Removed **%d** of your queued item(s).", removed), ref(m)); err != nil {
 		log.Printf("error: reply cancel-mine: %v", err)
 	}

@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/reviewstore"
@@ -78,6 +80,11 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 
 	// Reviewer must be a project member (allowedUserIds or a team), when known.
 	if e.Project != "" && b.cfg != nil && !b.cfg.AccessAllowed(e.Project, reviewerID) {
+		// Refused on the *reviewer*, not the requester, so this is a failed request
+		// rather than a capability denial — the reason has to say which.
+		b.auditCmdMsg(audit.ActionPRReviewRequest, m, e.Project,
+			errors.New("reviewer is not a member of this project"),
+			map[string]any{"reviewerId": reviewerID})
 		if _, err := discordReply(s, m.ChannelID,
 			fmt.Sprintf("<@%s> is not on this project's allowlist.", reviewerID), ref(m)); err != nil {
 			log.Printf("error: reply review-allow: %v", err)
@@ -101,7 +108,14 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		ReviewerID:    reviewerID,
 		Note:          note,
 	})
+	// The note is the requester's prose and stays out of the log; who was asked to
+	// review what is the whole record.
+	reviewDetail := map[string]any{
+		"reviewerId": reviewerID,
+		"pr":         fmt.Sprintf("%s/%s#%d", pr.Owner, pr.Repo, pr.Number),
+	}
 	if err != nil {
+		b.auditCmdMsg(audit.ActionPRReviewRequest, m, e.Project, err, reviewDetail)
 		if _, sendErr := discordReply(s, m.ChannelID, "Could not request review: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply review-save: %v", sendErr)
 		}
@@ -114,6 +128,13 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	ghLogin, ghErr := requestFormalGitHubReview(ctx, nil, b.cfg, cwd, pr.Owner, pr.Repo, pr.Number, reviewerID)
+	// OK stays true: the audited mutation is the team request, which succeeded. The
+	// formal GitHub request is an echo of it and reports itself as a detail — a
+	// failed echo must not make the row read as "no review was requested".
+	reviewDetail["requestId"] = req.ID
+	reviewDetail["githubLogin"] = ghLogin
+	reviewDetail["githubError"] = ghErr != nil
+	b.auditCmdMsg(audit.ActionPRReviewRequest, m, e.Project, nil, reviewDetail)
 
 	msg := formatReviewRequestReply(reviewRequestReply{
 		ReviewerID:  reviewerID,

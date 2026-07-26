@@ -3,6 +3,7 @@ package bot
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -68,16 +70,29 @@ func (b *Bot) handleVerify(s *discordgo.Session, m *discordgo.MessageCreate, par
 	replyText(s, m, fmt.Sprintf("Running **%d** verify command(s)…", len(toRun)))
 	var cards []string
 	var results []verifyResult
+	var names []string
 	allOK := true
 	for _, cmd := range toRun {
 		res := b.runOneVerify(cwd, cmd)
 		results = append(results, res)
+		names = append(names, res.Name)
 		cards = append(cards, formatVerifyCard(res))
 		if !res.OK {
 			allOK = false
 		}
 		log.Printf("verify.run thread=%s name=%s ok=%v exit=%d", m.ChannelID, res.Name, res.OK, res.ExitCode)
 	}
+	// /verify runs admin-configured shell on the host, so it is audited even
+	// though it changes no state of ours. Configured *names* only: the command
+	// strings and their output routinely contain paths, and the log is not the
+	// place to re-derive a failure — the thread card has it.
+	var verifyErr error
+	if !allOK {
+		verifyErr = errors.New("verify failed")
+	}
+	b.auditCmdMsg(audit.ActionVerifyRun, m, project, verifyErr, map[string]any{
+		"names": names,
+	})
 	body := strings.Join(cards, "\n\n")
 	if !allOK {
 		body = "**Verify failed**\n\n" + body

@@ -8,6 +8,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/gitworktree"
 )
 
@@ -23,6 +24,7 @@ func (b *Bot) handleSync(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		return
 	}
 	if !b.actorCanShip(m, e.Project) && !b.canControlThread(m, e) {
+		b.auditCmdMsg(audit.ActionGitSync, m, e.Project, errAuditDeniedCapability, nil)
 		replyText(s, m, "You're not allowed to `/sync` (need builder caps or thread control).")
 		return
 	}
@@ -52,6 +54,9 @@ func (b *Bot) handleSync(s *discordgo.Session, m *discordgo.MessageCreate, parse
 
 	if err := gitworktree.FetchOrigin(ctx, cwd); err != nil {
 		// fetch may fail offline; still try local origin/* if present
+		b.auditCmdMsg(audit.ActionGitSync, m, e.Project, fmt.Errorf("fetch: %w", err), map[string]any{
+			"branch": e.WorktreeBranch,
+		})
 		replyText(s, m, "git fetch failed: "+err.Error())
 		return
 	}
@@ -77,6 +82,11 @@ func (b *Bot) handleSync(s *discordgo.Session, m *discordgo.MessageCreate, parse
 
 	if err := gitworktree.MergeOriginBase(ctx, cwd, base); err != nil {
 		files, _ := gitworktree.ConflictedFiles(ctx, cwd)
+		b.auditCmdMsg(audit.ActionGitSync, m, e.Project, fmt.Errorf("merge: %w", err), map[string]any{
+			"branch":    e.WorktreeBranch,
+			"base":      base,
+			"conflicts": len(files),
+		})
 		msg := "Merge conflict with `origin/" + base + "`: " + err.Error()
 		if len(files) > 0 {
 			max := 15
@@ -94,5 +104,10 @@ func (b *Bot) handleSync(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		return
 	}
 	head, _ := gitworktree.HeadSHA(ctx, cwd)
+	b.auditCmdMsg(audit.ActionGitSync, m, e.Project, nil, map[string]any{
+		"branch": e.WorktreeBranch,
+		"base":   base,
+		"head":   shortSHA(head),
+	})
 	replyText(s, m, fmt.Sprintf("**Synced** with `origin/%s` · HEAD `%s`", base, shortSHA(head)))
 }

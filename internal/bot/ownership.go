@@ -8,6 +8,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -52,7 +53,9 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		e = sessionstore.Entry{Project: projName}
 		e.SetOwner(m.Author.ID, m.Author.String())
-		if err := b.sessions.Set(m.ChannelID, e); err != nil {
+		err := b.sessions.Set(m.ChannelID, e)
+		b.auditCmdMsg(audit.ActionSessionClaim, m, projName, err, map[string]any{"shell": true})
+		if err != nil {
 			log.Printf("error: claim save thread=%s: %v", m.ChannelID, err)
 			if _, sendErr := discordReply(s, m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply claim-save: %v", sendErr)
@@ -82,7 +85,12 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if prevID != "" && prevID != m.Author.ID {
 		e.AddCoOwner(prevID)
 	}
-	if err := b.sessions.Set(m.ChannelID, e); err != nil {
+	err := b.sessions.Set(m.ChannelID, e)
+	b.auditCmdMsg(audit.ActionSessionClaim, m, e.Project, err, map[string]any{
+		"previousOwnerId": prevID,
+		"takeover":        prevID != "",
+	})
+	if err != nil {
 		log.Printf("error: claim save thread=%s: %v", m.ChannelID, err)
 		if _, sendErr := discordReply(s, m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply claim-save: %v", sendErr)
@@ -142,7 +150,12 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 		e = sessionstore.Entry{Project: projName}
 		e.SetOwner(m.Author.ID, m.Author.String())
 		e.HandOff(target.ID, target.String())
-		if err := b.sessions.Set(m.ChannelID, e); err != nil {
+		err := b.sessions.Set(m.ChannelID, e)
+		b.auditCmdMsg(audit.ActionSessionHandOff, m, projName, err, map[string]any{
+			"toId":  target.ID,
+			"shell": true,
+		})
+		if err != nil {
 			log.Printf("error: handoff save thread=%s: %v", m.ChannelID, err)
 			if _, sendErr := discordReply(s, m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
 				log.Printf("error: reply handoff-save: %v", sendErr)
@@ -160,6 +173,7 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if !b.canControlUser(m.Author.ID, e) {
+		b.auditCmdMsg(audit.ActionSessionHandOff, m, e.Project, errAuditDeniedControl, map[string]any{"toId": target.ID})
 		b.denyControl(s, m, e, "hand off this thread")
 		return
 	}
@@ -169,7 +183,9 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	e.HandOff(target.ID, target.String())
-	if err := b.sessions.Set(m.ChannelID, e); err != nil {
+	err := b.sessions.Set(m.ChannelID, e)
+	b.auditCmdMsg(audit.ActionSessionHandOff, m, e.Project, err, map[string]any{"toId": target.ID})
+	if err != nil {
 		log.Printf("error: handoff save thread=%s: %v", m.ChannelID, err)
 		if _, sendErr := discordReply(s, m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
 			log.Printf("error: reply handoff-save: %v", sendErr)

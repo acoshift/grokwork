@@ -7,6 +7,7 @@ import (
 
 	"github.com/moonrhythm/hime"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -52,12 +53,12 @@ func (s *Server) postCaseLink(ctx *hime.Context) error {
 		return err
 	}
 	if canOpen, _, _ := s.resolveCaseCaps(ctx, ent.Project); !canOpen && !s.canControlSession(ctx, ent) {
-		s.auditAction(ctx, "case.link", errControlForbidden, map[string]any{"threadId": threadID})
+		s.auditAction(ctx, audit.ActionCaseLink, errControlForbidden, map[string]any{"threadId": threadID})
 		return ctx.Status(http.StatusForbidden).Error("forbidden: not allowed to link cases")
 	}
 	key := strings.TrimSpace(ctx.PostFormValue("caseKey"))
 	linkErr := s.bot.LinkCase(threadID, key)
-	s.auditAction(ctx, "case.link", linkErr, map[string]any{"threadId": threadID, "caseKey": key})
+	s.auditAction(ctx, audit.ActionCaseLink, linkErr, map[string]any{"threadId": threadID, "caseKey": key})
 	if linkErr != nil {
 		return s.sessionRedirect(ctx, threadID, "", linkErr.Error())
 	}
@@ -73,12 +74,12 @@ func (s *Server) postCaseUnlink(ctx *hime.Context) error {
 		return err
 	}
 	if canOpen, _, _ := s.resolveCaseCaps(ctx, ent.Project); !canOpen && !s.canControlSession(ctx, ent) {
-		s.auditAction(ctx, "case.unlink", errControlForbidden, map[string]any{"threadId": threadID})
+		s.auditAction(ctx, audit.ActionCaseUnlink, errControlForbidden, map[string]any{"threadId": threadID})
 		return ctx.Status(http.StatusForbidden).Error("forbidden: not allowed to link cases")
 	}
 	key := strings.TrimSpace(ctx.PostFormValue("caseKey"))
 	unlinkErr := s.bot.UnlinkCase(threadID, key)
-	s.auditAction(ctx, "case.unlink", unlinkErr, map[string]any{"threadId": threadID, "caseKey": key})
+	s.auditAction(ctx, audit.ActionCaseUnlink, unlinkErr, map[string]any{"threadId": threadID, "caseKey": key})
 	if unlinkErr != nil {
 		return s.sessionRedirect(ctx, threadID, "", unlinkErr.Error())
 	}

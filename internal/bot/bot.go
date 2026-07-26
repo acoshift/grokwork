@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
@@ -101,6 +103,12 @@ type Bot struct {
 	runs     *runjournal.Store
 	events   *timeline.Store
 	inbox    *inbox.Store
+	// audit is the Discord command surface's trail (audit_cmd.go). Deliberately a
+	// second Logger over the same directory as web's: each Append is one small
+	// O_APPEND write, which the kernel serializes across descriptors, so the two
+	// interleave by line and never by byte. Threading web's instance in here would
+	// buy one shared mutex and cost the bot a dependency on the web server existing.
+	audit *audit.Logger
 
 	ready     atomic.Bool
 	gateReady atomic.Bool
@@ -151,6 +159,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) 
 			log.Printf("warn: inbox: %v", err)
 		} else {
 			b.inbox = ib
+		}
+		if al, err := audit.New(cfg.DataDir); err != nil {
+			log.Printf("warn: audit: %v", err)
+		} else {
+			b.audit = al
 		}
 	}
 	if host, err := os.Hostname(); err == nil {
@@ -640,8 +653,13 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		log.Printf("warn: empty content on mention — enable Message Content Intent in Developer Portal")
 	}
 
-	if allowed, denyMsg := b.checkMessageAccess(s, m); !allowed {
+	if allowed, project, denyMsg := b.checkMessageAccess(s, m); !allowed {
 		log.Printf("deny: user %s(%s) project access: %s", m.Author.String(), m.Author.ID, denyMsg)
+		// Audited before the command is even parsed: this gate fires ahead of every
+		// per-command check, so a non-member's /reset would otherwise leave no trace
+		// at all. The command name is deliberately absent — parsing has not happened
+		// and the raw text is content we do not log.
+		b.auditCmdMsg(audit.ActionAccessDeny, m, project, errAuditDeniedProject, nil)
 		if _, err := discordReply(s, m.ChannelID, denyMsg, ref(m)); err != nil {
 			log.Printf("error: reply allowlist deny: %v", err)
 		}
@@ -869,9 +887,14 @@ func (b *Bot) handleCancel(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		return
 	}
-	if e, ok := b.sessions.Get(m.ChannelID); ok && !b.canControlThread(m, e) {
-		b.denyControl(s, m, e, "cancel")
-		return
+	project := ""
+	if e, ok := b.sessions.Get(m.ChannelID); ok {
+		project = e.Project
+		if !b.canControlThread(m, e) {
+			b.auditCmdMsg(audit.ActionSessionCancel, m, project, errAuditDeniedControl, nil)
+			b.denyControl(s, m, e, "cancel")
+			return
+		}
 	}
 	who := ""
 	if m.Author != nil {
@@ -879,11 +902,15 @@ func (b *Bot) handleCancel(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	msg, ok := b.cancelCurrentRun(m.ChannelID, who)
 	if !ok {
+		// Recorded as a failure, matching web's cancel: "nothing was running" is a
+		// different answer to "who cancelled this" than silence is.
+		b.auditCmdMsg(audit.ActionSessionCancel, m, project, errors.New(msg), nil)
 		if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 			log.Printf("error: reply cancel-idle: %v", err)
 		}
 		return
 	}
+	b.auditCmdMsg(audit.ActionSessionCancel, m, project, nil, nil)
 	if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply cancel: %v", err)
 	}
@@ -919,11 +946,19 @@ func plural(n int) string {
 }
 
 func (b *Bot) resetThread(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if e, ok := b.sessions.Get(m.ChannelID); ok && !b.canControlThread(m, e) {
-		b.denyControl(s, m, e, "reset")
-		return
+	project := ""
+	if e, ok := b.sessions.Get(m.ChannelID); ok {
+		project = e.Project
+		if !b.canControlThread(m, e) {
+			b.auditCmdMsg(audit.ActionSessionReset, m, project, errAuditDeniedControl, nil)
+			b.denyControl(s, m, e, "reset")
+			return
+		}
 	}
 	msg, err := b.resetThreadCore(m.ChannelID)
+	// Read the project before the reset, not after: a successful reset drops the
+	// session's worktree and (for non-cases) can leave nothing to read it from.
+	b.auditCmdMsg(audit.ActionSessionReset, m, project, err, nil)
 	if err != nil {
 		if _, sendErr := discordReply(s, m.ChannelID, msg, ref(m)); sendErr != nil {
 			log.Printf("error: reply reset: %v", sendErr)
@@ -1139,25 +1174,29 @@ func remoteWorkPromptPrefixMode(branch string, direct bool) string {
 }
 
 // checkMessageAccess resolves the channel's project and checks membership.
-func (b *Bot) checkMessageAccess(s *discordgo.Session, m *discordgo.MessageCreate) (bool, string) {
+//
+// project is returned even when access is refused (empty only when the channel
+// maps to nothing), so the deny path can name it in the audit trail without
+// asking Discord for the parent channel a second time.
+func (b *Bot) checkMessageAccess(s *discordgo.Session, m *discordgo.MessageCreate) (allowed bool, project, denyMsg string) {
 	if m == nil || m.Author == nil {
-		return false, "You're not allowed to use Grok."
+		return false, "", "You're not allowed to use Grok."
 	}
 	parent := parentChannelID(s, m.ChannelID)
 	project, ok := b.cfg.ChannelProject(parent)
 	if !ok || project == "" {
-		return false, "This channel is not mapped to a project."
+		return false, "", "This channel is not mapped to a project."
 	}
 	if !b.cfg.ProjectHasAllowlist(project) {
-		return false, fmt.Sprintf(
+		return false, project, fmt.Sprintf(
 			"Project **%s** has no members configured. An admin must add members in the web config.",
 			project,
 		)
 	}
 	if b.isAllowedUser(m.Author.ID, project) {
-		return true, ""
+		return true, project, ""
 	}
-	return false, fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
+	return false, project, fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
 }
 
 type projectRef struct {
