@@ -169,13 +169,16 @@ func (s *Server) fpConfig() string {
 	fmt.Fprintf(&b, "risky=%s\n", snap.RiskyPathGlobsText)
 	fmt.Fprintf(&b, "invite=%s|%s\n", snap.ClientID, snap.InviteURL)
 	for _, p := range snap.Projects {
-		// MemberIDs unions direct members with every team's members, so adding
-		// someone to a team moves the digest. The team rows are still needed on
-		// top of it: renaming a team or changing its capability template alters
-		// no membership, and the Access tab renders both.
+		// MemberIDs is a deduped union of direct members and every team's members,
+		// so it is not sufficient on its own: moving someone from one team to
+		// another leaves the union byte-identical, and the Access tab — which
+		// renders per-team rosters, and is the audit surface for adminProject now
+		// that the Discord mod bypass is gone — would keep showing the old
+		// assignment to every other viewer. Each team therefore contributes its own
+		// member list, not just its key/label/template.
 		fmt.Fprintf(&b, "p|%s|%s|%v\n", p.Name, p.Path, p.MemberIDs)
 		for _, t := range p.Teams {
-			fmt.Fprintf(&b, "t|%s|%s|%s|%s\n", p.Name, t.Key, t.Label, t.Capabilities)
+			fmt.Fprintf(&b, "t|%s|%s|%s|%s|%v\n", p.Name, t.Key, t.Label, t.Capabilities, t.Members)
 		}
 	}
 	for _, c := range snap.Channels {

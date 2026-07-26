@@ -107,7 +107,11 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 		pc.DiscordChannelID = strings.TrimSpace(pc.DiscordChannelID)
 		pc.DiscordGuildID = strings.TrimSpace(pc.DiscordGuildID)
 		pc.AllowedUserIDs = cleanIDList(pc.AllowedUserIDs)
-		pc.Teams = normalizeTeams(pc.Teams)
+		teams, err := normalizeTeams(pc.Teams)
+		if err != nil {
+			return fmt.Errorf("projects[%q]: %w", name, err)
+		}
+		pc.Teams = teams
 		if pc.Linear != nil {
 			pc.Linear.TeamKey = strings.TrimSpace(pc.Linear.TeamKey)
 			pc.Linear.APIKey = strings.TrimSpace(pc.Linear.APIKey)
@@ -146,6 +150,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		SafeTeamMode             *bool                   `json:"safeTeamMode,omitempty"`
 		SafeTeamDefaultTemplate  string                  `json:"safeTeamDefaultTemplate,omitempty"`
 		DefaultMode              string                  `json:"defaultMode,omitempty"`
+		CaseKey                  string                  `json:"caseKey,omitempty"`
 		CapabilityTemplates      map[string]Capabilities `json:"capabilityTemplates,omitempty"`
 		CapabilityByUser         map[string]string       `json:"capabilityByUser,omitempty"`
 		InvestigateTools         string                  `json:"investigateTools,omitempty"`
@@ -167,6 +172,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			SafeTeamMode:             cloneBoolPtr(pc.SafeTeamMode),
 			SafeTeamDefaultTemplate:  pc.SafeTeamDefaultTemplate,
 			DefaultMode:              pc.DefaultMode,
+			CaseKey:                  pc.CaseKey,
 			CapabilityTemplates:      cloneCapabilitiesMap(pc.CapabilityTemplates),
 			CapabilityByUser:         cloneStringMap(pc.CapabilityByUser),
 			InvestigateTools:         pc.InvestigateTools,
@@ -211,6 +217,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			SafeTeamMode:             cloneBoolPtr(v.SafeTeamMode),
 			SafeTeamDefaultTemplate:  v.SafeTeamDefaultTemplate,
 			DefaultMode:              v.DefaultMode,
+			CaseKey:                  v.CaseKey,
 			CapabilityTemplates:      cloneCapabilitiesMap(v.CapabilityTemplates),
 			CapabilityByUser:         cloneStringMap(v.CapabilityByUser),
 			InvestigateTools:         v.InvestigateTools,

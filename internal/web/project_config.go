@@ -130,9 +130,13 @@ func displayName(names map[string]string, id string) string {
 // capabilities rather than the "cannot use Grok" warning. This page is the audit
 // surface for adminProject, so a real grant shown as dead is worse than noise.
 func (s *Server) buildMemberRoster(item *config.ProjectItem, names map[string]string) []memberRow {
+	// Key on the normalized id: every lookup below normalizes, so keying on the raw
+	// spelling loses an override whose id is written differently from the allowlist
+	// entry for the same person ("123" vs "discord:123") — the grant then vanished
+	// from this page entirely rather than merely misrendering.
 	tplByUser := make(map[string]string, len(item.CapabilityByUser))
 	for _, m := range item.CapabilityByUser {
-		tplByUser[m.ID] = m.Template
+		tplByUser[config.NormalizeActorID(m.ID)] = m.Template
 	}
 	known := make(map[string]bool, len(item.CapabilityTemplateNames))
 	for _, n := range item.CapabilityTemplateNames {
@@ -150,7 +154,7 @@ func (s *Server) buildMemberRoster(item *config.ProjectItem, names map[string]st
 	member := make(map[string]bool, len(item.AllowedUserIDs))
 	for _, id := range item.AllowedUserIDs {
 		member[config.NormalizeActorID(id)] = true
-		tpl := tplByUser[id]
+		tpl := tplByUser[config.NormalizeActorID(id)]
 		name := displayName(names, id)
 		rows = append(rows, memberRow{
 			ID:              id,

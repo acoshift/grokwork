@@ -456,3 +456,37 @@ func TestConfigDigestTracksTeams(t *testing.T) {
 		t.Fatal("renaming a team did not move the config digest")
 	}
 }
+
+// TestConfigDigestTracksIntraProjectTeamMove covers the gap TestConfigDigestTracksTeams
+// leaves: MemberIDs is a deduped UNION of direct members and every team's
+// members, so moving one person from team A to team B inside the same project
+// leaves that union byte-identical. Before each team contributed its own member
+// list to the digest, the Access tab kept showing the old assignment to every
+// other viewer — and that page is the audit surface for adminProject now that
+// the Discord mod bypass is gone.
+func TestConfigDigestTracksIntraProjectTeamMove(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+
+	for _, team := range []struct{ key, label string }{{"eng", "Engineering"}, {"support", "Support"}} {
+		if err := cfg.SetProjectTeam("proj", team.key, team.label, "builder"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cfg.AddProjectTeamMember("proj", "eng", "mover-1"); err != nil {
+		t.Fatal(err)
+	}
+	before := srv.fpConfig()
+
+	// Move the same person across teams: the union of all members is unchanged.
+	if err := cfg.RemoveProjectTeamMember("proj", "eng", "mover-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.AddProjectTeamMember("proj", "support", "mover-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := srv.fpConfig(); got == before {
+		t.Fatal("moving a member between two teams did not move the config digest — " +
+			"per-team member lists are missing from fpConfig, so the Access tab goes stale")
+	}
+}

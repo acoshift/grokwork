@@ -581,3 +581,78 @@ func TestActorSubject(t *testing.T) {
 		}
 	}
 }
+
+// TestTeamKeyCaseCollisionIsRejected pins the fail-closed answer to two team
+// keys differing only in case. Keys are case-insensitive ids, so both name the
+// same team, but they carry different members and different capability
+// templates. Merging them into one map picks a winner by Go's randomized map
+// iteration order, so identical config bytes resolved to different capabilities
+// on different boots — measured granting adminProject on roughly one boot in
+// eight. Refusing to load is the only deterministic answer that cannot
+// over-grant.
+func TestTeamKeyCaseCollisionIsRejected(t *testing.T) {
+	raw := []byte(`{
+	  "app": {
+	    "path": "/tmp/app",
+	    "teams": {
+	      "Support": { "members": ["u1"], "capabilities": "admin" },
+	      "support": { "members": ["u2"], "capabilities": "investigator" }
+	    }
+	  }
+	}`)
+	var m ProjectsMap
+	err := json.Unmarshal(raw, &m)
+	if err == nil {
+		t.Fatal("expected a case-collision error, got nil (the winner would vary per boot)")
+	}
+	for _, want := range []string{"differing only in case", "Support", "support"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q — it must name both spellings so the operator can fix it", err, want)
+		}
+	}
+}
+
+// TestTeamKeyCaseCollisionRejectionIsDeterministic guards against the failure
+// mode being order-dependent: the collision must be reported on every load, not
+// just the ones where the colliding key happens to be visited second.
+func TestTeamKeyCaseCollisionIsDeterministic(t *testing.T) {
+	raw := []byte(`{"app":{"path":"/tmp/app","teams":{
+	  "Eng":{"members":["a"],"capabilities":"admin"},
+	  "eng":{"members":["b"],"capabilities":"investigator"},
+	  "ENG":{"members":["c"],"capabilities":"builder"}}}}`)
+	for i := range 100 {
+		var m ProjectsMap
+		if err := json.Unmarshal(raw, &m); err == nil {
+			t.Fatalf("load %d accepted a case-collision", i)
+		}
+	}
+}
+
+// TestCaseKeyOverrideSurvivesSave pins a field that was silently dropped: the
+// project caseKey override was missing from both the marshal field list and the
+// clone, so any web config write deleted it from config.json. Case keys are
+// quotable ids that other cases, commits and PRs point at, and losing the
+// prefix silently re-aims every reference already written down.
+func TestCaseKeyOverrideSurvivesSave(t *testing.T) {
+	m := ProjectsMap{"app": ProjectConfig{Path: "/tmp/app", CaseKey: "WEBAPP"}}
+
+	raw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"caseKey":"WEBAPP"`) {
+		t.Fatalf("caseKey dropped on marshal: %s", raw)
+	}
+
+	var back ProjectsMap
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	if got := back["app"].CaseKey; got != "WEBAPP" {
+		t.Fatalf("caseKey did not round-trip: got %q, want WEBAPP", got)
+	}
+
+	if got := cloneProjectsMap(m)["app"].CaseKey; got != "WEBAPP" {
+		t.Fatalf("caseKey lost by cloneProjectsMap: got %q, want WEBAPP", got)
+	}
+}

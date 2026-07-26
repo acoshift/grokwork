@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -73,25 +74,45 @@ func cleanActorList(ids []string) []string {
 
 // normalizeTeams canonicalizes keys, members and template names. An entry whose
 // key is empty is dropped — a team with no id cannot be addressed by any route.
-func normalizeTeams(m map[string]TeamConfig) map[string]TeamConfig {
+//
+// Keys differing only in case are a hard error rather than a silent merge. Keys
+// are case-insensitive ids, so "Support" and "support" are the same team, but
+// they carry different members and different capability templates: writing both
+// into one map means the winner is chosen by Go's randomized map iteration
+// order, and the same config bytes then resolve to different capabilities on
+// different boots. That was measured granting adminProject on roughly one boot in
+// eight. Refusing to load is the only deterministic answer that cannot
+// over-grant — the same stance this repo takes on a typo in deploy.yaml, and it
+// is what the fail-closed rules elsewhere in this file already imply. The web UI
+// normalizes before writing, so a collision can only come from hand-editing.
+func normalizeTeams(m map[string]TeamConfig) (map[string]TeamConfig, error) {
 	if len(m) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make(map[string]TeamConfig, len(m))
-	for k, v := range m {
+	origin := make(map[string]string, len(m)) // normalized key → source spelling
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		v := m[k]
 		key := normalizeTeamKey(k)
 		if key == "" {
 			continue
 		}
+		if first, dup := origin[key]; dup {
+			return nil, fmt.Errorf("teams has keys differing only in case (%q and %q): "+
+				"they are the same team id but carry different members and capabilities, "+
+				"so which one applies would vary per restart — merge them into one entry",
+				first, k)
+		}
+		origin[key] = k
 		v.Label = strings.TrimSpace(v.Label)
 		v.Members = cleanActorList(v.Members)
 		v.Capabilities = strings.ToLower(strings.TrimSpace(v.Capabilities))
 		out[key] = v
 	}
 	if len(out) == 0 {
-		return nil
+		return nil, nil
 	}
-	return out
+	return out, nil
 }
 
 // teamsContainActor reports whether any team of pc names actorID.
