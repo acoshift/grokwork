@@ -203,7 +203,6 @@ func taskRecordFromItem(item taskItem, status runjournal.Status) runjournal.Task
 		SnapRunKind:      item.snapRunKind,
 		SnapAllowPR:      item.snapAllowPR,
 		SnapAllowDirect:  item.snapAllowDirect,
-		RoleIDs:          append([]string(nil), item.roleIDs...),
 	}
 }
 

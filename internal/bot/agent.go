@@ -138,11 +138,11 @@ func (b *Bot) ensureSessionCLI(threadID string, cli config.AgentCLI) {
 // Fails closed without config, unlike requireCanStartFix: there is no legacy data
 // to be lenient about here, since nothing could have named a model before this
 // existed.
-func (b *Bot) requireCanSelectModel(project, userID string, roleIDs []string) error {
+func (b *Bot) requireCanSelectModel(project, userID string) error {
 	if b == nil || b.cfg == nil {
 		return ErrCannotSelectModel
 	}
-	if !b.cfg.ResolveCapabilities(project, userID, roleIDs).CanShip() {
+	if !b.cfg.ResolveCapabilities(project, userID).CanShip() {
 		return ErrCannotSelectModel
 	}
 	return nil

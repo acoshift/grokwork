@@ -222,14 +222,14 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 	}
 	// Defense in depth: explicit KindStartFix requires CanShip (web /start fix parity).
 	if kind == KindStartFix {
-		if err := b.requireCanStartFix(opts.Proj.Name, opts.Actor.ID, nil); err != nil {
+		if err := b.requireCanStartFix(opts.Proj.Name, opts.Actor.ID); err != nil {
 			if b.runs != nil {
 				b.runs.RemoveTaskFiles(threadID, taskID)
 			}
 			return 0, err
 		}
 	}
-	b.snapshotPolicyOntoItem(&item, opts.Proj.Name, nil)
+	b.snapshotPolicyOntoItem(&item, opts.Proj.Name)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &runJob{cancel: cancel, start: time.Now(), project: opts.Proj.Name}

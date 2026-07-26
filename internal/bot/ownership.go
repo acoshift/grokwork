@@ -14,20 +14,13 @@ import (
 
 // canControlThread reports whether the author may cancel/reset this thread.
 // Soft policy: unowned sessions (legacy / not yet set) allow anyone on the allowlist.
-// Owned sessions require owner, co-owner, or Discord moderator override.
-func (b *Bot) canControlThread(s *discordgo.Session, m *discordgo.MessageCreate, e sessionstore.Entry) bool {
+// Owned sessions require owner, co-owner, or a project admin (a team whose
+// capability template grants adminProject).
+func (b *Bot) canControlThread(m *discordgo.MessageCreate, e sessionstore.Entry) bool {
 	if m == nil || m.Author == nil {
 		return false
 	}
-	return b.canControlUser(s, m.ChannelID, m.Author.ID, e)
-}
-
-// isModerator is true for Administrator, Manage Messages, or Manage Threads in this channel.
-func (b *Bot) isModerator(s *discordgo.Session, m *discordgo.MessageCreate) bool {
-	if s == nil || m == nil || m.Author == nil {
-		return false
-	}
-	return b.isModeratorUser(s, m.ChannelID, m.Author.ID)
+	return b.canControlUser(m.Author.ID, e)
 }
 
 func (b *Bot) denyControl(s *discordgo.Session, m *discordgo.MessageCreate, e sessionstore.Entry, action string) {
@@ -67,7 +60,7 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 			return
 		}
 		if _, err := discordReply(s, m.ChannelID,
-			fmt.Sprintf("You own this thread now (<@%s>). Cancel/reset are restricted to you and Discord mods.", m.Author.ID),
+			fmt.Sprintf("You own this thread now (<@%s>). Cancel/reset are restricted to you and project admins.", m.Author.ID),
 			ref(m)); err != nil {
 			log.Printf("error: reply claim-new: %v", err)
 		}
@@ -97,7 +90,7 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	msg := fmt.Sprintf("You claimed this thread (<@%s>). Cancel/reset are restricted to you, co-owners, and Discord mods.", m.Author.ID)
+	msg := fmt.Sprintf("You claimed this thread (<@%s>). Cancel/reset are restricted to you, co-owners, and project admins.", m.Author.ID)
 	if prevID != "" {
 		label := prevName
 		if label == "" {
@@ -166,7 +159,7 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	if e.HasOwner() && !e.CanControl(m.Author.ID) && !b.isModerator(s, m) {
+	if !b.canControlUser(m.Author.ID, e) {
 		b.denyControl(s, m, e, "hand off this thread")
 		return
 	}

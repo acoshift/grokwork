@@ -67,17 +67,18 @@ func (b *Bot) handleDequeue(s *discordgo.Session, m *discordgo.MessageCreate, pa
 	}
 	idx := n - 1
 	it := st.queue[idx]
-	// Owner/mod or own item.
+	// Owner / project admin, or own item.
 	can := it.authorID != "" && it.authorID == uid
 	if !can {
 		if e, ok := b.sessions.Get(m.ChannelID); ok {
-			can = b.canControlThread(s, m, e)
+			can = b.canControlThread(m, e)
 		} else {
-			can = b.isModerator(s, m)
+			// No session yet, so no Entry.Project — resolve it from the channel map.
+			can = b.actorAdminsProject(b.projectForThread(s, m.ChannelID), uid)
 		}
 	}
 	if !can {
-		if _, err := discordReply(s, m.ChannelID, "You can only dequeue your own items (or owner/mod).", ref(m)); err != nil {
+		if _, err := discordReply(s, m.ChannelID, "You can only dequeue your own items (or the thread owner / a project admin).", ref(m)); err != nil {
 			log.Printf("error: reply dequeue-deny: %v", err)
 		}
 		return

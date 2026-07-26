@@ -82,7 +82,6 @@ type taskItem struct {
 	snapRunKind     string
 	snapAllowPR     bool
 	snapAllowDirect bool
-	roleIDs         []string
 	// Coerced investigate notice for Discord (D2).
 	policyCoerced bool
 }
@@ -870,7 +869,7 @@ func (b *Bot) handleCancel(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		return
 	}
-	if e, ok := b.sessions.Get(m.ChannelID); ok && !b.canControlThread(s, m, e) {
+	if e, ok := b.sessions.Get(m.ChannelID); ok && !b.canControlThread(m, e) {
 		b.denyControl(s, m, e, "cancel")
 		return
 	}
@@ -920,7 +919,7 @@ func plural(n int) string {
 }
 
 func (b *Bot) resetThread(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if e, ok := b.sessions.Get(m.ChannelID); ok && !b.canControlThread(s, m, e) {
+	if e, ok := b.sessions.Get(m.ChannelID); ok && !b.canControlThread(m, e) {
 		b.denyControl(s, m, e, "reset")
 		return
 	}
@@ -1155,7 +1154,7 @@ func (b *Bot) checkMessageAccess(s *discordgo.Session, m *discordgo.MessageCreat
 			project,
 		)
 	}
-	if b.isAllowedUser(s, m.GuildID, m.Author.ID, project, m.Member) {
+	if b.isAllowedUser(m.Author.ID, project) {
 		return true, ""
 	}
 	return false, fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
@@ -1333,13 +1332,9 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		item.authorID = m.Author.ID
 		item.authorName = m.Author.String()
 	}
-	var roleIDs []string
-	if m.Member != nil {
-		roleIDs = m.Member.Roles
-	}
 	// Capability gate (PR6): investigators may investigate freeform; Fix & ship needs CanShip.
 	if b.cfg != nil {
-		caps := b.cfg.ResolveCapabilities(proj.Name, item.actor.ID, roleIDs)
+		caps := b.cfg.ResolveCapabilities(proj.Name, item.actor.ID)
 		deny := func(msg string) {
 			b.postOrEditThreadStatus(s, threadID, statusMsgID, msg, actionBarDone(threadID, b.sessionWebURL(threadID)))
 			if b.runs != nil {
@@ -1373,7 +1368,7 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			}
 		}
 	}
-	b.snapshotPolicyOntoItem(&item, proj.Name, roleIDs)
+	b.snapshotPolicyOntoItem(&item, proj.Name)
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &runJob{cancel: cancel, start: time.Now(), project: proj.Name}
 	claimed, queuePos, qerr := b.claimOrEnqueue(threadID, job, item)
@@ -2196,10 +2191,9 @@ func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode
 		}
 	}
 	// Live capability re-check (K19 tighten).
-	roleIDs := item.roleIDs
 	caps := config.BuiltinCapabilityTemplates["builder"]
 	if b.cfg != nil {
-		caps = b.cfg.ResolveCapabilities(project, actor.ID, roleIDs)
+		caps = b.cfg.ResolveCapabilities(project, actor.ID)
 	}
 	// If snapshot present, use snap mode as requested.
 	reqMode := item.snapMode
@@ -2296,7 +2290,7 @@ func (b *Bot) ensureSessionMode(threadID, mode string) {
 }
 
 // snapshotPolicyOntoItem fills K19 fields before claimOrEnqueue.
-func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string, roleIDs []string) {
+func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string) {
 	if item == nil || b == nil {
 		return
 	}
@@ -2317,7 +2311,7 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string, roleIDs []s
 	}
 	caps := config.BuiltinCapabilityTemplates["builder"]
 	if b.cfg != nil {
-		caps = b.cfg.ResolveCapabilities(project, item.actor.ID, roleIDs)
+		caps = b.cfg.ResolveCapabilities(project, item.actor.ID)
 	}
 	reqMode := sessionMode
 	forceInv := false
@@ -2393,7 +2387,6 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string, roleIDs []s
 	item.snapRunKind = pol.RunKind
 	item.snapAllowPR = pol.AllowPR
 	item.snapAllowDirect = pol.AllowDirectShip
-	item.roleIDs = append([]string(nil), roleIDs...)
 	item.policyCoerced = pol.Coerced
 	if item.authorID == "" {
 		item.authorID = item.actor.ID

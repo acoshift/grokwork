@@ -293,7 +293,6 @@ func (b *Bot) rehydrateTaskItem(rec runjournal.TaskRecord, proj projectRef, thre
 		snapRunKind:      rec.SnapRunKind,
 		snapAllowPR:      rec.SnapAllowPR,
 		snapAllowDirect:  rec.SnapAllowDirect,
-		roleIDs:          append([]string(nil), rec.RoleIDs...),
 	}
 	if item.authorID == "" {
 		item.authorID = rec.Actor.ID

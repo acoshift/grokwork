@@ -57,36 +57,37 @@ type TaskRecord struct {
 	Attempt          int      `json:"attempt"`
 
 	// Social queue + policy snapshot (Wave 1).
-	AuthorID      string   `json:"authorId,omitempty"`
-	AuthorName    string   `json:"authorName,omitempty"`
-	IntentPreview string   `json:"intentPreview,omitempty"`
-	SnapMode      string   `json:"snapMode,omitempty"`
-	SnapPhase     string   `json:"snapPhase,omitempty"`
-	SnapRunKind   string   `json:"snapRunKind,omitempty"`
-	SnapAllowPR   bool     `json:"snapAllowPR,omitempty"`
+	// No role snapshot: authorization is resolved live from per-project teams,
+	// and an old journal's "roleIds" key is simply ignored on decode.
+	AuthorID        string `json:"authorId,omitempty"`
+	AuthorName      string `json:"authorName,omitempty"`
+	IntentPreview   string `json:"intentPreview,omitempty"`
+	SnapMode        string `json:"snapMode,omitempty"`
+	SnapPhase       string `json:"snapPhase,omitempty"`
+	SnapRunKind     string `json:"snapRunKind,omitempty"`
+	SnapAllowPR     bool   `json:"snapAllowPR,omitempty"`
 	SnapAllowDirect bool   `json:"snapAllowDirect,omitempty"`
-	RoleIDs       []string `json:"roleIds,omitempty"`
 }
 
 // Journal is one thread's durable active run + FIFO queue.
 type Journal struct {
-	ThreadID      string       `json:"threadId"`
-	Version       int          `json:"version"`
-	Active        *TaskRecord  `json:"active,omitempty"`
-	Queue         []TaskRecord `json:"queue,omitempty"`
-	SessionID     string       `json:"sessionId,omitempty"`
-	WorktreeCwd   string       `json:"worktreeCwd,omitempty"`
-	Branch        string       `json:"branch,omitempty"`
-	GrokPID       int          `json:"grokPid,omitempty"`
+	ThreadID    string       `json:"threadId"`
+	Version     int          `json:"version"`
+	Active      *TaskRecord  `json:"active,omitempty"`
+	Queue       []TaskRecord `json:"queue,omitempty"`
+	SessionID   string       `json:"sessionId,omitempty"`
+	WorktreeCwd string       `json:"worktreeCwd,omitempty"`
+	Branch      string       `json:"branch,omitempty"`
+	GrokPID     int          `json:"grokPid,omitempty"`
 	// Agent is the coding CLI that owns GrokPID and SessionID ("grok", "claude").
 	// Crash recovery needs it to tell a live agent child apart from a recycled
 	// PID, and to know which CLI can resume SessionID. Empty means grok.
-	Agent string `json:"agent,omitempty"`
-	Host  string `json:"host,omitempty"`
-	HeartbeatAt   string       `json:"heartbeatAt,omitempty"`
-	Generation    uint64       `json:"generation"`
-	BlockedReason string       `json:"blockedReason,omitempty"`
-	UpdatedAt     string       `json:"updatedAt"`
+	Agent         string `json:"agent,omitempty"`
+	Host          string `json:"host,omitempty"`
+	HeartbeatAt   string `json:"heartbeatAt,omitempty"`
+	Generation    uint64 `json:"generation"`
+	BlockedReason string `json:"blockedReason,omitempty"`
+	UpdatedAt     string `json:"updatedAt"`
 }
 
 // Store persists journals under dataDir/runs/.

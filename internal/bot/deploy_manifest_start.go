@@ -52,7 +52,7 @@ func (b *Bot) StartDeployManifestDraft(opts DeployManifestOpts) (FixStartResult,
 	model := strings.TrimSpace(opts.Model)
 	var cli config.AgentCLI
 	if model != "" {
-		if err := b.requireCanSelectModel(project, opts.Actor.ID, nil); err != nil {
+		if err := b.requireCanSelectModel(project, opts.Actor.ID); err != nil {
 			return FixStartResult{}, err
 		}
 		var err error

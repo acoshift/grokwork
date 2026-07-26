@@ -61,7 +61,7 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 	kind := webTaskKind(opts.Mode)
 	// Hard-block Fix & ship without builder-class caps (no silent coerce).
 	if wantsFixStartMode(opts.Mode, b.cfg.ProjectDefaultMode(project)) {
-		if err := b.requireCanStartFix(project, opts.Actor.ID, nil); err != nil {
+		if err := b.requireCanStartFix(project, opts.Actor.ID); err != nil {
 			return FixStartResult{}, err
 		}
 	}
@@ -70,7 +70,7 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 	model := strings.TrimSpace(opts.Model)
 	var cli config.AgentCLI
 	if model != "" {
-		if err := b.requireCanSelectModel(project, opts.Actor.ID, nil); err != nil {
+		if err := b.requireCanSelectModel(project, opts.Actor.ID); err != nil {
 			return FixStartResult{}, err
 		}
 		var err error
@@ -166,13 +166,13 @@ func wantsFixStartMode(mode, projectDefault string) bool {
 // requireCanStartFix fails when the actor lacks CanShip (startSessions +
 // githubWrites). Used by web StartWebTask / StartFix and Discord /start fix.
 // Nil config matches ResolveCapabilities (builder default for unmapped legacy).
-func (b *Bot) requireCanStartFix(project, userID string, roleIDs []string) error {
+func (b *Bot) requireCanStartFix(project, userID string) error {
 	if b == nil {
 		return ErrCannotStartFix
 	}
 	caps := config.BuiltinCapabilityTemplates["builder"]
 	if b.cfg != nil {
-		caps = b.cfg.ResolveCapabilities(project, userID, roleIDs)
+		caps = b.cfg.ResolveCapabilities(project, userID)
 	}
 	if !caps.CanShip() {
 		return ErrCannotStartFix

@@ -26,7 +26,7 @@ func TestStatusSnapshot(t *testing.T) {
 
 	cfg := &config.Config{
 		Projects: config.ProjectsMap{
-			"app": {Path: dir, AllowedUserIDs: []string{"u1"}, AllowedRoleIDs: []string{"r1"}},
+			"app": {Path: dir, AllowedUserIDs: []string{"u1"}},
 			"api": {Path: dir},
 		},
 		DataDir: dir,

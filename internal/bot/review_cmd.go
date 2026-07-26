@@ -76,11 +76,8 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		return
 	}
 
-	// Reviewer should be on the project allowlist (when known).
-	if e.Project != "" && b.cfg != nil && !b.cfg.AccessAllowed(e.Project, reviewerID, nil) {
-		// Soft allow if allowlist is role-only (we don't have their roles here) — still request.
-		// Fail only when project has user list and reviewer is not on it AND no roles configured.
-		// AccessAllowed with empty roles fails closed for users not on list — that's intended.
+	// Reviewer must be a project member (allowedUserIds or a team), when known.
+	if e.Project != "" && b.cfg != nil && !b.cfg.AccessAllowed(e.Project, reviewerID) {
 		if _, err := discordReply(s, m.ChannelID,
 			fmt.Sprintf("<@%s> is not on this project's allowlist.", reviewerID), ref(m)); err != nil {
 			log.Printf("error: reply review-allow: %v", err)

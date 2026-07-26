@@ -236,10 +236,10 @@ func TestRequireCanStartFixInvestigator(t *testing.T) {
 		},
 	}
 	b := &Bot{cfg: cfg}
-	if err := b.requireCanStartFix("app", "inv1", nil); !errors.Is(err, ErrCannotStartFix) {
+	if err := b.requireCanStartFix("app", "inv1"); !errors.Is(err, ErrCannotStartFix) {
 		t.Fatalf("investigator: %v", err)
 	}
-	if err := b.requireCanStartFix("app", "eng1", nil); err != nil {
+	if err := b.requireCanStartFix("app", "eng1"); err != nil {
 		t.Fatalf("builder: %v", err)
 	}
 }
@@ -264,7 +264,7 @@ func TestStartWebTaskInvestigateNonShip(t *testing.T) {
 		proj:     projectRef{Name: "app", Cwd: "/tmp"},
 		actor:    Actor{ID: "builder1", DisplayName: "Builder"},
 	}
-	b.snapshotPolicyOntoItem(&item, "app", nil)
+	b.snapshotPolicyOntoItem(&item, "app")
 
 	if item.snapMode != ModeInvestigate {
 		t.Fatalf("snapMode=%q want %q", item.snapMode, ModeInvestigate)

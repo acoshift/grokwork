@@ -46,7 +46,7 @@ func (b *Bot) StartCommitReview(opts CommitReviewOpts) (FixStartResult, error) {
 	}
 
 	if strings.TrimSpace(opts.Model) != "" {
-		if err := b.requireCanSelectModel(project, opts.Actor.ID, nil); err != nil {
+		if err := b.requireCanSelectModel(project, opts.Actor.ID); err != nil {
 			return FixStartResult{}, err
 		}
 	}

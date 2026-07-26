@@ -453,7 +453,7 @@ func HelpText() string {
 		"**Run action bar** — buttons on the live status / done message and `/status`:",
 		"Cancel · Continue (modal) · Reset (confirm) · History (admin UI path)",
 		"",
-		"Anyone may queue tasks (soft open). Cancel/reset: thread owner, co-owners, or Discord mods (Manage Messages / Manage Threads / Admin).",
+		"Anyone may queue tasks (soft open). Cancel/reset: thread owner, co-owners, or a project admin (a team with the admin role).",
 		"Investigate mode never opens PRs or ships to primary. SafeTeamMode maps unmapped users to investigator.",
 	}, "\n")
 }

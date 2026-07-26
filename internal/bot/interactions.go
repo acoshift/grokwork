@@ -42,7 +42,7 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 			return
 		}
 		project := b.projectForThread(s, tid)
-		if project == "" || !b.isAllowedUser(s, i.GuildID, user.ID, project, i.Member) {
+		if project == "" || !b.isAllowedUser(user.ID, project) {
 			msg := "You're not allowed to use Grok on this project."
 			if project != "" {
 				msg = fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
@@ -70,7 +70,7 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 	}
 
 	project := b.projectForThread(s, threadID)
-	if project == "" || !b.isAllowedUser(s, i.GuildID, user.ID, project, i.Member) {
+	if project == "" || !b.isAllowedUser(user.ID, project) {
 		msg := "You're not allowed to use Grok on this project."
 		if project != "" {
 			msg = fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
@@ -125,7 +125,7 @@ func (b *Bot) handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCr
 		return
 	}
 	project := b.projectForThread(s, threadID)
-	if project == "" || !b.isAllowedUser(s, i.GuildID, user.ID, project, i.Member) {
+	if project == "" || !b.isAllowedUser(user.ID, project) {
 		msg := "You're not allowed to use Grok on this project."
 		if project != "" {
 			msg = fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
@@ -156,7 +156,7 @@ func (b *Bot) handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCr
 }
 
 func (b *Bot) interactionCancel(s *discordgo.Session, i *discordgo.InteractionCreate, threadID string, user *discordgo.User) {
-	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(s, threadID, user.ID, e) {
+	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(user.ID, e) {
 		respondEphemeral(s, i, denyControlText(e, "cancel"))
 		return
 	}
@@ -173,7 +173,7 @@ func (b *Bot) interactionCancel(s *discordgo.Session, i *discordgo.InteractionCr
 }
 
 func (b *Bot) interactionResetPrompt(s *discordgo.Session, i *discordgo.InteractionCreate, threadID string, user *discordgo.User) {
-	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(s, threadID, user.ID, e) {
+	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(user.ID, e) {
 		respondEphemeral(s, i, denyControlText(e, "reset"))
 		return
 	}
@@ -194,7 +194,7 @@ func (b *Bot) interactionResetPrompt(s *discordgo.Session, i *discordgo.Interact
 }
 
 func (b *Bot) interactionResetConfirm(s *discordgo.Session, i *discordgo.InteractionCreate, threadID string, user *discordgo.User) {
-	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(s, threadID, user.ID, e) {
+	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(user.ID, e) {
 		// Replace the confirm prompt (drops Yes/Never mind).
 		respondUpdateMessage(s, i, denyControlText(e, "reset"))
 		return
@@ -283,38 +283,27 @@ func denyControlText(e sessionstore.Entry, action string) string {
 	}
 	if owner != "" && owner != e.OwnerID {
 		return fmt.Sprintf(
-			"Only the thread owner (**%s** / <@%s>), co-owners, or a Discord mod can %s. Ask them, or `@Grok /claim` to take ownership.",
+			"Only the thread owner (**%s** / <@%s>), co-owners, or a project admin can %s. Ask them, or `@Grok /claim` to take ownership.",
 			owner, e.OwnerID, action,
 		)
 	}
 	return fmt.Sprintf(
-		"Only the thread owner (<@%s>), co-owners, or a Discord mod can %s. Ask them, or `@Grok /claim` to take ownership.",
+		"Only the thread owner (<@%s>), co-owners, or a project admin can %s. Ask them, or `@Grok /claim` to take ownership.",
 		e.OwnerID, action,
 	)
 }
 
-// isAllowedUser checks project membership for Discord users.
-func (b *Bot) isAllowedUser(s *discordgo.Session, guildID, userID, project string, member *discordgo.Member) bool {
+// isAllowedUser checks project membership for a Discord user. Membership is
+// per-project data (allowedUserIds + teams) — nothing about the guild is
+// consulted, so no Discord round-trip is needed to answer it.
+func (b *Bot) isAllowedUser(userID, project string) bool {
 	if b == nil || b.cfg == nil || userID == "" || project == "" {
 		return false
 	}
 	if !b.cfg.ProjectHasAllowlist(project) {
 		return false
 	}
-	if b.cfg.AccessAllowed(project, userID, nil) {
-		return true
-	}
-	if member == nil && s != nil && guildID != "" {
-		var err error
-		member, err = s.GuildMember(guildID, userID)
-		if err != nil {
-			return false
-		}
-	}
-	if member == nil {
-		return false
-	}
-	return b.cfg.AccessAllowed(project, userID, member.Roles)
+	return b.cfg.AccessAllowed(project, userID)
 }
 
 // projectForThread resolves the project for a Discord thread (session, else parent channel map).
@@ -330,7 +319,10 @@ func (b *Bot) projectForThread(s *discordgo.Session, threadID string) string {
 }
 
 // canControlUser reports whether userID may cancel/reset this thread.
-func (b *Bot) canControlUser(s *discordgo.Session, channelID, userID string, e sessionstore.Entry) bool {
+// Authority: owner, co-owner, or a project admin (a team whose capability
+// template grants adminProject). Discord channel permissions are irrelevant —
+// authorization is per-project, not per-guild.
+func (b *Bot) canControlUser(userID string, e sessionstore.Entry) bool {
 	if userID == "" {
 		return false
 	}
@@ -340,20 +332,21 @@ func (b *Bot) canControlUser(s *discordgo.Session, channelID, userID string, e s
 	if e.CanControl(userID) {
 		return true
 	}
-	return b.isModeratorUser(s, channelID, userID)
+	return b.actorAdminsProject(e.Project, userID)
 }
 
-func (b *Bot) isModeratorUser(s *discordgo.Session, channelID, userID string) bool {
-	if s == nil || channelID == "" || userID == "" {
+// actorAdminsProject is the replacement for the old Discord moderator bypass.
+//
+// The AccessAllowed pre-check is load-bearing: with safeTeamMode on and
+// safeTeamDefaultTemplate "admin", ResolveCapabilities would otherwise hand
+// AdminProject to anyone at all. An empty project (a /claim shell with no
+// project yet) resolves to false, leaving owner/co-owner only.
+func (b *Bot) actorAdminsProject(project, userID string) bool {
+	if b == nil || b.cfg == nil || project == "" || userID == "" {
 		return false
 	}
-	perms, err := s.UserChannelPermissions(userID, channelID)
-	if err != nil {
-		log.Printf("warn: UserChannelPermissions user=%s channel=%s: %v", userID, channelID, err)
+	if !b.cfg.AccessAllowed(project, userID) {
 		return false
 	}
-	const modBits = discordgo.PermissionAdministrator |
-		discordgo.PermissionManageMessages |
-		discordgo.PermissionManageThreads
-	return perms&modBits != 0
+	return b.cfg.ResolveCapabilities(project, userID).AdminProject
 }

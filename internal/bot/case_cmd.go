@@ -21,9 +21,8 @@ func (b *Bot) handleCase(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		return
 	}
 	// Capability: Investigate or FileEscalation
-	roleIDs := memberRoles(m)
 	if b.cfg != nil {
-		caps := b.cfg.ResolveCapabilities(proj.Name, m.Author.ID, roleIDs)
+		caps := b.cfg.ResolveCapabilities(proj.Name, m.Author.ID)
 		if !caps.Investigate && !caps.FileEscalation && !caps.StartSessions {
 			replyText(s, m, "You're not allowed to open cases on this project.")
 			return
@@ -156,12 +155,11 @@ func (b *Bot) handleEscalate(s *discordgo.Session, m *discordgo.MessageCreate, p
 		replyText(s, m, "Case is closed. Use `@Grok /reopen` first.")
 		return
 	}
-	roleIDs := memberRoles(m)
 	// Builder-class means the escalator is engineering and takes the case; anyone
 	// else is handing it to engineering, which leaves it unassigned.
 	var caps config.Capabilities
 	if b.cfg != nil {
-		caps = b.cfg.ResolveCapabilities(e.Project, m.Author.ID, roleIDs)
+		caps = b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
 		if !canEscalateCase(caps) {
 			replyText(s, m, "You're not allowed to escalate cases (need fileEscalation or builder caps).")
 			return
@@ -204,10 +202,10 @@ func (b *Bot) handleCloseCase(s *discordgo.Session, m *discordgo.MessageCreate, 
 		replyText(s, m, "This thread is not a case.")
 		return
 	}
-	if !b.canControlThread(s, m, e) && !b.isModerator(s, m) {
+	if !b.canControlThread(m, e) {
 		// Investigators who own the case can close
 		if e.OwnerID != "" && m.Author != nil && e.OwnerID != m.Author.ID {
-			replyText(s, m, "Only the case owner, co-owner, or a mod can close.")
+			replyText(s, m, "Only the case owner, co-owner, or a project admin can close.")
 			return
 		}
 	}
@@ -258,7 +256,7 @@ func (b *Bot) handleCustomerUpdate(s *discordgo.Session, m *discordgo.MessageCre
 		return
 	}
 	if b.cfg != nil && m.Author != nil {
-		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID, memberRoles(m))
+		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
 		if !caps.DraftCustomerReply && !canEscalateCase(caps) {
 			replyText(s, m, "You're not allowed to draft customer updates (need draftCustomerReply).")
 			return
@@ -310,10 +308,9 @@ func (b *Bot) handleReopenCase(s *discordgo.Session, m *discordgo.MessageCreate,
 		replyText(s, m, "This case is already open (phase **"+e.CasePhase()+"**).")
 		return
 	}
-	roleIDs := memberRoles(m)
-	allowed := b.canControlThread(s, m, e) || b.isModerator(s, m)
+	allowed := b.canControlThread(m, e)
 	if !allowed && b.cfg != nil && m.Author != nil {
-		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID, roleIDs)
+		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
 		allowed = CanReopenCaseCaps(caps)
 	}
 	if !allowed {
@@ -374,7 +371,7 @@ func (b *Bot) handleAnswer(s *discordgo.Session, m *discordgo.MessageCreate, par
 		return
 	}
 	if b.cfg != nil && m.Author != nil {
-		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID, memberRoles(m))
+		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
 		if !caps.DraftCustomerReply && !canEscalateCase(caps) {
 			replyText(s, m, "You're not allowed to mark cases answered (need draftCustomerReply or escalate caps).")
 			return
@@ -494,13 +491,6 @@ func clampThreadTitle(s string) string {
 		return string(r[:87]) + "…"
 	}
 	return s
-}
-
-func memberRoles(m *discordgo.MessageCreate) []string {
-	if m != nil && m.Member != nil {
-		return m.Member.Roles
-	}
-	return nil
 }
 
 func replyText(s *discordgo.Session, m *discordgo.MessageCreate, text string) {

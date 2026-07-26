@@ -92,7 +92,7 @@ func (b *Bot) StartAddressCI(opts AddressCIOpts) (FixStartResult, error) {
 // two it got.
 func (b *Bot) resolveDispatchCLI(project string, actor Actor, model string) (config.AgentCLI, error) {
 	if strings.TrimSpace(model) != "" {
-		if err := b.requireCanSelectModel(project, actor.ID, nil); err != nil {
+		if err := b.requireCanSelectModel(project, actor.ID); err != nil {
 			return config.AgentCLI{}, err
 		}
 	}

@@ -18,7 +18,7 @@ func TestCanControlThreadSoftUnowned(t *testing.T) {
 		ChannelID: "t1",
 	}}
 	// No session owner → anyone may control (soft open / legacy).
-	if !b.canControlThread(nil, m, sessionstore.Entry{}) {
+	if !b.canControlThread(m, sessionstore.Entry{}) {
 		t.Fatal("unowned should allow control")
 	}
 }
@@ -38,15 +38,184 @@ func TestCanControlThreadOwnerAndCoOwner(t *testing.T) {
 		Author: &discordgo.User{ID: "other"}, ChannelID: "t1",
 	}}
 
-	if !b.canControlThread(nil, ownerMsg, e) {
+	if !b.canControlThread(ownerMsg, e) {
 		t.Fatal("owner should control")
 	}
-	if !b.canControlThread(nil, coMsg, e) {
+	if !b.canControlThread(coMsg, e) {
 		t.Fatal("co-owner should control")
 	}
-	// Without a Session, isModerator is false → other denied.
-	if b.canControlThread(nil, otherMsg, e) {
-		t.Fatal("other should not control without mod perms")
+	// testBot has no projects, so the entry's project grants nobody adminProject
+	// → a third party is denied.
+	if b.canControlThread(otherMsg, e) {
+		t.Fatal("other should not control without project admin caps")
+	}
+}
+
+// Authority for cancel/reset is owner, co-owner, or a member of a team whose
+// capability template grants adminProject. Discord channel permissions
+// (Administrator / Manage Messages / Manage Threads) no longer grant anything —
+// there is no Session here at all, and the admin path still works.
+func TestCanControlThreadProjectAdminOverrides(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		DataDir: dir,
+		Projects: config.ProjectsMap{
+			"app": {
+				Path: dir,
+				Teams: map[string]config.TeamConfig{
+					"leads": {Label: "Leads", Members: []string{"admin1"}, Capabilities: "admin"},
+				},
+			},
+			// Same person, builder team: may ship, may not seize a thread.
+			"other": {
+				Path: dir,
+				Teams: map[string]config.TeamConfig{
+					"eng": {Label: "Eng", Members: []string{"admin1"}, Capabilities: "builder"},
+				},
+			},
+			// Member of no team: access only, so no adminProject either.
+			"direct": {Path: dir, AllowedUserIDs: []string{"admin1"}},
+		},
+	}
+	b := New(cfg, store, hist)
+
+	adminMsg := &discordgo.MessageCreate{Message: &discordgo.Message{
+		Author: &discordgo.User{ID: "admin1"}, ChannelID: "t1",
+	}}
+	strangerMsg := &discordgo.MessageCreate{Message: &discordgo.Message{
+		Author: &discordgo.User{ID: "nobody"}, ChannelID: "t1",
+	}}
+
+	owned := sessionstore.Entry{Project: "app", OwnerID: "owner", OwnerName: "O"}
+	if !b.canControlThread(adminMsg, owned) {
+		t.Fatal("admin-team member should control a thread they do not own")
+	}
+	if b.canControlThread(strangerMsg, owned) {
+		t.Fatal("non-member should not control")
+	}
+
+	// Builder caps are not admin caps.
+	builderOwned := sessionstore.Entry{Project: "other", OwnerID: "owner", OwnerName: "O"}
+	if b.canControlThread(adminMsg, builderOwned) {
+		t.Fatal("builder team must not grant cancel/reset over another owner")
+	}
+
+	// A plain project member (allowedUserIds, no team) is not an admin. With
+	// SafeTeamMode off they resolve to builder, which is deliberately not enough.
+	directOwned := sessionstore.Entry{Project: "direct", OwnerID: "owner", OwnerName: "O"}
+	if b.canControlThread(adminMsg, directOwned) {
+		t.Fatal("plain project member must not control another owner's thread")
+	}
+
+	// A /claim shell with no project resolves to owner/co-owner only.
+	noProject := sessionstore.Entry{OwnerID: "owner", OwnerName: "O"}
+	if b.canControlThread(adminMsg, noProject) {
+		t.Fatal("empty project must fail closed")
+	}
+}
+
+// Behaviour change: Discord guild/channel permissions no longer grant
+// cancel/reset. A server mod carrying Administrator + Manage Messages +
+// Manage Threads who is on no adminProject team is denied — and being on the
+// project at all is not enough either.
+func TestCanControlThreadDiscordModNoLongerBypasses(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		DataDir: dir,
+		Projects: config.ProjectsMap{
+			"app": {
+				Path:           dir,
+				AllowedUserIDs: []string{"mod1"},
+				Teams: map[string]config.TeamConfig{
+					"eng":   {Label: "Eng", Members: []string{"mod1"}, Capabilities: "builder"},
+					"leads": {Label: "Leads", Members: []string{"lead1"}, Capabilities: "admin"},
+				},
+			},
+		},
+	}
+	b := New(cfg, store, hist)
+
+	// Every Discord signal the old bypass consulted, all set.
+	modMsg := &discordgo.MessageCreate{Message: &discordgo.Message{
+		Author:    &discordgo.User{ID: "mod1", Username: "mod"},
+		ChannelID: "t1",
+		GuildID:   "g1",
+		Member: &discordgo.Member{
+			GuildID: "g1",
+			Roles:   []string{"role-admin", "role-mod"},
+			Permissions: discordgo.PermissionAdministrator |
+				discordgo.PermissionManageMessages |
+				discordgo.PermissionManageThreads,
+		},
+	}}
+	e := sessionstore.Entry{Project: "app", OwnerID: "owner", OwnerName: "O"}
+	if b.canControlThread(modMsg, e) {
+		t.Fatal("a Discord mod without an adminProject team must be denied")
+	}
+
+	// The replacement authority works on the same project.
+	leadMsg := &discordgo.MessageCreate{Message: &discordgo.Message{
+		Author: &discordgo.User{ID: "lead1"}, ChannelID: "t1",
+	}}
+	if !b.canControlThread(leadMsg, e) {
+		t.Fatal("admin team should control")
+	}
+}
+
+// safeTeamDefaultTemplate "admin" hands AdminProject to every unmapped actor, so
+// actorAdminsProject must gate on membership first or a stranger could cancel
+// any thread on the project.
+func TestActorAdminsProjectRequiresMembership(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	cfg := &config.Config{
+		DataDir: dir,
+		Projects: config.ProjectsMap{
+			"app": {
+				Path:                    dir,
+				SafeTeamMode:            &on,
+				SafeTeamDefaultTemplate: "admin",
+				AllowedUserIDs:          []string{"member1"},
+			},
+		},
+	}
+	b := New(cfg, store, hist)
+
+	if !b.actorAdminsProject("app", "member1") {
+		t.Fatal("member falls through to the admin default: should be admin")
+	}
+	if b.actorAdminsProject("app", "stranger") {
+		t.Fatal("non-member must never inherit adminProject from the unmapped default")
+	}
+	if b.actorAdminsProject("", "member1") {
+		t.Fatal("empty project must fail closed")
+	}
+	if b.actorAdminsProject("app", "") {
+		t.Fatal("empty actor must fail closed")
 	}
 }
 

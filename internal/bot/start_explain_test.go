@@ -37,7 +37,7 @@ func TestStartExplainSnapshotPolicyNonShip(t *testing.T) {
 		proj:     projectRef{Name: "app", Cwd: "/tmp"},
 		actor:    Actor{ID: "builder1", DisplayName: "Builder"},
 	}
-	b.snapshotPolicyOntoItem(&item, "app", nil)
+	b.snapshotPolicyOntoItem(&item, "app")
 
 	if item.snapMode != ModeExplain {
 		t.Fatalf("snapMode=%q want %q", item.snapMode, ModeExplain)

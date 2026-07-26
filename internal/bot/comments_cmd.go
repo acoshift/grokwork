@@ -84,7 +84,7 @@ func (b *Bot) handleAddress(s *discordgo.Session, m *discordgo.MessageCreate, pa
 		replyText(s, m, "No session for this thread yet.")
 		return
 	}
-	if !b.actorCanShip(m, e.Project) && !b.canControlThread(s, m, e) {
+	if !b.actorCanShip(m, e.Project) && !b.canControlThread(m, e) {
 		replyText(s, m, "You're not allowed to `/address` (need builder caps or thread control).")
 		return
 	}

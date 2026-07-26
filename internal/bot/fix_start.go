@@ -95,7 +95,7 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 	if !ok || strings.TrimSpace(cwd) == "" {
 		return FixStartResult{}, fmt.Errorf("unknown project %q", project)
 	}
-	if err := b.requireCanStartFix(project, opts.Actor.ID, nil); err != nil {
+	if err := b.requireCanStartFix(project, opts.Actor.ID); err != nil {
 		return FixStartResult{}, err
 	}
 

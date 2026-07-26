@@ -22,7 +22,7 @@ func (b *Bot) handleSync(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		replyText(s, m, "No session for this thread yet.")
 		return
 	}
-	if !b.actorCanShip(m, e.Project) && !b.canControlThread(s, m, e) {
+	if !b.actorCanShip(m, e.Project) && !b.canControlThread(m, e) {
 		replyText(s, m, "You're not allowed to `/sync` (need builder caps or thread control).")
 		return
 	}

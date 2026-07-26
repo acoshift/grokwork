@@ -30,7 +30,7 @@ func (b *Bot) handleCheckpoint(s *discordgo.Session, m *discordgo.MessageCreate,
 		replyText(s, m, "No worktree yet — run a task first so a managed branch exists.")
 		return
 	}
-	if !b.canControlThread(s, m, e) {
+	if !b.canControlThread(m, e) {
 		// builders may also checkpoint
 		if !b.actorCanShip(m, e.Project) {
 			b.denyControl(s, m, e, "checkpoint")
@@ -147,7 +147,7 @@ func (b *Bot) createCheckpoint(threadID string, e sessionstore.Entry, actor Acto
 
 func (b *Bot) restoreCheckpoint(s *discordgo.Session, m *discordgo.MessageCreate, e sessionstore.Entry, cp sessionstore.CheckpointMeta, force bool) error {
 	threadID := m.ChannelID
-	if !b.canControlThread(s, m, e) && !b.actorCanApprove(m, e.Project) {
+	if !b.canControlThread(m, e) && !b.actorCanApprove(m, e.Project) {
 		return fmt.Errorf("only the owner, co-owner, mod, or approver may restore")
 	}
 	// K8 checklist
@@ -198,7 +198,7 @@ func (b *Bot) actorCanShip(m *discordgo.MessageCreate, project string) bool {
 	if b.cfg == nil || m == nil || m.Author == nil {
 		return false
 	}
-	caps := b.cfg.ResolveCapabilities(project, m.Author.ID, memberRoles(m))
+	caps := b.cfg.ResolveCapabilities(project, m.Author.ID)
 	return caps.CanShip()
 }
 
@@ -206,7 +206,7 @@ func (b *Bot) actorCanApprove(m *discordgo.MessageCreate, project string) bool {
 	if b.cfg == nil || m == nil || m.Author == nil {
 		return false
 	}
-	caps := b.cfg.ResolveCapabilities(project, m.Author.ID, memberRoles(m))
+	caps := b.cfg.ResolveCapabilities(project, m.Author.ID)
 	return caps.Approve || caps.AdminProject || caps.CanShip()
 }
 

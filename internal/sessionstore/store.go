@@ -20,7 +20,8 @@ type Entry struct {
 	UpdatedAt      string `json:"updatedAt"`
 
 	// Thread ownership: first @Grok author; /claim and /hand-off update these.
-	// Cancel/reset require owner, co-owner, or Discord moderator override.
+	// Cancel/reset require owner, co-owner, or a project admin (a team whose
+	// capability template grants adminProject).
 	OwnerID    string   `json:"ownerId,omitempty"`
 	OwnerName  string   `json:"ownerName,omitempty"`
 	CoOwnerIDs []string `json:"coOwnerIds,omitempty"`

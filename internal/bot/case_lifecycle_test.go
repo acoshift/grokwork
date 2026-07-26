@@ -320,7 +320,7 @@ func TestStartFixOnCaseDeniedWithoutEscalateCaps(t *testing.T) {
 		e.Phase = sessionstore.PhaseInvestigate
 	})
 
-	caps := cfg.ResolveCapabilities("app", "ops1", nil)
+	caps := cfg.ResolveCapabilities("app", "ops1")
 	if canEscalateCase(caps) {
 		t.Fatalf("operator should not canEscalateCase: %+v", caps)
 	}
@@ -335,7 +335,7 @@ func TestStartFixOnCaseDeniedWithoutEscalateCaps(t *testing.T) {
 		proj:     projectRef{Name: "app", Cwd: dir},
 		actor:    actor,
 	}
-	b.snapshotPolicyOntoItem(&item, "app", nil)
+	b.snapshotPolicyOntoItem(&item, "app")
 
 	after, _ := store.Get("th-gate")
 	if after.Phase == sessionstore.PhaseFixing {
@@ -358,7 +358,7 @@ func TestStartFixOnCaseDeniedWithoutEscalateCaps(t *testing.T) {
 		proj:     projectRef{Name: "app", Cwd: dir},
 		actor:    Actor{ID: "eng1", DisplayName: "Eng"},
 	}
-	b.snapshotPolicyOntoItem(&item2, "app", nil)
+	b.snapshotPolicyOntoItem(&item2, "app")
 	after2, _ := store.Get("th-gate")
 	if after2.Phase != sessionstore.PhaseFixing {
 		t.Fatalf("builder /start fix should escalate: phase=%q", after2.Phase)
