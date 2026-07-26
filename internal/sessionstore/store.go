@@ -398,12 +398,21 @@ func (s *Store) Get(threadID string) (Entry, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	e, ok := s.entries[threadID]
-	return e, ok
+	if !ok {
+		return Entry{}, false
+	}
+	// Hand back state the caller owns outright — see Entry.clone.
+	return e.clone(), true
 }
 
 func (s *Store) Set(threadID string, e Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Clone on the way IN as well: storing the caller's Entry verbatim would
+	// leave the store sharing the caller's slices and pointers, so a caller
+	// that keeps its copy and mutates it later would corrupt store state
+	// without going through Patch.
+	e = e.clone()
 	e.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	ensureDiscordRef(threadID, &e)
 	s.entries[threadID] = e
@@ -415,10 +424,14 @@ func (s *Store) Set(threadID string, e Entry) error {
 func (s *Store) Patch(threadID string, fn func(*Entry)) (Entry, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	e, ok := s.entries[threadID]
+	stored, ok := s.entries[threadID]
 	if !ok {
 		return Entry{}, false, nil
 	}
+	// Apply fn to a detached copy. Without this, an fn that appends to a slice
+	// with spare capacity would write through into the stored entry's backing
+	// array before the assignment below — invisible, and wrong if save() fails.
+	e := stored.clone()
 	fn(&e)
 	e.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	ensureDiscordRef(threadID, &e)
@@ -426,7 +439,8 @@ func (s *Store) Patch(threadID string, fn func(*Entry)) (Entry, bool, error) {
 	if err := s.save(); err != nil {
 		return Entry{}, true, err
 	}
-	return e, true, nil
+	// Hand back state the caller owns outright — see Entry.clone.
+	return e.clone(), true, nil
 }
 
 func (s *Store) Delete(threadID string) error {
@@ -448,7 +462,8 @@ func (s *Store) List() []Listed {
 	defer s.mu.Unlock()
 	out := make([]Listed, 0, len(s.entries))
 	for id, e := range s.entries {
-		out = append(out, Listed{ThreadID: id, Entry: e})
+		// Hand back state the caller owns outright — see Entry.clone.
+		out = append(out, Listed{ThreadID: id, Entry: e.clone()})
 	}
 	sortListed(out)
 	return out

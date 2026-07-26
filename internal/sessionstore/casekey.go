@@ -153,7 +153,8 @@ func (s *Store) FindByCaseKey(key string) (string, Entry, bool) {
 	defer s.mu.Unlock()
 	for id, e := range s.entries {
 		if e.CaseKey == key {
-			return id, e, true
+			// Hand back state the caller owns outright — see Entry.clone.
+			return id, e.clone(), true
 		}
 	}
 	return "", Entry{}, false
