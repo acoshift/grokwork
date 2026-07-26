@@ -697,6 +697,12 @@ func TestSaveAtomicNoLeftoverTmpAndPerm(t *testing.T) {
 // the whole point of writing to a temp file and renaming instead of writing
 // the target in place.
 func TestSaveFailurePreservesPreviousConfig(t *testing.T) {
+	// Root ignores the read-only directory mode below, so the save would
+	// succeed and the assertion would report a false FAILURE (not a false
+	// pass). Skip rather than assert something untrue of the environment.
+	if os.Geteuid() == 0 {
+		t.Skip("a read-only directory does not block root")
+	}
 	dir := t.TempDir()
 	cfg := &Config{
 		Projects:   ProjectsMap{},
