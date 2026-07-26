@@ -1366,8 +1366,9 @@ func TestCasesBoard(t *testing.T) {
 		`class="case-row sev-critical"`,
 		// Support-facing customer update snippet.
 		"customer update", "We are reproducing the duplicate retries now.",
-		// Rows open the session workspace; escalated case links its PR.
-		`href="/sessions/case-intake?project=proj"`,
+		// Rows open the session workspace, stamping this board as the detail
+		// page's ← crumb target; escalated case links its PR.
+		`href="/sessions/case-intake?project=proj&amp;back=%2Fprojects%2Fproj%2Fcases"`,
 		`href="/prs/acme/proj/12?project=proj"`,
 		"CI failing",
 	} {
@@ -1945,6 +1946,11 @@ func TestProjectConfigPage(t *testing.T) {
 			`id="project-verify"`,
 			"go test ./...",
 			"make lint",
+			// Case id prefix: the control, and the maxlength that has to mirror
+			// the server's cap (a longer prefix mints truncated).
+			`id="project-case-key"`,
+			`name="caseKey"`,
+			`maxlength="10"`,
 		}},
 		{"/config/projects/proj/integrations", []string{
 			`id="page-project-config-integrations"`,

@@ -212,6 +212,8 @@ type ProjectItem struct {
 	SafeTeamMode            bool
 	SafeTeamDefaultTemplate string // effective (default "investigator")
 	DefaultMode             string // empty = legacy fix
+	// CaseKey is the configured case-id prefix override, empty when derived.
+	CaseKey                 string
 	CapabilityByUser        []CapabilityMapItem
 	CapabilityByRole        []CapabilityMapItem
 	UnmappedUserIDs         []string // allowlisted users with no capabilityByUser entry
@@ -1130,6 +1132,7 @@ func (c *Config) Snapshot() Snapshot {
 			SafeTeamMode:             pc.SafeTeamMode != nil && *pc.SafeTeamMode,
 			SafeTeamDefaultTemplate:  defaultTpl,
 			DefaultMode:              strings.TrimSpace(strings.ToLower(pc.DefaultMode)),
+			CaseKey:                  strings.TrimSpace(pc.CaseKey),
 			CapabilityByUser:         capabilityMapItems(pc.CapabilityByUser),
 			CapabilityByRole:         capabilityMapItems(pc.CapabilityByRole),
 			UnmappedUserIDs:          unmappedIDs(pc.AllowedUserIDs, pc.CapabilityByUser),

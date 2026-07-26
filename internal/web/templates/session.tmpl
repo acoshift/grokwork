@@ -1,15 +1,16 @@
 {{define "content"}}
+{{/* Crumb target is provenance-aware (see sessionBackLink): the board the user
+     came from, the case board for a case, the sessions list otherwise. */}}
 <p class="pr-crumb">
-  <a href="{{if .Project}}/projects/{{.Project}}/sessions{{else}}{{route "sessions"}}{{end}}">← Sessions</a>
+  <a href="{{.BackHref}}">← {{.BackLabel}}</a>
   <span class="crumb-sep">/</span>
   <span class="mono">{{.ThreadID}}</span>
 </p>
 <div class="pr-title-row">
   <h1 id="page-session">Session <span class="mono" style="font-weight:500;font-size:1.05rem;color:var(--muted)">{{.ThreadID}}</span></h1>
   <div class="pr-head-links">
-    {{if .SessionEntry.IsCase}}
-    <a class="btn btn-compact" href="/projects/{{.SessionEntry.Project}}/cases">Case board</a>
-    {{end}}
+    {{/* No "Case board" button: for a case the ← crumb already goes there,
+         and two back-links to the same board read as two destinations. */}}
     {{if .HasWorktree}}
     <a class="btn btn-compact" href="/sessions/{{.ThreadID}}/diff{{if .Project}}?project={{urlquery .Project}}{{end}}">Worktree diff</a>
     {{else}}
@@ -80,9 +81,11 @@
 
 </div>{{/* /pr-main */}}
 
-<aside class="pr-rail">
+{{template "rail_scrim" $}}
+<aside class="pr-rail" id="page-rail">
+{{template "rail_sheet_head" $}}
 
-{{if and .SessionEntry.IsCase (or .CanCaseInvestigate .CanCaseEscalate .CanCaseAnswer .CanCaseDraft .CanCaseClose .CanCaseReopen)}}
+{{if and .SessionEntry.IsCase (or .CanCaseInvestigate .CanCaseEscalate .CanCaseAnswer .CanCaseDraft .CanCaseClose .CanCaseReopen .CanLinkCase)}}
 {{/* Case phase forms stay outside the live region so SSE swaps do not wipe typed notes. */}}
 <div class="rail-group" id="session-case-actions">
   <div class="rail-group-title">Case</div>
@@ -164,6 +167,33 @@
         <div class="form-actions"><button type="submit" id="btn-case-customer">Save update</button></div>
       </form>
       <p class="rail-note" style="margin-top:0.55rem">Sanitizer redacts secrets and local paths.</p>
+    </div>
+  </details>
+  {{end}}
+  {{if .CanLinkCase}}
+  <details class="action">
+    <summary><span class="action-title">Related cases</span>{{if .CaseLinks}}<span class="action-hint">{{len .CaseLinks}}</span>{{end}}</summary>
+    <div class="action-body">
+      {{/* Only outbound links get a Remove: an inbound one is the other case's
+           sentence about this one, and is theirs to retract. */}}
+      {{range .CaseLinks}}{{if not .Inbound}}
+      <form method="post" action="/sessions/{{$.ThreadID}}/case/unlink" class="case-link-row">
+        {{template "csrf" $}}
+        <input type="hidden" name="caseKey" value="{{.CaseKey}}">
+        <span class="mono">{{.CaseKey}}</span>
+        {{if .Title}}<span class="muted case-link-title">{{.Title}}</span>{{end}}
+        <button type="submit" class="btn-danger btn-compact">Remove</button>
+      </form>
+      {{end}}{{end}}
+      <form method="post" action="/sessions/{{.ThreadID}}/case/link">
+        {{template "csrf" $}}
+        <div class="field">
+          <label for="case-link-key">Case id</label>
+          <input type="text" id="case-link-key" name="caseKey" required placeholder="{{if .SessionEntry.CaseKey}}e.g. {{.SessionEntry.CaseKey}}{{else}}e.g. WEBAPP-14{{end}}" autocapitalize="characters" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="form-actions"><button type="submit" id="btn-case-link" class="btn-secondary">Link case</button></div>
+      </form>
+      <p class="rail-note" style="margin-top:0.55rem">The other case shows this one back automatically.</p>
     </div>
   </details>
   {{end}}
@@ -325,11 +355,32 @@
 <div class="section card" id="session-case-panel">
   <h2>Case <span class="muted" style="font-weight:500;font-size:0.9rem">· {{if .SessionEntry.Phase}}{{.SessionEntry.Phase}}{{else}}intake{{end}}</span></h2>
   <p class="sub" style="margin:0">
+    {{if .SessionEntry.CaseKey}}<span class="mono case-key" id="session-case-key">{{.SessionEntry.CaseKey}}</span>{{end}}
     <span class="badge">case</span>
     {{if .SessionEntry.Phase}}<span class="badge">{{.SessionEntry.Phase}}</span>{{end}}
     {{if .SessionEntry.Severity}}<span class="badge sev-{{.SessionEntry.Severity}}">{{.SessionEntry.Severity}}</span>{{end}}
     {{if .SessionEntry.IsCaseClosed}}<span class="badge">closed</span>{{end}}
   </p>
+  {{if .CaseLinks}}
+  {{/* Outbound and inbound in one list: from a reader's point of view both
+       answer "what else is this connected to". The direction is a chip, not a
+       heading, so a case with one of each does not grow two sections. */}}
+  <p style="margin:0.85rem 0 0.25rem"><span class="bubble-label" style="display:block">Related cases</span></p>
+  <ul class="case-links">
+    {{range .CaseLinks}}
+    <li>
+      {{if .ThreadID}}
+      <a class="mono" href="/sessions/{{.ThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}">{{.CaseKey}}</a>
+      {{else}}
+      <span class="mono muted" title="This case no longer exists">{{.CaseKey}}</span>
+      {{end}}
+      {{if .Inbound}}<span class="badge">references this</span>{{end}}
+      {{if .Phase}}<span class="badge">{{.Phase}}</span>{{end}}
+      {{if .Title}}<span class="muted">— {{.Title}}</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
   {{if .SessionEntry.CustomerTitle}}
   <p style="margin:0.85rem 0 0"><span class="bubble-label" style="display:block">Title</span>{{.SessionEntry.CustomerTitle}}</p>
   {{end}}

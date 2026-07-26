@@ -133,6 +133,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.removeProjectDeployEnvVar":   "/config/projects/deploy/var/remove",
 		"config.generateProjectVerify":       "/config/projects/verify/generate",
 		"config.setProjectMode":              "/config/projects/mode",
+		"config.setProjectCaseKey":           "/config/projects/case-key",
 		"config.addProjectMember":            "/config/projects/members",
 		"config.setProjectCapabilityUser":    "/config/projects/capabilities/users",
 		"config.removeProjectCapabilityUser": "/config/projects/capabilities/users/remove",
@@ -286,6 +287,12 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /projects/{project}/ship", s.requireAuth(hime.Handler(s.shipScoped)))
 	mux.Handle("GET /projects/{project}/cases", s.requireAuth(hime.Handler(s.casesScoped)))
 	mux.Handle("GET /projects/{project}/cases/new", s.requireAuth(hime.Handler(s.caseNewPage)))
+	// Case key → session page. Both spellings resolve the same reference: the
+	// workspace one for links inside the app, /c/{key} for what a person types
+	// or pastes into a commit message. {key} cannot shadow "new" above —
+	// ServeMux prefers the literal segment.
+	mux.Handle("GET /projects/{project}/cases/{key}", s.requireAuth(hime.Handler(s.caseByKey)))
+	mux.Handle("GET /c/{key}", s.requireAuth(hime.Handler(s.caseByKey)))
 	mux.Handle("GET /projects/{project}/sessions", s.requireAuth(hime.Handler(s.sessionsScoped)))
 	mux.Handle("GET /projects/{project}/worktrees", s.requireAuth(hime.Handler(s.worktreesScoped)))
 	// Retired feature-first hubs → launcher.
@@ -388,6 +395,10 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseCustomerUpdate))))
 	mux.Handle("POST /sessions/{threadID}/case/investigate",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseInvestigate))))
+	mux.Handle("POST /sessions/{threadID}/case/link",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseLink))))
+	mux.Handle("POST /sessions/{threadID}/case/unlink",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseUnlink))))
 	// Commit review → new Discord/web session; Grok opens issues agentically
 	mux.Handle("POST /projects/{project}/commits/{sha}/review",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCommitReview))))
@@ -420,6 +431,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/ship", s.requireAdmin(hime.Handler(s.setProjectShip)))
 	mux.Handle("POST /config/projects/safe-team", s.requireAdmin(hime.Handler(s.setProjectSafeTeam)))
 	mux.Handle("POST /config/projects/mode", s.requireAdmin(hime.Handler(s.setProjectMode)))
+	mux.Handle("POST /config/projects/case-key", s.requireAdmin(hime.Handler(s.setProjectCaseKey)))
 	mux.Handle("POST /config/projects/members", s.requireAdmin(hime.Handler(s.addProjectMember)))
 	mux.Handle("POST /config/projects/verify", s.requireAdmin(hime.Handler(s.setProjectVerify)))
 	mux.Handle("POST /config/projects/verify/generate", s.requireAdmin(hime.Handler(s.generateProjectVerify)))
@@ -512,9 +524,13 @@ type pageData struct {
 	Thread         history.Thread
 	Ship           bot.ShipBoard
 	Cases          bot.CaseBoard
-	Worktrees      []bot.WorktreeInfo
-	IdleTTLDays    int
-	Config         config.Snapshot
+	// CasesBoardURL is this board including its current filters, stamped onto
+	// each row's session link as ?back= so the detail page's ← crumb returns
+	// here instead of to the sessions list (see backlink.go).
+	CasesBoardURL string
+	Worktrees     []bot.WorktreeInfo
+	IdleTTLDays   int
+	Config        config.Snapshot
 	// Per-project settings tabs (/config/projects/{name}[/tab]).
 	ProjectItem      config.ProjectItem
 	DiscordUserNames map[string]string // Discord user id → display name (best-effort)
@@ -588,6 +604,14 @@ type pageData struct {
 	PRShipReady bool // every gate green → merge affordance opens expanded
 	DiffBase    string
 	ThreadID    string
+	// Session detail "←" crumb. Resolved from ?back= (provenance stamped by
+	// the linking board) or from the unit itself; never echoed from the query
+	// unvalidated — see backlink.go.
+	BackHref  string
+	BackLabel string
+	// Related cases, outbound then inbound (see bot.RelatedCaseLinks).
+	CaseLinks   []bot.CaseLink
+	CanLinkCase bool
 	// Diff review UI (commit / session / PR diff pages + per-file fragments)
 	DiffReview *diffReviewData
 	FileFrag   *fileFragData
@@ -1221,6 +1245,19 @@ func (s *Server) setProjectMode(ctx *hime.Context) error {
 		"name": name, "defaultMode": mode,
 	})
 	return s.projectConfigTabRedirect(ctx, name, "workflow", fmt.Sprintf("Updated default mode for project %q", name), err)
+}
+
+// setProjectCaseKey saves the Workflow tab's case-key prefix override. It only
+// affects keys minted after the save — cases already numbered keep their ids,
+// because those ids are what other cases and commits point at.
+func (s *Server) setProjectCaseKey(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	key := ctx.PostFormValue("caseKey")
+	err := s.cfg.SetProjectCaseKey(name, key)
+	s.auditAction(ctx, "config.set_project_case_key", err, map[string]any{
+		"name": name, "caseKey": key,
+	})
+	return s.projectConfigTabRedirect(ctx, name, "workflow", fmt.Sprintf("Updated case id prefix for project %q", name), err)
 }
 
 func (s *Server) setProjectVerify(ctx *hime.Context) error {

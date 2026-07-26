@@ -164,15 +164,20 @@ func TestPreviewServer(t *testing.T) {
 		// Support cases (Mode=case) across the phase pipeline → /projects/webapp/cases.
 		"1390000000000000021": {
 			SessionID: "case-a", Project: "webapp", Mode: "case", Phase: "intake",
+			CaseKey:  "WEBAPP-21",
 			Severity: "critical", CustomerTitle: "Checkout 500s for EU Visa cards",
 			CustomerRef: "ZD-4821", ReporterName: "beam", Origin: "discord",
 			OwnerID: "222222222222222222", OwnerName: "poon",
 		},
 		"1390000000000000022": {
 			SessionID: "case-b", Project: "webapp", Mode: "case", Phase: "investigate",
+			CaseKey:  "WEBAPP-22",
 			Severity: "high", CustomerTitle: "Webhook retries fire twice for one order",
 			CustomerRef: "ZD-4780", ReporterName: "mint", Origin: "discord",
 			OwnerID: "111111111111111111", OwnerName: "mint",
+			// Cross-reference to the older duplicate-charge case: same root
+			// cause, different module. Renders outbound here, inbound there.
+			RelatedCases:   []string{"WEBAPP-25"},
 			CustomerUpdate: "We reproduced the duplicate retries on staging and are tracing the debounce window now — next update within the hour.",
 			Dossier: &sessionstore.Dossier{
 				Summary: "Retry queue re-enqueues per webhook event instead of per order; burst of events → duplicate settle jobs.",
@@ -180,6 +185,7 @@ func TestPreviewServer(t *testing.T) {
 		},
 		"1390000000000000023": {
 			SessionID: "case-c", Project: "webapp", Mode: "case", Phase: "answered",
+			CaseKey:  "WEBAPP-23",
 			Severity: "medium", CustomerTitle: "How do refunds settle across currencies?",
 			CustomerRef: "ZD-4790", ReporterName: "beam", Origin: "web",
 			OwnerName:      "poon",
@@ -188,6 +194,7 @@ func TestPreviewServer(t *testing.T) {
 		},
 		"1390000000000000024": {
 			SessionID: "case-d", Project: "webapp", Mode: "case", Phase: "fixing",
+			CaseKey:  "WEBAPP-24",
 			Severity: "high", CustomerTitle: "Session cookies dropped on Safari 17",
 			CustomerRef: "ZD-4711", ReporterName: "mint", Origin: "discord",
 			OwnerName: "mint",
@@ -197,6 +204,7 @@ func TestPreviewServer(t *testing.T) {
 		},
 		"1390000000000000025": {
 			SessionID: "case-e", Project: "webapp", Mode: "case", Phase: "shipping",
+			CaseKey:  "WEBAPP-25",
 			Severity: "critical", CustomerTitle: "Duplicate charges on retried payments",
 			CustomerRef: "ZD-4695", ReporterName: "beam", Origin: "discord",
 			OwnerName: "mint",
@@ -212,6 +220,7 @@ func TestPreviewServer(t *testing.T) {
 		},
 		"1390000000000000026": {
 			SessionID: "case-f", Project: "webapp", Mode: "case", Phase: "closed",
+			CaseKey:  "WEBAPP-26",
 			Severity: "low", CustomerTitle: "Typo on the invoice footer",
 			CustomerRef: "ZD-4602", ReporterName: "beam", Origin: "web",
 			Resolution: "fixed", ResolutionNote: "Shipped in the July invoice template refresh.",
@@ -240,6 +249,27 @@ func TestPreviewServer(t *testing.T) {
 	}
 	for _, tt := range turns {
 		if err := hist.Append(tt.thread, tt.turn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A case with a long investigation, so the phone layout can be reviewed in
+	// the state it is actually hard in: the rail's actions (escalate, close)
+	// sit past a screen-height of turns and are only reachable through the
+	// action sheet.
+	for i := 1; i <= 14; i++ {
+		if err := hist.Append("1390000000000000022", history.Turn{
+			User: "mint#0",
+			Prompt: fmt.Sprintf("Round %d: narrow the duplicate-settle window — check the debounce key, "+
+				"the webhook dedupe table and the retry backoff for order #9313.", i),
+			Response: fmt.Sprintf("Round %d findings: the debounce key is per *event id*, not per order, so a "+
+				"burst of `charge.updated` webhooks for one order each open their own settle job.\n\n"+
+				"- `webhook/dedupe.go:71` keys on `evt.ID`\n"+
+				"- `settle/queue.go:184` enqueues unconditionally after dedupe\n"+
+				"- reproduced locally with 6 events in a 200ms window\n\n"+
+				"Next: confirm the same key is used on the invoicing path before proposing a fix.", i),
+			Status: "done", Elapsed: "3m0" + strconv.Itoa(i%10) + "s",
+			Project: "webapp", SessionID: "case-b",
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}

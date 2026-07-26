@@ -709,6 +709,16 @@ func preserveModeFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	if next.Phase == "" {
 		next.Phase = prev.Phase
 	}
+	// CaseKey is the case's permanent public id — losing it to a rebuild would
+	// break every reference already written into a commit, a PR or another
+	// case. RelatedCases rides with it; an intentional *clear* (removing the
+	// last link) goes through Patch, which never rebuilds.
+	if next.CaseKey == "" {
+		next.CaseKey = prev.CaseKey
+	}
+	if len(next.RelatedCases) == 0 && len(prev.RelatedCases) > 0 {
+		next.RelatedCases = append([]string(nil), prev.RelatedCases...)
+	}
 	if next.Severity == "" {
 		next.Severity = prev.Severity
 	}

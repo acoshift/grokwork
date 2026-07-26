@@ -141,12 +141,21 @@
       {{range .Rows}}
       <article class="case-row{{if .Severity}} sev-{{.Severity}}{{end}}">
         <div class="case-main">
-          <a class="case-title" href="/sessions/{{.ThreadID}}?project={{urlquery .Project}}">{{.Title}}</a>
+          {{/* back= stamps this board (filters included) as the detail page's
+               ← crumb target. $.CasesBoardURL, not the row's project: the
+               global board must return to the global board. */}}
+          <a class="case-title" href="/sessions/{{.ThreadID}}?project={{urlquery .Project}}&amp;back={{urlquery $.CasesBoardURL}}">{{.Title}}</a>
           <div class="case-meta">
+            {{/* Our id first, then theirs: CaseKey is what another case, a
+                 commit or a PR quotes; CustomerRef is the ticket it came from. */}}
+            {{if .CaseKey}}<span class="mono case-key">{{.CaseKey}}</span>{{end}}
             {{if not $.Project}}<a class="case-proj" href="/projects/{{.Project}}/cases">{{.Project}}</a>{{end}}
             {{if .CustomerRef}}<span class="mono case-ref">{{.CustomerRef}}</span>{{end}}
             {{if .Severity}}<span class="case-sev sev-{{.Severity}}">{{.Severity}}</span>{{end}}
-            <span class="mono muted">{{.ThreadID}}</span>
+            {{/* The thread snowflake is the storage key, not a name anyone
+                 uses. Keep it only for cases filed before keys existed, where
+                 it is still the sole way to refer to the row. */}}
+            {{if not .CaseKey}}<span class="mono muted">{{.ThreadID}}</span>{{end}}
             {{if .EngineerName}}<span>eng {{.EngineerName}}</span>{{else if .NeedsEngineer}}<span class="case-unassigned">needs an engineer</span>{{end}}
             {{if .OwnerName}}<span>owner {{.OwnerName}}</span>{{end}}
             {{if .ReporterName}}<span>reporter {{.ReporterName}}</span>{{end}}

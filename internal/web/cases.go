@@ -1,6 +1,7 @@
 package web
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/moonrhythm/hime"
@@ -41,7 +42,37 @@ func (s *Server) casesPageData(ctx *hime.Context, project string) pageData {
 		d.CanOpenCase = s.canOpenCase(d, project)
 	}
 	d.Cases = s.listCaseBoardVisible(ctx, project)
+	// Stamped onto every row's session link so the detail page's ← crumb
+	// returns to this board with these filters still applied. Built from the
+	// board's own resolved filters, not the raw query, so the SSE-refreshed
+	// list partial and the first render agree.
+	d.CasesBoardURL = casesBoardURL(project, d.Cases)
 	return d
+}
+
+// casesBoardURL renders the current board as a root-relative URL. Only filters
+// that actually narrow the board are carried: ListCaseBoardQuery resolves an
+// absent scope to "open", so spelling that out would put a query string on
+// every unfiltered board for no change in what it shows.
+func casesBoardURL(project string, b bot.CaseBoard) string {
+	base := caseBoardURL(project)
+	q := url.Values{}
+	for key, val := range map[string]string{
+		"phase":    b.PhaseFilter,
+		"severity": b.SeverityFilter,
+		"owner":    b.OwnerFilter,
+	} {
+		if val != "" {
+			q.Set(key, val)
+		}
+	}
+	if b.Scope == "all" {
+		q.Set("scope", "all")
+	}
+	if len(q) == 0 {
+		return base
+	}
+	return base + "?" + q.Encode()
 }
 
 // listCaseBoardVisible restricts the global board to the session's visible

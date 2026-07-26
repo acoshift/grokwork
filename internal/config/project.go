@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -39,6 +40,9 @@ type ProjectConfig struct {
 	SafeTeamMode            *bool                    `json:"safeTeamMode,omitempty"`
 	SafeTeamDefaultTemplate string                   `json:"safeTeamDefaultTemplate,omitempty"` // default investigator
 	DefaultMode             string                   `json:"defaultMode,omitempty"`             // investigate|fix|… empty=legacy
+	// CaseKey overrides the prefix new case keys take. Empty derives it from
+	// the project name (see ProjectCaseKeyPrefix).
+	CaseKey                 string                   `json:"caseKey,omitempty"`
 	CapabilityTemplates     map[string]Capabilities  `json:"capabilityTemplates,omitempty"`
 	CapabilityByRole        map[string]string        `json:"capabilityByRole,omitempty"` // Discord role ID → template
 	CapabilityByUser        map[string]string        `json:"capabilityByUser,omitempty"` // Discord user ID → template
@@ -440,6 +444,59 @@ func (c *Config) SetProjectRepoFetchIntervalMinutes(name string, minutes int) er
 	}
 	d := minutes
 	pc.RepoFetchIntervalMinutes = &d
+	c.Projects[name] = pc
+	return c.saveLocked()
+}
+
+// caseKeyOverridePattern is the shape a hand-set case-key prefix must have: a
+// letter, then up to nine more letters or digits.
+//
+// The length bound matters as much as the character set. sessionstore's
+// CaseKeyPrefix caps a prefix at MaxCaseKeyPrefixLen runes, so an override
+// longer than that would be stored whole and minted truncated — the settings
+// page would show SUPPORTDESKPORTAL while cases came out SUPPORTDES-1. Config
+// deliberately does not import sessionstore (turning a name into a prefix is
+// sessionstore's job, not config's), so the two constants are kept in step by
+// TestCaseKeyOverrideMatchesMintedPrefix instead.
+var caseKeyOverridePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]{0,9}$`)
+
+// ProjectCaseKey returns the configured case-key prefix override, or "" when
+// the project has none and keys should derive from its name.
+//
+// It is deliberately consulted only when a key is *minted*: changing it later
+// renames nothing, because keys already written into commits and into other
+// cases have to keep resolving.
+func (c *Config) ProjectCaseKey(name string) string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(pc.CaseKey)
+}
+
+// SetProjectCaseKey sets the case-key prefix override and persists it. An empty
+// value clears the override (back to deriving from the project name).
+func (c *Config) SetProjectCaseKey(name, prefix string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	prefix = strings.TrimSpace(prefix)
+	if prefix != "" && !caseKeyOverridePattern.MatchString(prefix) {
+		return fmt.Errorf("case key must start with a letter, contain only letters and digits, and be at most 10 characters")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("unknown project %q", name)
+	}
+	pc.CaseKey = strings.ToUpper(prefix)
 	c.Projects[name] = pc
 	return c.saveLocked()
 }

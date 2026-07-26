@@ -93,7 +93,9 @@
 
 </div>{{/* /pr-main */}}
 
-<aside class="pr-rail">
+{{template "rail_scrim" $}}
+<aside class="pr-rail" id="page-rail">
+{{template "rail_sheet_head" $}}
 
 {{if .CanStartSession}}
 <div class="rail-group" id="issue-fix-form">

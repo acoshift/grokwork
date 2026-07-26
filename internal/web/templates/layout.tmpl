@@ -1814,6 +1814,13 @@
       box-shadow: var(--shadow-1);
       padding: 0.75rem 1rem 0.8rem;
     }
+    /* Phone-only action-sheet chrome for .pr-rail (see the sheet rules in the
+       responsive block). Kept out of the accessibility tree and the tab order
+       on desktop by display:none rather than hidden/aria — the rail is an
+       ordinary column there and needs no header at all. */
+    .rail-sheet-head,
+    .rail-fab,
+    .rail-scrim { display: none; }
     .rail-group-title {
       color: var(--muted-soft);
       font-size: 0.68rem;
@@ -2192,6 +2199,42 @@
     }
     .case-meta .mono { font-size: 0.74rem; }
     .case-meta .case-ref { color: var(--text); font-weight: 500; }
+    /* The case's own id — the string people quote. Weighted above the rest of
+       the meta row so it reads as identity, not as one more attribute. */
+    .case-key {
+      font-weight: 620;
+      letter-spacing: 0.01em;
+      color: var(--text);
+      user-select: all;
+    }
+    #session-case-panel .case-key { font-size: 0.82rem; margin-right: 0.15rem; }
+    /* Related cases: one line per link, wrapping rather than truncating —
+       a cross-reference is only useful if you can read what it points at. */
+    .case-links {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      font-size: 0.85rem;
+    }
+    .case-links li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+    .case-link-row {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin: 0 0 0.4rem;
+      font-size: 0.82rem;
+    }
+    .case-link-row .case-link-title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .case-link-row button { flex-shrink: 0; }
     /* Global board: which project a case belongs to (links to its board). */
     .case-meta .case-proj {
       font-family: var(--mono);
@@ -3502,6 +3545,214 @@
       }
       .composer textarea { font-size: 16px; }
       .composer-hint { display: none; }
+
+      /* ── Detail-page rail as a bottom action sheet ───────────────────
+         One column stacks the rail *after* the main column, so on a session
+         with a long turn history "Close case" / "Abandon" sit thousands of
+         pixels below the fold — the actions a detail page exists for become
+         the hardest thing on it to reach. The rail is NOT moved in the DOM:
+         its forms hold typed state, must keep their place in the tab order,
+         and are replaced wholesale by boosted swaps. It is re-presented in
+         place as a sheet, raised by a button fixed above whatever bottom
+         chrome the page has.
+         Not a <dialog>: the rail is server-rendered inside #live-root, so
+         showModal() would mean relocating it into the top layer, where the
+         next boosted swap would leave it orphaned and showing the previous
+         page's actions. It is a disclosure — the scrim blocks pointer input
+         and Esc closes, but nothing claims aria-modal, because content
+         behind it genuinely stays reachable. */
+      /* The sheet has to out-paint the phone chrome, and the chrome wins by
+         default: .tabbar's z-index 80 lives inside aside.side (z 40), while
+         the rail lives inside #live-root, which `animation: pageIn … both`
+         keeps permanently filling — and a filling opacity animation is a
+         stacking context, so every z-index under it is trapped below the
+         sidebar's 40. Lifting #live-root itself is what frees them.
+         `position: relative` + z-index, NOT `animation: none`: removing the
+         animation would re-run pageIn the moment the class comes off, fading
+         the whole page up from opacity 0 behind the closing sheet on any
+         page loaded directly (no data-gw-nav to suppress it). relative is
+         also safe for the fixed composer — only transform/filter/contain
+         make an ancestor a containing block for position:fixed. */
+      /* The lift is *delayed on the way down*, not switched off with the
+         class: the sheet takes 0.26s to slide out, and dropping the lift the
+         instant Close is tapped would replay that whole exit behind the tab
+         bar. Transitioning z-index at 0s with a delay is a step, not a fade —
+         and under reduced motion the global transition:none removes the delay
+         and the slide together, so nothing is left to be behind anything.
+         z-index 0 while closed keeps the tab bar (inside aside.side, z 40)
+         floating over page content, as it must. */
+      body:has(.pr-rail .rail-group) #live-root {
+        position: relative;
+        z-index: 0;
+        transition: z-index 0s linear 0.3s;
+      }
+      body.rail-sheet-open:has(.pr-rail .rail-group) #live-root {
+        z-index: 50;
+        transition: z-index 0s;
+      }
+      .rail-fab {
+        position: fixed;
+        right: 0.85rem;
+        /* Above the tab bar by default; above the composer where one
+           replaces it (same key the tab bar itself is hidden on). */
+        bottom: calc(4.6rem + env(safe-area-inset-bottom));
+        z-index: 91;
+        align-items: center;
+        gap: 0.35rem;
+        height: 2.4rem;
+        padding: 0 0.95rem 0 0.8rem;
+        border: none;
+        border-radius: 999px;
+        background: var(--text);
+        color: var(--bg);
+        font: inherit;
+        font-size: 0.84rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        /* A ring in the page background, not a border: the button floats over
+           whatever the conversation happens to be showing, and a user bubble is
+           the same black as the pill — against one, a translucent border is
+           invisible and the button dissolves into the message. The halo cuts it
+           out of any background. */
+        box-shadow: 0 0 0 3px var(--bg), 0 6px 18px -6px hsl(var(--black) / 45%);
+        cursor: pointer;
+      }
+      /* Only pages with something in the rail get the button. Presence of the
+         <aside> is not enough: pr_detail always emits it, and a merged PR seen
+         by a member with neither githubWrites nor startSessions renders it
+         with zero groups — a button that raises an empty sheet. */
+      body:has(.pr-rail .rail-group) .rail-fab { display: inline-flex; }
+      /* Above the composer dock, which grows with the textarea — hence the
+         measured --gw-dock-h (published by the composer script) rather than a
+         constant, which the input would climb over after a few typed lines.
+         No env() added on top: offsetHeight already includes the dock's own
+         safe-area padding. The fallback covers the pre-script first paint and
+         has to add it back itself. */
+      body:has(#session-continue-form) .rail-fab {
+        bottom: calc(var(--gw-dock-h, calc(3.4rem + env(safe-area-inset-bottom))) + 0.7rem);
+      }
+      /* The sheet covers it; hiding avoids a second control over the scrim.
+         Focus returns here on close (see the action-sheet script). Carries the
+         :has() too — without it this loses to the show rule above, whose
+         :has(.pr-rail .rail-group) argument makes it the more specific one. */
+      body.rail-sheet-open:has(.pr-rail .rail-group) .rail-fab { display: none; }
+      .rail-fab-chev {
+        width: 0.85rem;
+        height: 0.85rem;
+        flex-shrink: 0;
+        background: currentColor;
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 15 6-6 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 15 6-6 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+      }
+      /* Sits between the composer (z 90) and the sheet (z 96) — and therefore
+         has to live in the same stacking context as both, i.e. inside
+         #live-root as a sibling of the rail. At <body> level it would be
+         either under the whole lifted page or over the sheet; there is no
+         value that works. That is why it is rendered by the page templates
+         rather than by the shell. */
+      .rail-scrim {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 95;
+        background: hsl(var(--black) / 38%);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.24s ease;
+      }
+      body.rail-sheet-open .rail-scrim { opacity: 1; pointer-events: auto; }
+      .pr-rail {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        /* The desktop rule sticks the rail with top: 1.25rem. Left standing, a
+           fixed box with both offsets is over-constrained and the browser drops
+           `bottom` — the sheet would hang from the top of the screen. */
+        top: auto;
+        z-index: 96;
+        /* Tall enough that a case rail's later groups (Close case, Danger
+           zone) are one short scroll away rather than five, still short enough
+           to read as a sheet over the page rather than a new screen. */
+        max-height: min(84dvh, 40rem);
+        overflow-y: auto;
+        /* Scrolling the sheet to its end must not start scrolling the page
+           under it — the gesture that reads as "keep going" would otherwise
+           drag the conversation away behind the sheet. */
+        overscroll-behavior: contain;
+        gap: 0.7rem;
+        padding: 0 0.8rem calc(1rem + env(safe-area-inset-bottom));
+        background: var(--bg);
+        border-top: 1px solid var(--border-strong);
+        border-radius: 1.15rem 1.15rem 0 0;
+        box-shadow: 0 -12px 32px -16px hsl(var(--black) / 45%);
+        transform: translateY(100%);
+        visibility: hidden;
+        transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+                    visibility 0s linear 0.26s;
+      }
+      body.rail-sheet-open .pr-rail {
+        transform: none;
+        visibility: visible;
+        transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1),
+                    visibility 0s;
+      }
+      /* Sticky so the grip and Close stay put while a long rail scrolls. */
+      .rail-sheet-head {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 0.2rem 0.5rem;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        margin: 0 -0.8rem;
+        padding: 0.45rem 0.9rem 0.55rem;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+      }
+      .rail-sheet-grip {
+        grid-column: 1 / -1;
+        justify-self: center;
+        width: 2.25rem;
+        height: 0.25rem;
+        margin-bottom: 0.35rem;
+        border-radius: 999px;
+        background: var(--border-strong);
+      }
+      .rail-sheet-title {
+        font-size: 0.95rem;
+        font-weight: 640;
+        letter-spacing: -0.015em;
+        color: var(--text);
+      }
+      .rail-sheet-x {
+        width: 1.9rem;
+        height: 1.9rem;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border);
+        border-radius: 50%;
+        background: var(--surface-l1);
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+      /* Rail cards lose their own frame inside the sheet — the sheet is the
+         surface, and nested cards on a small screen read as clutter. */
+      .pr-rail .rail-group {
+        background: none;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        padding: 0.35rem 0.2rem 0.15rem;
+      }
+      .pr-rail .rail-group + .rail-group { border-top: 1px solid var(--border); }
+      /* Comfortable thumb targets for the disclosure rows. */
+      .pr-rail details.action > summary { padding: 0.75rem 0; }
       /* !important: many config forms set their desktop column layout via an
          inline style attribute, which would otherwise beat this breakpoint and
          push multi-column grids past the phone viewport. */
@@ -3536,74 +3787,134 @@
         font-size: 16px;
       }
 
-      /* ── Page transitions: iOS push / pop ────────────────────────────
-         Boosted navigation replaces #live-root and history restore refills
-         it, so a View Transition can animate the change. VT rather than a
-         CSS animation on #live-root itself: an animated transform — and a
-         view-transition-name — apply containment, which makes the element
-         the containing block for its fixed descendants and is exactly what
-         trapped the session composer (see the pageIn note above). VT
-         animates snapshots in a separate tree, so no live element changes
-         its containing block. layout.tmpl's JS sets data-gw-nav on <html>
-         (push | pop | swap) before the swap and only ever arms this on a
-         phone with motion allowed. */
-
       /* Lifted out of the root snapshot so the tab bar stays pinned while
          the page slides under it — the one piece of chrome iOS never moves.
          Naming it is safe: containment only affects descendants, and its
          own <a>s are static. #live-root must never be named for that reason. */
       #tab-bar { view-transition-name: gw-tabbar; }
-      /* Same treatment: loaderStop() runs from afterSettle, i.e. inside the
-         transition callback, so an in-flight loader is still .on when the
-         outgoing snapshot is taken and would slide away with the page. */
-      #page-loader { view-transition-name: gw-loader; }
-
-      /* The slide is the page-enter animation, so drop the fade rather than
-         stack the two. Scoped to data-gw-nav (only ever set when a transition
-         was armed) so first paint, reloads and any un-animated swap keep
-         pageIn, as does a browser with no View Transitions support. */
-      html[data-gw-nav] #live-root { animation: none; }
-
-      @keyframes gw-nav-in-right { from { transform: translateX(100%); } }
-      @keyframes gw-nav-out-left { to { transform: translateX(-24%); opacity: 0.5; } }
-      @keyframes gw-nav-in-left { from { transform: translateX(-24%); opacity: 0.5; } }
-      @keyframes gw-nav-out-right { to { transform: translateX(100%); } }
-      @keyframes gw-nav-fade-in { from { opacity: 0; } }
-
-      html[data-gw-nav]::view-transition-old(root),
-      html[data-gw-nav]::view-transition-new(root) {
-        /* body's background propagates to the canvas, so the root snapshots
-           are transparent — repaint it or the two screens show through each
-           other mid-slide. mix-blend-mode undoes the UA cross-fade blend. */
-        background: var(--bg);
-        mix-blend-mode: normal;
-      }
-      html[data-gw-nav="push"]::view-transition-old(root) {
-        animation: gw-nav-out-left 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
-      }
-      html[data-gw-nav="push"]::view-transition-new(root) {
-        animation: gw-nav-in-right 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
-      }
-      html[data-gw-nav="pop"]::view-transition-old(root) {
-        /* The leaving screen rides above the one it uncovers; without this the
-           new snapshot paints last and the pop reads as a push. */
-        z-index: 1;
-        animation: gw-nav-out-right 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
-      }
-      html[data-gw-nav="pop"]::view-transition-new(root) {
-        animation: gw-nav-in-left 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
-      }
-      /* Same-level moves (tab bar, filter re-renders) do not slide — iOS
-         switches tabs in place. Old holds still, new crossfades over it. */
-      html[data-gw-nav="swap"]::view-transition-old(root) { animation: none; }
-      html[data-gw-nav="swap"]::view-transition-new(root) {
-        animation: gw-nav-fade-in 0.16s ease both;
-      }
+      /* Same reason as the tab bar: persistent phone chrome that must not
+         ride the slide. Its only descendant is a static span. */
+      #rail-fab { view-transition-name: gw-rail-fab; }
       /* Tab bar: same box on both screens, so only the active tint changes. */
       html[data-gw-nav]::view-transition-old(gw-tabbar),
       html[data-gw-nav]::view-transition-new(gw-tabbar) {
         animation-duration: 0.2s;
       }
+    }
+
+    /* ── Page transitions: push / pop ──────────────────────────────────
+       Boosted navigation replaces #live-root and history restore refills it,
+       so a View Transition can animate the change. VT rather than a CSS
+       animation on #live-root itself: an animated transform — and a
+       view-transition-name — apply containment, which makes the element the
+       containing block for its fixed descendants and is exactly what trapped
+       the session composer (see the pageIn note above). VT animates snapshots
+       in a separate tree, so no live element changes its containing block.
+       layout.tmpl's JS sets data-gw-nav on <html> (push | pop | swap) before
+       the swap, whenever motion is allowed.
+
+       One set of rules, two characters, because the *grammar* of the move is
+       the same on both and only its amplitude differs: a phone slides a full
+       screen because the screen IS the app, a desktop window would throw the
+       whole page across a monitor to say the same thing. The four tokens
+       below are the entire difference. */
+    :root {
+      /* Phone: full-width slide, no fade — the leading screen is opaque and
+         the one underneath parallaxes at a quarter speed, as on iOS. */
+      --nav-lead: 100%;   /* travel of the screen entering/leaving on top   */
+      --nav-lead-o: 1;    /* its opacity at the extreme                     */
+      --nav-trail: 24%;   /* parallax of the screen underneath              */
+      --nav-trail-o: 0.5; /* its opacity at the extreme                     */
+      --nav-dur: 0.34s;
+    }
+    @media (min-width: 921px) {
+      /* Desktop: a 10px hint of direction under a crossfade. Both snapshots
+         reach opacity 0 at their extreme, so the move reads as a dissolve
+         that leans — no page-sized travel on a wide viewport. */
+      :root {
+        --nav-lead: 10px;
+        --nav-lead-o: 0;
+        --nav-trail: 6px;
+        --nav-trail-o: 0;
+        --nav-dur: 0.22s;
+      }
+      /* The sidebar is identical across the two screens, so leaving it in the
+         root snapshot would crossfade it against itself — and two opacity
+         ramps summing to less than 1 mid-way read as a flicker on every
+         navigation. Own group, no animation, it simply stays. Safe to name on
+         desktop specifically: nothing inside it is position:fixed there (the
+         tab bar, its only fixed descendant, is display:none above 920px), so
+         the containment the name applies has nothing to capture. */
+      aside.side { view-transition-name: gw-side; }
+      html[data-gw-nav]::view-transition-old(gw-side),
+      html[data-gw-nav]::view-transition-new(gw-side) {
+        /* animation:none without mix-blend-mode:normal is a trap the root rule
+           below already documents: the UA blends a captured pair with
+           plus-lighter, and it only reads as a clean cross-fade because the
+           default fade animations keep the two opacities summing to 1.
+           Cancelling those leaves both at opacity 1 and plus-lighter adds them
+           — the sidebar would blow out to white on every navigation. */
+        animation: none;
+        mix-blend-mode: normal;
+      }
+      /* Both snapshots are the same pixels, so with normal blending the new one
+         simply covers the old and the sidebar reads as untouched. */
+      html[data-gw-nav]::view-transition-old(gw-side) { opacity: 0; }
+    }
+
+    /* Same treatment as the tab bar: loaderStop() runs from afterSettle, i.e.
+       inside the transition callback, so an in-flight loader is still .on when
+       the outgoing snapshot is taken and would slide away with the page. */
+    #page-loader { view-transition-name: gw-loader; }
+
+    /* The transition is the page-enter animation, so drop the fade rather than
+       stack the two. Scoped to data-gw-nav (only ever set when a transition
+       was armed) so first paint, reloads and any un-animated swap keep pageIn,
+       as does a browser with no View Transitions support. */
+    html[data-gw-nav] #live-root { animation: none; }
+
+    @keyframes gw-nav-in-right {
+      from { transform: translateX(var(--nav-lead)); opacity: var(--nav-lead-o); }
+    }
+    @keyframes gw-nav-out-left {
+      to { transform: translateX(calc(-1 * var(--nav-trail))); opacity: var(--nav-trail-o); }
+    }
+    @keyframes gw-nav-in-left {
+      from { transform: translateX(calc(-1 * var(--nav-trail))); opacity: var(--nav-trail-o); }
+    }
+    @keyframes gw-nav-out-right {
+      to { transform: translateX(var(--nav-lead)); opacity: var(--nav-lead-o); }
+    }
+    @keyframes gw-nav-fade-in { from { opacity: 0; } }
+
+    html[data-gw-nav]::view-transition-old(root),
+    html[data-gw-nav]::view-transition-new(root) {
+      /* body's background propagates to the canvas, so the root snapshots
+         are transparent — repaint it or the two screens show through each
+         other mid-slide. mix-blend-mode undoes the UA cross-fade blend. */
+      background: var(--bg);
+      mix-blend-mode: normal;
+    }
+    html[data-gw-nav="push"]::view-transition-old(root) {
+      animation: gw-nav-out-left var(--nav-dur) cubic-bezier(0.32, 0.72, 0, 1) both;
+    }
+    html[data-gw-nav="push"]::view-transition-new(root) {
+      animation: gw-nav-in-right var(--nav-dur) cubic-bezier(0.32, 0.72, 0, 1) both;
+    }
+    html[data-gw-nav="pop"]::view-transition-old(root) {
+      /* The leaving screen rides above the one it uncovers; without this the
+         new snapshot paints last and the pop reads as a push. */
+      z-index: 1;
+      animation: gw-nav-out-right var(--nav-dur) cubic-bezier(0.32, 0.72, 0, 1) both;
+    }
+    html[data-gw-nav="pop"]::view-transition-new(root) {
+      animation: gw-nav-in-left var(--nav-dur) cubic-bezier(0.32, 0.72, 0, 1) both;
+    }
+    /* Same-level moves (tab bar, filter re-renders) do not slide — iOS
+       switches tabs in place. Old holds still, new crossfades over it. */
+    html[data-gw-nav="swap"]::view-transition-old(root) { animation: none; }
+    html[data-gw-nav="swap"]::view-transition-new(root) {
+      animation: gw-nav-fade-in 0.16s ease both;
     }
   </style>
 </head>
@@ -3755,6 +4066,20 @@
       </div>
     </main>
   </div>
+  {{/* Phone action sheet trigger for detail-page rails (session, PR, issue,
+       Linear, commit). It sits at <body> level, beside #page-loader and the
+       dialogs, and carries no page data: the sheet's *content* is the page's
+       own <aside class="pr-rail">, which is never moved (see the .rail-fab /
+       .pr-rail rules in the responsive block). CSS decides whether the button
+       exists at all — body:has(.pr-rail .rail-group) — so no page template
+       has to opt in, and no partial can render it. The scrim cannot live here;
+       it has to share the rail's stacking context and so is rendered next to
+       the rail by each page (see "rail_scrim").
+       Deliberately not <nav>: partial responses are asserted to contain no
+       "<nav", and this is chrome, not navigation. */}}
+  <button type="button" class="rail-fab" id="rail-fab" aria-expanded="false" aria-controls="page-rail">
+    <span class="rail-fab-chev" aria-hidden="true"></span>Actions
+  </button>
   {{/* Outside #live-root / boost target so stream runs survive navigation swaps. */}}
   <dialog id="gw-stream-modal" class="gw-stream-modal" aria-labelledby="gw-stream-title">
     <div class="gw-stream-shell">
@@ -4334,13 +4659,37 @@
     // Session conversation: composer autosize + ⌘/Ctrl+Enter submit, and
     // keep the newest turn in view. All handlers are delegated so they
     // survive boosted navigations and the oob/live-region swaps.
+    // The dock grows with the textarea (1 row → 160px of it), so anything
+    // parked above it has to know how tall it currently is. --gw-dock-h is
+    // that measurement; the phone action-sheet button reads it. Published
+    // rather than assumed, because a constant offset puts the button on top of
+    // the input after a few typed lines.
+    function publishDockHeight() {
+      var dock = document.getElementById("session-continue-form");
+      var root = document.documentElement.style;
+      if (!dock) {
+        root.removeProperty("--gw-dock-h");
+        return;
+      }
+      root.setProperty("--gw-dock-h", dock.offsetHeight + "px");
+    }
     function composerInput(e) {
       var t = e.target;
       if (!t || t.id !== "continue-prompt") return;
       t.style.height = "auto";
       t.style.height = Math.min(t.scrollHeight, 160) + "px";
+      publishDockHeight();
     }
     document.addEventListener("input", composerInput);
+    // A navigation can add, remove or resize the dock without any input event.
+    document.body.addEventListener("htmx:afterSettle", publishDockHeight);
+    document.body.addEventListener("htmx:historyRestore", publishDockHeight);
+    window.addEventListener("resize", publishDockHeight);
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", publishDockHeight);
+    } else {
+      publishDockHeight();
+    }
     document.addEventListener("keydown", function (e) {
       var t = e.target;
       if (!t || t.id !== "continue-prompt") return;
@@ -4747,7 +5096,9 @@
     // Returns true when the caller should opt this swap into a transition.
     function armNav(url) {
       if (!document.startViewTransition) return false;
-      if (!narrowMQ.matches) return false;
+      // Width is no longer a gate: the CSS carries a desktop character for the
+      // same push/pop (see the --nav-* tokens), so both layouts animate and
+      // neither needs the JS to know which one it is on.
       // The global prefers-reduced-motion rule cannot reach the
       // ::view-transition tree, so the opt-out has to happen here.
       if (reduceMotionMQ.matches) return false;
@@ -4990,6 +5341,64 @@
       syncMode();
     })();
 
+    // Detail-page action sheet (phones only). All state is one body class —
+    // the rail itself is page content inside #live-root and is never touched,
+    // so a boosted swap can replace it wholesale without this script caring.
+    // Same reason the queries are re-run per call rather than cached: the
+    // element answering .pr-rail today is not the one that will answer after
+    // the next navigation.
+    (function () {
+      var fab = document.getElementById("rail-fab");
+      if (!fab) return;
+      var OPEN = "rail-sheet-open";
+      function rail() { return document.querySelector(".pr-rail"); }
+      function isOpen() { return document.body.classList.contains(OPEN); }
+      function open() {
+        var r = rail();
+        if (!r || isOpen()) return;
+        document.body.classList.add(OPEN);
+        fab.setAttribute("aria-expanded", "true");
+        var x = r.querySelector("[data-rail-close]");
+        if (x) x.focus();
+      }
+      // refocus only on a deliberate dismissal: after a navigation the button
+      // may be gone, and stealing focus mid-swap fights the new page.
+      function close(refocus) {
+        if (!isOpen()) return;
+        document.body.classList.remove(OPEN);
+        fab.setAttribute("aria-expanded", "false");
+        if (refocus) fab.focus();
+      }
+      fab.addEventListener("click", function () {
+        if (isOpen()) close(true); else open();
+      });
+      document.addEventListener("click", function (e) {
+        var t = e.target;
+        if (!t || !t.closest) return;
+        if (t.closest("[data-rail-close]")) { close(true); return; }
+        // A link in the rail navigates; drop the sheet so the destination does
+        // not arrive with one already raised. Forms need no such rule — their
+        // boosted POST closes it through htmx:beforeRequest below.
+        if (isOpen() && t.closest(".pr-rail a[href]")) close(false);
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Escape" || !isOpen()) return;
+        // A rail form's data-confirm opens a modal <dialog> over the sheet.
+        // Esc belongs to the dialog then — closing the sheet under it would
+        // disconnect the form the confirm is about to re-submit.
+        if (document.querySelector("dialog[open]")) return;
+        close(true);
+      });
+      // Boosted only, exactly as the account menu above: SSE region refreshes
+      // fire beforeRequest too and must not shut a sheet being used.
+      document.body.addEventListener("htmx:beforeRequest", function (e) {
+        if (e.detail && e.detail.boosted) close(false);
+      });
+      // Back/forward is served from htmx's history cache with no request, so
+      // beforeRequest never fires for it.
+      document.body.addEventListener("htmx:historyCacheHit", function () { close(false); });
+      document.body.addEventListener("htmx:historyRestore", function () { close(false); });
+    })();
 
     // Per-path scroll for boosted navigations (e.g. history detail → list via
     // "← History"). show:none keeps the *leaving* page's scrollY; without this
@@ -5219,6 +5628,25 @@
 </html>
 {{end}}
 {{define "csrf"}}{{if .CSRF}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}{{end}}
+{{/* Scrim for the phone action sheet. Rendered immediately before the rail, so
+     it lands in the same stacking context and can sit between the composer and
+     the sheet — no <body>-level z-index can do that once #live-root is lifted.
+     Inert and invisible until body.rail-sheet-open; display:none above the
+     phone breakpoint, so on desktop it is not even a paint. */}}
+{{define "rail_scrim"}}<div class="rail-scrim" id="rail-scrim" data-rail-close></div>{{end}}
+{{/* Sheet header for a detail-page rail. Rendered by every .pr-rail as its
+     first child and display:none above the phone breakpoint, so on desktop it
+     is neither drawn nor focusable — the rail is an ordinary column there.
+     It lives in the rail rather than in the shell because it has to scroll
+     (sticky) with the sheet it titles, and because its Close button belongs in
+     the sheet's tab order, not the page's. */}}
+{{define "rail_sheet_head"}}
+<div class="rail-sheet-head">
+  <span class="rail-sheet-grip" aria-hidden="true"></span>
+  <span class="rail-sheet-title">Actions</span>
+  <button type="button" class="rail-sheet-x" data-rail-close aria-label="Close actions">&times;</button>
+</div>
+{{end}}
 {{/* Model dropdowns. Options are grouped by the CLI each name routes to, so the
      derived agent is visible at the point of choice rather than only after
      saving. Defined here because both the config page and the dispatch pages

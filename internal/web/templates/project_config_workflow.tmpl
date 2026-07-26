@@ -52,6 +52,28 @@
   </p>
 
   <div style="border-top:1px solid var(--border); margin-top:1.1rem; padding-top:1rem;">
+    <form class="inline" method="post" action="{{route "config.setProjectCaseKey"}}" id="project-case-key" style="grid-template-columns: minmax(0, 22rem) auto;">
+      {{template "csrf" $}}
+      <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+      <div>
+        <label for="project-case-key-input">Case id prefix</label>
+        {{/* maxlength mirrors the server's cap: a longer prefix would be minted
+             truncated, so the field must not let one be typed and then quietly
+             disagree with the ids. */}}
+        <input type="text" id="project-case-key-input" name="caseKey" value="{{.ProjectItem.CaseKey}}"
+               maxlength="10" pattern="[A-Za-z][A-Za-z0-9]{0,9}"
+               placeholder="{{.ProjectItem.Name}}" autocapitalize="characters" autocomplete="off" spellcheck="false">
+      </div>
+      <button type="submit">Save case id</button>
+    </form>
+    <p class="sub" style="margin:0.5rem 0 0; font-size:0.8rem">
+      New cases are numbered <span class="mono">PREFIX-1</span>, <span class="mono">PREFIX-2</span>, … Empty derives the
+      prefix from the project name. Changing it only affects cases filed afterwards — ids already
+      quoted in commits and in other cases keep resolving.
+    </p>
+  </div>
+
+  <div style="border-top:1px solid var(--border); margin-top:1.1rem; padding-top:1rem;">
     <form method="post" action="{{route "config.setProjectVerify"}}" id="project-verify">
       {{template "csrf" $}}
       <input type="hidden" name="name" value="{{.ProjectItem.Name}}">

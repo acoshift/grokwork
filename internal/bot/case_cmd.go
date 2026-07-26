@@ -85,6 +85,18 @@ func (b *Bot) handleCase(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	}
 }
 
+// caseKeyPrefix resolves the prefix new keys for a project take: the project's
+// configured override when it has one, otherwise its name. Normalising the
+// result into a legal prefix is sessionstore's job.
+func (b *Bot) caseKeyPrefix(project string) string {
+	if b.cfg != nil {
+		if custom := b.cfg.ProjectCaseKey(project); custom != "" {
+			return custom
+		}
+	}
+	return project
+}
+
 func (b *Bot) ensureCaseShell(threadID, project string, actor Actor, severity, ref, title, source string) error {
 	if b.sessions == nil {
 		return fmt.Errorf("no session store")
@@ -104,6 +116,20 @@ func (b *Bot) ensureCaseShell(threadID, project string, actor Actor, severity, r
 	e.ReporterID = actor.ID
 	e.ReporterName = actor.String()
 	e.IntakeSource = source
+	// Minted once, here, because this is the one funnel both intake surfaces
+	// pass through. Never re-minted: a second /case on the same thread (a
+	// re-file with a corrected title) must not renumber a case someone has
+	// already quoted. A failure to allocate is not fatal — a case without a
+	// key is still a case, and the alternative is refusing to record an
+	// incident because a counter file could not be written.
+	if e.CaseKey == "" {
+		prefix := b.caseKeyPrefix(project)
+		if key, err := b.sessions.AllocateCaseKey(prefix); err != nil {
+			log.Printf("error: allocate case key for %s: %v", project, err)
+		} else {
+			e.CaseKey = key
+		}
+	}
 	if e.Goal == "" {
 		e.Goal = title
 	}

@@ -137,6 +137,11 @@ func TestCaseCreateIntakeShell(t *testing.T) {
 	if e.OwnerID != "member-1" {
 		t.Fatalf("ownerID=%q want member-1", e.OwnerID)
 	}
+	// A case is numbered at intake, from the project name when no prefix is
+	// configured. This is the id the board shows and /c/<key> resolves.
+	if e.CaseKey != "PROJ-1" {
+		t.Fatalf("caseKey=%q want PROJ-1", e.CaseKey)
+	}
 	// Intake-only: no Grok run (Discord /case parity).
 	bot.WaitIdleForTest(b, 5*time.Second)
 	if e, _ := srv.sessions.Get("th-web-1"); e.SessionID != "" {
@@ -148,6 +153,34 @@ func TestCaseCreateIntakeShell(t *testing.T) {
 		t.Fatalf("starter message missing case card: %v", spy.Sends)
 	}
 	assertAuditDetailContains(t, srv, `"origin":"web-case"`)
+}
+
+// TestCaseCreateHonoursCaseKeyOverride covers the only bridge between the
+// per-project prefix setting and the key that actually gets minted. The
+// setting is otherwise only proved to be *stored*.
+func TestCaseCreateHonoursCaseKeyOverride(t *testing.T) {
+	srv, _, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	bot.SetThreadAPIForTest(b, &bot.FakeThreadAPI{NextMsg: "m1", NextTh: "th-key-1"})
+	if err := srv.cfg.SetProjectCaseKey("proj", "shop"); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := postFix(t, srv, "/projects/proj/cases/new", sid, csrf, url.Values{
+		"title": {"Refund stuck in review"}, "severity": {"high"},
+	}); w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	e, ok := srv.sessions.Get("th-key-1")
+	if !ok {
+		t.Fatal("case not created")
+	}
+	if e.CaseKey != "SHOP-1" {
+		t.Fatalf("caseKey=%q want SHOP-1 (override, not the project name)", e.CaseKey)
+	}
 }
 
 // Notes queue an investigate run: phase promotes intake → investigate before

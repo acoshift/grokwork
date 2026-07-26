@@ -97,6 +97,17 @@ type Entry struct {
 	// intake | investigate | answered | fixing | shipping | closed
 	Phase string `json:"phase,omitempty"`
 
+	// CaseKey is the case's quotable identity ("WEBAPP-14"), assigned at intake
+	// and never changed — references written into commits, PRs and other cases
+	// have to keep resolving. Distinct from CustomerRef, which is *their* id for
+	// the ticket (ZD-4821) and is neither ours to mint nor guaranteed present.
+	// Empty on cases filed before keys existed; see internal/sessionstore/casekey.go.
+	CaseKey string `json:"caseKey,omitempty"`
+	// RelatedCases are other cases' keys this one points at — "same root cause
+	// as WEBAPP-9". Stored one-way and rendered both ways (the back-reference is
+	// derived), so neither case has to be edited to keep the pair in sync.
+	RelatedCases []string `json:"relatedCases,omitempty"`
+
 	Severity      string `json:"severity,omitempty"`      // low|medium|high|critical
 	CustomerTitle string `json:"customerTitle,omitempty"` // short external-safe title
 	CustomerRef   string `json:"customerRef,omitempty"`   // opaque external id

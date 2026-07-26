@@ -724,6 +724,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 	if d.NavProject != "" {
 		d.Project = d.NavProject
 	}
+	d.BackHref, d.BackLabel = s.sessionBackLink(ctx, d)
 	// Session lifecycle controls: fold the ownership/admin check into the
 	// startSessions gate so control affordances only render when the matching
 	// POST would actually run (auth-off keeps them hidden — the POSTs 404 there).
@@ -744,6 +745,13 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 		d.CanCaseClose = !closed && d.CanControlSession
 		d.CanCaseInvestigate = !closed && !shipPhase && (caps.Investigate || caps.FileEscalation || caps.StartSessions || d.CanControlSession)
 		d.CanCaseReopen = closed && (bot.CanReopenCaseCaps(caps) || d.CanControlSession)
+		// Cross-referencing stays available on a closed case: "the same thing
+		// happened again" is exactly the moment someone reaches for the case
+		// that was already resolved.
+		d.CanLinkCase = caps.Investigate || caps.FileEscalation || caps.StartSessions || d.CanControlSession
+	}
+	if d.SessionEntry.IsCase() && s.bot != nil {
+		d.CaseLinks = s.bot.RelatedCaseLinks(threadID)
 	}
 	return d
 }

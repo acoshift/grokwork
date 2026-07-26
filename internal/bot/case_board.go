@@ -10,8 +10,11 @@ import (
 
 // CaseRow is one Mode=case session on the web case board.
 type CaseRow struct {
-	ThreadID    string
-	Project     string
+	ThreadID string
+	Project  string
+	// CaseKey is the case's quotable id ("WEBAPP-14"); empty on cases filed
+	// before keys existed.
+	CaseKey     string
 	Phase       string // normalized; unknown/empty phases bucket as intake
 	Severity    string // low|medium|high|critical (normalized) or ""
 	Title       string // CustomerTitle → Goal → "(untitled case)"
@@ -326,16 +329,11 @@ func (b *Bot) ListCaseBoardQuery(q CaseBoardQuery) CaseBoard {
 }
 
 func (b *Bot) caseRowFrom(threadID string, e sessionstore.Entry, phase string) CaseRow {
-	title := strings.TrimSpace(e.CustomerTitle)
-	if title == "" {
-		title = strings.TrimSpace(e.Goal)
-	}
-	if title == "" {
-		title = "(untitled case)"
-	}
+	title := caseRowTitle(e)
 	row := CaseRow{
 		ThreadID:       threadID,
 		Project:        e.Project,
+		CaseKey:        strings.TrimSpace(e.CaseKey),
 		Phase:          phase,
 		Severity:       strings.ToLower(strings.TrimSpace(e.Severity)),
 		Title:          title,
