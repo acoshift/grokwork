@@ -3726,20 +3726,31 @@
         letter-spacing: -0.015em;
         color: var(--text);
       }
+      /* iOS sheet dismiss — SF Symbol xmark.circle.fill: systemGray disc,
+         white xmark, no stroke. Hairline ring + typographic × was the oddity. */
       .rail-sheet-x {
-        width: 1.9rem;
-        height: 1.9rem;
+        width: 1.875rem;
+        height: 1.875rem;
         padding: 0;
-        display: flex;
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        border: 1px solid var(--border);
+        border: none;
         border-radius: 50%;
-        background: var(--surface-l1);
-        color: var(--muted);
-        font-size: 1.05rem;
-        line-height: 1;
+        background: #8e8e93;
+        color: #fff;
         cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        transition: opacity 0.12s ease, transform 0.12s ease;
+      }
+      .rail-sheet-x svg {
+        display: block;
+        width: 0.7rem;
+        height: 0.7rem;
+      }
+      .rail-sheet-x:active {
+        opacity: 0.72;
+        transform: scale(0.94);
       }
       /* Rail cards lose their own frame inside the sheet — the sheet is the
          surface, and nested cards on a small screen read as clutter. */
@@ -5644,7 +5655,12 @@
 <div class="rail-sheet-head">
   <span class="rail-sheet-grip" aria-hidden="true"></span>
   <span class="rail-sheet-title">Actions</span>
-  <button type="button" class="rail-sheet-x" data-rail-close aria-label="Close actions">&times;</button>
+  <button type="button" class="rail-sheet-x" data-rail-close aria-label="Close actions">
+    {{/* SF Symbol xmark proportions — medium weight, round caps. */}}
+    <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      <path d="M2.2 2.2l7.6 7.6M9.8 2.2l-7.6 7.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+  </button>
 </div>
 {{end}}
 {{/* Model dropdowns. Options are grouped by the CLI each name routes to, so the
