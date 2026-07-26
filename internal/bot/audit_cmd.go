@@ -37,6 +37,34 @@ var (
 	errAuditDeniedQueueItem  = errors.New("forbidden: not the queue item author, thread owner, or project admin")
 )
 
+// Origins for session.start rows. The action name alone cannot answer "which
+// affordance started this run" — a thread task, a button, /fix-ci and /address all
+// enqueue the same job — and the affordance is what an operator reconstructing a
+// push actually needs. Named constants because these strings are queried.
+const (
+	auditOriginDiscord  = "discord"          // plain task / @Grok /start …
+	auditOriginFixCI    = "discord-fix-ci"   // /fix-ci
+	auditOriginButton   = "discord-button"   // completion-card Continue modal
+	auditOriginAddress  = "discord-address"  // /address
+	auditOriginDecision = "discord-decision" // decision-card click
+)
+
+// taskAuditKind labels a run by what the user asked for, mirroring web's
+// detail["kind"]. /start fix has a wider blast radius than an investigate and the
+// log has to distinguish them without the prompt text, which never gets written.
+func taskAuditKind(k Kind) string {
+	switch k {
+	case KindStartInvestigate:
+		return "investigate"
+	case KindStartFix:
+		return "fix"
+	case KindStartExplain:
+		return "explain"
+	default:
+		return "task"
+	}
+}
+
 // auditCmd appends one Discord-originated event. Nil bot / nil logger is a
 // no-op, so a Bot built without a data dir (most unit tests) needs no stub.
 //

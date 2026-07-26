@@ -8,6 +8,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/ghpr"
 )
 
@@ -85,6 +86,8 @@ func (b *Bot) handleAddress(s *discordgo.Session, m *discordgo.MessageCreate, pa
 		return
 	}
 	if !b.actorCanShip(m, e.Project) && !b.canControlThread(m, e) {
+		b.auditCmdMsg(audit.ActionSessionStart, m, e.Project, errAuditDeniedCapability,
+			map[string]any{"origin": auditOriginAddress, "kind": "address_review"})
 		replyText(s, m, "You're not allowed to `/address` (need builder caps or thread control).")
 		return
 	}
@@ -129,6 +132,16 @@ func (b *Bot) handleAddress(s *discordgo.Session, m *discordgo.MessageCreate, pa
 		URL:          pr.URL,
 		Comments:     comments,
 		Conversation: detail.Comments,
+	})
+	// Same action and kind as the web rail's "Address review" (internal/web/address.go),
+	// so one query answers "who dispatched an agent at this PR" across both surfaces.
+	// Comment bodies are the reviewers' prose and stay out; the counts are the record.
+	b.auditCmdMsg(audit.ActionSessionStart, m, e.Project, err, map[string]any{
+		"origin":     auditOriginAddress,
+		"kind":       "address_review",
+		"pr":         fmt.Sprintf("%s/%s#%d", pr.Owner, pr.Repo, pr.Number),
+		"comments":   len(comments),
+		"prComments": len(detail.Comments),
 	})
 	if err != nil {
 		replyText(s, m, "Address failed: "+err.Error())

@@ -1235,7 +1235,20 @@ func parentChannelID(s *discordgo.Session, channelID string) string {
 	return channelID
 }
 
+// handleTask runs a Discord-originated task. Audited as auditOriginDiscord.
 func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed) {
+	b.handleTaskOrigin(s, m, parsed, auditOriginDiscord, nil)
+}
+
+// handleTaskOrigin is handleTask with the audit provenance of whatever dispatched
+// it. Every Discord run funnels through here, so this — not the call sites — is
+// where session.start is recorded: the capability gate below is the *only* gate on
+// a Discord run, so a caller that audits before calling asserts a run that the
+// gate may still refuse. origin/detail describe the affordance; the outcome is read
+// off the gate and the enqueue.
+func (b *Bot) handleTaskOrigin(
+	s *discordgo.Session, m *discordgo.MessageCreate, parsed Parsed, origin string, detail map[string]any,
+) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("error: panic in handleTask msg=%s: %v", m.ID, r)
@@ -1371,10 +1384,27 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		item.authorID = m.Author.ID
 		item.authorName = m.Author.String()
 	}
+	// startDetail is the session.start detail for this dispatch: what was asked
+	// for, by which affordance. Prompt text is never included — a task can carry a
+	// customer's words.
+	startDetail := func(extra map[string]any) map[string]any {
+		d := map[string]any{"origin": origin, "kind": taskAuditKind(parsed.Kind)}
+		for k, v := range detail {
+			d[k] = v
+		}
+		for k, v := range extra {
+			d[k] = v
+		}
+		return d
+	}
+
 	// Capability gate (PR6): investigators may investigate freeform; Fix & ship needs CanShip.
 	if b.cfg != nil {
 		caps := b.cfg.ResolveCapabilities(proj.Name, item.actor.ID)
 		deny := func(msg string) {
+			// Every refusal below funnels through here, so one call covers them all.
+			b.auditCmd(audit.ActionSessionStart, item.actor, threadID, proj.Name, errAuditDeniedCapability,
+				startDetail(nil))
 			b.postOrEditThreadStatus(s, threadID, statusMsgID, msg, actionBarDone(threadID, b.sessionWebURL(threadID)))
 			if b.runs != nil {
 				b.runs.RemoveTaskFiles(threadID, taskID)
@@ -1411,6 +1441,10 @@ func (b *Bot) handleTask(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &runJob{cancel: cancel, start: time.Now(), project: proj.Name}
 	claimed, queuePos, qerr := b.claimOrEnqueue(threadID, job, item)
+	// One row per dispatch, written where the outcome is known: a queue failure
+	// started nothing and must not read as a run.
+	b.auditCmd(audit.ActionSessionStart, item.actor, threadID, proj.Name, qerr,
+		startDetail(map[string]any{"queuePos": queuePos, "queued": qerr == nil && !claimed}))
 	if qerr != nil {
 		cancel()
 		if b.runs != nil {

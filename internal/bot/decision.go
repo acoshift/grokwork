@@ -9,6 +9,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -252,10 +253,16 @@ func (b *Bot) handleDecisionClick(s *discordgo.Session, i *discordgo.Interaction
 		log.Printf("decision: project: %v", err)
 		return
 	}
-	_, _ = b.StartContinue(ContinueOpts{
+	_, startErr := b.StartContinue(ContinueOpts{
 		ThreadID: threadID,
 		Project:  proj.Name,
 		Prompt:   follow,
 		Actor:    actor,
+	})
+	// A decision click queues a model run like any other dispatch, so it is a
+	// session.start. The question id is recorded, never the option label — the model
+	// wrote those and they can quote a customer.
+	b.auditCmd(audit.ActionSessionStart, actor, threadID, proj.Name, startErr, map[string]any{
+		"origin": auditOriginDecision, "kind": "task", "questionId": qid, "via": "button",
 	})
 }

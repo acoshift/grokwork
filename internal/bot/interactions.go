@@ -1,14 +1,21 @@
 package bot
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
+
+// buttonAuditDetail marks a row as produced by a message-component click rather
+// than a text command — the same mutation, a different affordance. One shared value
+// is safe: auditCmd copies detail into a fresh map and never writes back.
+var buttonAuditDetail = map[string]any{"via": "button"}
 
 func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if i == nil || i.Interaction == nil {
@@ -81,15 +88,15 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 
 	switch action {
 	case actionCancel:
-		b.interactionCancel(s, i, threadID, user)
+		b.interactionCancel(s, i, threadID, project, user)
 	case actionContinue:
 		if err := s.InteractionRespond(i.Interaction, continueModal(threadID)); err != nil {
 			log.Printf("error: continue modal thread=%s: %v", threadID, err)
 		}
 	case actionReset:
-		b.interactionResetPrompt(s, i, threadID, user)
+		b.interactionResetPrompt(s, i, threadID, project, user)
 	case actionResetOK:
-		b.interactionResetConfirm(s, i, threadID, user)
+		b.interactionResetConfirm(s, i, threadID, project, user)
 	case actionResetNo:
 		// Update the confirm prompt so Yes/Never mind cannot be re-clicked.
 		respondUpdateMessage(s, i, "Reset cancelled.")
@@ -152,19 +159,33 @@ func (b *Bot) handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCr
 	}
 
 	m := messageCreateFromInteraction(i, user, prompt)
-	go b.handleTask(s, m, Parsed{Kind: KindTask, Prompt: prompt})
+	// Audited by handleTaskOrigin (it owns the capability gate), tagged as a button
+	// so a run started from a card is distinguishable from a typed follow-up.
+	go b.handleTaskOrigin(s, m, Parsed{Kind: KindTask, Prompt: prompt}, auditOriginButton, buttonAuditDetail)
 }
 
-func (b *Bot) interactionCancel(s *discordgo.Session, i *discordgo.InteractionCreate, threadID string, user *discordgo.User) {
+// interactionCancel is the completion card's Cancel button. It performs exactly
+// what `@Grok /cancel` does behind the same ownership gate, so it writes the same
+// audit rows — the button is the path most runs are actually cancelled from, and
+// detail["via"] is what tells the two apart afterwards.
+func (b *Bot) interactionCancel(
+	s *discordgo.Session, i *discordgo.InteractionCreate, threadID, project string, user *discordgo.User,
+) {
 	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(user.ID, e) {
+		b.auditCmd(audit.ActionSessionCancel, ActorFromUser(user), threadID, project,
+			errAuditDeniedControl, buttonAuditDetail)
 		respondEphemeral(s, i, denyControlText(e, "cancel"))
 		return
 	}
 	msg, ok := b.cancelCurrentRun(threadID, user.String())
 	if !ok {
+		// Same distinction /cancel makes: "nothing was running" is not a denial.
+		b.auditCmd(audit.ActionSessionCancel, ActorFromUser(user), threadID, project,
+			errors.New(msg), buttonAuditDetail)
 		respondEphemeral(s, i, msg)
 		return
 	}
+	b.auditCmd(audit.ActionSessionCancel, ActorFromUser(user), threadID, project, nil, buttonAuditDetail)
 	// Ack privately + announce in thread (matches /cancel visibility).
 	respondEphemeral(s, i, msg)
 	if _, err := discordSend(s, threadID, msg+" (via button · <@"+user.ID+">)"); err != nil {
@@ -172,8 +193,16 @@ func (b *Bot) interactionCancel(s *discordgo.Session, i *discordgo.InteractionCr
 	}
 }
 
-func (b *Bot) interactionResetPrompt(s *discordgo.Session, i *discordgo.InteractionCreate, threadID string, user *discordgo.User) {
+// interactionResetPrompt shows the confirm. Nothing is mutated here, but this is
+// where a user without control is actually turned away (the confirm buttons are
+// never rendered for them), so the denial has to be recorded here or the common
+// refusal leaves no row.
+func (b *Bot) interactionResetPrompt(
+	s *discordgo.Session, i *discordgo.InteractionCreate, threadID, project string, user *discordgo.User,
+) {
 	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(user.ID, e) {
+		b.auditCmd(audit.ActionSessionReset, ActorFromUser(user), threadID, project,
+			errAuditDeniedControl, buttonAuditDetail)
 		respondEphemeral(s, i, denyControlText(e, "reset"))
 		return
 	}
@@ -193,13 +222,22 @@ func (b *Bot) interactionResetPrompt(s *discordgo.Session, i *discordgo.Interact
 	}
 }
 
-func (b *Bot) interactionResetConfirm(s *discordgo.Session, i *discordgo.InteractionCreate, threadID string, user *discordgo.User) {
+func (b *Bot) interactionResetConfirm(
+	s *discordgo.Session, i *discordgo.InteractionCreate, threadID, project string, user *discordgo.User,
+) {
 	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(user.ID, e) {
+		// Reachable when control changed between the prompt and the click, so it is a
+		// real refusal of a real attempt and gets its own row.
+		b.auditCmd(audit.ActionSessionReset, ActorFromUser(user), threadID, project,
+			errAuditDeniedControl, buttonAuditDetail)
 		// Replace the confirm prompt (drops Yes/Never mind).
 		respondUpdateMessage(s, i, denyControlText(e, "reset"))
 		return
 	}
 	msg, err := b.resetThreadCore(threadID)
+	// Recorded before the error branch: a reset that dropped the worktree and then
+	// failed halfway is exactly the row an operator needs.
+	b.auditCmd(audit.ActionSessionReset, ActorFromUser(user), threadID, project, err, buttonAuditDetail)
 	if err != nil {
 		respondUpdateMessage(s, i, msg)
 		return
