@@ -1,0 +1,126 @@
+{{define "content"}}
+<h1 id="page-deploys-board">Deploys</h1>
+<p class="sub">
+  What is running where. One row per service and environment, showing the last
+  successful deploy that no later one has replaced. Pipelines and the deploy
+  buttons live on each project's own <span class="mono">Deploys</span> page.
+</p>
+
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap
+     into the region, not wipe the page. No filters in the URL: the board has
+     none, and htmx bakes this hx-get at render time. */}}
+<div class="live-region"
+     id="live-deploys-board"
+     hx-get="{{route "partial.deploys.board"}}"
+     hx-trigger="sse:deploy"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML"
+     hx-sync="this:queue last">
+  {{template "deploys_board_table" .}}
+</div>
+{{end}}
+
+{{define "deploys_board_table"}}
+{{$b := .DeployBoard}}
+<div class="grid">
+  <div class="card">
+    <div class="label">Lanes</div>
+    <div class="value">{{len $b.Rows}}</div>
+    <div class="hint">across {{$b.Projects}} project{{if ne $b.Projects 1}}s{{end}}</div>
+  </div>
+  <div class="card">
+    <div class="label">Live</div>
+    <div class="value">{{$b.Live}}</div>
+    <div class="hint">with a current deploy</div>
+  </div>
+  <div class="card">
+    <div class="label">Needs attention</div>
+    <div class="value">{{$b.Attention}}</div>
+    <div class="hint">{{if gt $b.Attention 0}}<span class="badge status-error">failed or never shipped</span>{{else}}all settled{{end}}</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Environments <span class="muted" style="font-weight:500;font-size:0.9rem">({{len $b.Rows}})</span></h2>
+  {{if $b.Rows}}
+  <div class="m-rows">
+    {{range $b.Rows}}
+    <a class="m-row" href="/projects/{{.Project}}/deploys{{if .RunID}}/{{.RunID}}{{end}}">
+      <span class="m-row-main">
+        <span class="m-row-t"><span class="mono">{{.Project}}</span> · <span class="mono">{{.Service}}</span> → <span class="mono">{{.Env}}</span></span>
+        <span class="m-row-s">
+          {{if .HasCurrent}}<span class="mono">{{.ShortSHA}}</span>{{if .Age}} · {{.Age}}{{end}}{{if .Actor}} · {{.Actor}}{{end}}
+          {{else}}never deployed{{end}}
+        </span>
+        <span class="m-row-s">
+          {{if .HasCurrent}}<span class="badge status-done">live</span>{{else}}<span class="badge status-error">no deploy</span>{{end}}
+          {{if .LatestStatus}}{{template "deploy_status_badge" .LatestStatus}}{{end}}
+        </span>
+      </span>
+    </a>
+    {{end}}
+  </div>
+  <div class="table-scroll m-hide">
+  <table>
+    <thead>
+      <tr>
+        <th>Project</th>
+        <th>Service</th>
+        <th>Environment</th>
+        <th>Commit</th>
+        <th>Status</th>
+        <th>By</th>
+        <th>Age</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range $b.Rows}}
+      <tr>
+        <td><a href="/projects/{{.Project}}/deploys">{{.Project}}</a></td>
+        <td class="mono">{{.Service}}{{if .Repo}}<div class="pr-ref mono">{{.Repo}}</div>{{end}}</td>
+        <td class="mono">{{.Env}}</td>
+        <td class="mono">
+          {{if .HasCurrent}}
+          <a href="/projects/{{.Project}}/deploys/{{.RunID}}">{{.ShortSHA}}</a>
+          {{if .Subject}}<div class="pr-ref">{{.Subject}}</div>{{end}}
+          {{else}}
+          <span class="muted">—</span>
+          {{end}}
+        </td>
+        <td>
+          {{if .HasCurrent}}
+          <span class="badge status-done">live</span>
+          {{else}}
+          <span class="badge status-error">never deployed</span>
+          {{end}}
+          {{if .LatestStatus}}
+          <a href="/projects/{{.Project}}/deploys/{{.LatestRunID}}" title="Newest run on this lane{{if .LatestAge}} · {{.LatestAge}}{{end}}">{{template "deploy_status_badge" .LatestStatus}}</a>
+          {{end}}
+        </td>
+        <td>{{if .Actor}}{{.Actor}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="muted" title="{{.At}}">{{if .Age}}{{.Age}}{{else}}—{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">No deploys recorded yet. Trigger one from a project's Deploys page.</div>
+  {{end}}
+  {{if $b.Truncated}}
+  <p class="sub">
+    Showing lanes seen in the {{$b.ScanLimit}} most recently updated deploy runs.
+    A service that has not been deployed in a long time may be missing here —
+    its project's own Deploys page still lists every run.
+  </p>
+  {{end}}
+</div>
+{{end}}
+
+{{/* One spelling of a run status badge, shared by the phone rows and the table. */}}
+{{define "deploy_status_badge"}}
+<span class="badge {{if eq . "succeeded"}}status-done{{else if eq . "failed"}}status-error{{else if eq . "running"}}live{{else if eq . "cancelled"}}status-cancelled{{else}}status-warn{{end}}">{{.}}</span>
+{{end}}

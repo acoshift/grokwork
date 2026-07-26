@@ -15,6 +15,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/deploy"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -370,6 +371,7 @@ func TestPreviewServer(t *testing.T) {
 			Note: "Re-check the idempotency key change in the settle path.",
 		})
 	}
+	seedPreviewDeploys(t, srv)
 	// Synthetic git/gh so the diff review UI can be exercised with a large
 	// changeset: /projects/webapp/commits → commit detail (lazy per-file
 	// hunks), /prs/acme/webapp/128/diff for the PR surface.
@@ -742,4 +744,69 @@ func previewMinutes(n int) *int { return &n }
 
 func previewStamp(d time.Duration) string {
 	return time.Now().UTC().Add(d).Format(time.RFC3339)
+}
+
+// seedPreviewDeploys fills the run store so /deploys (the cross-project board)
+// and each project's own Deploys page have something to render. Every state the
+// board can show is present: a settled lane, a lane with a failure sitting on
+// top of a good deploy, a deploy in flight, and a lane that has never shipped.
+func seedPreviewDeploys(t *testing.T, srv *Server) {
+	t.Helper()
+	store := srv.Deploys().Store()
+	add := func(r deploy.Run) string {
+		t.Helper()
+		r.ID = deploy.NewRunID()
+		r.ShortSHA = r.SHA[:7]
+		if err := store.Create(r); err != nil {
+			t.Fatal(err)
+		}
+		return r.ID
+	}
+	// webapp/web: two quiet environments, prod one release behind stag.
+	add(deploy.Run{
+		Project: "webapp", Repo: "acme/webapp", Service: "web", Env: "stag",
+		Ref: "main", SHA: "9f31c07ab4e25d18", Subject: "Debounce the settle retries",
+		Status: deploy.StatusSucceeded, ActorName: "mint",
+		QueuedAt: previewStamp(-3 * time.Hour), StartedAt: previewStamp(-3 * time.Hour),
+		EndedAt: previewStamp(-170 * time.Minute),
+	})
+	add(deploy.Run{
+		Project: "webapp", Repo: "acme/webapp", Service: "web", Env: "prod",
+		Ref: "main", SHA: "4f2c9ae0b17d43c2", Subject: "Idempotency key on the settle path",
+		Status: deploy.StatusSucceeded, ActorName: "poon",
+		QueuedAt: previewStamp(-30 * time.Hour), StartedAt: previewStamp(-30 * time.Hour),
+		EndedAt: previewStamp(-29 * time.Hour),
+	})
+	// webapp/api prod: live at an older commit, newest attempt failed.
+	live := add(deploy.Run{
+		Project: "webapp", Repo: "acme/webapp", Service: "api", Env: "prod",
+		Ref: "main", SHA: "b7d21c3aa90f14e2", Subject: "Drain the webhook queue on boot",
+		Status: deploy.StatusSucceeded, ActorName: "poon",
+		QueuedAt: previewStamp(-52 * time.Hour), StartedAt: previewStamp(-52 * time.Hour),
+		EndedAt: previewStamp(-51 * time.Hour),
+	})
+	_ = live
+	add(deploy.Run{
+		Project: "webapp", Repo: "acme/webapp", Service: "api", Env: "prod",
+		Ref: "main", SHA: "c0ffee11d00d2233", Subject: "Bump the settle worker pool",
+		Status: deploy.StatusFailed, ActorName: "beam",
+		Error:    `step "rollout" failed (exit 1)`,
+		QueuedAt: previewStamp(-40 * time.Minute), StartedAt: previewStamp(-40 * time.Minute),
+		EndedAt: previewStamp(-38 * time.Minute),
+	})
+	// api project: one deploy in flight, one environment nobody has shipped to.
+	add(deploy.Run{
+		Project: "api", Repo: "acme/api", Service: "api", Env: "dev",
+		Ref: "main", SHA: "3d5a81b6c9074fe0", Subject: "Split the ingest handler",
+		Status: deploy.StatusRunning, ActorName: "beam",
+		QueuedAt: previewStamp(-4 * time.Minute), StartedAt: previewStamp(-4 * time.Minute),
+	})
+	add(deploy.Run{
+		Project: "api", Repo: "acme/api", Service: "worker", Env: "prod",
+		Ref: "main", SHA: "aa17e930b2c4415f", Subject: "First cut of the worker chart",
+		Status: deploy.StatusFailed, ActorName: "mint",
+		Error:    `step "helm-upgrade" failed (exit 1)`,
+		QueuedAt: previewStamp(-6 * 24 * time.Hour), StartedAt: previewStamp(-6 * 24 * time.Hour),
+		EndedAt: previewStamp(-6*24*time.Hour + 3*time.Minute),
+	})
 }

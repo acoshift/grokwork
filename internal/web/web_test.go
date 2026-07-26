@@ -150,6 +150,9 @@ func TestPagesRender(t *testing.T) {
 		{"/history", `id="page-history"`},
 		{"/worktrees", `id="page-worktrees"`},
 		{"/worktrees", "Prune idle now"},
+		// Cross-project deploy board: renders with no runs on disk at all.
+		{"/deploys", `id="page-deploys-board"`},
+		{"/deploys", `id="live-deploys-board"`},
 		// Project workspace pages (project-first UX).
 		{"/projects/proj", `id="page-project-overview"`},
 		{"/projects/proj", `id="live-project-pulse"`},
@@ -937,6 +940,7 @@ func TestNavBrandChrome(t *testing.T) {
 		">Cases<",
 		">Sessions<",
 		">Worktrees<",
+		">Deploys<",
 		">Config<",
 		"Across projects",
 		"Grok Work",
@@ -1070,6 +1074,8 @@ func TestNavScopeRules(t *testing.T) {
 		{"/ship", ""},
 		{"/ship?project=proj", ""}, // data filter, not workspace scope
 		{"/cases", ""},
+		{"/deploys", ""},                   // cross-project lead view, not a workspace
+		{"/projects/proj/deploys", "proj"}, // its per-project sibling still scopes
 		{"/projects/proj", "proj"},
 		{"/projects/proj/ship", "proj"},
 		{"/projects/proj/cases", "proj"},

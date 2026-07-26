@@ -4128,6 +4128,10 @@
         <a href="{{route "ship"}}" data-icon="ship" class="{{if .IsShip}}active{{end}}">Ship</a>
         <a href="{{route "cases"}}" data-icon="cases" class="{{if .IsCases}}active{{end}}">Cases</a>
         <a href="/reviews" data-icon="issues" class="{{if .IsReviews}}active{{end}}">Reviews</a>
+        {{/* Mirrors the workspace order (Deploys immediately before Sessions).
+             /deploys carries no project segment, so navScopeFromURL and its JS
+             mirror both leave the shell global with no rule of their own. */}}
+        <a href="{{route "deploys"}}" data-icon="deploys" class="{{if .IsDeploys}}active{{end}}">Deploys</a>
         <a href="{{route "sessions"}}" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">Sessions</a>
         <a href="{{route "worktrees"}}" data-icon="worktrees" class="{{if .IsWorktrees}}active{{end}}">Worktrees</a>
         <a href="{{route "spend"}}" data-icon="spend" class="{{if .IsSpend}}active{{end}}">Spend</a>

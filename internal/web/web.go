@@ -46,9 +46,13 @@ type Server struct {
 	oauth       DiscordOAuth // nil → HTTPDiscordOAuth
 	audit       *audit.Logger
 	// Test injectables (nil → production defaults).
-	ghRunner  ghpr.Runner
-	deploys   *deploy.Engine
-	linearNew func(apiKey string) *linear.Client
+	ghRunner ghpr.Runner
+	deploys  *deploy.Engine
+	// deployScanLimit bounds the /deploys board's fold over the run store
+	// (0 → deploy.DefaultLaneScanLimit); tests shrink it to reach the clipped
+	// path without writing hundreds of records.
+	deployScanLimit int
+	linearNew       func(apiKey string) *linear.Client
 	// Fix-with-Grok rate limit (lazy init).
 	startLimit *startRateLimiter
 	// PR raw-patch cache (page + per-file fragments share one gh pr diff).
@@ -115,6 +119,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"cases":                              "/cases",
 		"inbox":                              "/inbox",
 		"spend":                              "/spend",
+		"deploys":                            "/deploys",
 		"worktrees":                          "/worktrees",
 		"worktrees.prune":                    "/worktrees/prune",
 		"worktrees.pruneIdle":                "/worktrees/prune-idle",
@@ -183,6 +188,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"partial.history.turns":   "/partials/history/turns/",
 		"partial.session":         "/partials/sessions/",
 		"partial.worktrees.table": "/partials/worktrees/table",
+		"partial.deploys.board":   "/partials/deploys/board",
 		"partial.issues.table":    "/partials/issues/table",
 		"partial.pr.gates":        "/partials/prs/",
 		"partial.config.lists":    "/partials/config/lists",
@@ -253,6 +259,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("start", "layout.tmpl", "start.tmpl")
 	tp.ParseFiles("commits", "layout.tmpl", "commits.tmpl")
 	tp.ParseFiles("deploys", "layout.tmpl", "deploys.tmpl")
+	tp.ParseFiles("deploys_board", "layout.tmpl", "deploys_board.tmpl")
 	tp.ParseFiles("deploy_run", "layout.tmpl", "deploy_run.tmpl")
 	tp.ParseFiles("commit_detail", "layout.tmpl", "commit_detail.tmpl", "diff_review.tmpl")
 
@@ -282,6 +289,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /cases", s.requireAuth(hime.Handler(s.casesGlobal)))
 	mux.Handle("GET /inbox", s.requireAuth(hime.Handler(s.inboxPage)))
 	mux.Handle("GET /worktrees", s.requireAuth(hime.Handler(s.worktreesPage)))
+	// Cross-project deploy board. Read-only and global — triggering stays on
+	// /projects/{p}/deploys, where the manifest and the environment gates are.
+	mux.Handle("GET /deploys", s.requireAuth(hime.Handler(s.deploysBoard)))
 	mux.Handle("GET /spend", s.requireAuth(hime.Handler(s.spendPage)))
 	mux.Handle("GET /config", s.requireAdmin(hime.Handler(s.configPage)))
 	mux.Handle("GET /config/projects/{name}", s.requireAdmin(hime.Handler(s.projectConfigPage)))
@@ -429,6 +439,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/history/turns/{threadID}", s.requireAuth(hime.Handler(s.partialHistoryTurns)))
 	mux.Handle("GET /partials/sessions/{threadID}", s.requireAuth(hime.Handler(s.partialSession)))
 	mux.Handle("GET /partials/worktrees/table", s.requireAuth(hime.Handler(s.partialWorktreesTable)))
+	mux.Handle("GET /partials/deploys/board", s.requireAuth(hime.Handler(s.partialDeploysBoard)))
 	mux.Handle("GET /partials/issues/table", s.requireAuth(hime.Handler(s.partialIssuesTable)))
 	mux.Handle("GET /partials/prs/{owner}/{repo}/{n}/gates", s.requireAuth(hime.Handler(s.partialPRGates)))
 	mux.Handle("GET /partials/config/lists", s.requireAdmin(hime.Handler(s.partialConfigLists)))
@@ -614,6 +625,8 @@ type pageData struct {
 	// the confirm modal can read as dangerous for those and not for dev.
 	DeployEnvGated map[string]bool
 	DeployRecent   []deploy.Run
+	// DeployBoard is the cross-project /deploys lead view (one row per lane).
+	DeployBoard deployBoard
 	// CanGenerateManifest gates the "write this with an agent" form.
 	CanGenerateManifest bool
 	// Deploy settings tab.
