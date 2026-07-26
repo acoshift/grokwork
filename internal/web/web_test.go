@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2405,6 +2406,60 @@ func TestWorktreePruneRoutes(t *testing.T) {
 	}
 }
 
+// syncRecorder serializes access to an httptest.ResponseRecorder.
+//
+// ResponseRecorder is not safe for concurrent use, and an SSE handler keeps
+// writing for as long as the stream is open. A test that polls Body.String() to
+// wait for the first event therefore races every Write in the handler goroutine
+// — which is what -race reported against TestSSE.
+//
+// It must implement http.Flusher by type assertion rather than relying on
+// http.ResponseController: Server.sse does `flusher, ok := w.(http.Flusher)` and
+// gives up when that fails, so a wrapper without Flush would silently change
+// what this test exercises.
+type syncRecorder struct {
+	mu  sync.Mutex
+	rec *httptest.ResponseRecorder
+}
+
+func newSyncRecorder() *syncRecorder {
+	return &syncRecorder{rec: httptest.NewRecorder()}
+}
+
+// Header is unguarded: the handler sets headers before starting the write loop,
+// and the test only reads them after <-done.
+func (s *syncRecorder) Header() http.Header { return s.rec.Header() }
+
+func (s *syncRecorder) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rec.Write(p)
+}
+
+func (s *syncRecorder) WriteHeader(code int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rec.WriteHeader(code)
+}
+
+func (s *syncRecorder) Flush() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rec.Flush()
+}
+
+func (s *syncRecorder) body() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rec.Body.String()
+}
+
+func (s *syncRecorder) code() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rec.Code
+}
+
 func TestSSE(t *testing.T) {
 	srv, _, _ := testServer(t)
 	h := srv.Handler()
@@ -2413,7 +2468,7 @@ func TestSSE(t *testing.T) {
 	defer cancel()
 
 	req := httptest.NewRequest(http.MethodGet, "/events", nil).WithContext(ctx)
-	w := httptest.NewRecorder()
+	w := newSyncRecorder()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -2423,7 +2478,7 @@ func TestSSE(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	var body string
 	for time.Now().Before(deadline) {
-		body = w.Body.String()
+		body = w.body()
 		if strings.Contains(body, "data:") {
 			cancel()
 			break
@@ -2436,8 +2491,8 @@ func TestSSE(t *testing.T) {
 	if !strings.Contains(ct, "text/event-stream") {
 		t.Fatalf("Content-Type=%q", ct)
 	}
-	if w.Code != http.StatusOK {
-		t.Fatalf("status=%d", w.Code)
+	if w.code() != http.StatusOK {
+		t.Fatalf("status=%d", w.code())
 	}
 
 	var payload string
