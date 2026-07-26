@@ -27,11 +27,17 @@ import (
 // generation, …) — each spawns a real coding-CLI child process, so this is a
 // cost gate, not a Fix-specific quirk.
 //
-// startRateMax must be >= fixBulkMax: bulk Fix consumes budget proportional to
-// its batch size (see postIssuesBulkFix), so a single full-size bulk request
-// has to fit in one window or the feature would be unusable at its own limit.
+// This was 5 while it only gated Fix. It is 10 because bulk Fix now consumes
+// budget proportional to its batch size (see postIssuesBulkFix), so a
+// full-size bulk request must fit inside one window or the feature would be
+// unusable at its own documented maximum. That is a deliberate doubling of the
+// per-actor start budget, not an accident of the refactor.
+//
+// Deliberately NOT written as `= fixBulkMax`: coupling a rate limit to a batch
+// size means raising the batch cap would silently raise the rate limit too.
+// TestStartRateMaxCoversFullBulkBatch pins the invariant instead.
 const (
-	startRateMax    = fixBulkMax
+	startRateMax    = 10
 	startRateWindow = time.Minute
 )
 

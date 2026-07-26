@@ -500,6 +500,14 @@ func TestFixLinearCreate(t *testing.T) {
 	if !strings.HasPrefix(loc, "/sessions/lin-web-1") {
 		t.Fatalf("Location=%q", loc)
 	}
+	// Wait for the async run before reading the entry. Store.Get returns an
+	// Entry copy, but its Issues slice shares a backing array with the stored
+	// entry, so reading it while the run's upsertIssue is still appending is a
+	// data race — caught by -race once atomic writes added fsync latency and
+	// widened the window. The t.Cleanup wait above is too late: it runs after
+	// the body, not before this read.
+	bot.WaitIdleForTest(b, 5*time.Second)
+
 	e, ok := srv.sessions.Get("lin-web-1")
 	if !ok || len(e.Issues) != 1 || !e.Issues[0].IsLinear() {
 		t.Fatalf("%+v", e)
@@ -877,3 +885,15 @@ func boolJSON(ok bool) string {
 }
 
 // linearStubClient unused placeholder removed
+
+// TestStartRateMaxCoversFullBulkBatch pins the invariant that used to be
+// expressed as `startRateMax = fixBulkMax`. Coupling the two meant raising the
+// bulk batch cap would silently raise the per-actor rate limit; decoupling them
+// needs this assertion so the pair cannot drift into a state where a full-size
+// bulk Fix can never be admitted.
+func TestStartRateMaxCoversFullBulkBatch(t *testing.T) {
+	if startRateMax < fixBulkMax {
+		t.Fatalf("startRateMax (%d) < fixBulkMax (%d): a full-size bulk Fix could never fit in one window",
+			startRateMax, fixBulkMax)
+	}
+}

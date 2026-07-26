@@ -341,6 +341,32 @@ func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem
 		item.intentPreview = intentPreview(item.parsed.Prompt, 80)
 	}
 
+	// Light concurrency caps (0 = unlimited), checked BEFORE taking this
+	// thread's lock. The check scans other threads' threadState.mu, so holding
+	// our own across it would be an AB-BA cycle: two goroutines claiming two
+	// different threads would each hold their own mu and block on the other's.
+	// Excluding self is not enough — see
+	// TestConcurrentClaimsOnDistinctThreadsDoNotDeadlock.
+	//
+	// threadBusy peeks under a short-lived lock and releases before the scan.
+	// A thread that is already busy will queue this item rather than start a
+	// new run, so caps must not apply to it. The peek can go stale between here
+	// and the claim below, which at worst mis-charges one item in a race — the
+	// same looseness "light cap" already implied, and strictly better than the
+	// previous behaviour of charging every follow-up.
+	if b.cfg != nil && !b.threadBusy(threadID) {
+		if max := b.cfg.MaxConcurrentRunsValue(); max > 0 && b.countActiveRuns() >= max {
+			return false, 0, fmt.Errorf("host concurrent run limit reached (%d)", max)
+		}
+		if maxU := b.cfg.MaxConcurrentRunsUserValue(); maxU > 0 {
+			if uid := runActorID(item); uid != "" {
+				if b.countActiveRunsByUser(uid) >= maxU {
+					return false, 0, fmt.Errorf("per-user concurrent run limit reached (%d)", maxU)
+				}
+			}
+		}
+	}
+
 	st := b.stateFor(threadID)
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -374,25 +400,6 @@ func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem
 			return false, 0, err
 		}
 		return false, len(st.queue), nil
-	}
-
-	// Light concurrency caps (0 = unlimited), checked only here: this item
-	// is about to become a NEW active run (st.job == nil, above). A
-	// follow-up that would only queue behind the caller's own already-
-	// running job on this thread must never be charged against the cap.
-	// The current thread is excluded from the scan (see
-	// countActiveRunsExcluding) since st.mu is already held here.
-	if b.cfg != nil {
-		if max := b.cfg.MaxConcurrentRunsValue(); max > 0 && b.countActiveRunsExcluding(threadID) >= max {
-			return false, 0, fmt.Errorf("host concurrent run limit reached (%d)", max)
-		}
-		if maxU := b.cfg.MaxConcurrentRunsUserValue(); maxU > 0 {
-			if uid := runActorID(item); uid != "" {
-				if b.countActiveRunsByUserExcluding(uid, threadID) >= maxU {
-					return false, 0, fmt.Errorf("per-user concurrent run limit reached (%d)", maxU)
-				}
-			}
-		}
 	}
 
 	st.job = job
@@ -486,27 +493,42 @@ func (b *Bot) clearQueue(threadID string) int {
 	return n
 }
 
-func (b *Bot) countActiveRuns() int {
-	return b.countActiveRunsExcluding("")
+// threadBusy reports whether threadID currently has an active run. It takes
+// that thread's lock only for the peek and releases it immediately, so callers
+// may safely follow it with countActiveRuns / countActiveRunsByUser, which lock
+// every thread in turn. Holding one thread's mu across those scans deadlocks —
+// see the cap check in claimOrEnqueueInternal.
+func (b *Bot) threadBusy(threadID string) bool {
+	if b == nil {
+		return false
+	}
+	v, ok := b.states.Load(threadID)
+	if !ok {
+		return false
+	}
+	st, _ := v.(*threadState)
+	if st == nil {
+		return false
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.job != nil
 }
 
-// countActiveRunsExcluding counts active runs, skipping excludeThreadID.
-// Callers holding excludeThreadID's threadState.mu (deciding whether to
-// claim it) must pass it here: Range would otherwise try to re-lock that
-// same *threadState.mu from within the lock, which self-deadlocks since
-// sync.Mutex is not reentrant. A thread excluded this way is by definition
-// not yet active (its own job==nil is what the caller is deciding), so
-// omitting it from the scan doesn't undercount.
-func (b *Bot) countActiveRunsExcluding(excludeThreadID string) int {
+// countActiveRuns counts threads with an active run, host-wide.
+//
+// It locks each thread in turn, so no caller may hold any threadState.mu while
+// calling it.
+func (b *Bot) countActiveRuns() int {
 	if b == nil {
 		return 0
 	}
 	n := 0
-	b.states.Range(func(k, v any) bool {
-		if excludeThreadID != "" && k.(string) == excludeThreadID {
+	b.states.Range(func(_, v any) bool {
+		st, _ := v.(*threadState)
+		if st == nil {
 			return true
 		}
-		st := v.(*threadState)
 		st.mu.Lock()
 		if st.job != nil {
 			n++
@@ -517,14 +539,12 @@ func (b *Bot) countActiveRunsExcluding(excludeThreadID string) int {
 	return n
 }
 
+// countActiveRunsByUser counts active runs started by userID. The id is
+// normalized on both sides (here and where runJob.actorID is stamped) so a bare
+// snowflake and its "discord:"-namespaced spelling are one actor, not two.
+//
+// Same locking rule as countActiveRuns: no threadState.mu may be held.
 func (b *Bot) countActiveRunsByUser(userID string) int {
-	return b.countActiveRunsByUserExcluding(userID, "")
-}
-
-// countActiveRunsByUserExcluding is the per-user analogue of
-// countActiveRunsExcluding — see that function for why exclusion (rather
-// than just locking everything) is required.
-func (b *Bot) countActiveRunsByUserExcluding(userID, excludeThreadID string) int {
 	if b == nil || userID == "" {
 		return 0
 	}
@@ -533,10 +553,7 @@ func (b *Bot) countActiveRunsByUserExcluding(userID, excludeThreadID string) int
 		return 0
 	}
 	n := 0
-	b.states.Range(func(k, v any) bool {
-		if excludeThreadID != "" && k.(string) == excludeThreadID {
-			return true
-		}
+	b.states.Range(func(_, v any) bool {
 		st, _ := v.(*threadState)
 		if st == nil {
 			return true
