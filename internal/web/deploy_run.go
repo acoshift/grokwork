@@ -61,8 +61,9 @@ func (s *Server) postDeploy(ctx *hime.Context) error {
 	run, err := s.deploys.Trigger(ctx.Context(), deploy.TriggerRequest{
 		Project: project, Repo: slug, RepoPath: repoPath,
 		Service: service, Env: env, Ref: ref,
-		Actor: deploy.Actor{ID: userID, Name: name},
-		Caps:  s.cfg.ResolveCapabilities(project, userID, nil),
+		ExpectSHA: strings.TrimSpace(ctx.PostFormValue("expect_sha")),
+		Actor:     deploy.Actor{ID: userID, Name: name},
+		Caps:      s.cfg.ResolveCapabilities(project, userID, nil),
 	})
 	s.auditAction(ctx, "deploy.trigger", err, map[string]any{
 		"project": project, "service": service, "env": env, "ref": ref, "sha": run.SHA, "runId": run.ID,

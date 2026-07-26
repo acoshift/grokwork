@@ -997,3 +997,179 @@ services:
 		t.Fatalf("redeploy status = %q: %s", got.Status, got.Error)
 	}
 }
+
+func gatedEngine(t *testing.T) (*Engine, *config.Config, string, string) {
+	t.Helper()
+	manifest := `version: 1
+environments: [dev, prod]
+services:
+  api:
+    steps:
+      - { name: ok, run: "true" }
+`
+	origin := gitRepo(t, manifest)
+	clone := cloneRepo(t, origin)
+	cfg := engineConfig(t, clone)
+	if err := cfg.SetProjectDeployEnabled("app", true); err != nil {
+		t.Fatal(err)
+	}
+	// prod is gated; dev is not — the drift check applies only to the former.
+	if err := cfg.SetProjectDeployEnvPolicy("app", "prod", config.DeployEnvPolicy{
+		RequireCapability: "approve", AllowedRefs: []string{"*"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectDeployEnvPolicy("app", "dev", config.DeployEnvPolicy{
+		AllowedRefs: []string{"*"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eng, err := NewEngine(cfg, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		eng.Stop(ctx)
+	})
+	return eng, cfg, origin, clone
+}
+
+func approverCaps() config.Capabilities {
+	return config.Capabilities{StartSessions: true, GithubWrites: true, Approve: true}
+}
+
+// TestGatedDeployRefusesWhenTheRefMoved is the drift guard. The trigger fetches
+// before resolving, so a protected environment must not silently ship a commit
+// the operator never saw.
+func TestGatedDeployRefusesWhenTheRefMoved(t *testing.T) {
+	skipOnWindows(t)
+	eng, _, origin, clone := gatedEngine(t)
+
+	// What the page showed.
+	shown, err := gitworktree.ResolveRefSHA(context.Background(), clone, "origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Someone pushes between page load and click.
+	mustEmptyCommit(t, origin)
+	moved := headSHA(t, origin)
+
+	_, err = eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: clone, Service: "api", Env: "prod",
+		Caps: approverCaps(), ExpectSHA: shown,
+	})
+	if err == nil {
+		t.Fatal("gated deploy shipped a commit the operator never reviewed")
+	}
+	for _, want := range []string{"moved", shortSHAOf(shown), shortSHAOf(moved), "reload"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+func TestGatedDeployProceedsWhenTheRefIsUnchanged(t *testing.T) {
+	skipOnWindows(t)
+	eng, _, _, clone := gatedEngine(t)
+	shown, err := gitworktree.ResolveRefSHA(context.Background(), clone, "origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: clone, Service: "api", Env: "prod",
+		Caps: approverCaps(), ExpectSHA: shown,
+	})
+	if err != nil {
+		t.Fatalf("gated deploy refused an unchanged ref: %v", err)
+	}
+	if run.SHA != shown {
+		t.Fatalf("deployed %s, want the reviewed %s", run.SHA, shown)
+	}
+	waitTerminal(t, eng, run.ID)
+}
+
+// TestGatedDeployRequiresAnExpectation is the fail-closed half: a caller that
+// omits the expectation must be refused, not silently exempted.
+func TestGatedDeployRequiresAnExpectation(t *testing.T) {
+	skipOnWindows(t)
+	eng, _, _, clone := gatedEngine(t)
+	_, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: clone, Service: "api", Env: "prod",
+		Caps: approverCaps(), // no ExpectSHA
+	})
+	if err == nil {
+		t.Fatal("gated deploy accepted with no reviewed commit")
+	}
+	if !strings.Contains(err.Error(), "confirmed") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+// TestUngatedDeployIgnoresDrift: for dev, deploying the current tip is the
+// intent, so a moved ref must not add friction.
+func TestUngatedDeployIgnoresDrift(t *testing.T) {
+	skipOnWindows(t)
+	eng, _, origin, clone := gatedEngine(t)
+	shown, err := gitworktree.ResolveRefSHA(context.Background(), clone, "origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustEmptyCommit(t, origin)
+	moved := headSHA(t, origin)
+
+	run, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: clone, Service: "api", Env: "dev",
+		Caps: builderCaps(), ExpectSHA: shown,
+	})
+	if err != nil {
+		t.Fatalf("ungated deploy refused: %v", err)
+	}
+	if run.SHA != moved {
+		t.Fatalf("deployed %s, want the current tip %s", run.SHA, moved)
+	}
+	waitTerminal(t, eng, run.ID)
+
+	// And with no expectation at all.
+	mustEmptyCommit(t, origin)
+	if _, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: clone, Service: "api", Env: "dev", Caps: builderCaps(),
+	}); err != nil {
+		t.Fatalf("ungated deploy required an expectation: %v", err)
+	}
+}
+
+// TestGatedRedeployNeedsNoExpectation: a redeploy is SHA-pinned, so there is
+// nothing to drift — and blocking it would break rollback, which is the one
+// thing a gated environment needs most during an incident.
+func TestGatedRedeployNeedsNoExpectation(t *testing.T) {
+	skipOnWindows(t)
+	eng, _, origin, clone := gatedEngine(t)
+	shown, err := gitworktree.ResolveRefSHA(context.Background(), clone, "origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: clone, Service: "api", Env: "prod",
+		Caps: approverCaps(), ExpectSHA: shown,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitTerminal(t, eng, first.ID)
+
+	// The branch moves on; a rollback must still be possible with no expectation.
+	mustEmptyCommit(t, origin)
+	again, err := eng.Trigger(context.Background(), TriggerRequest{
+		Project: "app", RepoPath: clone, Service: "api", Env: "prod",
+		Caps: approverCaps(), RedeployOf: first.ID,
+	})
+	if err != nil {
+		t.Fatalf("gated redeploy refused: %v", err)
+	}
+	if again.SHA != first.SHA {
+		t.Fatalf("redeploy SHA = %s, want the pinned %s", again.SHA, first.SHA)
+	}
+	waitTerminal(t, eng, again.ID)
+}

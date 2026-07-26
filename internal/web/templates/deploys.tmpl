@@ -119,7 +119,7 @@ services:
       {{$gated := index $.DeployEnvGated .Env}}
       <form method="post" action="/projects/{{$.Project}}/deploys" class="inline"
             style="grid-template-columns: 1fr 12rem auto;"
-            data-confirm="Deploy {{$svc}} to {{.Env}} at {{$.DeployShortSHA}}? {{len .Steps}} step{{if ne (len .Steps) 1}}s{{end}} will run against {{.Env}}."
+            data-confirm="Deploy {{$svc}} to {{.Env}} at {{$.DeployShortSHA}}? {{len .Steps}} step{{if ne (len .Steps) 1}}s{{end}} will run against {{.Env}}.{{if $gated}} If the branch has moved since this page loaded, the deploy is refused rather than shipping a different commit.{{end}}"
             data-confirm-title="Deploy {{$svc}} → {{.Env}}"
             data-confirm-ok="Deploy"
             {{if $gated}}data-confirm-danger="1"{{end}}>
@@ -129,7 +129,19 @@ services:
         <input type="hidden" name="owner" value="{{$.ActiveOwner}}">
         <input type="hidden" name="repo" value="{{$.ActiveRepo}}">
         <span><span class="mono">{{$svc}}</span> → <span class="mono">{{.Env}}</span></span>
+        {{if $gated}}
+        {{/* A protected environment deploys the exact commit shown here, not
+             "whatever that ref points at by the time you click": the trigger
+             fetches first, so the ref can legitimately move in between, and
+             reviewing a specific commit is what the gate is for. expect_sha
+             makes the server refuse a drifted deploy. To ship a different
+             commit here, use Redeploy on a past run — it is SHA-pinned. */}}
+        <input type="hidden" name="ref" value="{{$.DeployRef}}">
+        <input type="hidden" name="expect_sha" value="{{$.DeploySHA}}">
+        <span class="mono muted">{{$.DeployRef}} @ {{$.DeployShortSHA}}</span>
+        {{else}}
         <input type="text" name="ref" value="{{$.DeployRef}}" class="mono" aria-label="Ref for {{$svc}} to {{.Env}}">
+        {{end}}
         <button type="submit" class="{{if $gated}}btn-danger{{else}}btn-secondary{{end}}">Deploy</button>
       </form>
       {{end}}

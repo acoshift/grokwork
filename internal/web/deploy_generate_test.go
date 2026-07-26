@@ -200,3 +200,68 @@ func TestPostGenerateUnknownProject(t *testing.T) {
 		t.Fatalf("status = %d, want 403", w.Code)
 	}
 }
+
+// deployFeatureServer enables the deploy feature so the board renders trigger
+// forms, with prod gated and dev not.
+func deployFeatureServer(t *testing.T) (*Server, *config.Config) {
+	t.Helper()
+	srv, cfg := generateServer(t, testDeployManifest)
+	cfg.WebAuth.Features.Deploy = true
+	if err := cfg.SetProjectDeployEnabled("proj", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectDeployEnvPolicy("proj", "prod", config.DeployEnvPolicy{
+		RequireCapability: "approve", AllowedRefs: []string{"*"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectDeployEnvPolicy("proj", "dev", config.DeployEnvPolicy{
+		AllowedRefs: []string{"*"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return srv, cfg
+}
+
+// TestGatedCellPostsTheReviewedCommit pins the half the engine cannot enforce:
+// the guard refuses a gated trigger with no expectation, so a form that omits
+// expect_sha would make every protected deploy fail. It also pins that a gated
+// cell does not offer a free-text ref — the commit shown is the commit shipped.
+func TestGatedCellPostsTheReviewedCommit(t *testing.T) {
+	srv, _ := deployFeatureServer(t)
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/deploys", sid)
+
+	i := strings.Index(body, `name="env" value="prod"`)
+	if i < 0 {
+		t.Fatalf("no prod trigger form on the board:\n%s", body)
+	}
+	start := strings.LastIndex(body[:i], "<form")
+	end := i + strings.Index(body[i:], "</form>")
+	form := body[start:end]
+
+	if !strings.Contains(form, `name="expect_sha"`) {
+		t.Fatalf("gated form omits expect_sha, so every prod deploy would be refused:\n%s", form)
+	}
+	if strings.Contains(form, `type="text" name="ref"`) {
+		t.Fatalf("gated form offers a free-text ref; the reviewed commit must be the one shipped:\n%s", form)
+	}
+	if !strings.Contains(form, `type="hidden" name="ref"`) {
+		t.Fatalf("gated form lost its ref:\n%s", form)
+	}
+
+	// dev is ungated: the ref stays editable and no expectation is imposed.
+	j := strings.Index(body, `name="env" value="dev"`)
+	if j < 0 {
+		t.Fatal("no dev trigger form")
+	}
+	dstart := strings.LastIndex(body[:j], "<form")
+	dend := j + strings.Index(body[j:], "</form>")
+	devForm := body[dstart:dend]
+	if !strings.Contains(devForm, `type="text" name="ref"`) {
+		t.Fatalf("ungated form lost its editable ref:\n%s", devForm)
+	}
+	if strings.Contains(devForm, `name="expect_sha"`) {
+		t.Fatalf("ungated form imposes a drift check; deploying the current tip is the intent:\n%s", devForm)
+	}
+}

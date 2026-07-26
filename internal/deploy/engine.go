@@ -127,6 +127,13 @@ type TriggerRequest struct {
 	// RedeployOf, when set, replays that run's frozen steps at its SHA and
 	// waives the ref check (see CheckRefAllowed).
 	RedeployOf string
+	// ExpectSHA is the commit the operator was shown when they decided.
+	//
+	// Required for a protected environment: the trigger fetches before
+	// resolving, so between page load and click the ref can legitimately move,
+	// and "I reviewed that exact commit" is the whole point of a gate. Ignored
+	// for ungated environments, where deploying the current tip is the intent.
+	ExpectSHA string
 }
 
 // Trigger validates and starts a deploy, returning the created run.
@@ -200,6 +207,9 @@ func (e *Engine) Trigger(ctx context.Context, req TriggerRequest) (Run, error) {
 		sha, err = gitworktree.ResolveRefSHA(ctx, req.RepoPath, refUsed)
 		if err != nil {
 			return Run{}, fmt.Errorf("deploy: cannot resolve %s: %w", refUsed, err)
+		}
+		if err := checkExpectedSHA(envCfg, refUsed, sha, req.ExpectSHA); err != nil {
+			return Run{}, err
 		}
 		// The manifest is read straight from the commit — no checkout needed to
 		// know what would run, so a rejected request costs nothing on disk.
@@ -411,6 +421,28 @@ func (e *Engine) checkRef(ctx context.Context, req TriggerRequest, ref string) e
 		return nil
 	}
 	return fmt.Errorf("deploy: %q is not an allowed ref for %s (allowed: %s)", ref, req.Env, strings.Join(allowed, ", "))
+}
+
+// checkExpectedSHA enforces that a protected environment deploys the commit the
+// operator actually reviewed.
+//
+// Fail-closed: a gated trigger with no expectation is refused rather than
+// silently losing the protection, because the only caller that omits it is one
+// that has not shown anyone a commit. Redeploys never reach here — their SHA is
+// pinned, so there is nothing to drift.
+func checkExpectedSHA(envCfg *config.DeployEnvConfig, ref, resolved, expect string) error {
+	if envCfg == nil || strings.TrimSpace(envCfg.RequireCapability) == "" {
+		return nil
+	}
+	expect = strings.TrimSpace(expect)
+	if expect == "" {
+		return fmt.Errorf("deploy: this environment requires the commit to be confirmed; reload the deploys page and try again")
+	}
+	if expect == resolved {
+		return nil
+	}
+	return fmt.Errorf("deploy: %s moved from %s to %s since the page was loaded — reload to review the new commit",
+		ref, shortSHAOf(expect), shortSHAOf(resolved))
 }
 
 // RefAllowed matches a ref against an allowlist, supporting a trailing "*".

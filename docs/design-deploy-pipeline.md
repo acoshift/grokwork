@@ -107,6 +107,29 @@ Two deliberate exceptions:
 The board fetches too, throttled by the project's own interval so a page load
 stays cheap and an operator who disabled idle fetch keeps that choice.
 
+### K2c — A protected environment deploys the commit that was reviewed
+
+K2b's fetch closes a staleness hole but opens a small one: the trigger resolves
+the ref *after* fetching, so a push between page load and click would ship a
+commit nobody looked at. Seconds wide, and irrelevant for dev — but "I reviewed
+that exact commit" is the entire point of a capability gate.
+
+So a gated environment's trigger carries `expect_sha`, and the engine refuses
+when the resolved SHA differs, naming both commits and telling the operator to
+reload. It is **fail-closed**: a gated trigger with no expectation is refused
+rather than silently exempted, because the only caller that omits one is a
+caller that has not shown anyone a commit.
+
+The board reinforces it rather than relying on the check alone: a gated cell
+renders the ref as static text plus hidden inputs, so there is no free-text box
+whose value could disagree with the SHA beside it. To ship a different commit to
+a protected environment, use Redeploy on a past run — SHA-pinned, and therefore
+exempt from the expectation by construction, which is also what keeps rollback
+working during an incident.
+
+Ungated environments impose nothing: deploying the current tip is the intent
+there, and the ref stays editable.
+
 ### K3 — Two composition mechanisms, because environments need different pipelines
 
 Real environments do not differ by a variable: dev applies straight from a branch, stag gates on a
