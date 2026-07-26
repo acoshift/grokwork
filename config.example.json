@@ -69,6 +69,14 @@
   "yolo": true,
   "model": "",
   "summarizeModel": "",
+  "modelRates": {
+    "claude-opus-5": {
+      "inputPerMTok": null,
+      "outputPerMTok": null,
+      "cacheReadPerMTok": null,
+      "cacheWritePerMTok": null
+    }
+  },
   "maxTurns": 40,
   "timeoutMs": 1800000,
   "extraArgs": [],

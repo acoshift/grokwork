@@ -512,6 +512,9 @@
     #side-nav a[data-icon="deploys"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpolyline points='17 8 12 3 7 8'/%3E%3Cline x1='12' y1='3' x2='12' y2='15'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="sessions"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="worktrees"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='6' y1='3' x2='6' y2='15'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }
+    {{/* Spend is a receipt, not a coin: a currency glyph next to Worktrees and
+         Config reads as a payment action, and the list is all nouns. */}}
+    #side-nav a[data-icon="spend"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2h12v20l-3-2-3 2-3-2-3 2z'/%3E%3Cline x1='9.5' y1='7.5' x2='14.5' y2='7.5'/%3E%3Cline x1='9.5' y1='11.5' x2='14.5' y2='11.5'/%3E%3Cline x1='9.5' y1='15.5' x2='12.5' y2='15.5'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="config"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='4' y1='21' x2='4' y2='14'/%3E%3Cline x1='4' y1='10' x2='4' y2='3'/%3E%3Cline x1='12' y1='21' x2='12' y2='12'/%3E%3Cline x1='12' y1='8' x2='12' y2='3'/%3E%3Cline x1='20' y1='21' x2='20' y2='16'/%3E%3Cline x1='20' y1='12' x2='20' y2='3'/%3E%3Cline x1='1' y1='14' x2='7' y2='14'/%3E%3Cline x1='9' y1='8' x2='15' y2='8'/%3E%3Cline x1='17' y1='16' x2='23' y2='16'/%3E%3C/svg%3E"); }
     .nav-links > a:hover {
       color: var(--text);
@@ -985,6 +988,11 @@
       border: none;
       margin: 0;
     }
+    /* Model-rate table: five columns of one short number each. Tables size to
+       max-content, so default-width text inputs pushed the last column out of the
+       card and behind a horizontal scroll on an ordinary desktop. A price per
+       million tokens is a handful of characters. */
+    #page-config-rates td input { max-width: 6.5rem; }
     th, td {
       text-align: left;
       padding: 0.68rem 0.9rem;
@@ -4112,6 +4120,7 @@
         <a href="/projects/{{.NavProject}}/deploys" data-icon="deploys" class="{{if .IsDeploys}}active{{end}}">Deploys</a>
         <a href="/projects/{{.NavProject}}/sessions" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">Sessions</a>
         <a href="/projects/{{.NavProject}}/worktrees" data-icon="worktrees" class="{{if .IsWorktrees}}active{{end}}">Worktrees</a>
+        <a href="/projects/{{.NavProject}}/spend" data-icon="spend" class="{{if .IsSpend}}active{{end}}">Spend</a>
         {{if .IsAdmin}}<a href="/config/projects/{{.NavProject}}" data-icon="config" class="{{if .IsConfig}}active{{end}}">Settings</a>{{end}}
         {{else}}
         <a href="{{route "home"}}" data-icon="projects" class="{{if .IsDashboard}}active{{end}}">Projects</a>
@@ -4121,6 +4130,7 @@
         <a href="/reviews" data-icon="issues" class="{{if .IsReviews}}active{{end}}">Reviews</a>
         <a href="{{route "sessions"}}" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">Sessions</a>
         <a href="{{route "worktrees"}}" data-icon="worktrees" class="{{if .IsWorktrees}}active{{end}}">Worktrees</a>
+        <a href="{{route "spend"}}" data-icon="spend" class="{{if .IsSpend}}active{{end}}">Spend</a>
         <a href="{{route "inbox"}}" data-icon="cases" class="{{if .IsInbox}}active{{end}}">Inbox</a>
         {{if .IsAdmin}}<a href="{{route "config"}}" data-icon="config" class="{{if .IsConfig}}active{{end}}">Config</a>{{end}}
         {{end}}

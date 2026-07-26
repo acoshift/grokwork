@@ -18,6 +18,7 @@ import (
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/spend"
 	"github.com/acoshift/grokwork/internal/timeline"
 )
 
@@ -764,6 +765,10 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 			if d.Project == "" {
 				d.Project = th.Project
 			}
+			// This session's cost, folded from the turn log already in hand. No
+			// visibility gate: reaching this page at all already passed
+			// ensureSessionPageAccess for the owning project.
+			d.SessionSpend = spend.ForThread(th, s.cfg)
 		} else {
 			d.Thread.ThreadID = threadID
 		}

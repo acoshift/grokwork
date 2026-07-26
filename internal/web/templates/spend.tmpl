@@ -1,0 +1,148 @@
+{{define "content"}}
+<h1 id="page-spend">{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· spend</span>{{else}}Spend{{end}}</h1>
+<p class="sub">
+  What agent runs have cost, folded from the per-turn token records.
+  {{if .Project}}This project only.{{else}}Every project you can see.{{end}}
+</p>
+
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{/* Tokens are always known; dollars need a rate. Saying so once at the top is
+     what stops "—" in the cost column from reading as "free". */}}
+{{if and .Spend.Total.Turns (not .Spend.Total.HasCost)}}
+<div class="flash">
+  No model has a price yet, so this report shows tokens only.
+  {{if .IsAdmin}}<a href="{{route "config.rates"}}">Set model rates</a> to see dollars.{{end}}
+</div>
+{{end}}
+
+<div class="section card" id="spend-total">
+  <h2>Total</h2>
+  {{if .Spend.Total.Turns}}
+  <div class="inline" style="grid-template-columns: repeat(4, 1fr);align-items:start">
+    <div>
+      <span class="drill-s">Cost</span>
+      <p style="margin:0.2rem 0 0;font-size:1.35rem;font-weight:600">{{cost .Spend.Total}}</p>
+      {{if .Spend.Total.Partial}}<p class="sub" style="margin:0.2rem 0 0">{{.Spend.Total.Unpriced}} of {{.Spend.Total.Turns}} turns have no rate — this is a floor.</p>{{end}}
+    </div>
+    <div>
+      <span class="drill-s">Tokens</span>
+      <p style="margin:0.2rem 0 0;font-size:1.35rem;font-weight:600">{{tokens .Spend.Total.TotalTokens}}</p>
+      <p class="sub" style="margin:0.2rem 0 0">in {{tokens .Spend.Total.Tokens.Input}} · cached {{tokens .Spend.Total.Tokens.CacheRead}} · out {{tokens .Spend.Total.Tokens.Output}}</p>
+    </div>
+    <div>
+      <span class="drill-s">Turns</span>
+      <p style="margin:0.2rem 0 0;font-size:1.35rem;font-weight:600">{{.Spend.Total.Turns}}</p>
+      <p class="sub" style="margin:0.2rem 0 0">{{.Spend.Total.Priced}} priced · {{.Spend.Total.Unpriced}} unpriced</p>
+    </div>
+    <div>
+      <span class="drill-s">Last run</span>
+      <p style="margin:0.2rem 0 0;font-size:1.05rem;font-weight:600" class="mono">{{shortTime .Spend.Total.LastAt}}</p>
+    </div>
+  </div>
+  {{else}}
+  <div class="empty">No turns with recorded token usage{{if .Project}} in this project{{end}} yet.</div>
+  {{end}}
+</div>
+
+{{if .Spend.UnpricedModels}}
+<div class="section card" id="spend-unpriced">
+  <h2>Models with no price</h2>
+  <p class="sub">
+    These ran and burned tokens, but their rate is missing or does not cover every
+    token class they used, so their cost is not in the figures above.
+  </p>
+  <p>
+    {{range .Spend.UnpricedModels}}<span class="badge status-warn">{{if .}}{{.}}{{else}}unnamed{{end}}</span> {{end}}
+  </p>
+  {{if .IsAdmin}}<p class="sub"><a href="{{route "config.rates"}}">Set model rates →</a></p>{{end}}
+</div>
+{{end}}
+
+{{if not .Project}}
+<div class="section" id="spend-by-project">
+  <h2>By project <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Spend.ByProject}})</span></h2>
+  {{if .Spend.ByProject}}
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Project</th><th>Cost</th><th>Tokens</th><th>Turns</th><th>Models</th><th>Last run</th></tr>
+    </thead>
+    <tbody>
+      {{range .Spend.ByProject}}
+      <tr>
+        <td><a href="/projects/{{.Key}}/spend">{{.Key}}</a></td>
+        <td>{{cost .}}</td>
+        <td>{{tokens .TotalTokens}}</td>
+        <td>{{.Turns}}</td>
+        <td class="mono muted">{{models .}}</td>
+        <td class="mono muted">{{shortTime .LastAt}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">Nothing to report.</div>
+  {{end}}
+</div>
+{{end}}
+
+<div class="section" id="spend-by-actor">
+  <h2>By person <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Spend.ByActor}})</span></h2>
+  {{if .Spend.ByActor}}
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Person</th><th>Cost</th><th>Tokens</th><th>Turns</th><th>Models</th><th>Last run</th></tr>
+    </thead>
+    <tbody>
+      {{range .Spend.ByActor}}
+      <tr>
+        <td>{{if .Label}}{{.Label}}{{else}}<span class="muted">unknown</span>{{end}}</td>
+        <td>{{cost .}}</td>
+        <td>{{tokens .TotalTokens}}</td>
+        <td>{{.Turns}}</td>
+        <td class="mono muted">{{models .}}</td>
+        <td class="mono muted">{{shortTime .LastAt}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">Nothing to report.</div>
+  {{end}}
+</div>
+
+<div class="section" id="spend-by-session">
+  <h2>By session <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Spend.BySession}})</span></h2>
+  {{if .Spend.BySession}}
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Session</th><th>Cost</th><th>Tokens</th><th>Turns</th>{{if not $.Project}}<th>Project</th>{{end}}<th>Last run</th></tr>
+    </thead>
+    <tbody>
+      {{range .Spend.BySession}}
+      <tr>
+        <td>
+          <a class="tid mono" href="/sessions/{{.Key}}{{if .Project}}?project={{urlquery .Project}}{{end}}">{{.Key}}</a>
+          {{if .Label}}<span class="drill-s" style="display:block">{{.Label}}</span>{{end}}
+        </td>
+        <td>{{cost .}}</td>
+        <td>{{tokens .TotalTokens}}</td>
+        <td>{{.Turns}}</td>
+        {{if not $.Project}}<td>{{if .Project}}<a href="/projects/{{.Project}}">{{.Project}}</a>{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
+        <td class="mono muted">{{shortTime .LastAt}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">Nothing to report.</div>
+  {{end}}
+</div>
+{{end}}

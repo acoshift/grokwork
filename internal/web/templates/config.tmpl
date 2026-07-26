@@ -53,6 +53,15 @@
         </span>
         <span class="drill-v">{{.Config.MaxTurns}} turns · {{msDur .Config.TimeoutMs}}</span>
       </a>
+      <a class="drill" href="{{route "config.rates"}}">
+        <span class="drill-main">
+          <span class="drill-t">Model rates</span>
+          <span class="drill-s">dollars per million tokens</span>
+        </span>
+        {{/* Zero priced models is worth calling out: the spend report still works,
+             it just cannot show dollars, and nothing else says why. */}}
+        {{if .Config.ModelRatesSet}}<span class="drill-v">{{.Config.ModelRatesSet}} priced</span>{{else}}<span class="badge status-warn">tokens only</span>{{end}}
+      </a>
       <div class="drill">
         <span class="drill-main">
           <span class="drill-t">Crash-safe active runs</span>

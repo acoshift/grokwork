@@ -2224,6 +2224,10 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 	if prompt == "" {
 		prompt = "(empty prompt)"
 	}
+	// Agent + model are resolved through threadCLI, the single place that decides
+	// what a run on this thread uses, so the name a spend rollup prices can never
+	// disagree with the CLI that was actually billed.
+	cli := b.threadCLI(threadID)
 	if err := b.history.Append(threadID, history.Turn{
 		User:      user,
 		UserID:    userID,
@@ -2239,6 +2243,9 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 		RunKind:   pol.RunKind,
 		Mode:      pol.Mode,
 		Phase:     pol.Phase,
+		Agent:     cli.Agent.String(),
+		Model:     cli.Model,
+		Usage:     turnUsage(result),
 	}); err != nil {
 		log.Printf("error: history append thread=%s: %v", threadID, err)
 	}

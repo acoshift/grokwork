@@ -25,6 +25,7 @@ import (
 	"github.com/acoshift/grokwork/internal/markdown"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/spend"
 )
 
 //go:embed templates/*
@@ -113,6 +114,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"ship":                               "/ship",
 		"cases":                              "/cases",
 		"inbox":                              "/inbox",
+		"spend":                              "/spend",
 		"worktrees":                          "/worktrees",
 		"worktrees.prune":                    "/worktrees/prune",
 		"worktrees.pruneIdle":                "/worktrees/prune-idle",
@@ -160,6 +162,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.ci":                          "/config/ci",
 		"config.prlinks":                     "/config/pr-links",
 		"config.risky":                       "/config/risky",
+		"config.rates":                       "/config/model-rates",
 		"config.resume":                      "/config/resume",
 		"issues":                             "/issues",
 		"issues.project":                     "/projects/",
@@ -193,6 +196,13 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// shortTime formats a time.Time or RFC3339 string as "2006-01-02 15:04"
 	// (same layout as the commits list Date column).
 	app.TemplateFunc("shortTime", shortTime)
+	// Spend report formatting. cost/models take a whole row rather than a number
+	// because an unpriced row must render "—" and not "$0.00" — the decision needs
+	// the row's Priced/Unpriced counts, so it cannot live in the template.
+	app.TemplateFunc("tokens", formatTokens)
+	app.TemplateFunc("usd", formatUSD)
+	app.TemplateFunc("cost", spendCost)
+	app.TemplateFunc("models", spendModels)
 
 	// One template set per page: layout root for full documents; named {{define}}s
 	// for SSE fragments (ctx.View("dashboard#dashboard_stats", …)).
@@ -210,6 +220,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("inbox", "layout.tmpl", "inbox.tmpl")
 	tp.ParseFiles("case_new", "layout.tmpl", "case_new.tmpl")
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
+	tp.ParseFiles("spend", "layout.tmpl", "spend.tmpl")
 	tp.ParseFiles("config", "layout.tmpl", "config.tmpl")
 	tp.ParseFiles("config_bot", "layout.tmpl", "config_bot.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_channels", "layout.tmpl", "config_channels.tmpl", "config_shared.tmpl")
@@ -223,6 +234,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("config_ci", "layout.tmpl", "config_ci.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_prlinks", "layout.tmpl", "config_prlinks.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_risky", "layout.tmpl", "config_risky.tmpl", "config_shared.tmpl")
+	tp.ParseFiles("config_rates", "layout.tmpl", "config_rates.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("project_config", "layout.tmpl", "project_config.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("project_config_workflow", "layout.tmpl", "project_config_workflow.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("project_config_integrations", "layout.tmpl", "project_config_integrations.tmpl", "project_config_shared.tmpl")
@@ -269,6 +281,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /cases", s.requireAuth(hime.Handler(s.casesGlobal)))
 	mux.Handle("GET /inbox", s.requireAuth(hime.Handler(s.inboxPage)))
 	mux.Handle("GET /worktrees", s.requireAuth(hime.Handler(s.worktreesPage)))
+	mux.Handle("GET /spend", s.requireAuth(hime.Handler(s.spendPage)))
 	mux.Handle("GET /config", s.requireAdmin(hime.Handler(s.configPage)))
 	mux.Handle("GET /config/projects/{name}", s.requireAdmin(hime.Handler(s.projectConfigPage)))
 	mux.Handle("GET /config/projects/{name}/workflow", s.requireAdmin(hime.Handler(s.projectConfigWorkflowPage)))
@@ -295,6 +308,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /c/{key}", s.requireAuth(hime.Handler(s.caseByKey)))
 	mux.Handle("GET /projects/{project}/sessions", s.requireAuth(hime.Handler(s.sessionsScoped)))
 	mux.Handle("GET /projects/{project}/worktrees", s.requireAuth(hime.Handler(s.worktreesScoped)))
+	mux.Handle("GET /projects/{project}/spend", s.requireAuth(hime.Handler(s.spendScoped)))
 	// Retired feature-first hubs → launcher.
 	mux.Handle("GET /issues", s.requireAuth(hime.Handler(s.redirectHome)))
 	mux.Handle("GET /projects/{project}/issues", s.requireAuth(hime.Handler(s.issuesList)))
@@ -463,6 +477,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/ci", s.requireAdmin(hime.Handler(s.configSubPage("config_ci", "CI triage", false))))
 	mux.Handle("GET /config/pr-links", s.requireAdmin(hime.Handler(s.configSubPage("config_prlinks", "Discord PR links", false))))
 	mux.Handle("GET /config/risky", s.requireAdmin(hime.Handler(s.configSubPage("config_risky", "Completion risk paths", false))))
+	mux.Handle("GET /config/model-rates", s.requireAdmin(hime.Handler(s.configSubPage("config_rates", "Model rates", false))))
+	mux.Handle("POST /config/model-rates", s.requireAdmin(hime.Handler(s.updateModelRates)))
 	mux.Handle("POST /config/run", s.requireAdmin(hime.Handler(s.updateRunSettings)))
 	mux.Handle("POST /config/agent", s.requireAdmin(hime.Handler(s.updateAgentSettings)))
 	mux.Handle("POST /config/worktrees", s.requireAdmin(hime.Handler(s.updateWorktreeSettings)))
@@ -512,6 +528,7 @@ type pageData struct {
 	IsReviews   bool
 	IsStart     bool
 	IsDeploys   bool
+	IsSpend     bool
 	Flash       string
 	Error       string
 	// ErrorAlertTitle, when set with Error, opens the appAlert modal on the
@@ -530,7 +547,15 @@ type pageData struct {
 	CasesBoardURL string
 	Worktrees     []bot.WorktreeInfo
 	IdleTTLDays   int
-	Config        config.Snapshot
+	// Spend rollup (cost report pages). SpendActor is the ?actor= filter as
+	// submitted; RatesConfigured is how many models have a price, which is what
+	// turns "no dollars anywhere" from a mystery into a setup step.
+	Spend           spend.Report
+	SpendActor      string
+	RatesConfigured int
+	// SessionSpend is one session's cost, shown on its detail page.
+	SessionSpend spend.Row
+	Config       config.Snapshot
 	// Per-project settings tabs (/config/projects/{name}[/tab]).
 	ProjectItem      config.ProjectItem
 	DiscordUserNames map[string]string // Discord user id → display name (best-effort)

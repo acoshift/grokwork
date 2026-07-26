@@ -86,6 +86,11 @@ type Config struct {
 	// dispatch UI can override it per session, and the choice is stamped on the
 	// session like any other. Empty → Model.
 	ReviewModel string `json:"reviewModel,omitempty"`
+	// ModelRates prices token usage per model, in dollars per million tokens,
+	// keyed by normalized model name (see ModelRateKey). Absent or partial rates
+	// report tokens without a dollar figure rather than a wrong one — see
+	// ModelRate.Price.
+	ModelRates map[string]ModelRate `json:"modelRates,omitempty"`
 	// ClaudeExtraArgs are extra claude CLI flags. ExtraArgs below is grok
 	// vocabulary and is never passed to claude.
 	ClaudeExtraArgs []string `json:"claudeExtraArgs,omitempty"`
@@ -275,9 +280,16 @@ type Snapshot struct {
 	// ModelGroups / SummarizeModelGroups / ReviewModelGroups are the dropdown
 	// options for each field, grouped by agent and including the configured value
 	// when it is not curated.
-	ModelGroups               []ModelGroup
-	SummarizeModelGroups      []ModelGroup
-	ReviewModelGroups         []ModelGroup
+	ModelGroups          []ModelGroup
+	SummarizeModelGroups []ModelGroup
+	ReviewModelGroups    []ModelGroup
+	// ModelRates is the per-model price table for the config form (curated models
+	// first, then any extra name config already carries). ModelRatesSet counts the
+	// rows with at least one figure, which is what the hub row reports — a spend
+	// report with zero configured rates shows tokens only, and that is worth
+	// surfacing before someone goes looking for the dollars.
+	ModelRates                []ModelRateItem
+	ModelRatesSet             int
 	ClaudeIncludeAnthropicEnv bool
 	MaxTurns                  int // effective (default 40)
 	TimeoutMs                 int // effective (default 1800000 = 30m)
@@ -705,6 +717,7 @@ func (c *Config) saveLocked() error {
 		ClaudeBin                 string                    `json:"claudeBin,omitempty"`
 		SummarizeModel            string                    `json:"summarizeModel,omitempty"`
 		ReviewModel               string                    `json:"reviewModel,omitempty"`
+		ModelRates                map[string]ModelRate      `json:"modelRates,omitempty"`
 		ClaudeExtraArgs           []string                  `json:"claudeExtraArgs,omitempty"`
 		ClaudeIncludeAnthropicEnv *bool                     `json:"claudeIncludeAnthropicEnv,omitempty"`
 		Yolo                      *bool                     `json:"yolo"`
@@ -750,6 +763,7 @@ func (c *Config) saveLocked() error {
 		ClaudeBin:                 c.ClaudeBin,
 		SummarizeModel:            c.SummarizeModel,
 		ReviewModel:               c.ReviewModel,
+		ModelRates:                cloneModelRates(c.ModelRates),
 		ClaudeExtraArgs:           slices.Clone(c.ClaudeExtraArgs),
 		ClaudeIncludeAnthropicEnv: cloneBoolPtr(c.ClaudeIncludeAnthropicEnv),
 		Yolo:                      c.Yolo,
@@ -1394,6 +1408,13 @@ func (c *Config) Snapshot() Snapshot {
 	if claudeBin == "" {
 		claudeBin = grokrun.AgentClaude.DefaultBin()
 	}
+	rateItems := modelRateItemsFrom(c.ModelRates)
+	ratesSet := 0
+	for _, it := range rateItems {
+		if it.Configured {
+			ratesSet++
+		}
+	}
 	snap := Snapshot{
 		Projects:                  projects,
 		Channels:                  channels,
@@ -1415,6 +1436,8 @@ func (c *Config) Snapshot() Snapshot {
 		ModelGroups:               ModelGroups(c.Model),
 		SummarizeModelGroups:      ModelGroups(c.SummarizeModel),
 		ReviewModelGroups:         ModelGroups(c.ReviewModel),
+		ModelRates:                rateItems,
+		ModelRatesSet:             ratesSet,
 		ClaudeIncludeAnthropicEnv: c.ClaudeIncludeAnthropicEnv != nil && *c.ClaudeIncludeAnthropicEnv,
 		MaxTurns:                  maxTurns,
 		TimeoutMs:                 timeoutMs,

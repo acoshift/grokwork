@@ -83,7 +83,15 @@ func TestPreviewServer(t *testing.T) {
 			"900000000000000001": "webapp",
 			"900000000000000002": "api",
 		},
-		GrokBin:    "grok",
+		GrokBin: "grok",
+		// Only the claude models are priced, deliberately: the spend report has to
+		// be reviewable in the mixed state a real deployment lives in, where some
+		// runs show dollars and the rest show tokens with a "no rate" badge.
+		ModelRates: map[string]config.ModelRate{
+			"claude-opus-5":    previewRate(5, 25, 0.5, 6.25),
+			"claude-sonnet-5":  previewRate(3, 15, 0.3, 3.75),
+			"claude-haiku-4-5": previewRate(1, 5, 0.1, 1.25),
+		},
 		MaxTurns:   40,
 		TimeoutMs:  1800000,
 		HTTPListen: "127.0.0.1:18787",
@@ -248,16 +256,26 @@ func TestPreviewServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Token usage on the seeded turns so the spend report has something to fold.
+	// The shape matters for review: claude turns carry a big cache-read share (the
+	// prefix is re-charged every call), grok-4.5 is left unpriced below so the
+	// "tokens but no dollars" rendering is visible on the same page as real costs.
+	claudeUsage := func(in, cacheRead, cacheWrite, out, resident int) *history.Usage {
+		return &history.Usage{
+			InputTokens: in, CacheReadTokens: cacheRead, CacheCreationTokens: cacheWrite,
+			OutputTokens: out, ContextTokens: resident, ContextWindowTokens: 1_000_000,
+		}
+	}
 	turns := []struct {
 		thread string
 		turn   history.Turn
 	}{
-		{"1390000000000000001", history.Turn{User: "mint#0", Prompt: "The checkout E2E test is flaky on CI — it fails roughly 1 in 5 runs with a timeout waiting for the payment webhook. Find the race and fix it.", Response: "Found it: the retry queue debounces per-order but the test asserts on the first attempt. I widened the webhook wait and debounced the queue flush.\n\nOpened PR: https://github.com/acme/webapp/pull/128", Status: "done", Elapsed: "4m12s", Project: "webapp", SessionID: "sess-a1"}},
-		{"1390000000000000001", history.Turn{User: "mint#0", Prompt: "CI is still red on the lint job — fix it and push.", Response: "Working…", Status: "error", ExitCode: 1, Error: "Reached max turns before a final reply", Elapsed: "12m40s", Project: "webapp", SessionID: "sess-a1"}},
-		{"1390000000000000001", history.Turn{User: "poon#0", Prompt: "/fix-ci", Response: "gofmt drift in payment_retry.go — formatted, pushed, checks green except the flaky E2E which is queued.", Status: "done", Elapsed: "2m03s", Project: "webapp", SessionID: "sess-a1"}},
-		{"1390000000000000002", history.Turn{User: "poon#0", Prompt: "Add standard X-RateLimit-Limit / Remaining / Reset headers to all public endpoints, with tests.", Response: "Done — middleware emits the three headers from the token bucket state; added table-driven tests.\n\nPR: https://github.com/acme/api/pull/86 (merged)", Status: "done", Elapsed: "9m51s", Project: "api", SessionID: "sess-b2"}},
-		{"1390000000000000003", history.Turn{User: "mint#0", Prompt: "Start the SameSite=Lax migration for session cookies behind a flag.", Response: "", Status: "cancelled", Error: "Cancelled by owner via /cancel", Elapsed: "0m48s", Project: "webapp", SessionID: "sess-c3"}},
-		{"1390000000000000003", history.Turn{User: "mint#0", Prompt: "Resume: SameSite=Lax behind GROK_COOKIE_LAX flag, draft PR is fine.", Response: "Draft PR up: https://github.com/acme/webapp/pull/131 — flag default off, e2e matrix added for both modes.", Status: "done", Elapsed: "6m22s", Project: "webapp", SessionID: "sess-c3"}},
+		{"1390000000000000001", history.Turn{User: "mint#0", Prompt: "The checkout E2E test is flaky on CI — it fails roughly 1 in 5 runs with a timeout waiting for the payment webhook. Find the race and fix it.", Response: "Found it: the retry queue debounces per-order but the test asserts on the first attempt. I widened the webhook wait and debounced the queue flush.\n\nOpened PR: https://github.com/acme/webapp/pull/128", Status: "done", Elapsed: "4m12s", Project: "webapp", SessionID: "sess-a1", Agent: "claude", Model: "claude-opus-5", Usage: claudeUsage(1_240, 186_400, 41_900, 9_820, 62_300)}},
+		{"1390000000000000001", history.Turn{User: "mint#0", Prompt: "CI is still red on the lint job — fix it and push.", Response: "Working…", Status: "error", ExitCode: 1, Error: "Reached max turns before a final reply", Elapsed: "12m40s", Project: "webapp", SessionID: "sess-a1", Agent: "claude", Model: "claude-opus-5", Usage: claudeUsage(3_100, 812_000, 96_400, 28_300, 141_800)}},
+		{"1390000000000000001", history.Turn{User: "poon#0", Prompt: "/fix-ci", Response: "gofmt drift in payment_retry.go — formatted, pushed, checks green except the flaky E2E which is queued.", Status: "done", Elapsed: "2m03s", Project: "webapp", SessionID: "sess-a1", Agent: "claude", Model: "claude-haiku-4-5", Usage: claudeUsage(880, 42_100, 11_200, 3_400, 28_900)}},
+		{"1390000000000000002", history.Turn{User: "poon#0", Prompt: "Add standard X-RateLimit-Limit / Remaining / Reset headers to all public endpoints, with tests.", Response: "Done — middleware emits the three headers from the token bucket state; added table-driven tests.\n\nPR: https://github.com/acme/api/pull/86 (merged)", Status: "done", Elapsed: "9m51s", Project: "api", SessionID: "sess-b2", Agent: "grok", Model: "grok-4.5", Usage: &history.Usage{TotalTokens: 318_400}}},
+		{"1390000000000000003", history.Turn{User: "mint#0", Prompt: "Start the SameSite=Lax migration for session cookies behind a flag.", Response: "", Status: "cancelled", Error: "Cancelled by owner via /cancel", Elapsed: "0m48s", Project: "webapp", SessionID: "sess-c3", Agent: "claude", Model: "claude-opus-5", Usage: claudeUsage(410, 9_800, 6_100, 1_240, 17_500)}},
+		{"1390000000000000003", history.Turn{User: "mint#0", Prompt: "Resume: SameSite=Lax behind GROK_COOKIE_LAX flag, draft PR is fine.", Response: "Draft PR up: https://github.com/acme/webapp/pull/131 — flag default off, e2e matrix added for both modes.", Status: "done", Elapsed: "6m22s", Project: "webapp", SessionID: "sess-c3", Agent: "claude", Model: "claude-opus-5", Usage: claudeUsage(1_020, 274_500, 33_800, 12_600, 84_200)}},
 	}
 	for _, tt := range turns {
 		if err := hist.Append(tt.thread, tt.turn); err != nil {
@@ -281,6 +299,8 @@ func TestPreviewServer(t *testing.T) {
 				"Next: confirm the same key is used on the invoicing path before proposing a fix.", i),
 			Status: "done", Elapsed: "3m0" + strconv.Itoa(i%10) + "s",
 			Project: "webapp", SessionID: "case-b",
+			Agent: "claude", Model: "claude-sonnet-5",
+			Usage: claudeUsage(700+i*40, 30_000+i*9_000, 8_000+i*400, 2_100+i*90, 24_000+i*7_000),
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -685,5 +705,14 @@ func previewGitRunner() func(ctx context.Context, dir, name string, args ...stri
 			return []byte(b.String()), nil
 		}
 		return nil, nil
+	}
+}
+
+// previewRate builds one model's price row for the preview config (dollars per
+// million tokens).
+func previewRate(in, out, cacheRead, cacheWrite float64) config.ModelRate {
+	return config.ModelRate{
+		InputPerMTok: &in, OutputPerMTok: &out,
+		CacheReadPerMTok: &cacheRead, CacheWritePerMTok: &cacheWrite,
 	}
 }

@@ -27,15 +27,27 @@
     {{if .DiscordURL}}<a class="btn btn-compact" href="{{.DiscordURL}}" target="_blank" rel="noopener">Discord ↗</a>{{end}}
   </div>
 </div>
-{{if .Project}}
+{{if or .Project .SessionSpend.Turns}}
 <div class="pr-meta">
-  <span><strong>{{.Project}}</strong></span>
+  {{if .Project}}<span><strong>{{.Project}}</strong></span>{{end}}
   {{/* Sessions started before agents were selectable carry no stamp; showing
        nothing there is accurate, since they ran on whatever the default was. */}}
   {{if .SessionEntry.Agent}}<span class="badge" id="session-agent">{{.SessionEntry.Agent}}{{if .SessionEntry.Model}} · {{.SessionEntry.Model}}{{end}}</span>{{end}}
   {{if .SessionEntry.IsCase}}
   <span class="badge">case</span>
   {{if .SessionEntry.Phase}}<span class="badge">{{.SessionEntry.Phase}}</span>{{end}}
+  {{end}}
+  {{/* What this session has cost, on the identity row rather than a line of its
+       own: it is a property of the unit, like its project and model, and a second
+       .pr-meta row reads as an orphan under the first.
+       Deliberately outside the live region — it is folded from the *sealed* turn
+       log, so it cannot change while a run is in flight, and re-rendering it on
+       every dashboard tick would be pure noise. Cost is "—" rather than $0.00
+       when no model here has a rate; see spendCost. */}}
+  {{if .SessionSpend.Turns}}
+  <span id="session-spend" title="Sum of every turn's billed tokens in this session">{{tokens .SessionSpend.TotalTokens}} tokens</span>
+  <span title="{{if .SessionSpend.HasCost}}{{if .SessionSpend.Partial}}A floor: {{.SessionSpend.Unpriced}} turn(s) ran on a model with no rate{{else}}Priced from the configured model rates{{end}}{{else}}No rate configured for this session's model{{end}}">{{cost .SessionSpend}}</span>
+  <span class="muted">{{.SessionSpend.Turns}} billed turn{{if ne .SessionSpend.Turns 1}}s{{end}}</span>
   {{end}}
 </div>
 {{end}}

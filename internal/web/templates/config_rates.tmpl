@@ -1,0 +1,64 @@
+{{define "content"}}
+<div class="config-sub" id="page-config-rates">
+{{template "config_sub_header" $}}
+<h1>Model rates</h1>
+<p class="sub">
+  Prices in <strong>dollars per million tokens</strong>, used by the
+  <a href="{{route "spend"}}">spend report</a>. Rates are not built in: published
+  prices change, deployments negotiate their own, and a stale number compiled into
+  the binary would look authoritative while being wrong.
+</p>
+<p class="sub">
+  A blank field means <em>unset</em>, which is different from zero. A run whose
+  model has no rate — or whose rate does not cover a token class it used — reports
+  its tokens with no dollar figure, rather than a cost of $0.00 that would read as
+  free. Fill in only the classes your runs actually produce: a Grok-only setup
+  never needs the cache columns.
+</p>
+<div class="section card">
+  <form method="post" action="{{route "config.rates"}}">
+    {{template "csrf" $}}
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Input</th>
+          <th>Output</th>
+          <th>Cache read</th>
+          <th>Cache write</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Config.ModelRates}}
+        {{/* Every row posts all five fields, blanks included: the handler matches
+             rows by position, so a sparse form would shift rates onto the wrong
+             model. */}}
+        <tr>
+          <td>
+            <input type="hidden" name="model" value="{{.Model}}">
+            <span class="mono">{{.Model}}</span>
+            {{if .Agent}}<span class="drill-s" style="display:block">{{.Agent}}{{if not .Curated}} · from config{{end}}</span>{{else if not .Curated}}<span class="drill-s" style="display:block">from config</span>{{end}}
+          </td>
+          <td><input type="text" name="input" value="{{.Input}}" placeholder="unset" inputmode="decimal" autocomplete="off" aria-label="{{.Model}} input rate"></td>
+          <td><input type="text" name="output" value="{{.Output}}" placeholder="unset" inputmode="decimal" autocomplete="off" aria-label="{{.Model}} output rate"></td>
+          <td><input type="text" name="cacheRead" value="{{.CacheRead}}" placeholder="unset" inputmode="decimal" autocomplete="off" aria-label="{{.Model}} cache read rate"></td>
+          <td><input type="text" name="cacheWrite" value="{{.CacheWrite}}" placeholder="unset" inputmode="decimal" autocomplete="off" aria-label="{{.Model}} cache write rate"></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    </div>
+    <p class="sub" style="margin:0.75rem 0 0">
+      Cache write is billed above the input rate by most providers (1.25× on
+      Anthropic), so it is a separate column rather than an assumption. Cache read
+      is the cheapest class and usually the largest: every agent turn after the
+      first re-reads the whole prompt prefix and is charged for it again.
+    </p>
+    <div class="form-actions">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</div>
+</div>
+{{end}}
