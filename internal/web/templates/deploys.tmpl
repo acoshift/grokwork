@@ -196,4 +196,55 @@ services:
 </div>
 {{end}}
 {{end}}
+
+{{/* Outside the branches on purpose: a manifest that fails to parse sets
+     neither DeployNotConfigured nor DeployRows, and that is precisely when an
+     agent should be offered. */}}
+{{template "deploy_generate_form" .}}
+{{end}}
+
+{{define "deploy_generate_form"}}
+{{if .CanGenerateManifest}}
+{{/* An ordinary agent session: it writes the file and opens a PR, so the
+     pipeline gets reviewed before it can govern a production deploy. Gated on
+     startSessions rather than the deploy feature, so a project can write its
+     pipeline before deploys are switched on. */}}
+<div class="section card" id="deploy-generate">
+  <h2>{{if .DeployNotConfigured}}Write this with an agent{{else}}Update with an agent{{end}}</h2>
+  <p class="sub" style="margin-top:0">
+    Starts a session that inspects the repo — Dockerfiles, existing CI deploy
+    workflows, the directory layout — and writes
+    <span class="mono">{{.DeployManifestPath}}</span>, then opens a PR for review.
+    {{if .DeployEnvs}}It is told which environments this host has configured and
+    which variable names their steps can use (never the values).{{end}}
+  </p>
+  <form method="post" action="/projects/{{.Project}}/deploys/generate">
+    {{template "csrf" $}}
+    <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    <div class="field">
+      <label for="deploy-req">Additional requirements <span class="muted">(optional)</span></label>
+      <textarea id="deploy-req" name="requirements" rows="5"
+                placeholder="e.g. prod must promote the image built for stag rather than rebuilding; run migrations before rollout; the web app deploys to a GCS bucket behind a CDN"></textarea>
+      <p class="rail-note" style="margin-top:0.4rem">
+        Anything the repo cannot tell it: promotion rules, migration order, which
+        services to skip, approvals your team expects. These take precedence over
+        its own reading of the repo.
+      </p>
+    </div>
+    {{if .CanSelectModel}}
+    <div class="field">
+      <label for="deploy-model">Model</label>
+      <select id="deploy-model" name="model">
+        {{template "model_picker_options" $}}
+      </select>
+      <p class="rail-note" style="margin-top:0.4rem">The model picks the CLI, and the session keeps both for life.</p>
+    </div>
+    {{end}}
+    <div class="form-actions">
+      <button type="submit">{{if .DeployNotConfigured}}Generate pipeline{{else}}Start update session{{end}}</button>
+    </div>
+  </form>
+</div>
+{{end}}
 {{end}}

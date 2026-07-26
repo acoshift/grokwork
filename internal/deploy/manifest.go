@@ -451,3 +451,34 @@ func shortRev(rev string) string {
 	}
 	return rev
 }
+
+// ReadRawManifestAt returns the manifest bytes at rev without parsing them.
+//
+// The generate-pipeline session needs the current file even when it is broken —
+// a manifest that fails to parse is exactly the one worth handing to an agent to
+// fix, so this deliberately skips validation.
+func ReadRawManifestAt(ctx context.Context, run Runner, repoPath, rev, manifestPath string) (string, error) {
+	if run == nil {
+		run = execRunner
+	}
+	manifestPath = strings.TrimSpace(manifestPath)
+	if manifestPath == "" {
+		manifestPath = DefaultManifestPath
+	}
+	if err := validateDir(manifestPath); err != nil {
+		return "", fmt.Errorf("deploy: manifest path %q: %w", manifestPath, err)
+	}
+	blob, size, err := lsTreeBlob(ctx, run, repoPath, rev, manifestPath)
+	if err != nil {
+		return "", err
+	}
+	if size > MaxManifestBytes {
+		return "", fmt.Errorf("deploy: %s is %d bytes at %s, over the %d byte limit",
+			manifestPath, size, shortRev(rev), MaxManifestBytes)
+	}
+	out, err := run(ctx, repoPath, "git", "cat-file", "blob", blob)
+	if err != nil {
+		return "", fmt.Errorf("deploy: read %s at %s: %w", manifestPath, shortRev(rev), err)
+	}
+	return string(out), nil
+}

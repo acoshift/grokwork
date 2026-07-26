@@ -49,6 +49,14 @@ func (s *Server) deploysPage(ctx *hime.Context) error {
 	d.IsDeploys = true
 	d.Project = project
 	d.DeployManifestPath = deploy.DefaultManifestPath
+	if p := strings.TrimSpace(s.cfg.ProjectDeployManifestPath(project)); p != "" {
+		d.DeployManifestPath = p
+	}
+	// Filled before every early return: the generate form is most useful exactly
+	// when the manifest is missing or broken.
+	d.CanGenerateManifest = d.CanStartSession &&
+		s.cfg.ResolveCapabilities(project, d.UserID, nil).CanShip()
+	s.attachModelPicker(&d, project, s.cfg.TaskModel())
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e

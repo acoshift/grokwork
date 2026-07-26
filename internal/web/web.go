@@ -301,6 +301,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /projects/{project}/deploys/{runID}/log.txt", s.requireAuth(hime.Handler(s.deployRunLogRaw)))
 	mux.Handle("POST /projects/{project}/deploys",
 		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeploy))))
+	// Gated on startSessions, not the deploy feature: writing the pipeline is
+	// ordinary agent work that ends in a PR, and it has to be possible before
+	// deploys are switched on.
+	mux.Handle("POST /projects/{project}/deploys/generate",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postDeployGenerate))))
 	mux.Handle("POST /projects/{project}/deploys/{runID}/cancel",
 		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeployCancel))))
 	mux.Handle("POST /projects/{project}/deploys/{runID}/redeploy",
@@ -565,6 +570,8 @@ type pageData struct {
 	// the confirm modal can read as dangerous for those and not for dev.
 	DeployEnvGated map[string]bool
 	DeployRecent   []deploy.Run
+	// CanGenerateManifest gates the "write this with an agent" form.
+	CanGenerateManifest bool
 	// Deploy settings tab.
 	DeployCapabilityNames []string
 	DeployFeatureOn       bool
