@@ -72,6 +72,52 @@ func TestPerUserConcurrentRunCapIgnoresQueued(t *testing.T) {
 	}
 }
 
+// TestPerUserConcurrentRunCapAllowsSameThreadFollowUp pins that the per-user
+// cap check runs only on the claim path (a NEW active run), not ahead of the
+// busy-thread/queue branch. With MaxConcurrentRunsUser=1, alice's own
+// already-running job on t1 is the one active run counted for her; a second
+// @Grok message on that SAME thread is an ordinary mid-run follow-up and must
+// be queued behind it, not refused as hitting her own cap.
+func TestPerUserConcurrentRunCapAllowsSameThreadFollowUp(t *testing.T) {
+	max := 1
+	b := &Bot{cfg: &config.Config{MaxConcurrentRunsUser: &max}}
+
+	job1 := &runJob{cancel: func() {}, start: time.Now()}
+	claimed, _, err := b.claimOrEnqueue("t1", job1, taskItem{threadID: "t1", actor: Actor{ID: "alice"}})
+	if err != nil || !claimed {
+		t.Fatalf("alice first claim: claimed=%v err=%v", claimed, err)
+	}
+
+	// Alice sends a follow-up to the SAME thread t1: must queue, not be
+	// refused by the cap she's already "using" via her own active job.
+	job2 := &runJob{cancel: func() {}}
+	claimed, pos, err := b.claimOrEnqueue("t1", job2, taskItem{threadID: "t1", actor: Actor{ID: "alice"}})
+	if err != nil || claimed || pos != 1 {
+		t.Fatalf("alice same-thread follow-up should queue, got claimed=%v pos=%d err=%v", claimed, pos, err)
+	}
+}
+
+// TestHostConcurrentRunCapAllowsSameThreadFollowUp mirrors
+// TestPerUserConcurrentRunCapAllowsSameThreadFollowUp for the host-wide cap:
+// the single active run on a thread must not block a follow-up destined for
+// that same thread's queue.
+func TestHostConcurrentRunCapAllowsSameThreadFollowUp(t *testing.T) {
+	max := 1
+	b := &Bot{cfg: &config.Config{MaxConcurrentRuns: &max}}
+
+	job1 := &runJob{cancel: func() {}, start: time.Now()}
+	claimed, _, err := b.claimOrEnqueue("t1", job1, taskItem{threadID: "t1", actor: Actor{ID: "alice"}})
+	if err != nil || !claimed {
+		t.Fatalf("first claim: claimed=%v err=%v", claimed, err)
+	}
+
+	job2 := &runJob{cancel: func() {}}
+	claimed, pos, err := b.claimOrEnqueue("t1", job2, taskItem{threadID: "t1", actor: Actor{ID: "bob"}})
+	if err != nil || claimed || pos != 1 {
+		t.Fatalf("same-thread follow-up should queue, got claimed=%v pos=%d err=%v", claimed, pos, err)
+	}
+}
+
 // TestCountActiveRunsByUserNormalizesActorID pins that a bare Discord id and
 // its "discord:" namespaced spelling land in the same bucket, so a config
 // written either way and a runtime id written the other way still collide.

@@ -341,20 +341,6 @@ func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem
 		item.intentPreview = intentPreview(item.parsed.Prompt, 80)
 	}
 
-	// Light concurrency caps (0 = unlimited).
-	if b.cfg != nil {
-		if max := b.cfg.MaxConcurrentRunsValue(); max > 0 && b.countActiveRuns() >= max {
-			return false, 0, fmt.Errorf("host concurrent run limit reached (%d)", max)
-		}
-		if maxU := b.cfg.MaxConcurrentRunsUserValue(); maxU > 0 {
-			if uid := runActorID(item); uid != "" {
-				if b.countActiveRunsByUser(uid) >= maxU {
-					return false, 0, fmt.Errorf("per-user concurrent run limit reached (%d)", maxU)
-				}
-			}
-		}
-	}
-
 	st := b.stateFor(threadID)
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -389,6 +375,26 @@ func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem
 		}
 		return false, len(st.queue), nil
 	}
+
+	// Light concurrency caps (0 = unlimited), checked only here: this item
+	// is about to become a NEW active run (st.job == nil, above). A
+	// follow-up that would only queue behind the caller's own already-
+	// running job on this thread must never be charged against the cap.
+	// The current thread is excluded from the scan (see
+	// countActiveRunsExcluding) since st.mu is already held here.
+	if b.cfg != nil {
+		if max := b.cfg.MaxConcurrentRunsValue(); max > 0 && b.countActiveRunsExcluding(threadID) >= max {
+			return false, 0, fmt.Errorf("host concurrent run limit reached (%d)", max)
+		}
+		if maxU := b.cfg.MaxConcurrentRunsUserValue(); maxU > 0 {
+			if uid := runActorID(item); uid != "" {
+				if b.countActiveRunsByUserExcluding(uid, threadID) >= maxU {
+					return false, 0, fmt.Errorf("per-user concurrent run limit reached (%d)", maxU)
+				}
+			}
+		}
+	}
+
 	st.job = job
 	job.actorID = config.NormalizeActorID(runActorID(item))
 	if err := b.saveJournalFromState(threadID, st, item, true); err != nil {
@@ -481,11 +487,25 @@ func (b *Bot) clearQueue(threadID string) int {
 }
 
 func (b *Bot) countActiveRuns() int {
+	return b.countActiveRunsExcluding("")
+}
+
+// countActiveRunsExcluding counts active runs, skipping excludeThreadID.
+// Callers holding excludeThreadID's threadState.mu (deciding whether to
+// claim it) must pass it here: Range would otherwise try to re-lock that
+// same *threadState.mu from within the lock, which self-deadlocks since
+// sync.Mutex is not reentrant. A thread excluded this way is by definition
+// not yet active (its own job==nil is what the caller is deciding), so
+// omitting it from the scan doesn't undercount.
+func (b *Bot) countActiveRunsExcluding(excludeThreadID string) int {
 	if b == nil {
 		return 0
 	}
 	n := 0
-	b.states.Range(func(_, v any) bool {
+	b.states.Range(func(k, v any) bool {
+		if excludeThreadID != "" && k.(string) == excludeThreadID {
+			return true
+		}
 		st := v.(*threadState)
 		st.mu.Lock()
 		if st.job != nil {
@@ -498,6 +518,13 @@ func (b *Bot) countActiveRuns() int {
 }
 
 func (b *Bot) countActiveRunsByUser(userID string) int {
+	return b.countActiveRunsByUserExcluding(userID, "")
+}
+
+// countActiveRunsByUserExcluding is the per-user analogue of
+// countActiveRunsExcluding — see that function for why exclusion (rather
+// than just locking everything) is required.
+func (b *Bot) countActiveRunsByUserExcluding(userID, excludeThreadID string) int {
 	if b == nil || userID == "" {
 		return 0
 	}
@@ -506,7 +533,10 @@ func (b *Bot) countActiveRunsByUser(userID string) int {
 		return 0
 	}
 	n := 0
-	b.states.Range(func(_, v any) bool {
+	b.states.Range(func(k, v any) bool {
+		if excludeThreadID != "" && k.(string) == excludeThreadID {
+			return true
+		}
 		st, _ := v.(*threadState)
 		if st == nil {
 			return true
