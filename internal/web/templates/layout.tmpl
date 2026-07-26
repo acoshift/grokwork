@@ -196,6 +196,10 @@
       }
     }
     * { box-sizing: border-box; }
+    /* iOS Safari (26 Liquid Glass especially) samples the document background
+       for the browser chrome tint. Keep <html> on the page bg so the title
+       bar has a stable sample target when fixed overlays come and go. */
+    html { background-color: var(--bg); }
     body {
       margin: 0;
       font-family: var(--font);
@@ -3650,6 +3654,13 @@
          either under the whole lifted page or over the sheet; there is no
          value that works. That is why it is rendered by the page templates
          rather than by the shell. */
+      /* While the sheet is up, paint the dim onto <html> too. Safari samples
+         fixed overlays for chrome tint and can latch the scrim color after
+         dismiss; a real document-background change on open/close is what
+         makes the title bar release back to --bg. */
+      html:has(body.rail-sheet-open) {
+        background-color: color-mix(in srgb, #000 38%, var(--bg));
+      }
       .rail-scrim {
         display: block;
         position: fixed;
@@ -3657,10 +3668,18 @@
         z-index: 95;
         background: hsl(var(--black) / 38%);
         opacity: 0;
+        /* visibility delayed so the layer leaves Safari's fixed-element
+           sample pool after the fade — opacity:0 alone still counts. */
+        visibility: hidden;
         pointer-events: none;
-        transition: opacity 0.24s ease;
+        transition: opacity 0.24s ease, visibility 0s linear 0.24s;
       }
-      body.rail-sheet-open .rail-scrim { opacity: 1; pointer-events: auto; }
+      body.rail-sheet-open .rail-scrim {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transition: opacity 0.24s ease, visibility 0s;
+      }
       .pr-rail {
         position: fixed;
         left: 0;
@@ -5404,8 +5423,40 @@
         if (!r || isOpen()) return;
         document.body.classList.add(OPEN);
         fab.setAttribute("aria-expanded", "true");
+        // Pre-26 Safari still honors theme-color; dim it with the scrim.
+        setThemeColorTint(true);
         var x = r.querySelector("[data-rail-close]");
         if (x) x.focus();
+      }
+      // iOS Safari samples fixed overlays for browser-chrome tint and can keep
+      // the scrim's color after dismiss. Re-assert the page background on
+      // <html> + theme-color so the title bar re-samples --bg.
+      function setThemeColorTint(dim) {
+        var metas = document.querySelectorAll('meta[name="theme-color"]');
+        for (var i = 0; i < metas.length; i++) {
+          var m = metas[i];
+          if (!m.dataset.gwThemeBase) m.dataset.gwThemeBase = m.getAttribute("content") || "";
+          if (dim) {
+            // Match color-mix(#000 38%, --bg) approximately for the two themes.
+            var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+            m.setAttribute("content", dark ? "#0c0c0c" : "#9a9a9a");
+          } else {
+            m.setAttribute("content", m.dataset.gwThemeBase);
+          }
+        }
+      }
+      function resyncChromeTint() {
+        setThemeColorTint(false);
+        if (isOpen()) return;
+        var root = document.documentElement;
+        // Stamp the resolved page bg, flush, then hand ownership back to the
+        // CSS token so scheme flips stay live. The paint change is what makes
+        // Safari re-sample the title bar off the dismissed scrim.
+        root.style.backgroundColor = getComputedStyle(document.body).backgroundColor;
+        void root.offsetHeight;
+        requestAnimationFrame(function () {
+          if (!isOpen()) root.style.backgroundColor = "";
+        });
       }
       // refocus only on a deliberate dismissal: after a navigation the button
       // may be gone, and stealing focus mid-swap fights the new page.
@@ -5414,6 +5465,10 @@
         document.body.classList.remove(OPEN);
         fab.setAttribute("aria-expanded", "false");
         if (refocus) fab.focus();
+        resyncChromeTint();
+        // Scrim visibility delay is 0.24s; re-assert once it has left the
+        // fixed-element sample pool.
+        setTimeout(resyncChromeTint, 280);
       }
       fab.addEventListener("click", function () {
         if (isOpen()) close(true); else open();
