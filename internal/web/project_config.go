@@ -29,11 +29,22 @@ type memberRow struct {
 	Caps     []string // effective capability chips
 	// TemplateUnknown: explicit template that resolves to nothing (typo in a
 	// hand-edited config). The select shows it as "(unknown)" instead of
-	// silently falling back to default; effective caps come from the fallback.
+	// silently falling back to default; the actor's effective capabilities are
+	// none, because ResolveCapabilities fails closed on a broken mapping.
 	TemplateUnknown bool
-	// Inert: capability map entry without allowlist membership (legacy or
-	// hand-edited config) — the bot never grants these access, so the roster
-	// surfaces them for cleanup instead of hiding them.
+	// Direct: on allowedUserIds, so the row's × removes a direct membership.
+	// A row that is not direct is either a live team member or inert, and its ×
+	// can only remove the capabilityByUser entry.
+	Direct bool
+	// ViaTeam: not on allowedUserIds but on one of the project's teams, so the
+	// grant is live and the capabilityByUser override is in force. Rendering
+	// these as Inert claimed the opposite of the truth.
+	ViaTeam bool
+	// Via names the teams carrying a ViaTeam row's access ("via team eng").
+	Via string
+	// Inert: capability map entry with neither a direct membership nor a team
+	// (legacy or hand-edited config) — the bot never grants these access, so the
+	// roster surfaces them for cleanup instead of hiding them.
 	Inert bool
 }
 
@@ -111,9 +122,13 @@ func displayName(names map[string]string, id string) string {
 }
 
 // buildMemberRoster merges the direct allowlist and the capabilityByUser map
-// into one roster: direct members in config order, then inert map-only rows.
-// Team members are NOT here — they live on the team roster, because their grant
-// belongs to the team and removing it means leaving the team.
+// into one roster: direct members in config order, then map-only rows.
+// Team members are NOT listed for their team grant — that lives on the team
+// roster, because removing it means leaving the team. A team member *with* a
+// capabilityByUser override does get a row, because the override is editable
+// only here; it is a live grant, not an inert one, so it renders its effective
+// capabilities rather than the "cannot use Grok" warning. This page is the audit
+// surface for adminProject, so a real grant shown as dead is worse than noise.
 func (s *Server) buildMemberRoster(item *config.ProjectItem, names map[string]string) []memberRow {
 	tplByUser := make(map[string]string, len(item.CapabilityByUser))
 	for _, m := range item.CapabilityByUser {
@@ -122,6 +137,14 @@ func (s *Server) buildMemberRoster(item *config.ProjectItem, names map[string]st
 	known := make(map[string]bool, len(item.CapabilityTemplateNames))
 	for _, n := range item.CapabilityTemplateNames {
 		known[n] = true
+	}
+	// Teams carrying each actor, in the snapshot's key order.
+	teamsByActor := make(map[string][]string)
+	for _, t := range item.Teams {
+		for _, id := range t.Members {
+			n := config.NormalizeActorID(id)
+			teamsByActor[n] = append(teamsByActor[n], t.Key)
+		}
 	}
 	var rows []memberRow
 	member := make(map[string]bool, len(item.AllowedUserIDs))
@@ -136,16 +159,29 @@ func (s *Server) buildMemberRoster(item *config.ProjectItem, names map[string]st
 			Template:        tpl,
 			Explicit:        tpl != "",
 			TemplateUnknown: tpl != "" && !known[tpl],
+			Direct:          true,
 			Caps:            capChips(s.cfg.ResolveCapabilities(item.Name, id)),
 		})
 	}
 	for _, m := range item.CapabilityByUser {
-		if !member[config.NormalizeActorID(m.ID)] {
-			rows = append(rows, memberRow{
-				ID: m.ID, Name: displayName(names, m.ID), Initials: "?",
-				Template: m.Template, Explicit: true, Inert: true,
-			})
+		id := config.NormalizeActorID(m.ID)
+		if member[id] {
+			continue
 		}
+		teams := teamsByActor[id]
+		row := memberRow{
+			ID: m.ID, Name: displayName(names, m.ID), Initials: "?",
+			Template: m.Template, Explicit: true,
+			TemplateUnknown: m.Template != "" && !known[m.Template],
+			ViaTeam:         len(teams) > 0,
+			Inert:           len(teams) == 0,
+		}
+		if row.ViaTeam {
+			row.Initials = memberInitials(row.Name, config.ActorSubject(m.ID))
+			row.Via = "via team " + strings.Join(teams, ", ")
+			row.Caps = capChips(s.cfg.ResolveCapabilities(item.Name, m.ID))
+		}
+		rows = append(rows, row)
 	}
 	return rows
 }
@@ -160,8 +196,11 @@ func defaultRoleFallback(item *config.ProjectItem) string {
 }
 
 // buildTeamRoster renders one row per team with the capabilities its template
-// grants and its members. A team naming no template (or an unknown one) shows
-// the policy fallback's capabilities, which is what its members actually get.
+// grants and its members. A team naming no template shows the policy fallback's
+// capabilities, which is what its members actually get. A team naming an
+// *unknown* template shows no capabilities at all, because that is what
+// ResolveCapabilities gives them — a broken mapping fails closed instead of
+// falling through to the unmapped default.
 func (s *Server) buildTeamRoster(item *config.ProjectItem, names map[string]string) []teamRosterRow {
 	if len(item.Teams) == 0 {
 		return nil
@@ -169,11 +208,14 @@ func (s *Server) buildTeamRoster(item *config.ProjectItem, names map[string]stri
 	fallback := defaultRoleFallback(item)
 	rows := make([]teamRosterRow, 0, len(item.Teams))
 	for _, t := range item.Teams {
-		tpl := t.Capabilities
-		if tpl == "" || t.TemplateUnknown {
-			tpl = fallback
+		var caps config.Capabilities
+		if !t.TemplateUnknown {
+			tpl := t.Capabilities
+			if tpl == "" {
+				tpl = fallback
+			}
+			caps, _ = s.cfg.ResolveTemplate(item.Name, tpl)
 		}
-		caps, _ := s.cfg.ResolveTemplate(item.Name, tpl)
 		row := teamRosterRow{
 			Key:             t.Key,
 			Label:           t.Label,

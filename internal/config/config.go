@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -614,13 +615,25 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config.channels must map Discord channel IDs → project names")
 	}
 
-	for name, pc := range c.Projects {
+	for _, name := range slices.Sorted(maps.Keys(c.Projects)) {
+		pc := c.Projects[name]
 		cwd := pc.Path
 		if !filepath.IsAbs(cwd) {
 			return nil, fmt.Errorf("project %q path must be absolute: %s", name, cwd)
 		}
 		if _, err := os.Stat(cwd); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] project %q path does not exist: %s\n", name, cwd)
+		}
+		// A capability template that resolves to nothing is not a soft problem:
+		// whoever it applies to gets zero capabilities (ResolveCapabilities fails
+		// closed rather than promoting them to the unmapped default).
+		for _, ref := range unresolvedTemplateRefs(pc) {
+			fmt.Fprintf(os.Stderr,
+				"[warn] project %q: %s names no known capability template — "+
+					"everyone it applies to gets NO capabilities until it is fixed "+
+					"(known: builtin investigator/operator/builder/approver/admin plus "+
+					"projects.%s.capabilityTemplates).\n",
+				name, ref, name)
 		}
 	}
 	for ch, name := range c.Channels {

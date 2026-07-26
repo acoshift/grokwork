@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -119,31 +120,153 @@ func TestResolveCapabilitiesAccessOnlyTeamFallsBackToDefault(t *testing.T) {
 	}
 }
 
-// TestResolveCapabilitiesUnknownTeamTemplateFallsBackToDefault: a typo in a team's
-// capability template must not silently promote (or demote to admin) — it
-// contributes nothing and the unmapped default applies.
-func TestResolveCapabilitiesUnknownTeamTemplateFallsBackToDefault(t *testing.T) {
-	on := true
-	cfg := &Config{Projects: ProjectsMap{
-		"app": {
-			Path:         "/app",
-			SafeTeamMode: &on,
-			Teams:        map[string]TeamConfig{"eng": {Members: []string{"discord:9"}, Capabilities: "buildr"}},
+// TestResolveCapabilitiesBrokenTemplateFailsClosed: a named-but-unresolvable
+// capability template must not fall through to the *unmapped* default, which is
+// builder with safeTeamMode off (its default) — a typo, or an operator deleting
+// a capabilityTemplates overlay, would then promote a support team to
+// builder-class. "Nothing named a template" and "the named template is broken"
+// are different answers; only the first one gets a default.
+func TestResolveCapabilitiesBrokenTemplateFailsClosed(t *testing.T) {
+	zero := Capabilities{}
+	on, off := true, false
+	for _, tc := range []struct {
+		name string
+		pc   ProjectConfig
+	}{
+		{
+			name: "team typo, safeTeamMode unset (default off → builder)",
+			pc: ProjectConfig{
+				Path: "/app",
+				CapabilityTemplates: map[string]Capabilities{
+					"support-l1": {Investigate: true},
+				},
+				Teams: map[string]TeamConfig{
+					"support": {Members: []string{"discord:9"}, Capabilities: "support-l1-TYPO"},
+				},
+			},
 		},
-	}}
+		{
+			name: "team typo, safeTeamMode explicitly off",
+			pc: ProjectConfig{
+				Path:         "/app",
+				SafeTeamMode: &off,
+				Teams: map[string]TeamConfig{
+					"support": {Members: []string{"discord:9"}, Capabilities: "buildr"},
+				},
+			},
+		},
+		{
+			name: "team typo, safeTeamMode on",
+			pc: ProjectConfig{
+				Path:         "/app",
+				SafeTeamMode: &on,
+				Teams: map[string]TeamConfig{
+					"support": {Members: []string{"discord:9"}, Capabilities: "buildr"},
+				},
+			},
+		},
+		{
+			name: "capabilityByUser typo on a direct member",
+			pc: ProjectConfig{
+				Path:             "/app",
+				AllowedUserIDs:   []string{"9"},
+				CapabilityByUser: map[string]string{"9": "investigatr"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{Projects: ProjectsMap{"app": tc.pc}}
+			caps := cfg.ResolveCapabilities("app", "9")
+			if caps != zero {
+				t.Fatalf("a broken capability template must fail closed, got %+v", caps)
+			}
+			// Access is a separate grant: membership still holds, so the operator
+			// sees a member who can do nothing rather than a silent promotion.
+			if !cfg.AccessAllowed("app", "9") {
+				t.Error("an unknown template must not revoke access")
+			}
+		})
+	}
+
+	// A second, *valid* membership is not punished for a broken sibling: whatever
+	// resolves still applies (and nothing more).
+	cfg := &Config{Projects: ProjectsMap{"app": {
+		Path: "/app",
+		Teams: map[string]TeamConfig{
+			"support": {Members: []string{"discord:9"}, Capabilities: "investigator"},
+			"eng":     {Members: []string{"discord:9"}, Capabilities: "buildr"},
+		},
+	}}}
 	caps := cfg.ResolveCapabilities("app", "9")
+	if !caps.FileEscalation {
+		t.Errorf("the resolvable team must still apply: %+v", caps)
+	}
 	if caps.CanShip() {
-		t.Errorf("a misspelled template must not ship: %+v", caps)
+		t.Errorf("the broken team must contribute nothing: %+v", caps)
 	}
-	if caps.AdminProject {
-		t.Errorf("a misspelled template must not admin: %+v", caps)
+
+	// Control: with no template named anywhere, the unmapped default is unchanged.
+	unmapped := &Config{Projects: ProjectsMap{"app": {
+		Path:  "/app",
+		Teams: map[string]TeamConfig{"eng": {Members: []string{"discord:9"}}},
+	}}}
+	if !unmapped.ResolveCapabilities("app", "9").CanShip() {
+		t.Error("an access-only team with safeTeamMode off must still get the builder default")
 	}
-	if !caps.Investigate {
-		t.Errorf("want the investigator default: %+v", caps)
+}
+
+// TestLoadWarnsUnresolvedCapabilityTemplate: failing closed is right but silent,
+// so Load names every template reference that resolves to nothing.
+func TestLoadWarnsUnresolvedCapabilityTemplate(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "app"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	// Access is still granted — membership is the grant, the template is separate.
-	if !cfg.AccessAllowed("app", "9") {
-		t.Error("an unknown template must not revoke access")
+	cfgPath := filepath.Join(dir, "config.json")
+	raw := `{
+  "discordToken": "test-token",
+  "projects": {
+    "app": {
+      "path": "` + filepath.Join(dir, "app") + `",
+      "capabilityTemplates": {"support-l1": {"investigate": true}},
+      "capabilityByUser": {"7": "operator"},
+      "teams": {
+        "support": {"members": ["discord:123"], "capabilities": "support-l1-TYPO"},
+        "eng": {"members": ["discord:456"], "capabilities": "builder"}
+      }
+    }
+  },
+  "channels": {"c1": "app"}
+}`
+	if err := os.WriteFile(cfgPath, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GROK_WORK_CONFIG", cfgPath)
+	t.Setenv("DISCORD_BOT_TOKEN", "")
+	t.Setenv("GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID", "")
+
+	restore := captureStderr(t)
+	cfg, err := Load()
+	warnings := restore()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// normalizeTeams lowercases the template name on load, so the warning quotes
+	// the stored (lowercased) spelling.
+	if !strings.Contains(warnings, "support-l1-typo") ||
+		!strings.Contains(warnings, "teams.support.capabilities") {
+		t.Fatalf("no warning naming the broken team template:\n%s", warnings)
+	}
+	// The names that do resolve must not be reported.
+	if strings.Contains(warnings, "teams.eng") || strings.Contains(warnings, "capabilityByUser.7") {
+		t.Errorf("warned about a template that resolves:\n%s", warnings)
+	}
+	// And the runtime answer matches what the warning claims.
+	if caps := cfg.ResolveCapabilities("app", "123"); caps != (Capabilities{}) {
+		t.Errorf("broken team template granted %+v on the real Load path", caps)
+	}
+	if !cfg.ResolveCapabilities("app", "456").CanShip() {
+		t.Error("the sibling team lost its grant")
 	}
 }
 

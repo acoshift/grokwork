@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -159,6 +160,14 @@ func (c *Config) ProjectInvestigateTools(project string) string {
 // allowedUserIds-only member.
 // SafeTeamMode off → builder default for unmapped (backward compat).
 // SafeTeamMode on → unmapped → safeTeamDefaultTemplate (default investigator) (K16).
+//
+// "Nothing named a template" and "every named template is broken" are different
+// answers and must not share a branch: the unmapped default is builder with
+// safeTeamMode off, so letting a typo (or a deleted capabilityTemplates overlay)
+// fall through would *promote* a support team to builder-class. A named-but-
+// unresolvable template therefore fails closed with zero capabilities — the same
+// answer safeTeamMode already gives for an unresolvable default template.
+// Load() warns about every such name so the operator learns at startup.
 func (c *Config) ResolveCapabilities(project, userID string) Capabilities {
 	if c == nil {
 		return BuiltinCapabilityTemplates["builder"]
@@ -188,24 +197,29 @@ func (c *Config) ResolveCapabilities(project, userID string) Capabilities {
 	}
 
 	var caps Capabilities
-	var any bool
+	var named, resolved bool
 	if uid != "" && byUser != nil {
 		// Keys may be written bare or namespaced; normalize both sides.
-		if name, hit := normalizeActorKeys(byUser)[uid]; hit {
+		if name, hit := normalizeActorKeys(byUser)[uid]; hit && strings.TrimSpace(name) != "" {
+			named = true
 			if t, ok := lookupTemplate(name, overlays); ok {
 				caps = caps.Or(t)
-				any = true
+				resolved = true
 			}
 		}
 	}
 	for _, name := range teamTemplates {
+		named = true
 		if t, ok := lookupTemplate(name, overlays); ok {
 			caps = caps.Or(t)
-			any = true
+			resolved = true
 		}
 	}
-	if any {
+	if resolved {
 		return caps
+	}
+	if named {
+		return Capabilities{} // broken mapping → fail closed, never the default
 	}
 	// Unmapped
 	if safe {
@@ -216,6 +230,43 @@ func (c *Config) ResolveCapabilities(project, userID string) Capabilities {
 		return t
 	}
 	return BuiltinCapabilityTemplates["builder"]
+}
+
+// unresolvedTemplateRefs returns "<where> → <name>" for every capability template
+// the project names that resolves to nothing, sorted. Each one silently strips
+// the capabilities of whoever it applies to (ResolveCapabilities fails closed on
+// a broken mapping), so Load reports them rather than leaving the operator to
+// discover it as a member who can suddenly do nothing.
+func unresolvedTemplateRefs(pc ProjectConfig) []string {
+	var out []string
+	check := func(where, name string) {
+		if strings.TrimSpace(name) == "" {
+			return
+		}
+		if _, ok := lookupTemplate(name, pc.CapabilityTemplates); !ok {
+			out = append(out, where+" → "+name)
+		}
+	}
+	if pc.SafeTeamMode != nil && *pc.SafeTeamMode {
+		check("safeTeamDefaultTemplate", pc.SafeTeamDefaultTemplate)
+	}
+	keys := make([]string, 0, len(pc.Teams))
+	for k := range pc.Teams {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		check("teams."+k+".capabilities", pc.Teams[k].Capabilities)
+	}
+	ids := make([]string, 0, len(pc.CapabilityByUser))
+	for id := range pc.CapabilityByUser {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		check("capabilityByUser."+id, pc.CapabilityByUser[id])
+	}
+	return out
 }
 
 func lookupTemplate(name string, overlays map[string]Capabilities) (Capabilities, bool) {

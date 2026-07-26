@@ -332,6 +332,100 @@ func TestReviewerAdminIDAcceptsNamespaced(t *testing.T) {
 	}
 }
 
+// TestAccessTabTeamMemberWithOverrideIsLive: a capabilityByUser override on
+// someone whose project access comes from a team is a LIVE grant. The roster
+// derived membership from allowedUserIds alone, so the row rendered inert —
+// "not on member list … cannot use Grok" with no capability chips — while the
+// override was in force. With the Discord mod bypass gone, adminProject is the
+// only way to cancel/reset someone else's thread and this page is where it is
+// audited, so the row has to tell the truth.
+func TestAccessTabTeamMemberWithOverrideIsLive(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	if err := cfg.SetProjectTeam("proj", "eng", "Engineering", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.AddProjectTeamMember("proj", "eng", "discord:456"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectCapabilityByUser("proj", "456", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	// The grant the page has to describe.
+	if !cfg.AccessAllowed("proj", "456") || !cfg.ResolveCapabilities("proj", "456").AdminProject {
+		t.Fatalf("precondition: 456 must hold adminProject on proj: %+v",
+			cfg.ResolveCapabilities("proj", "456"))
+	}
+
+	body := getTeamBody(t, srv, "/config/projects/proj")
+	// Scope every assertion to the roster row for 456.
+	i := strings.Index(body, `id="member-roster"`)
+	if i < 0 {
+		t.Fatalf("no member roster: %s", body)
+	}
+	rows := strings.Split(body[i:], `class="roster-row`)
+	var row string
+	for _, r := range rows {
+		if strings.Contains(r, "456") {
+			row = r
+			break
+		}
+	}
+	if row == "" {
+		t.Fatalf("roster has no row for the overridden team member: %s", body[i:])
+	}
+	if strings.Contains(row, "not on member list") ||
+		strings.Contains(row, "cannot use Grok") {
+		t.Fatalf("a live team member rendered as inert:\n%s", row)
+	}
+	if !strings.Contains(row, "via team eng") {
+		t.Fatalf("row does not say where the access comes from:\n%s", row)
+	}
+	if !strings.Contains(row, `<span class="cap danger-cap">admin</span>`) {
+		t.Fatalf("row does not render the effective admin capability:\n%s", row)
+	}
+	// The row's × can only remove the override — the actor is on no allowlist, so
+	// offering "remove member" would post a request the config layer rejects.
+	if !strings.Contains(row, `action="/config/projects/capabilities/users/remove"`) {
+		t.Fatalf("row must offer removing the override, not the membership:\n%s", row)
+	}
+}
+
+// TestAccessTabBrokenTeamTemplateShowsNoCaps: the team card used to advertise the
+// unmapped fallback's capabilities for a team whose template does not resolve.
+// Those members now get nothing at all, and the card has to say that instead.
+func TestAccessTabBrokenTeamTemplateShowsNoCaps(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	// Hand-edited config: SetProjectTeam validates, so write the broken name via
+	// the parsed-config path a config.json edit produces.
+	cfg.Projects["proj"] = config.ProjectConfig{
+		Path:           cfg.Projects["proj"].Path,
+		AllowedUserIDs: cfg.Projects["proj"].AllowedUserIDs,
+		Teams: map[string]config.TeamConfig{
+			"support": {Label: "Support", Members: []string{"discord:sup-1"}, Capabilities: "support-l1-typo"},
+		},
+	}
+	if caps := cfg.ResolveCapabilities("proj", "sup-1"); caps != (config.Capabilities{}) {
+		t.Fatalf("precondition: broken template must fail closed, got %+v", caps)
+	}
+	body := getTeamBody(t, srv, "/config/projects/proj")
+	i := strings.Index(body, `class="team-card"`)
+	if i < 0 {
+		t.Fatalf("no team card: %s", body)
+	}
+	card := body[i:]
+	if j := strings.Index(card, "team-add-member"); j >= 0 {
+		card = card[:j]
+	}
+	if !strings.Contains(card, "no capabilities") {
+		t.Fatalf("broken-template warning must say members get nothing:\n%s", card)
+	}
+	// The chips are <span class="cap">, <span class="cap hi"> or <span
+	// class="cap danger-cap"> — the enclosing <span class="caps"> stays.
+	if strings.Contains(card, `<span class="cap"`) || strings.Contains(card, `<span class="cap `) {
+		t.Fatalf("broken template must advertise no capability chips:\n%s", card)
+	}
+}
+
 // TestConfigDigestTracksTeams: the config page auto-refreshes off fpConfig, so a
 // team edit that leaves the digest unchanged makes the Access tab go stale.
 func TestConfigDigestTracksTeams(t *testing.T) {

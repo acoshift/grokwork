@@ -91,7 +91,7 @@
         </form>
       </div>
       {{if .TemplateUnknown}}
-      <div class="team-warn">⚠ role <span class="mono">{{.Capabilities}}</span> is not a known template — members fall back to <span class="mono">{{$.DefaultRoleFallback}}</span>.</div>
+      <div class="team-warn">⚠ role <span class="mono">{{.Capabilities}}</span> is not a known template — members get <strong>no capabilities</strong> until it is fixed (a broken role fails closed, it does not fall back).</div>
       {{end}}
       {{if .Members}}
       <div class="team-members">
@@ -177,7 +177,7 @@
         <span class="avatar">{{.Initials}}</span>
         <span class="id-wrap">
           <span class="name">{{if .Name}}{{.Name}}{{else}}<span class="mono">{{.ID}}</span>{{end}}</span>
-          {{if .Name}}<span class="snowflake">{{.ID}}</span>{{else if .Inert}}<span class="snowflake">not on member list</span>{{end}}
+          {{if .Name}}<span class="snowflake">{{.ID}}{{if .ViaTeam}} · {{.Via}}{{end}}</span>{{else if .Inert}}<span class="snowflake">not on member list</span>{{else if .ViaTeam}}<span class="snowflake">{{.Via}}</span>{{end}}
         </span>
       </span>
       <span class="role-cell">
@@ -211,19 +211,19 @@
         {{range .Caps}}<span class="cap{{if eq . "admin"}} danger-cap{{else if and $row.Explicit (not $row.TemplateUnknown)}} hi{{end}}">{{.}}</span>{{end}}
       </span>
       {{end}}
-      {{if .Inert}}
-      <form class="row-x-form" method="post" action="{{route "config.removeProjectCapabilityUser"}}" data-confirm="Remove role assignment for {{.ID}}?" data-confirm-title="Remove assignment" data-confirm-ok="Remove" data-confirm-danger>
-        {{template "csrf" $}}
-        <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
-        <input type="hidden" name="id" value="{{.ID}}">
-        <button type="submit" class="row-x" title="Remove role assignment">×</button>
-      </form>
-      {{else}}
+      {{if .Direct}}
       <form class="row-x-form" method="post" action="{{route "config.removeProjectUser"}}" data-confirm="Remove {{.ID}} from this project?" data-confirm-title="Remove member" data-confirm-ok="Remove" data-confirm-danger>
         {{template "csrf" $}}
         <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
         <input type="hidden" name="id" value="{{.ID}}">
         <button type="submit" class="row-x" title="Remove member">×</button>
+      </form>
+      {{else}}
+      <form class="row-x-form" method="post" action="{{route "config.removeProjectCapabilityUser"}}" data-confirm="Remove role assignment for {{.ID}}?" data-confirm-title="Remove assignment" data-confirm-ok="Remove" data-confirm-danger>
+        {{template "csrf" $}}
+        <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button type="submit" class="row-x" title="Remove role assignment">×</button>
       </form>
       {{end}}
     </div>
