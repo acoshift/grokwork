@@ -58,7 +58,7 @@ Always mention the bot first: `@Grok …`.
 | `/answer [draft]` | Knowledge path → phase `answered` |
 | `/customer-update <text>` | Set sanitized customer-facing text |
 | `/escalate [note]` | Hand to eng → phase `fixing` |
-| `/close [answered\|fixed\|…]` | Close case (owner/co/mod) |
+| `/close [answered\|fixed\|…]` | Close case (owner/co-owner/project admin) |
 | `/reopen [investigate\|fixing]` | Resume a closed case (default investigate; keeps dossier) |
 | `/board cases` | List open cases by phase |
 | `/status`, `/brief`, `/help` | Thread state and help |
@@ -81,7 +81,7 @@ Requires web OAuth **member+** (or admin) **and** host feature `startSessions` f
 | Sessions / history | Read progress |
 | Ship board | Usually read-only for investigators (no ship caps) |
 
-**Note:** Web resolves capabilities with Discord **user id only** (no guild roles). Map investigators by user ID if they primarily work from the web.
+**Note:** Discord and web both resolve capabilities from the **actor id only** — nothing about the guild is consulted. Put investigators on a team whose `capabilities` is `investigator`, or map them in `capabilityByUser`; either works identically in chat and on the web.
 
 Without OAuth (open LAN), write features stay off (fail-closed).
 
@@ -109,7 +109,7 @@ Without OAuth (open LAN), write features stay off (fail-closed).
 | “You're not allowed to open cases…” | Caps lack investigate/escalate/start — check Safe Team mapping |
 | “You're not allowed to escalate…” | Need `fileEscalation` or builder-class caps — ask admin |
 | “You're not allowed to draft customer updates…” | Need `draftCustomerReply` (or escalate/builder class) |
-| “Only the case owner, co-owner, or a mod can close.” | `/claim` or ask owner |
+| “Only the case owner, co-owner, or a project admin can close.” | `/claim` or ask owner |
 | “This case is **closed**…” | Open a **new** `/case` |
 | Silent / no reply | Channel not mapped or allowlist empty |
 

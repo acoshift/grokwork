@@ -132,10 +132,10 @@ By default the UI stays **open on the private network** (no login) so existing c
 |-------------|---------|
 | `webAuth.enabled` | Turn on OAuth gates |
 | `webAuth.sessionSecret` | Optional / reserved (web sessions are opaque server-side IDs, not HMAC cookies) |
-| `webAuth.adminDiscordIds` | Discord user IDs who may change config / prune worktrees |
-| `webAuth.memberDiscordIds` / `viewerDiscordIds` | Optional explicit lists |
+| `webAuth.adminDiscordIds` | Actors who may change config / prune worktrees. Namespaced actor ids (`discord:123`, `oidc:alice`); a bare snowflake still means Discord. The JSON key keeps its historical name |
+| `webAuth.memberDiscordIds` / `viewerDiscordIds` | Optional explicit lists, same namespaced-actor-id form |
 | `webAuth.features.*` | `githubWrites`, `merge`, `startSessions` (see table above; all default false) |
-| Project `allowedUserIds` | Users listed on any project get **member** if not in the lists above |
+| Project membership | Actors on any project (`allowedUserIds` **or** a `teams.<key>.members` list) get **member** if not in the lists above |
 | `GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID` | If `adminDiscordIds` is empty, merged on boot as the first admin |
 
 When enabled: unauthenticated page GETs redirect to `/login`; config and worktree **POST**s require an **admin** session + CSRF. Static assets stay public. Discord `@Grok` is unchanged (still uses the bot allowlist).
@@ -212,8 +212,8 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 | `@Grok /link #N` · `/link ENG-123` | Bind GitHub/Linear tickets (Linear only when enabled for the project); `/link fix …` stores **Fixes**; `/unlink`; `/link clear` |
 | `@Grok /claim` | Take ownership of this thread |
 | `@Grok /hand-off @user` | Transfer ownership and post a short hand-off card |
-| `@Grok /reset` | Drop session + remove this thread’s git worktree (owner/mod) |
-| `@Grok /cancel` · `/stop` | Stop the in-progress run (owner/mod; queued follow-ups still run) |
+| `@Grok /reset` | Drop session + remove this thread’s git worktree (owner, co-owner, or project admin) |
+| `@Grok /cancel` · `/stop` | Stop the in-progress run (owner, co-owner, or project admin; queued follow-ups still run) |
 | `@Grok /fix-ci` | Fetch failing CI checks for this thread’s PR(s) and queue a minimal fix |
 | `@Grok <task>` + attachments | Download files for Grok to read (logs, screenshots, patches) |
 | Reply to a message with `@Grok <task>` | Include the referenced message text + attachments (e.g. image, then ask Grok) |

@@ -28,7 +28,7 @@ Escalation and customer-draft gates still succeed for builders via **builder-cla
 - `/verify`, `/comments`, `/link`, `/review @user`, labels, board  
 - On **cases** (after escalate or while collaborating): implement in phase `fixing` with ship policy when caps allow  
 - Escalate / answer / customer-update on cases via builder-class gates (even without the draft/escalate flag bits)  
-- Claim ownership, queue tasks, cancel/reset when owner/co/mod  
+- Claim ownership, queue tasks, cancel/reset when owner/co-owner/project admin  
 
 ---
 
@@ -109,9 +109,9 @@ Capability resolution is the same on web and in Discord: `capabilityByUser` plus
 |-----------|------------|
 | Coerced to investigate / no PR | Caps missing `githubWrites` (mis-mapped as investigator) — admin must map to `builder` |
 | “You're not allowed to start fix tasks…” | No start/github/investigate path |
-| “You're not allowed to `/sync` (need builder caps or thread control).” | Not CanShip and not thread owner/co/mod |
+| “You're not allowed to `/sync` (need builder caps or thread control).” | Not CanShip and not thread owner/co-owner/project admin |
 | “You're not allowed to `/address`…” | Same as sync |
-| Demoted after Safe Team Mode on | Unmapped eng → default investigator — map role/user to `builder` |
+| Demoted after Safe Team Mode on | Unmapped eng → default investigator — put them on a team whose `capabilities` is `builder` (or map the user in `capabilityByUser`) |
 | Web POST 404 “not found” | Host feature flag off or auth off (features fail closed) |
 | Web 403 member required | Web role is **viewer** only |
 

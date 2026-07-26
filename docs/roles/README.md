@@ -72,9 +72,9 @@ Web write features (host-level, fail-closed when OAuth is off):
 - `merge` — merge PR from web  
 - `prReviews` — team PR review actions  
 
-Resolution order for Discord user id: **admin list → member list → viewer list → any project `allowedUserIds` → deny**. Project role IDs alone do **not** grant web login membership; put eng/support user snowflakes on project allowlists (or webAuth lists).
+Resolution order for an actor id: **admin list → member list → viewer list → membership of any project (`allowedUserIds` or a `teams.<key>.members` list) → deny**. `webAuth.adminDiscordIds` (and the member/viewer lists) accept namespaced actor ids; a bare snowflake still means Discord.
 
-Web capability checks for case open/escalate resolve with **user id only** (no Discord guild role list). Prefer `capabilityByUser` for people who work primarily from the web.
+Web and Discord capability checks resolve from the **actor id only** — there is no guild-role lookup on either path, so a team membership means the same thing in chat and in the web UI.
 
 ---
 

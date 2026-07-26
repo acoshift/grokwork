@@ -339,9 +339,9 @@ resolveWebRole(discordUserId):
   1. if discordUserId ∈ webAuth.adminDiscordIds  → admin
   2. else if discordUserId ∈ webAuth.memberDiscordIds → member
   3. else if discordUserId ∈ webAuth.viewerDiscordIds → viewer
-  4. else if isAllowedUser(discordUserId) per bot allowlist
-       (allowedUserIds OR allowedRoleIds via GuildMember when DiscordReady)
-       → member   // team default: allowlisted eng is web member
+  4. else if actor is a project member per bot allowlist
+       (allowedUserIds OR any teams.<key>.members list; no Discord call needed)
+       → member   // team default: an allowlisted engineer is a web member
   5. else → deny (no session)
 ```
 

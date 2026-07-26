@@ -22,7 +22,7 @@ Still requires project Discord allowlist + mapped channel.
 - Open cases when investigate caps resolve (`/case`)  
 - Run **read-only** investigate / explain work  
 - Draft **customer updates** and mark **answered**  
-- Close cases they own (owner / co-owner / mod rules)  
+- Close cases they own (owner / co-owner / project-admin rules)  
 - Board, status, brief, claim/hand-off, queue helpers  
 
 ---
@@ -52,7 +52,7 @@ Always `@Grok …` first.
 | `/investigate <notes>` | Read-only dig |
 | `/answer [draft]` | Phase → answered |
 | `/customer-update <text>` | Sanitized customer text |
-| `/close [resolution]` | Close (owner/co/mod) |
+| `/close [resolution]` | Close (owner/co-owner/project admin) |
 | `/board cases` | Case list |
 | `/status`, `/brief`, `/help` | Continuity |
 

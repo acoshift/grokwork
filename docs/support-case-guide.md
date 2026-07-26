@@ -149,7 +149,7 @@ Every command requires `@Grok` first.
 | `wontfix` | not fixing | abandoned |
 | `escalated_external` | handed outside the team | abandoned |
 
-- Only the case **owner**, co-owner, or a Discord **mod** can close (investigators who own the case can close).  
+- Only the case **owner**, co-owner, or a **project admin** (a team whose `capabilities` template grants `adminProject`) can close (investigators who own the case can close).  
 - Closed cases are **frozen** (no more investigate/answer/customer-update) until `@Grok /reopen` (or `/reopen fixing`).
 
 ### `/reopen` — resume a closed case

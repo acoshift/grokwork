@@ -10,6 +10,13 @@
 | **Related** | `Claude.md`, `TODO.md`, `docs/design-full-workflow-web-ui.md`, `docs/design-crash-safe-active-runs.md`, `docs/design-per-user-github-identity.md`, **`docs/design-no-pr-mode.md`** (shipped) |
 | **Advisor** | Fable xhigh 2026-07-22 — **go-with-changes** (rev 4). Rev 5 = code recheck, not a second design pass. |
 
+> **Superseded (2026-07-27):** Discord-role authorization is gone. `allowedRoleIds` and
+> `capabilityByRole` were removed, along with the `roleIDs []string` parameter on
+> `AccessAllowed` / `ResolveCapabilities`. Membership **and** capabilities now come from
+> per-project `teams.<key>` (`members` = namespaced actor ids, `capabilities` = template
+> name); `allowedUserIds` and `capabilityByUser` are unchanged. Read the role references
+> below as history. See `README.md`, `docs/roles/README.md`, and `internal/config/team.go`.
+
 ---
 
 ## Overview

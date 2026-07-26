@@ -44,12 +44,12 @@ Member is necessary but not always sufficient:
 
 | Action | Extra gate |
 |--------|------------|
-| Open case (form + POST) | `Investigate \|\| FileEscalation \|\| StartSessions` via `ResolveCapabilities(project, userID, nil)` |
+| Open case (form + POST) | `Investigate \|\| FileEscalation \|\| StartSessions` via `ResolveCapabilities(project, actorID)` |
 | Escalate / draft on case panel | Shared Discord rules (`CanEscalateCaseCaps` / `CanDraftCaseCaps`) |
 | Ship from Grok run | Session runs still apply Discord-style caps (githubWrites for PR policy) |
 | Control session buttons | Feature + member + ownership/admin control check |
 
-**Role maps do not apply on web** (nil role IDs). Map active web users in `capabilityByUser`.
+Capabilities resolve from the **actor id only**, identically in chat and on the web: put web users on a project `teams.<key>.members` list (namespaced ids, e.g. `oidc:alice`) or map them in `capabilityByUser`.
 
 Under Safe Team Mode, unmapped members default to **investigator** (or configured default)—they can open cases if investigate is present, but freeform fix will not ship.
 

@@ -32,8 +32,8 @@ This is the richest **project-scoped** Discord capability bundle.
 - Everything **approver** and **builder** can do (ship, investigate, cases)  
 - Explicit **`merge`** and **`adminProject`** flags for future/gates that check them  
 - Today’s bot gates that honor `AdminProject` include approve-class checks (e.g. checkpoint restore alongside `Approve` / `CanShip`)  
-- Open cases, escalate, draft, close (with ownership/mod rules for close)  
-- Thread control when also owner/co/mod for cancel/reset  
+- Open cases, escalate, draft, close (with ownership/project-admin rules for close)  
+- Thread control for cancel/reset: owner, co-owner, or `adminProject` on this project  
 
 **Important product invariant:** the Discord bot **does not merge GitHub PRs** (`gh pr merge`). Merging in the product sense is:
 
@@ -116,4 +116,4 @@ A person can be capability-template `admin` on Discord and still be web **viewer
 |------|---------|
 | Capability **admin** (this doc) | Project Discord/web-start capability flags |
 | [Web admin](./web-admin.md) | OAuth role for config UI and all-project visibility |
-| Discord server Administrator | Platform permission for `/cancel`/`/reset` as “mod”; not a grokwork template |
+| Discord server Administrator | **Grants nothing in grokwork.** Guild/channel permissions are deliberately irrelevant — `/cancel`/`/reset` need owner, co-owner, or this template’s `adminProject` |
