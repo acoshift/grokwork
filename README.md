@@ -181,6 +181,29 @@ A brand-new provider account that is a member of nothing logs in at the provider
 
 Finding your ids: `curl -sH "Authorization: Bearer <token>" https://api.github.com/user | jq .id`, or read the actor id straight off the denial message after one attempt.
 
+### Linking your logins (`/account`)
+
+By default each login is its own actor, so one person arriving through Discord and Google is two strangers — separate sessions, grants, ownership, spend and run caps. **`/account`** fixes that: any signed-in user can attach another login to the account they are signed in as, and detach it again. There is no capability gate, deliberately — gating it would leave the least-privileged person permanently split in two with no way to ask for a fix.
+
+The account you were signed in as when you linked stays **canonical**; the login you attached becomes an **alias**, and signing in with it afterwards lands you in the canonical account. Existing Discord-only deployments therefore need no migration: the snowflake everyone is already allowlisted under remains the account id.
+
+Two consequences worth knowing before you configure anything:
+
+- **Grants must name the account, never an alias.** An `allowedUserIds`, team-member or `capabilityByUser` entry naming an alias will never match, because a session never carries one. Linking *absorbs* what the alias already had — its web-role entries, project access, team memberships, ownership, watcher and case-role ids are rewritten onto the account — so a login that already had access does not lose it. Absorbing is one-way: **unlinking does not give the grants back**, and the confirm text says so.
+- **Unlink is refused if it would lock you out** — you cannot detach the only login that can still be minted for your account (on a Google-only deployment, that is the Google alias of a Discord-canonical account).
+
+Linking a login that is already an alias elsewhere, or that is itself an account with aliases of its own, is refused: that is an account *merge*, which is out of scope. Both link and unlink are audited (`identity.link` / `identity.unlink`), **including refusals** — "someone tried to attach a login to my account" is exactly the report that answers.
+
+### Git attribution comes from a linked GitHub login
+
+The GitHub `@login` that shows up in public output — the PR footer and `Co-authored-by` trailer on ship prompts, the "On behalf of @…" on web-posted comments, and `@Grok /review`'s `gh pr edit --add-reviewer` — now comes **only** from a GitHub login the person proved by signing in with it at `/account`. No admin asserts it any more.
+
+The trailer address is `<numericID>+<login>@users.noreply.github.com`. GitHub matches on the **numeric id**, so the commit lands on that person's profile and contribution graph, no personal email enters public git history, and a later rename keeps working. Both halves are required: an unlinked (or handle-expired) actor gets **no trailer and no mention at all**, which is deliberate — a trailer that attributes to nobody looks like the feature worked.
+
+The cached login is **re-proved on every GitHub sign-in** and **expires after 30 days**, because signing in with Discord proves nothing about a GitHub name and a renamed-then-squatted handle must not keep being mentioned. `/account` marks such a row `handle unverified`; recovery is one GitHub sign-in. This needs no extra OAuth scope — `read:user` already returns the id and login.
+
+> **Removed config key:** `discordUserGitHub` (and its `/config/github-identities` page) is **gone**. A config that still carries it loads fine and prints a startup warning naming the affected ids so you can ask those people to link GitHub themselves; the mappings are ignored. There are no env vars to change — the key never had an env fallback, and the replacement adds none: the GitHub credentials under `webAuth.providers.github` you already need for login are the whole requirement. Until a user links, they simply get no trailer, exactly like an unmapped user before.
+
 ## 3. Run
 
 ```bash
@@ -431,6 +454,8 @@ internal/web/          # private admin UI (hime, templates, SSE)
 internal/grokrun/      # exec grok -p
 internal/gitworktree/  # per-thread git worktree isolation
 internal/sessionstore/ # thread → session persistence
+internal/identity/     # login → account links (data/identity-links.json) + GitHub attribution
+internal/atomicfile/   # crash-safe file writes (temp → fsync → rename → fsync dir)
 internal/history/      # per-turn conversation log + token usage for the web UI
 internal/spend/        # folds history turns into a cost report against modelRates
 internal/ghpr/         # gh CLI wrapper (PR/issue state, checks, writes)

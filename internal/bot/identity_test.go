@@ -9,9 +9,11 @@ import (
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/grokrun"
+	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/identity"
 	"github.com/acoshift/grokwork/internal/inbox"
 	"github.com/acoshift/grokwork/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/spend"
 )
 
 // linkStore builds an identity store with the given alias → canonical bindings.
@@ -251,5 +253,85 @@ func TestInThreadMentionUsesTheDiscordAlias(t *testing.T) {
 	// existed rather than being dropped from the message.
 	if gotIDs[1] != "web:nobody" {
 		t.Errorf("unmappable recipient = %q, want it passed through untouched", gotIDs[1])
+	}
+}
+
+// The map-key family. A spend rollup buckets turns in a map keyed on the actor
+// id a run recorded (spend.turnActor → history.Turn.UserID), so two logins of one
+// person would appear as two independent spenders — two rows, each with half the
+// tokens, and no view anywhere that adds them up. Nothing in spend, history or
+// the rollup is alias-aware and none of them should be: canonical-at-mint is what
+// makes the two turns land under one key.
+//
+// Both mint paths are exercised for real rather than asserted about: the web
+// dispatch hands recordTurnActor an Actor whose id was already resolved at login,
+// and the Discord dispatch mints one through b.actorFromUser.
+func TestSpendFoldsOneAccountAcrossProviders(t *testing.T) {
+	const (
+		snowflake = "424242424242424242"
+		account   = "google:sub-1"
+	)
+	dir := t.TempDir()
+	sessions, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &Bot{cfg: &config.Config{}, sessions: sessions, history: hist}
+	b.SetIdentity(linkStore(t, map[string]string{snowflake: account}))
+
+	usage := func(in, out int) *grokrun.Usage {
+		return &grokrun.Usage{InputTokens: in, OutputTokens: out, TotalTokens: in + out}
+	}
+	// Turn 1 — web: the session cookie already carries the canonical id.
+	b.recordTurnActor("t1", Actor{ID: account, DisplayName: "Web Me"}, nil, "proj", "web task",
+		grokrun.Result{Text: "ok", Usage: usage(100, 10)}, time.Second)
+	// Turn 2 — Discord: same human, minted from the snowflake.
+	discord := b.actorFromUser(&discordgo.User{ID: snowflake, Username: "me"})
+	if discord.ID != account {
+		t.Fatalf("Discord mint produced %q, not the account", discord.ID)
+	}
+	b.recordTurnActor("t2", discord, nil, "proj", "discord task",
+		grokrun.Result{Text: "ok", Usage: usage(200, 20)}, time.Second)
+
+	rep, err := spend.Build(hist, nil, spend.Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.ByActor) != 1 {
+		keys := make([]string, 0, len(rep.ByActor))
+		for _, r := range rep.ByActor {
+			keys = append(keys, r.Key)
+		}
+		t.Fatalf("ByActor rows = %d %v, want 1 — one human must be one spender", len(rep.ByActor), keys)
+	}
+	row := rep.ByActor[0]
+	if row.Key != account {
+		t.Errorf("actor key = %q, want the account %q", row.Key, account)
+	}
+	if row.Turns != 2 {
+		t.Errorf("turns = %d, want both", row.Turns)
+	}
+	if got := row.TotalTokens(); got != 330 {
+		t.Errorf("tokens = %d, want 330 (both turns under one key)", got)
+	}
+	// And the rollup can be scoped to the account: asking for the alias returns
+	// nothing, because the alias never reached a stored record.
+	byAccount, err := spend.Build(hist, nil, spend.Query{ActorID: account})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byAccount.Total.Turns != 2 {
+		t.Errorf("ActorID=account selected %d turns, want 2", byAccount.Total.Turns)
+	}
+	byAlias, err := spend.Build(hist, nil, spend.Query{ActorID: snowflake})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byAlias.Total.Turns != 0 {
+		t.Errorf("ActorID=alias selected %d turns — the alias still has its own bucket", byAlias.Total.Turns)
 	}
 }

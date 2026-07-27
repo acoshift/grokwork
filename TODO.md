@@ -67,7 +67,9 @@ Order is suggested priority, not a commitment. **Code on `main` wins** if this f
 - [x] Project-first shell; ship board; sessions; worktrees; config; OAuth-optional web auth
 - [x] **Multi-provider login** — Discord, Google and GitHub behind one `oauthStart`/`oauthCallback` pair (`GET /auth/{provider}`); a button renders only for a provider holding **both** credential halves, and the same predicate gates the route, so a hidden button is never the only gate. Identity is the provider's immutable subject (Google `sub`, GitHub numeric `id`) under a per-provider namespace (`google:` / `github:`); Discord's actor id stays bare. Credentials at `webAuth.providers.<p>.{clientId,clientSecret}` with a secret-only env fallback
   - [ ] No admin UI for provider credentials — `webAuth.providers` is hand-edited in `config.json`; `/config` neither shows nor edits it (deliberate: it would be the first place the web UI renders a client secret)
-  - [ ] No account linking — one person arriving through two providers is two unrelated actors, each needing its own allowlist/team entry. `config.discordUserGitHub` is still set by hand and is deliberately **not** populated from a GitHub login (commit-attribution identity is a separate decision)
+- [x] **Account linking** (`/account`, `internal/identity`) — one person can bind several logins to one account; any signed-in user may link/unlink their own (no capability gate). Architecture is **canonical-at-mint**: an actor id is resolved to its account where it is *born* (`web.oauthCallback`, `bot.actorFromUser`), so every existing comparison — `config.SameActor`, plain `==` on the run cap, map keys in `webUsers`/inbox/spend — keeps working untouched. Alias awareness was deliberately **not** added to `SameActor`. Linking absorbs the alias's grants/ownership (`config.RewriteActorID`, `sessionstore.RewriteActor`) and cannot activate a dormant `capabilityByUser` entry; unlink is refused when it would leave no mintable login. Link start is `POST /account/link` (CSRF + session-bound state cookie), never a GET
+  - [ ] No account **merge** — linking a login that is already an alias, or that is itself an account with aliases, is refused rather than merged. Two people who each built up history under separate logins cannot be combined
+  - [ ] Grants must name the **account**, not an alias, and nothing in the roster UI flags an allowlist/team entry that names an alias and therefore can never match
 - [x] Start task web; session continue / cancel / reset / label / goal / claim
 - [x] Issues / Linear list / commits / PR detail / diff review / team PR reviews
 - [x] Bulk fix, commit-review-as-session, markdown bodies, live SSE regions
@@ -91,10 +93,11 @@ Order is suggested priority, not a commitment. **Code on `main` wins** if this f
 
 See `docs/design-per-user-github-identity.md` Tier A. **Host still pushes/opens PRs.**
 
-- [x] Discord user → GitHub login map (`config.discordUserGitHub` + web Config UI)
-- [x] Ship prompt trailers + Co-authored-by; PR footer: display name + optional `@login` + session id (no Discord snowflake / thread jump link in human-visible text)
-- [x] Web comment prefix “On behalf of @login …” when mapped
-- [x] `/review @user` → formal GitHub review request when mapped (`gh pr edit --add-reviewer`)
+- [x] ~~Discord user → GitHub login map (`config.discordUserGitHub` + web Config UI)~~ — **removed**. Replaced by a link the person *proved* by signing in with GitHub at `/account` (`internal/identity`, `Store.GitHubFor`), keyed on the account rather than a snowflake. `config.Load` warns naming the ignored ids; an unlinked user gets no trailer, exactly as an unmapped one did
+- [x] Ship prompt trailers + Co-authored-by; PR footer: display name + optional `@login` + session id (no Discord snowflake / thread jump link in human-visible text). Trailer email is `<numericID>+<login>@users.noreply.github.com` — GitHub matches the numeric id, so it survives a rename and leaks no personal address
+- [x] Web comment prefix “On behalf of @login …” when linked
+- [x] `/review @user` → formal GitHub review request when linked (`gh pr edit --add-reviewer`)
+- [ ] The cached GitHub handle expires after 30 days and can only be re-proved by a **GitHub** sign-in; a Discord-only user who linked GitHub once silently stops being mentioned (the trailer email still works). `/account` marks the row `handle unverified`, but nothing pings them
 
 ### 2. Team DX — daily notifications — **shipped**
 

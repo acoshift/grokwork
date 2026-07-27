@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Grok Work** (`grokwork`): a single Go process that bridges Discord and the `grok` CLI. Users tag `@Grok <task>` in a mapped channel; the bot runs Grok Build headless (`grok -p … --cwd <project>`) against a local checkout and streams the reply into a Discord thread. It also serves a private-network admin web UI (OAuth-optional) on `:8787` with a **project-first IA**: `/` is a project launcher; `/projects/{name}` is a per-project workspace (overview, ship, issues, Linear, commits, sessions, worktrees, settings); cross-project lead views (`/ship`, `/sessions`, `/worktrees`, `/spend`, `/deploys`, `/search`) and global `/config` remain in the global shell.
+**Grok Work** (`grokwork`): a single Go process that bridges Discord and the `grok` CLI. Users tag `@Grok <task>` in a mapped channel; the bot runs Grok Build headless (`grok -p … --cwd <project>`) against a local checkout and streams the reply into a Discord thread. It also serves a private-network admin web UI (OAuth-optional) on `:8787` with a **project-first IA**: `/` is a project launcher; `/projects/{name}` is a per-project workspace (overview, ship, issues, Linear, commits, sessions, worktrees, settings); cross-project lead views (`/ship`, `/sessions`, `/worktrees`, `/spend`, `/deploys`, `/search`), the per-user `/account` (link/unlink logins) and global `/config` remain in the global shell.
 
 Module: `github.com/acoshift/grokwork`. Binary: `grokwork`. Env: `GROK_WORK_*` only.
 
