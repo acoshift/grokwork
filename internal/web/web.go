@@ -117,6 +117,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// a provider may actually be used is decided by providerConfigured inside
 	// the handler (see oauth_provider.go). TestAuthRoutesMatchProviderTable pins
 	// these against authStartPath / authCallbackPath so the two cannot drift.
+	// Each provider also gets an "auth.<p>.link" route: the same handshake,
+	// finishing by attaching the identity to the signed-in account instead of
+	// minting a session (see account.go).
 	app.Routes(hime.Routes{
 		"home":                               "/",
 		"login":                              "/login",
@@ -126,7 +129,12 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"auth.google.callback":               "/auth/google/callback",
 		"auth.github":                        "/auth/github",
 		"auth.github.callback":               "/auth/github/callback",
+		"auth.discord.link":                  "/auth/discord/link",
+		"auth.google.link":                   "/auth/google/link",
+		"auth.github.link":                   "/auth/github/link",
 		"logout":                             "/logout",
+		"account":                            "/account",
+		"account.unlink":                     "/account/unlink",
 		"history":                            "/history",
 		"history.thread":                     "/history/",
 		"sessions":                           "/sessions",
@@ -266,6 +274,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("project_config_deploy", "layout.tmpl", "project_config_deploy.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("project_config_danger", "layout.tmpl", "project_config_danger.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("login", "layout.tmpl", "login.tmpl")
+	tp.ParseFiles("account", "layout.tmpl", "account.tmpl")
 	tp.ParseFiles("issues", "layout.tmpl", "issues.tmpl")
 	tp.ParseFiles("issue_detail", "layout.tmpl", "issue_detail.tmpl")
 	tp.ParseFiles("linear_issues", "layout.tmpl", "linear_issues.tmpl")
@@ -295,7 +304,14 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// be swallowed by /auth/{provider}; an unknown key 404s in the handler.
 	mux.Handle("GET /auth/{provider}", hime.Handler(s.oauthStart))
 	mux.Handle("GET /auth/{provider}/callback", hime.Handler(s.oauthCallback))
+	// Linking another login is not public: it needs the session it will attach
+	// to. The callback stays public (the provider redirects to it) and re-checks
+	// that session against the one baked into the state cookie.
+	mux.Handle("GET /auth/{provider}/link", s.requireAccount(hime.Handler(s.oauthLinkStart)))
 	mux.Handle("POST /logout", hime.Handler(s.logout))
+	// Self-service account: your logins, whatever your role.
+	mux.Handle("GET /account", s.requireAuth(hime.Handler(s.accountPage)))
+	mux.Handle("POST /account/unlink", s.requireAccount(hime.Handler(s.postAccountUnlink)))
 
 	// Authenticated pages + SSE + partials
 	mux.Handle("GET /{$}", s.requireAuth(hime.Handler(s.home)))
@@ -570,6 +586,7 @@ type pageData struct {
 	IsStart     bool
 	IsDeploys   bool
 	IsSpend     bool
+	IsAccount   bool
 	Flash       string
 	Error       string
 	// ErrorAlertTitle, when set with Error, opens the appAlert modal on the
@@ -632,6 +649,13 @@ type pageData struct {
 	// that are fully configured. Empty renders the misconfiguration notice
 	// instead of a gate with no way through it.
 	LoginProviders []loginProviderView
+	// Account page (/account): the logins that resolve to this account, and the
+	// configured providers it has none from yet. AccountLinkingOn is false when
+	// no identity store is installed, which turns the page into a read-only
+	// explanation rather than buttons that would refuse.
+	AccountIdentities  []accountIdentityRow
+	AccountLinkOptions []accountLinkOption
+	AccountLinkingOn   bool
 	// Workflow read UI (PR4–7)
 	Project       string
 	RepoCatalog   []config.GitHubRepoRef

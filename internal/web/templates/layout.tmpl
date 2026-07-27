@@ -788,6 +788,16 @@
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }
+    /* Way in to /account (linked logins). Sized like the role line so the
+       identity block stays one small stack, not a button cluster. */
+    .side-user-account {
+      margin-top: 0.3rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-decoration: none;
+      align-self: flex-start;
+    }
+    .side-user-account:hover { color: var(--text); text-decoration: underline; }
     /* Row 2 of .side-user's grid (side padding comes from that box). */
     .logout-form { grid-column: 1 / -1; margin: 0; padding: 0; }
     .logout-form button {
@@ -4414,6 +4424,11 @@
               <span class="side-user-meta">
                 <span class="side-user-name">{{.UserName}}</span>
                 <span class="side-user-role">{{.UserRole}}</span>
+                {{/* Third line rather than a fourth grid row: .side-user-meta is
+                     a flex column, so this costs one small line here and lands
+                     inside the identity block of the phone menu — a row of its
+                     own would add a full 1rem-gap row to the desktop footer. */}}
+                <a class="side-user-account" href="{{route "account"}}">Account</a>
               </span>
               <form method="post" action="{{route "logout"}}" class="logout-form" hx-boost="false">
                 {{if .CSRF}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}

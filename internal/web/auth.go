@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"crypto/subtle"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -304,6 +305,132 @@ func (s *Server) oauthStart(ctx *hime.Context) error {
 	return ctx.Redirect(authURL)
 }
 
+// oauthLinkStart begins attaching another login to the signed-in account.
+//
+// It is oauthStart with two differences, and both are the whole security model:
+// the state lands in the LINK cookie (so it can never complete a login), and
+// the cookie carries the id of the web session that started it (so the callback
+// can refuse to attach an identity to a session that did not ask for it).
+//
+// A GET is safe here even though it has no CSRF token: forging this request
+// only makes the victim's browser start a flow that will attach whatever the
+// VICTIM authenticates as, to the victim's own account. The dangerous
+// direction — the attacker's identity onto the victim's account — is what the
+// session binding refuses.
+func (s *Server) oauthLinkStart(ctx *hime.Context) error {
+	if !s.cfg.WebAuthEnabled() {
+		return ctx.Redirect("/")
+	}
+	key := ctx.PathValue("provider")
+	p, known := s.provider(key)
+	if !known {
+		return ctx.Status(http.StatusNotFound).Error("unknown login provider")
+	}
+	sess := sessionFromContext(ctx.Context())
+	if sess == nil {
+		sess = s.sessionFromRequest(ctx.Request)
+	}
+	if sess == nil {
+		return ctx.RedirectTo("login", map[string]string{"err": "log in before linking another login"})
+	}
+	// Same gate as the login route: a hidden button is not a gate, and no state
+	// cookie is written for a provider whose credentials are missing.
+	if !s.providerConfigured(key) {
+		return s.accountRedirect(ctx, "", p.Label()+" login is not configured")
+	}
+	if s.identity == nil {
+		return s.accountRedirect(ctx, "", "identity linking is not available")
+	}
+	// Shares the session-start budget: a link is a provider round trip started
+	// by a click, and the same actor hammering it is the same abuse.
+	if !s.startLimiter().Allow(sess.DiscordUserID) {
+		err := fmt.Errorf("rate limit exceeded: try again in a minute")
+		s.auditIdentity(ctx, audit.ActionIdentityLink, err, map[string]any{"provider": key})
+		return s.accountRedirect(ctx, "", err.Error())
+	}
+	state, err := randomToken(16)
+	if err != nil {
+		return ctx.Status(http.StatusInternalServerError).Error("state: " + err.Error())
+	}
+	http.SetCookie(ctx.ResponseWriter(), &http.Cookie{
+		Name:     oauthLinkStateCookieFor(key),
+		Value:    state + "|" + sess.ID,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   s.cookieSecure(),
+		MaxAge:   int(oauthStateTTL.Seconds()),
+	})
+	clientID, _ := s.cfg.OAuthProviderCreds(key)
+	authURL := p.AuthorizeURL(clientID, s.oauthRedirectURIFor(key), state)
+	// Same reason as oauthStart: boosted htmx would call the provider with an
+	// HX-Request header their CORS rejects.
+	if ctx.Request.Header.Get("HX-Request") == "true" {
+		ctx.ResponseWriter().Header().Set("HX-Redirect", authURL)
+		ctx.ResponseWriter().WriteHeader(http.StatusNoContent)
+		return nil
+	}
+	return ctx.Redirect(authURL)
+}
+
+// oauthFlow is what the state cookie says a callback is completing.
+type oauthFlow struct {
+	// link is true for a link flow; false is an ordinary login.
+	link bool
+	// sessionID is the web session that started a link flow.
+	sessionID string
+	// next is a login flow's post-login path (always safeLocalNext'd).
+	next string
+}
+
+// takeOAuthState consumes the state cookies for this provider and reports which
+// flow the returned state belongs to. The string result is a user-facing
+// refusal, empty on success.
+//
+// Both cookies are cleared whether or not they matched: a state is single-use,
+// and leaving the loser behind would let it be replayed for its remaining TTL.
+//
+// The flow is chosen by which cookie's state MATCHES, not by which cookie
+// exists. Preferring the link cookie on presence alone would let an abandoned
+// link flow — the tab someone closed at the provider's consent screen —
+// swallow a genuine login callback for the next ten minutes.
+func (s *Server) takeOAuthState(ctx *hime.Context, key, state string) (oauthFlow, string) {
+	read := func(name string) string {
+		c, err := ctx.Cookie(name)
+		if err != nil || c.Value == "" {
+			return ""
+		}
+		http.SetCookie(ctx.ResponseWriter(), &http.Cookie{
+			Name: name, Value: "", Path: "/", MaxAge: -1,
+			HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.cookieSecure(),
+			Expires: time.Unix(0, 0),
+		})
+		return c.Value
+	}
+	linkVal := read(oauthLinkStateCookieFor(key))
+	loginVal := read(oauthStateCookieFor(key))
+	if linkVal == "" && loginVal == "" {
+		return oauthFlow{}, "missing OAuth state cookie"
+	}
+	if linkVal != "" {
+		stored, sessionID, _ := strings.Cut(linkVal, "|")
+		if stored == state {
+			return oauthFlow{link: true, sessionID: sessionID}, ""
+		}
+	}
+	if loginVal != "" {
+		stored, next, found := strings.Cut(loginVal, "|")
+		if stored == state {
+			f := oauthFlow{next: "/"}
+			if found {
+				f.next = safeLocalNext(next)
+			}
+			return f, ""
+		}
+	}
+	return oauthFlow{}, "invalid OAuth state"
+}
+
 // oauthCallback completes a login. Nothing from the browser is trusted but the
 // opaque code and the state this server issued — no user id, email or role is
 // ever read from a query parameter. Every refusal below happens before any
@@ -329,38 +456,51 @@ func (s *Server) oauthCallback(ctx *hime.Context) error {
 	if code == "" || state == "" {
 		return ctx.RedirectTo("login", map[string]string{"err": "missing OAuth code or state"})
 	}
-	c, err := ctx.Cookie(oauthStateCookieFor(key))
-	if err != nil || c.Value == "" {
-		return ctx.RedirectTo("login", map[string]string{"err": "missing OAuth state cookie"})
+	flow, stateErr := s.takeOAuthState(ctx, key, state)
+	if stateErr != "" {
+		return ctx.RedirectTo("login", map[string]string{"err": stateErr})
 	}
-	// Clear state cookie.
-	http.SetCookie(ctx.ResponseWriter(), &http.Cookie{
-		Name: oauthStateCookieFor(key), Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.cookieSecure(),
-		Expires: time.Unix(0, 0),
-	})
-	stored := c.Value
-	storedState := stored
-	next := "/"
-	if i := strings.IndexByte(stored, '|'); i >= 0 {
-		storedState = stored[:i]
-		next = safeLocalNext(stored[i+1:])
-	}
-	if storedState != state {
-		return ctx.RedirectTo("login", map[string]string{"err": "invalid OAuth state"})
+	// A link is authorized by the session that STARTED it, and that is checked
+	// before the code is redeemed: an attacker who lures a signed-in victim into
+	// completing their link callback must not even get their code spent, let
+	// alone their login attached. See verifyLinkSession.
+	var linkSession *Session
+	if flow.link {
+		var err error
+		linkSession, err = s.verifyLinkSession(ctx, flow)
+		if err != nil {
+			s.auditIdentity(ctx, audit.ActionIdentityLink, err, map[string]any{"provider": key})
+			return s.accountRedirect(ctx, "", err.Error())
+		}
 	}
 
 	clientID, secret := s.cfg.OAuthProviderCreds(key)
 	redirectURI := s.oauthRedirectURIFor(key)
 	token, err := p.Exchange(ctx.Context(), code, redirectURI, clientID, secret)
 	if err != nil {
+		// A link failure belongs on /account: the person is signed in, and
+		// bouncing them to /login would drop the message (a live session there
+		// redirects straight home).
+		if flow.link {
+			lerr := fmt.Errorf("token exchange failed")
+			s.auditIdentity(ctx, audit.ActionIdentityLink, lerr, map[string]any{"provider": key})
+			return s.accountRedirect(ctx, "", lerr.Error())
+		}
 		s.auditLogin(audit.ActorAnonymous, "", "", false, "token exchange failed")
 		return ctx.RedirectTo("login", map[string]string{"err": "token exchange failed"})
 	}
 	id, err := p.Identity(ctx.Context(), token)
 	if err != nil || strings.TrimSpace(id.Subject) == "" {
+		if flow.link {
+			lerr := fmt.Errorf("failed to load %s profile", p.Label())
+			s.auditIdentity(ctx, audit.ActionIdentityLink, lerr, map[string]any{"provider": key})
+			return s.accountRedirect(ctx, "", lerr.Error())
+		}
 		s.auditLogin(audit.ActorAnonymous, "", "", false, "failed to load "+p.Label()+" profile")
 		return ctx.RedirectTo("login", map[string]string{"err": "failed to load " + p.Label() + " profile"})
+	}
+	if flow.link {
+		return s.finishOAuthLink(ctx, key, linkSession, id)
 	}
 	// Canonical-at-mint: this is the only place a web actor id is born, so it is
 	// the only place that has to know about linked logins. Everything downstream —
@@ -383,6 +523,13 @@ func (s *Server) oauthCallback(ctx *hime.Context) error {
 		if key != config.ActorKindDiscord || actor != loginActor {
 			msg += " (" + actor + ")"
 		}
+		// The other way in is the one nobody guesses: a person who already has
+		// access under a different login does not need an admin at all, they need
+		// to sign in with that one and attach this login to it. Say so here, where
+		// they are standing, rather than in documentation they are not reading.
+		if actor == loginActor && s.linkingAvailable() {
+			msg += " — if you already have access with another login, sign in with that one and link this one at /account"
+		}
 		return ctx.RedirectTo("login", map[string]string{"err": msg})
 	}
 	name := id.Name
@@ -403,7 +550,7 @@ func (s *Server) oauthCallback(ctx *hime.Context) error {
 	}
 	s.auditLogin(actor, loginActor, string(role), true, "")
 	s.SetSessionCookie(ctx.ResponseWriter(), sess.ID)
-	return ctx.Redirect(next)
+	return ctx.Redirect(flow.next)
 }
 
 // auditLogin records one login attempt.

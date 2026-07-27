@@ -39,6 +39,18 @@ func oauthStateCookieFor(key string) string {
 	return oauthStateCookie + "_" + key
 }
 
+// oauthLinkStateCookieFor names the state cookie for a LINK flow.
+//
+// A link and a login share one callback, so the two flows need states that
+// cannot be swapped: completing a link with a state minted for a login would
+// skip the session binding that makes linking safe at all, and completing a
+// login with a link's state would mint a session from an identity the person
+// only meant to attach. Separate cookies make that a non-question — and let a
+// link started in one tab coexist with a login started in another.
+func oauthLinkStateCookieFor(key string) string {
+	return oauthStateCookieFor(key) + "_link"
+}
+
 // Session is a server-side web login record.
 type Session struct {
 	ID string `json:"id"`
@@ -189,6 +201,40 @@ func (st *sessionStore) Delete(id string) error {
 	}
 	delete(st.sessions, id)
 	return st.saveLocked()
+}
+
+// RevokeActor deletes every session carrying actorID and reports how many.
+//
+// Called after a login is absorbed into an account: the alias's live sessions
+// were minted before the link and still carry its actor id, which from that
+// moment names nobody — its grants have moved to the account and it will never
+// be minted again. Left alone they would keep acting as a hollow identity until
+// they expired, seeing none of the person's own work.
+//
+// Matching is SameActor, not ==, for the same reason every other id comparison
+// is: a session written before namespacing may spell the id either way.
+func (st *sessionStore) RevokeActor(actorID string) (int, error) {
+	if st == nil {
+		return 0, nil
+	}
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return 0, nil
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	n := 0
+	for id, s := range st.sessions {
+		if !config.SameActor(s.DiscordUserID, actorID) {
+			continue
+		}
+		delete(st.sessions, id)
+		n++
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	return n, st.saveLocked()
 }
 
 // displayNames returns Discord user id → display name for non-expired sessions.

@@ -157,6 +157,10 @@ func TestPagesRender(t *testing.T) {
 		// Search results render as a full lead view even with no query.
 		{"/search", `id="page-search"`},
 		{"/search", `id="search-form"`},
+		// Self-service account page. With auth off there is no account, and the
+		// page says so instead of rendering buttons that would refuse.
+		{"/account", `id="page-account"`},
+		{"/account", `id="account-anonymous"`},
 		// Cross-project deploy board: renders with no runs on disk at all.
 		{"/deploys", `id="page-deploys-board"`},
 		{"/deploys", `id="live-deploys-board"`},

@@ -62,6 +62,12 @@ const (
 	ActionGitCheckpointRestore    = "git.checkpoint_restore" // hard reset a unit worktree to a checkpoint
 	ActionVerifyRun               = "verify.run"             // project verify commands (shell, no model)
 	ActionAccessDeny              = "access.deny"            // refused before any command ran
+	// Identity linking (internal/identity). A link changes which grants, threads
+	// and spend a login resolves to, so both the grant and every refusal are
+	// events — a refused link is exactly what a "someone tried to attach a login
+	// to my account" report is checked against.
+	ActionIdentityLink   = "identity.link"
+	ActionIdentityUnlink = "identity.unlink"
 	// Case actions. Both surfaces write these strings; keep them here so the
 	// Discord and web halves of one workflow cannot drift into two action names.
 	ActionCaseEscalate       = "case.escalate"

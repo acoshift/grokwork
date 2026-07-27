@@ -1,0 +1,88 @@
+{{define "content"}}
+<h1 id="page-account">Account</h1>
+<p class="sub">
+  The logins that sign you in to this account. Grants, threads, cases and spend
+  belong to the <em>account</em>, not to any one login.
+</p>
+
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if not .AccountIdentities}}
+<div class="section card" id="account-anonymous">
+  <p class="sub" style="margin:0">
+    Web auth is off on this deployment, so there is no account to manage — everyone
+    on the private network is the same anonymous operator.
+  </p>
+</div>
+{{else}}
+
+<div class="section card" id="account-identities">
+  <h2>Logins</h2>
+  <div class="table-scroll">
+  <table id="account-identity-table">
+    <thead>
+      <tr>
+        <th>Provider</th>
+        <th>Actor id</th>
+        <th>Subject</th>
+        <th>Name</th>
+        <th>Linked</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .AccountIdentities}}
+      <tr>
+        <td>{{.Label}}{{if .Canonical}} <span class="badge">canonical</span>{{end}}</td>
+        <td class="mono">{{.ActorID}}</td>
+        <td class="mono muted">{{.Subject}}</td>
+        <td>{{if .Name}}{{.Name}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="mono muted">{{if .LinkedAt}}{{.LinkedAt}}{{else}}—{{end}}</td>
+        <td class="row-actions">
+          {{if and (not .Canonical) $.AccountLinkingOn}}
+          <form method="post" action="{{route "account.unlink"}}"
+                data-confirm="Unlink your {{.Label}} login? Access that moved onto this account when you linked it stays here — unlinking does not move it back."
+                data-confirm-title="Unlink {{.Label}}" data-confirm-ok="Unlink" data-confirm-danger>
+            {{template "csrf" $}}
+            <input type="hidden" name="alias" value="{{.ActorID}}">
+            <button type="submit" class="btn-danger">Unlink</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  <p class="sub" style="margin:0.6rem 0 0">
+    The canonical id is the one every grant should name: an allowlist, team or
+    capability entry written with a linked login can never match, because a
+    session never carries one.
+  </p>
+</div>
+
+{{if .AccountLinkingOn}}
+<div class="section card" id="account-link">
+  <h2>Link another login</h2>
+  {{if .AccountLinkOptions}}
+  <p class="sub" style="margin-top:0">
+    You will be sent to the provider to prove the login is yours. Anything that
+    login already had — project access, teams, threads, cases — moves onto this
+    account.
+  </p>
+  <div class="form-actions">
+    {{range .AccountLinkOptions}}
+    <a class="btn" href="{{.LinkPath}}" hx-boost="false" id="account-link-{{.Key}}">Link {{.Label}}…</a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="empty" id="account-link-empty">
+    Every configured login provider is already on this account.
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{end}}
+{{end}}

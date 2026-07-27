@@ -629,6 +629,11 @@ func TestAuthRoutesMatchProviderTable(t *testing.T) {
 		if got := f.srv.app.Route("auth." + key + ".callback"); got != authCallbackPath(key) {
 			t.Errorf("route auth.%s.callback=%q want %q", key, got, authCallbackPath(key))
 		}
+		// Every provider can also be LINKED to an account, and the account page
+		// renders these by name — a missing entry there is a dead button.
+		if got := f.srv.app.Route("auth." + key + ".link"); got != authLinkPath(key) {
+			t.Errorf("route auth.%s.link=%q want %q", key, got, authLinkPath(key))
+		}
 		if _, ok := f.srv.provider(key); !ok {
 			t.Errorf("no provider adapter for %q", key)
 		}

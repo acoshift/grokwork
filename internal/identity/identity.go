@@ -300,6 +300,43 @@ func (s *Store) aliasesOfLocked(canonical string) []string {
 	return out
 }
 
+// AliasLink is one linked login, as the account page shows it: the alias in
+// wire form plus the metadata the store kept with it.
+//
+// AliasesOf answers "which logins are this account", which is all the mint and
+// notify paths need. The account page additionally has to render *when* a login
+// was linked and, for GitHub, under which handle — so this is the one accessor
+// that hands out a Link's contents rather than just its key.
+type AliasLink struct {
+	Alias    string
+	Handle   string
+	LinkedAt time.Time
+}
+
+// LinksOf returns the account's linked logins, ordered like AliasesOf.
+func (s *Store) LinksOf(canonical string) []AliasLink {
+	if s == nil {
+		return nil
+	}
+	c := config.NormalizeActorID(canonical)
+	if c == "" {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	aliases := s.aliasesOfLocked(c)
+	out := make([]AliasLink, 0, len(aliases))
+	for _, alias := range aliases {
+		link := s.links[alias]
+		out = append(out, AliasLink{
+			Alias:    wireForm(alias),
+			Handle:   link.Handle,
+			LinkedAt: link.LinkedAt,
+		})
+	}
+	return out
+}
+
 // GitHubFor returns the GitHub login and numeric id linked to an account.
 //
 // The numeric id is the alias's own subject (the identity); the login is the

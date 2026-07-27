@@ -505,3 +505,38 @@ func assertWarned(t *testing.T, s *Store, mustName ...string) {
 		}
 	}
 }
+
+// The account page has to render what AliasesOf deliberately drops: when a
+// login was attached, and under which GitHub handle. Ordering matches
+// AliasesOf so the two surfaces cannot disagree about which login is which.
+func TestLinksOfCarriesHandleAndTimestamp(t *testing.T) {
+	s, _ := newStore(t)
+	at := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	s.now = func() time.Time { return at }
+	if err := s.Link("github:999", "discord:42424", "@alice"); err != nil {
+		t.Fatalf("Link: %v", err)
+	}
+	if err := s.Link("google:sub-1", "42424", ""); err != nil {
+		t.Fatalf("Link google: %v", err)
+	}
+
+	got := s.LinksOf("42424")
+	if len(got) != 2 {
+		t.Fatalf("LinksOf = %+v, want 2 rows", got)
+	}
+	if got[0].Alias != "github:999" || got[0].Handle != "alice" || !got[0].LinkedAt.Equal(at) {
+		t.Fatalf("github row = %+v", got[0])
+	}
+	if got[1].Alias != "google:sub-1" || got[1].Handle != "" {
+		// A handle on a non-GitHub alias would put a display name where the
+		// attribution path expects a login.
+		t.Fatalf("google row = %+v", got[1])
+	}
+	if n := len(s.LinksOf("nobody")); n != 0 {
+		t.Fatalf("LinksOf(nobody) returned %d rows", n)
+	}
+	var nilStore *Store
+	if n := len(nilStore.LinksOf("42424")); n != 0 {
+		t.Fatalf("nil store returned %d rows", n)
+	}
+}

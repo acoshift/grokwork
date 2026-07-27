@@ -19,6 +19,11 @@ type oauthIdentity struct {
 	Subject   string
 	Name      string
 	AvatarURL string
+	// Handle is the provider's mutable public handle, set only where one exists
+	// and is worth keeping: GitHub's login, which git attribution needs to build
+	// the noreply address. It is display metadata like Name — never compared,
+	// never resolved against, and refreshed from the provider on every login.
+	Handle string
 }
 
 // oauthProvider is one login button end to end.
@@ -47,6 +52,13 @@ func loginProviderOrder() []string { return config.OAuthProviderKinds() }
 
 func authStartPath(key string) string    { return "/auth/" + key }
 func authCallbackPath(key string) string { return "/auth/" + key + "/callback" }
+
+// authLinkPath starts a LINK flow: the same provider handshake as a login, but
+// finishing by attaching the identity to the signed-in account instead of
+// minting a session from it. It shares the callback — which flow a callback
+// completes is decided by the state cookie it carries, never by the URL, so
+// there is exactly one place that redeems a code.
+func authLinkPath(key string) string { return "/auth/" + key + "/link" }
 
 // actorIDFor maps a provider subject onto the actor id space.
 //
@@ -227,10 +239,13 @@ func (p githubProvider) Identity(ctx context.Context, accessToken string) (oauth
 		return oauthIdentity{}, err
 	}
 	// Subject is the numeric id — never the login, which is renameable and
-	// whose freed name anyone may re-register.
+	// whose freed name anyone may re-register. The login still travels as
+	// Handle, because a git trailer has to name a person the way GitHub renders
+	// them; it is stored beside the id, never in place of it.
 	return oauthIdentity{
 		Subject:   u.Subject(),
 		Name:      u.DisplayName(),
 		AvatarURL: safeAvatarURL(u.AvatarURL),
+		Handle:    strings.TrimSpace(u.Login),
 	}, nil
 }
