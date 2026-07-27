@@ -55,7 +55,7 @@ func FilterChildEnv(base []string, pol ChildEnvPolicy) (env []string, dropped []
 			}
 			continue
 		}
-		if name == "DISCORD_BOT_TOKEN" || name == "DISCORD_TOKEN" || name == "DISCORD_CLIENT_SECRET" {
+		if isHostSecretName(name) {
 			dropped = append(dropped, name)
 			continue
 		}
@@ -76,6 +76,29 @@ func FilterChildEnv(base []string, pol ChildEnvPolicy) (env []string, dropped []
 // instead of protecting anything. Add new credential names here.
 func isClaudeCredentialName(name string) bool {
 	return strings.HasPrefix(name, "ANTHROPIC_") || name == "CLAUDE_CODE_OAUTH_TOKEN"
+}
+
+// isHostSecretName reports whether name carries a grokwork host credential that
+// no agent child may ever see. These are matched by exact name rather than by a
+// prefix because their namespaces are shared with variables that must pass
+// through: a "GITHUB_" denylist prefix would swallow GH_TOKEN/GITHUB_TOKEN,
+// which IncludeGHToken deliberately re-admits so the agent can push and open PRs.
+//
+// INVARIANT: every env fallback a webAuth login provider reads must be listed
+// here. config.OAuthProviderCreds resolves each provider's secret from config
+// first and then from the environment (see internal/config/webauth_providers.go);
+// a name that appears there and not here is handed verbatim to every coding
+// agent, whose output is streamed into Discord and persisted to data/history/.
+// GOOGLE_CLIENT_SECRET and GROK_WORK_* are already covered by the GOOGLE_ and
+// GROK_WORK_ denylist prefixes; TestFilterChildEnvDropsWebAuthProviderSecrets
+// pins the whole set so the two lists cannot drift apart again.
+func isHostSecretName(name string) bool {
+	switch name {
+	case "DISCORD_BOT_TOKEN", "DISCORD_TOKEN", "DISCORD_CLIENT_SECRET", "GITHUB_CLIENT_SECRET":
+		return true
+	default:
+		return false
+	}
 }
 
 func isGitHubTokenName(name string) bool {

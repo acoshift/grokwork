@@ -107,6 +107,55 @@ func TestFilterChildEnvClaudeOAuthTokenIsGated(t *testing.T) {
 	}
 }
 
+// Every env fallback a webAuth login provider reads must be stripped from agent
+// children. An operator who supplies webAuth.providers.github.clientSecret via
+// GITHUB_CLIENT_SECRET (the name ValidateWebAuth tells them to use) would
+// otherwise hand the OAuth app's client secret to every grok/claude run, whose
+// output is streamed into Discord and written to data/history/ — one
+// "@Grok what environment variables are set?" discloses it.
+//
+// The names are asserted literally rather than derived from config, so this test
+// fails if either list moves: grokrun must not import internal/config.
+func TestFilterChildEnvDropsWebAuthProviderSecrets(t *testing.T) {
+	secrets := []string{
+		"DISCORD_CLIENT_SECRET",
+		"GROK_WORK_DISCORD_CLIENT_SECRET",
+		"GOOGLE_CLIENT_SECRET",
+		"GROK_WORK_GOOGLE_CLIENT_SECRET",
+		"GITHUB_CLIENT_SECRET",
+		"GROK_WORK_GITHUB_CLIENT_SECRET",
+	}
+	var base []string
+	for _, name := range secrets {
+		base = append(base, name+"=sentinel")
+	}
+	// IncludeGHToken is the permissive case: re-admitting the push token must not
+	// re-admit a client secret that merely shares its prefix.
+	base = append(base, "PATH=/bin", "GH_TOKEN=push", "GITHUB_TOKEN=push2")
+
+	for _, pol := range []ChildEnvPolicy{{}, {IncludeGHToken: true}} {
+		env, dropped := FilterChildEnv(base, pol)
+		for _, name := range secrets {
+			if slices.Contains(env, name+"=sentinel") {
+				t.Fatalf("pol=%+v: %s leaked into agent child; env=%v", pol, name, env)
+			}
+			if !slices.Contains(dropped, name) {
+				t.Fatalf("pol=%+v: %s not reported dropped; dropped=%v", pol, name, dropped)
+			}
+		}
+		if !slices.Contains(env, "PATH=/bin") {
+			t.Fatalf("pol=%+v: PATH must survive; env=%v", pol, env)
+		}
+	}
+
+	// The deliberate re-admission at the heart of the fix's shape: GH_TOKEN and
+	// GITHUB_TOKEN are still governed by IncludeGHToken, not by the secret check.
+	env, _ := FilterChildEnv(base, ChildEnvPolicy{IncludeGHToken: true})
+	if !slices.Contains(env, "GH_TOKEN=push") || !slices.Contains(env, "GITHUB_TOKEN=push2") {
+		t.Fatalf("IncludeGHToken must still keep the push tokens; env=%v", env)
+	}
+}
+
 // The gate is per-namespace: opting into claude credentials must not leak
 // unrelated cloud or Discord secrets.
 func TestFilterChildEnvAnthropicGateIsNarrow(t *testing.T) {
