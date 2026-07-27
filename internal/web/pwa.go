@@ -4,7 +4,24 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"strings"
 )
+
+// cacheStatic adds Cache-Control for embedded /static assets.
+// Fonts are immutable (names change only when the binary ships a new face), so
+// they get a year-long cache — that is what stops a refresh from re-fetching
+// Inter and flashing the system font. Other static files (JS, icons) version
+// with the binary but have no content hash in the URL, so a short cache only.
+func cacheStatic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/fonts/") || strings.HasSuffix(r.URL.Path, ".woff2") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // serveStaticFile serves an embedded static/* file with the given content type.
 // Used for root-scoped PWA assets (manifest, service worker) that must not live

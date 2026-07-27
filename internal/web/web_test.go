@@ -145,6 +145,10 @@ func TestPagesRender(t *testing.T) {
 		{"/", `id="page-home"`},
 		{"/", `class="proj-card"`},
 		{"/", `href="/projects/proj"`},
+		// Font loading: preload latin faces + block (not swap) so refresh
+		// does not flash system font before Inter arrives.
+		{"/", `rel="preload" href="/static/fonts/inter-latin-var.woff2"`},
+		{"/", `font-display: block`},
 		{"/ship", `id="page-ship"`},
 		{"/sessions", `id="page-sessions"`},
 		{"/history", `id="page-history"`},
@@ -429,6 +433,21 @@ func TestPagesRender(t *testing.T) {
 			if w.Body.Len() < 100 {
 				t.Fatalf("%s body too small: %d", path, w.Body.Len())
 			}
+		}
+
+		// Fonts: year cache so refresh reuses the face and skips the system-font flash.
+		req := httptest.NewRequest(http.MethodGet, "/static/fonts/inter-latin-var.woff2", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "max-age=31536000") || !strings.Contains(cc, "immutable") {
+			t.Fatalf("font Cache-Control=%q want long immutable", cc)
+		}
+		// Non-font static still cached, but shorter (no content hash in URL).
+		req = httptest.NewRequest(http.MethodGet, "/static/htmx.min.js", nil)
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "max-age=86400") {
+			t.Fatalf("js Cache-Control=%q want max-age=86400", cc)
 		}
 	})
 

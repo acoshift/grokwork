@@ -283,7 +283,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 
 	mux := http.NewServeMux()
 	// Public (static + PWA install assets + auth)
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", cacheStatic(http.FileServer(http.FS(static)))))
 	registerPWA(mux)
 	mux.Handle("GET /login", hime.Handler(s.loginPage))
 	// {provider} matches exactly one segment, so /auth/discord/callback cannot
