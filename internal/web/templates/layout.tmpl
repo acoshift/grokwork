@@ -3865,19 +3865,32 @@
         padding: 0 0.95rem 0 0.8rem;
         border: none;
         border-radius: 999px;
-        background: var(--text);
-        color: var(--bg);
+        /* Same fill/fg as primary buttons — not --text/--bg. --bg is the page
+           wash (neutral-50 / near-black), so using it as label color washed the
+           glyph out and a --bg halo read as a muddy ring, especially over the
+           session composer's frosted glass (color-mix of the same token). */
+        background: var(--button);
+        color: var(--button-fg);
         font: inherit;
         font-size: 0.84rem;
         font-weight: 600;
         letter-spacing: -0.01em;
-        /* A ring in the page background, not a border: the button floats over
-           whatever the conversation happens to be showing, and a user bubble is
-           the same black as the pill — against one, a translucent border is
-           invisible and the button dissolves into the message. The halo cuts it
-           out of any background. */
-        box-shadow: 0 0 0 3px var(--bg), 0 6px 18px -6px hsl(var(--black) / 45%);
+        /* Surface stroke, not a page-bg halo: cuts the pill out of a same-ink
+           user bubble, and stays clean over frosted tab bar / composer chrome
+           where a solid --bg ring looked like a wrong-color border. */
+        box-shadow: 0 0 0 2px var(--surface), 0 6px 18px -6px hsl(var(--black) / 45%);
         cursor: pointer;
+      }
+      /* Global button:hover / :focus-visible outrank a bare .rail-fab (element
+         + pseudo vs class). Reassert so the surface stroke is not replaced by
+         the translucent focus ring alone, and hover keeps primary fill. */
+      .rail-fab:hover {
+        background: var(--button-hover);
+        color: var(--button-fg);
+      }
+      .rail-fab:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus-border), 0 6px 18px -6px hsl(var(--black) / 45%);
       }
       /* Only pages with something in the rail get the button. Presence of the
          <aside> is not enough: pr_detail always emits it, and a merged PR seen
