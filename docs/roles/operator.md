@@ -20,7 +20,8 @@ Still requires project Discord allowlist + mapped channel.
 ## What they can do
 
 - Open cases when investigate caps resolve (`/case`)  
-- Run **read-only** investigate / explain work  
+- Run **investigate** / explain work with **file-only tools** (no host shell / `psql`)  
+
 - Draft **customer updates** and mark **answered**  
 - Close cases they own (owner / co-owner / project-admin rules)  
 - Board, status, brief, claim/hand-off, queue helpers  
@@ -33,6 +34,7 @@ Still requires project Discord allowlist + mapped channel.
 |--------|---------|
 | `/escalate` | **Denied** — need `fileEscalation` or builder-class (`startSessions` / `githubWrites`) |
 | Ship / open PR / direct-ship | Coerced to investigate or denied |
+| Host shell on investigate (`psql`, logs via CLI, …) | **Denied** — need investigator+ (`fileEscalation`), `safeOps`, or builder-class |
 | `/start fix` as shipping | Not available |
 | Escalate via web case panel | Escalate control hidden/denied without escalate caps |
 

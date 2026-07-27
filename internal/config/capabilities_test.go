@@ -115,17 +115,24 @@ func TestCanInvestigateShell(t *testing.T) {
 	if !BuiltinCapabilityTemplates["investigator"].CanInvestigateShell() {
 		t.Fatal("investigator must get diagnostic shell (psql, …)")
 	}
-	if !BuiltinCapabilityTemplates["operator"].CanInvestigateShell() {
-		t.Fatal("operator has Investigate and must get diagnostic shell")
+	if BuiltinCapabilityTemplates["operator"].CanInvestigateShell() {
+		t.Fatal("operator must stay file-only (no shell)")
 	}
 	if !BuiltinCapabilityTemplates["builder"].CanInvestigateShell() {
 		t.Fatal("builder must get investigate shell")
 	}
+	if !BuiltinCapabilityTemplates["approver"].CanInvestigateShell() {
+		t.Fatal("approver must get investigate shell")
+	}
 	if !BuiltinCapabilityTemplates["admin"].CanInvestigateShell() {
 		t.Fatal("admin must get investigate shell")
 	}
-	if !(Capabilities{Investigate: true}).CanInvestigateShell() {
-		t.Fatal("Investigate alone must unlock investigate shell")
+	// Investigate alone is not enough — that is operator's shape.
+	if (Capabilities{Investigate: true}).CanInvestigateShell() {
+		t.Fatal("Investigate alone must not unlock shell")
+	}
+	if !(Capabilities{FileEscalation: true}).CanInvestigateShell() {
+		t.Fatal("FileEscalation must unlock investigate shell")
 	}
 	if !(Capabilities{SafeOps: true}).CanInvestigateShell() {
 		t.Fatal("SafeOps alone must unlock investigate shell")

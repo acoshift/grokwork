@@ -48,7 +48,8 @@ type RunPolicy struct {
 	DirtyTreeWarn        bool
 	Coerced              bool // StartSessions without GithubWrites coerced to investigate
 	// InvestigateShell is true when the investigate allowlist includes host shell
-	// (role-gated: SafeOps or CanShip). Used for prompt contract, not CLI flags.
+	// (role-gated: FileEscalation, SafeOps, or CanShip — not operator). Used for
+	// prompt contract, not CLI flags.
 	InvestigateShell bool
 }
 
@@ -78,12 +79,12 @@ const DefaultInvestigateTools = "read_file,grep"
 
 // investigateTools picks the allowlist for an investigate run.
 //
-// Shell is role-gated: only SafeOps or builder-class (CanShip) actors get host
-// shell tools. Plain investigators stay file-only.
+// Shell is role-gated (CanInvestigateShell): investigator+ (fileEscalation),
+// builder-class (CanShip), or explicit SafeOps. Builtin operator stays file-only.
 //
 // The project override is written in one agent's tool vocabulary and only
 // applies when shell is allowed (otherwise an override that listed Bash would
-// re-open host shell for support). Handing grok names to claude (or the reverse)
+// re-open host shell for operators). Handing grok names to claude (or the reverse)
 // would resolve to an allowlist of zero real tools, so an override only applies
 // to the agent whose names it is written in; other agents get their own default.
 func investigateTools(agent grokrun.Agent, override string, caps config.Capabilities) string {

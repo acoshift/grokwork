@@ -209,7 +209,7 @@ func TestSameAgentTreatsEmptyAsGrok(t *testing.T) {
 
 // The investigate allowlist must match the agent that will run, otherwise the
 // model is handed tool names it does not have and cannot read the repo.
-// Shell is role-gated: Investigate (or SafeOps/CanShip) grants diagnostic shell.
+// Shell is role-gated: investigator+ / SafeOps / CanShip — not operator.
 func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 	// Zero caps → file-only for both agents.
 	base := PolicyInput{ForceInvestigate: true}
@@ -228,6 +228,15 @@ func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 		t.Fatalf("claude file-only tools=%v", claudePol.Tools)
 	}
 
+	// Operator: investigate without escalate → file-only (no shell).
+	base = PolicyInput{
+		ForceInvestigate: true,
+		Caps:             config.BuiltinCapabilityTemplates["operator"],
+	}
+	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep" || pol.InvestigateShell {
+		t.Fatalf("operator must stay file-only: tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
+	}
+
 	// Investigator gets shell for diagnostics (psql, …) on both agents.
 	base = PolicyInput{
 		ForceInvestigate: true,
@@ -241,7 +250,7 @@ func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 		t.Fatalf("investigator claude tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
 	}
 
-	// Builder-class gets shell on both agents.
+	// Builder-class gets shell.
 	base = PolicyInput{
 		ForceInvestigate: true,
 		Caps:             config.BuiltinCapabilityTemplates["builder"],

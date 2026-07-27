@@ -7,7 +7,8 @@ import (
 
 // Capabilities are project-scoped action flags (fail-closed when zero).
 // RequestChange remains reserved (no command gates yet).
-// SafeOps gates diagnostic shell on investigate runs (and deploy requireCapability).
+// SafeOps can unlock diagnostic shell (and deploy requireCapability); shell also
+// follows FileEscalation / CanShip — see CanInvestigateShell.
 type Capabilities struct {
 	Investigate        bool `json:"investigate,omitempty"`
 	DraftCustomerReply bool `json:"draftCustomerReply,omitempty"`
@@ -65,11 +66,16 @@ func (c Capabilities) CanShip() bool {
 }
 
 // CanInvestigateShell is true when an investigate run may use host shell tools
-// (psql, logs, health checks, …). Anyone with Investigate gets diagnostics
-// (including builtin investigator); SafeOps and CanShip also grant it. Shell is
-// still not a sandbox — the investigate prompt requires non-destructive use only.
+// (psql, logs, health checks, …).
+//
+// Builtin mapping: investigator and above get shell; operator does not.
+// - FileEscalation marks investigator-class (operator deliberately lacks it)
+// - CanShip covers builder/approver/admin
+// - SafeOps is an explicit grant for custom ops templates without ship/escalate
+//
+// Shell is not a sandbox — the investigate prompt requires non-destructive use only.
 func (c Capabilities) CanInvestigateShell() bool {
-	return c.Investigate || c.SafeOps || c.CanShip()
+	return c.FileEscalation || c.SafeOps || c.CanShip()
 }
 
 // TemplateName lookup: project overlay then builtin. Unknown → zero + false.
