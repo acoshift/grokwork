@@ -16,9 +16,10 @@
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
 {{/* Action forms live OUTSIDE the live region below: the confirm handler bails
-     on a detached form (it checks isConnected), and the swap-pause hook only
-     fires for isEditing(), which does not cover an open dialog. A confirmed
-     prod deploy silently doing nothing is the failure this avoids. */}}
+     on a detached form (it checks isConnected), and the swap-pause edit check
+     only covers focused fields inside the region — not an open dialog. A
+     confirmed prod deploy silently doing nothing is the failure the
+     confirm-modal pause avoids. */}}
 <div class="toolbar" id="deploy-run-actions">
   {{if not $run.Status.Terminal}}
   <form method="post" action="/projects/{{.Project}}/deploys/{{$run.ID}}/cancel"

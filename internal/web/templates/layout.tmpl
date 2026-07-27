@@ -5071,13 +5071,24 @@
       statusEl.className = cls || "";
     }
 
-    function isEditing() {
-      var el = document.activeElement;
+    // Editable control under focus. Used with containment: forms outside
+    // live-regions (session composer, nav search, filter selects, rails) must
+    // not freeze every SSE partial while the user is merely focused and waiting.
+    function isEditableControl(el) {
       if (!el || el === document.body) return false;
       var tag = el.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
       if (el.isContentEditable) return true;
       return false;
+    }
+
+    // True only when focus is on an editable control *inside* the live-region
+    // about to swap. Typed forms that must survive refreshes stay outside
+    // live-regions by template convention; this is belt-and-braces for any
+    // field that does land inside.
+    function isEditingInside(region) {
+      var el = document.activeElement;
+      return !!(region && isEditableControl(el) && region.contains(el));
     }
 
     // Event delegation so handlers survive live-region swaps.
@@ -5187,22 +5198,24 @@
       if (link) { e.preventDefault(); link.click(); }
     });
 
-    // Pause domain partial swaps while a field is focused (e.g. ship digest select).
+    // Pause domain partial swaps only when they would clobber in-region focus
+    // or a confirm modal. Focus outside the region (composer, filters, rails)
+    // must keep live updates flowing.
     document.body.addEventListener("htmx:beforeRequest", function (e) {
       var elt = e.detail && e.detail.elt;
       if (!elt || !elt.classList || !elt.classList.contains("live-region")) return;
       // A swap while the confirm modal is open detaches the form behind it, and
       // the confirm handler then bails on !form.isConnected, losing the click
-      // silently. isEditing() does not cover this: focus is on a dialog button,
-      // not an INPUT. Belt and braces — trigger forms also live outside live
-      // regions, so the common case never reaches here.
+      // silently. isEditingInside does not cover this: focus is on a dialog
+      // button, not an INPUT. Belt and braces — trigger forms also live outside
+      // live regions, so the common case never reaches here.
       var confirmDlg = document.getElementById("gw-confirm-modal");
       if (confirmDlg && confirmDlg.open) {
         e.preventDefault();
         setStatus("live · paused while confirming", "ok");
         return;
       }
-      if (isEditing()) {
+      if (isEditingInside(elt)) {
         e.preventDefault();
         setStatus("live · paused while editing", "ok");
       }

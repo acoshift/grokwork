@@ -473,11 +473,11 @@ All under `/projects/{project}/…`, so `navScopeFromURL` (`internal/web/project
 `layout.tmpl` JS twin need no change; a global `/deploys` would need both.
 
 **Every deploy trigger form lives outside the live region** — not only the composer (the
-`session.tmpl:68` typed-input rule) but the per-lane Deploy buttons. The confirm handler bails on a
-detached form (`layout.tmpl:4310-4312` guards on `isConnected`) and the swap-pause hook only fires
-for `isEditing()`, which covers INPUT/TEXTAREA/SELECT/contentEditable and **not** an open dialog
-(`layout.tmpl:4376-4383`, `:4493-4499`). A confirmed prod deploy would otherwise silently do nothing.
-Belt and braces: the pause hook also gains `if (dlg.open) { e.preventDefault(); return; }`.
+`session.tmpl` typed-input rule) but the per-lane Deploy buttons. The confirm handler bails on a
+detached form (`isConnected` guard) and the swap-pause edit check only covers an editable control
+**inside** the live-region being swapped (`isEditingInside`), which an open dialog is not. A
+confirmed prod deploy would otherwise silently do nothing. Belt and braces: the pause hook also
+gains `if (dlg.open) { e.preventDefault(); return; }`.
 
 The nav anchor goes in `.nav-links` only, not the phone `.tabbar`. The tab bar is a curated set of
 five primary sections; Issues, Linear, Commits, Worktrees, and Settings are all absent from it too.

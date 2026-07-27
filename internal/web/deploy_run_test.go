@@ -208,6 +208,33 @@ func TestLiveRegionPausesWhileConfirming(t *testing.T) {
 	}
 }
 
+// TestLiveRegionEditPauseIsContainmentOnly pins that SSE live-region refreshes
+// do not freeze merely because focus is on an editable outside the region
+// (session composer, nav search, filter selects, rails). Edit-pause requires
+// the active control to be contained by the requesting live-region.
+func TestLiveRegionEditPauseIsContainmentOnly(t *testing.T) {
+	srv := deploysServer(t, testDeployManifest)
+	body := getBody(t, srv.Handler(), "/projects/proj/deploys")
+	for _, want := range []string{
+		"paused while editing",
+		"paused while confirming",
+		"function isEditingInside",
+		"region.contains(el)",
+		"isEditingInside(elt)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("layout swap-pause missing containment contract %q", want)
+		}
+	}
+	// Global focus must not gate: the old isEditing() predicate is gone.
+	if strings.Contains(body, "function isEditing(") {
+		t.Fatal("global isEditing() still present; edit pause must be containment-scoped")
+	}
+	if strings.Contains(body, "if (isEditing())") {
+		t.Fatal("edit pause still uses global isEditing()")
+	}
+}
+
 func TestLiveRevsIncludesDeploy(t *testing.T) {
 	srv := deploysServer(t, testDeployManifest)
 	before := srv.computeLiveRevs()
