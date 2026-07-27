@@ -454,3 +454,65 @@ func TestLoadAcceptsProviderOnlyWebAuth(t *testing.T) {
 		t.Fatal("the same subject under github must not inherit the google admin grant")
 	}
 }
+
+// TestGoogleOnlyDeploymentDoesNotWarnAboutDiscord pins a noise rule that has a
+// safety consequence.
+//
+// Discord's client id is derived from the bot token, which every grokwork
+// install has, so a deployment logging people in with Google alone looks
+// "half-configured" for Discord on every boot. The operator set nothing and can
+// remove nothing, so the warning is unactionable — and it prints to the same
+// stderr channel as the teams-migration lockout notice, which operators must
+// actually read. A permanent warning next to a critical one trains people to
+// skip both.
+func TestGoogleOnlyDeploymentDoesNotWarnAboutDiscord(t *testing.T) {
+	t.Setenv("DISCORD_CLIENT_SECRET", "")
+	t.Setenv("GROK_WORK_DISCORD_CLIENT_SECRET", "")
+
+	cfg := &Config{
+		// A real bot token is what makes EffectiveClientID non-empty; any value
+		// with the right shape does for this test.
+		DiscordToken: "MTIzNDU2Nzg5MDEyMzQ1Njc4.abcdef.ghijklmnopqrstuvwxyz012345",
+		WebAuth: &WebAuthConfig{
+			Enabled:       true,
+			SessionSecret: "s",
+			Providers: &WebAuthProviders{
+				Google: &OAuthProviderConfig{ClientID: "gid", ClientSecret: "gsec"},
+			},
+		},
+	}
+
+	stop := captureStderr(t)
+	cfg.warnHalfConfiguredProviders()
+	out := stop()
+
+	if strings.Contains(strings.ToLower(out), "discord") {
+		t.Errorf("Google-only deployment warned about Discord, which it never configured:\n%s", out)
+	}
+}
+
+// TestHalfConfiguredProviderStillWarns guards the other direction: silencing the
+// derived-Discord case must not silence a genuine stray half.
+func TestHalfConfiguredProviderStillWarns(t *testing.T) {
+	t.Setenv("GITHUB_CLIENT_SECRET", "")
+	t.Setenv("GROK_WORK_GITHUB_CLIENT_SECRET", "")
+
+	cfg := &Config{
+		WebAuth: &WebAuthConfig{
+			Enabled:       true,
+			SessionSecret: "s",
+			Providers: &WebAuthProviders{
+				Google: &OAuthProviderConfig{ClientID: "gid", ClientSecret: "gsec"},
+				GitHub: &OAuthProviderConfig{ClientID: "hid"}, // stray half
+			},
+		},
+	}
+
+	stop := captureStderr(t)
+	cfg.warnHalfConfiguredProviders()
+	out := stop()
+
+	if !strings.Contains(out, "github") {
+		t.Errorf("a genuine stray half must still warn:\n%s", out)
+	}
+}

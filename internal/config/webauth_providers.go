@@ -230,6 +230,16 @@ func (c *Config) warnHalfConfiguredProviders() {
 		if (id == "") == (secret == "") {
 			continue
 		}
+		// Discord's client id is DERIVED from the bot token, which every install
+		// has, so a deployment that logs people in with Google only would trip
+		// this on every boot — told to fix a credential it never set and cannot
+		// remove. An unactionable warning is worse than none here: the same
+		// stderr channel carries the teams-migration lockout notice, which
+		// operators must actually read. Warn for Discord only when its secret is
+		// present but its id is genuinely absent.
+		if kind == ActorKindDiscord && secret == "" {
+			continue
+		}
 		half := "clientSecret"
 		if id == "" {
 			half = "clientId"
