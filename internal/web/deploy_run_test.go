@@ -221,6 +221,10 @@ func TestLiveRegionEditPauseIsContainmentOnly(t *testing.T) {
 		"function isEditingInside",
 		"region.contains(el)",
 		"isEditingInside(elt)",
+		// Paused states use the warn (yellow) chip, not ok green.
+		`setStatus("live · paused while editing", "warn")`,
+		`setStatus("live · paused while confirming", "warn")`,
+		"#sse-status.warn",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("layout swap-pause missing containment contract %q", want)

@@ -791,9 +791,9 @@
     }
     .logout-form button:hover { background: var(--surface-l2); color: var(--text); }
 
-    /* SSE telemetry status: JS owns className ("", "ok", "err") on #sse-status.
-       Visible label is short on narrow viewports (no refresh clock); full text
-       stays in title for long-press/hover. */
+    /* SSE telemetry status: JS owns className ("", "ok", "warn", "err") on
+       #sse-status. Visible label is short on narrow viewports (no refresh
+       clock); full text stays in title for long-press/hover. */
     #sse-status {
       display: inline-flex;
       align-items: center;
@@ -817,6 +817,8 @@
     }
     #sse-status.ok { color: var(--ok); }
     #sse-status.ok::before { background: var(--ok); animation: pulse 2.4s ease-out infinite; }
+    #sse-status.warn { color: var(--warn); }
+    #sse-status.warn::before { background: var(--warn); }
     #sse-status.err { color: var(--danger); }
     #sse-status.err::before { background: var(--danger); }
 
@@ -5212,12 +5214,12 @@
       var confirmDlg = document.getElementById("gw-confirm-modal");
       if (confirmDlg && confirmDlg.open) {
         e.preventDefault();
-        setStatus("live · paused while confirming", "ok");
+        setStatus("live · paused while confirming", "warn");
         return;
       }
       if (isEditingInside(elt)) {
         e.preventDefault();
-        setStatus("live · paused while editing", "ok");
+        setStatus("live · paused while editing", "warn");
       }
     });
 
