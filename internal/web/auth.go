@@ -241,6 +241,7 @@ func (s *Server) loginPage(ctx *hime.Context) error {
 		d.LoginNext = ""
 	}
 	d.Error = strings.TrimSpace(ctx.FormValue("err"))
+	d.LoginProviders = s.loginProviders()
 	if s.cfg.WebAuthEnabled() {
 		if sess := s.sessionFromRequest(ctx.Request); sess != nil {
 			return ctx.Redirect(safeLocalNext(rawNext))
@@ -252,15 +253,25 @@ func (s *Server) loginPage(ctx *hime.Context) error {
 	return s.viewPage(ctx, "login", d)
 }
 
-func (s *Server) oauthDiscordStart(ctx *hime.Context) error {
+// oauthStart begins a login for the provider named in the path. One handler
+// serves every provider: see oauthProvider for why the per-provider surface is
+// deliberately four small pure functions.
+func (s *Server) oauthStart(ctx *hime.Context) error {
 	if !s.cfg.WebAuthEnabled() {
 		return ctx.Redirect("/")
 	}
-	clientID := s.cfg.EffectiveClientID()
-	redirectURI := s.oauthRedirectURI()
-	if clientID == "" || redirectURI == "" {
-		return ctx.RedirectTo("login", map[string]string{"err": "OAuth is not fully configured (client id / public base URL)"})
+	key := ctx.PathValue("provider")
+	p, known := s.provider(key)
+	if !known {
+		return ctx.Status(http.StatusNotFound).Error("unknown login provider")
 	}
+	// Fail closed before anything is minted: no state cookie is written for a
+	// provider whose credentials are missing.
+	if !s.providerConfigured(key) {
+		return ctx.RedirectTo("login", map[string]string{"err": p.Label() + " login is not configured"})
+	}
+	clientID, _ := s.cfg.OAuthProviderCreds(key)
+	redirectURI := s.oauthRedirectURIFor(key)
 	state, err := randomToken(16)
 	if err != nil {
 		return ctx.Status(http.StatusInternalServerError).Error("state: " + err.Error())
@@ -272,7 +283,7 @@ func (s *Server) oauthDiscordStart(ctx *hime.Context) error {
 		val = state + "|" + next
 	}
 	http.SetCookie(ctx.ResponseWriter(), &http.Cookie{
-		Name:     oauthStateCookie,
+		Name:     oauthStateCookieFor(key),
 		Value:    val,
 		Path:     "/",
 		HttpOnly: true,
@@ -280,10 +291,11 @@ func (s *Server) oauthDiscordStart(ctx *hime.Context) error {
 		Secure:   s.cookieSecure(),
 		MaxAge:   int(oauthStateTTL.Seconds()),
 	})
-	authURL := discordAuthorizeURL(clientID, redirectURI, state)
-	// Boosted htmx would follow a 302 to Discord with HX-Request, which Discord
-	// CORS rejects ("HX-Request is not allowed by Access-Control-Allow-Headers").
-	// Force a client-side full navigation instead. Login link also uses hx-boost=false.
+	authURL := p.AuthorizeURL(clientID, redirectURI, state)
+	// Boosted htmx would follow a 302 to the provider with HX-Request, which
+	// their CORS rejects ("HX-Request is not allowed by
+	// Access-Control-Allow-Headers"). Force a client-side full navigation
+	// instead. Login links also use hx-boost=false.
 	if ctx.Request.Header.Get("HX-Request") == "true" {
 		ctx.ResponseWriter().Header().Set("HX-Redirect", authURL)
 		ctx.ResponseWriter().WriteHeader(http.StatusNoContent)
@@ -292,26 +304,38 @@ func (s *Server) oauthDiscordStart(ctx *hime.Context) error {
 	return ctx.Redirect(authURL)
 }
 
-func (s *Server) oauthDiscordCallback(ctx *hime.Context) error {
+// oauthCallback completes a login. Nothing from the browser is trusted but the
+// opaque code and the state this server issued — no user id, email or role is
+// ever read from a query parameter. Every refusal below happens before any
+// network call, so an unconfigured or unknown provider cannot exchange.
+func (s *Server) oauthCallback(ctx *hime.Context) error {
 	if !s.cfg.WebAuthEnabled() {
 		return ctx.Redirect("/")
 	}
+	key := ctx.PathValue("provider")
+	p, known := s.provider(key)
+	if !known {
+		return ctx.Status(http.StatusNotFound).Error("unknown login provider")
+	}
+	if !s.providerConfigured(key) {
+		return ctx.RedirectTo("login", map[string]string{"err": p.Label() + " login is not configured"})
+	}
 	q := ctx.URL.Query()
 	if errParam := q.Get("error"); errParam != "" {
-		return ctx.RedirectTo("login", map[string]string{"err": "Discord denied login: " + errParam})
+		return ctx.RedirectTo("login", map[string]string{"err": p.Label() + " denied login: " + errParam})
 	}
 	code := strings.TrimSpace(q.Get("code"))
 	state := strings.TrimSpace(q.Get("state"))
 	if code == "" || state == "" {
 		return ctx.RedirectTo("login", map[string]string{"err": "missing OAuth code or state"})
 	}
-	c, err := ctx.Cookie(oauthStateCookie)
+	c, err := ctx.Cookie(oauthStateCookieFor(key))
 	if err != nil || c.Value == "" {
 		return ctx.RedirectTo("login", map[string]string{"err": "missing OAuth state cookie"})
 	}
 	// Clear state cookie.
 	http.SetCookie(ctx.ResponseWriter(), &http.Cookie{
-		Name: oauthStateCookie, Value: "", Path: "/", MaxAge: -1,
+		Name: oauthStateCookieFor(key), Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.cookieSecure(),
 		Expires: time.Unix(0, 0),
 	})
@@ -326,40 +350,47 @@ func (s *Server) oauthDiscordCallback(ctx *hime.Context) error {
 		return ctx.RedirectTo("login", map[string]string{"err": "invalid OAuth state"})
 	}
 
-	redirectURI := s.oauthRedirectURI()
-	clientID := s.cfg.EffectiveClientID()
-	secret := s.cfg.DiscordClientSecretValue()
-	oauth := s.oauth
-	if oauth == nil {
-		oauth = &HTTPDiscordOAuth{}
-	}
-	token, err := oauth.ExchangeCode(ctx.Context(), code, redirectURI, clientID, secret)
+	clientID, secret := s.cfg.OAuthProviderCreds(key)
+	redirectURI := s.oauthRedirectURIFor(key)
+	token, err := p.Exchange(ctx.Context(), code, redirectURI, clientID, secret)
 	if err != nil {
 		s.auditLogin(audit.ActorAnonymous, "", false, "token exchange failed")
 		return ctx.RedirectTo("login", map[string]string{"err": "token exchange failed"})
 	}
-	user, err := oauth.FetchUser(ctx.Context(), token)
-	if err != nil {
-		s.auditLogin(audit.ActorAnonymous, "", false, "failed to load Discord profile")
-		return ctx.RedirectTo("login", map[string]string{"err": "failed to load Discord profile"})
+	id, err := p.Identity(ctx.Context(), token)
+	if err != nil || strings.TrimSpace(id.Subject) == "" {
+		s.auditLogin(audit.ActorAnonymous, "", false, "failed to load "+p.Label()+" profile")
+		return ctx.RedirectTo("login", map[string]string{"err": "failed to load " + p.Label() + " profile"})
 	}
-	role, ok := s.cfg.ResolveWebRoleForConfig(user.ID)
+	actor := actorIDFor(key, id.Subject)
+	role, ok := s.cfg.ResolveWebRoleForConfig(actor)
 	if !ok {
-		s.auditLogin(user.ID, "", false, "not authorized")
-		return ctx.RedirectTo("login", map[string]string{"err": "not authorized for this Grok Work instance"})
+		s.auditLogin(actor, "", false, "not authorized")
+		// A brand-new Google/GitHub account is a member of nothing, which is the
+		// correct fail-closed outcome — but the person cannot guess the exact
+		// allowlist string, so name it. Discord's message is left byte-identical
+		// (its actor id is the snowflake they already know).
+		msg := "not authorized for this Grok Work instance"
+		if key != config.ActorKindDiscord {
+			msg += " (" + actor + ")"
+		}
+		return ctx.RedirectTo("login", map[string]string{"err": msg})
 	}
-	name := user.DisplayName()
-	avatar := user.AvatarURL()
-	sess, err := s.webSessions.Create(user.ID, name, avatar, role)
+	name := id.Name
+	if strings.TrimSpace(name) == "" {
+		name = actor
+	}
+	avatar := id.AvatarURL
+	sess, err := s.webSessions.Create(actor, name, avatar, role)
 	if err != nil {
-		s.auditLogin(user.ID, string(role), false, "session create failed")
+		s.auditLogin(actor, string(role), false, "session create failed")
 		return ctx.Status(http.StatusInternalServerError).Error("session: " + err.Error())
 	}
 	// Durable profile (name + avatar URL); not cleared on logout.
 	if s.webUsers != nil {
-		_ = s.webUsers.Upsert(user.ID, name, avatar)
+		_ = s.webUsers.Upsert(actor, name, avatar)
 	}
-	s.auditLogin(user.ID, string(role), true, "")
+	s.auditLogin(actor, string(role), true, "")
 	s.SetSessionCookie(ctx.ResponseWriter(), sess.ID)
 	return ctx.Redirect(next)
 }
@@ -388,12 +419,4 @@ func (s *Server) logout(ctx *hime.Context) error {
 		return ctx.RedirectTo("login")
 	}
 	return ctx.Redirect("/")
-}
-
-func (s *Server) oauthRedirectURI() string {
-	base := s.cfg.WebPublicBaseURLValue()
-	if base == "" {
-		return ""
-	}
-	return base + "/auth/discord/callback"
 }

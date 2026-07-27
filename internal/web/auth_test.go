@@ -5,74 +5,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
-	"github.com/acoshift/grokwork/internal/history"
-	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
+// authOnServer is the Discord-only auth fixture the bulk of the suite uses.
+// Google and GitHub have their doubles installed but no credentials, so on this
+// server they are the "unconfigured provider" case.
 func authOnServer(t *testing.T) (*Server, *config.Config, *FakeDiscordOAuth) {
 	t.Helper()
-	dir := t.TempDir()
-	proj := filepath.Join(dir, "proj")
-	if err := os.MkdirAll(proj, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfgPath := filepath.Join(dir, "config.json")
-	cfg := &config.Config{
-		DiscordToken:        "tok",
-		DiscordClientID:     "424242424242424242",
-		DiscordClientSecret: "client-secret",
-		WebPublicBaseURL:    "http://127.0.0.1:8787",
-		Projects: config.ProjectsMap{
-			// member-1 / viewer-1 must be on the project: web Member role alone
-			// does not grant CanAccessProject (project ACL is allowlist/team-based).
-			"proj": {Path: proj, AllowedUserIDs: []string{"allow-user", "member-1", "viewer-1"}},
-		},
-		Channels:   map[string]string{"ch": "proj"},
-		GrokBin:    "grok",
-		MaxTurns:   40,
-		TimeoutMs:  1000,
-		HTTPListen: "127.0.0.1:0",
-		ConfigPath: cfgPath,
-		DataDir:    filepath.Join(dir, "data"),
-		WebAuth: &config.WebAuthConfig{
-			Enabled:          true,
-			SessionSecret:    "test-session-secret-32-bytes-long!",
-			AdminDiscordIDs:  []string{"admin-1"},
-			MemberDiscordIDs: []string{"member-1"},
-			ViewerDiscordIDs: []string{"viewer-1"},
-		},
-	}
-	if err := cfg.Save(); err != nil {
-		t.Fatal(err)
-	}
-	if err := cfg.ValidateWebAuth(); err != nil {
-		t.Fatal(err)
-	}
-	store, err := sessionstore.New(cfg.DataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	hist, err := history.New(cfg.DataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fake := &FakeDiscordOAuth{CodeToUser: map[string]DiscordUser{
-		"code-admin":  {ID: "admin-1", Username: "admin", GlobalName: "Admin User", Avatar: "abc123def"},
-		"code-member": {ID: "member-1", Username: "member"},
-		"code-allow":  {ID: "allow-user", Username: "allowed"},
-		"code-deny":   {ID: "stranger", Username: "stranger"},
-	}}
-	srv := New(cfg, store, hist, bot.New(cfg, store, hist))
-	srv.oauth = fake
-	return srv, cfg, fake
+	f := newAuthFixture(t, nil)
+	return f.srv, f.cfg, f.discord
 }
 
 func TestAuthOffPagesAndMutate(t *testing.T) {
@@ -131,6 +77,12 @@ func TestAuthOnUnauthenticatedRedirect(t *testing.T) {
 	// Must not hx-boost OAuth: Discord CORS rejects HX-Request on authorize.
 	if !strings.Contains(body, `id="login-discord"`) || !strings.Contains(body, `hx-boost="false"`) {
 		t.Fatalf("login Discord link must set hx-boost=false, body snippet missing markers")
+	}
+	// This fixture configures Discord only, so no other provider may be offered.
+	for _, unwanted := range []string{`id="login-google"`, `id="login-github"`} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("unconfigured provider rendered a button: %s", unwanted)
+		}
 	}
 	// Static still public.
 	req = httptest.NewRequest(http.MethodGet, "/static/htmx.min.js", nil)

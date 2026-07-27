@@ -44,6 +44,8 @@ type Server struct {
 	webSessions *sessionStore
 	webUsers    *userStore   // durable name/avatar; survives logout
 	oauth       DiscordOAuth // nil → HTTPDiscordOAuth
+	oauthGoogle GoogleOAuth  // nil → HTTPGoogleOAuth
+	oauthGitHub GitHubOAuth  // nil → HTTPGitHubOAuth
 	audit       *audit.Logger
 	// Test injectables (nil → production defaults).
 	ghRunner ghpr.Runner
@@ -105,11 +107,20 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	app.Server().WaitBeforeShutdown = 0
 	app.Server().GraceTimeout = time.Millisecond
 
+	// One "auth.<provider>" / "auth.<provider>.callback" pair per login
+	// provider, registered unconditionally: route names are static, and whether
+	// a provider may actually be used is decided by providerConfigured inside
+	// the handler (see oauth_provider.go). TestAuthRoutesMatchProviderTable pins
+	// these against authStartPath / authCallbackPath so the two cannot drift.
 	app.Routes(hime.Routes{
 		"home":                               "/",
 		"login":                              "/login",
 		"auth.discord":                       "/auth/discord",
 		"auth.discord.callback":              "/auth/discord/callback",
+		"auth.google":                        "/auth/google",
+		"auth.google.callback":               "/auth/google/callback",
+		"auth.github":                        "/auth/github",
+		"auth.github.callback":               "/auth/github/callback",
 		"logout":                             "/logout",
 		"history":                            "/history",
 		"history.thread":                     "/history/",
@@ -275,8 +286,10 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
 	registerPWA(mux)
 	mux.Handle("GET /login", hime.Handler(s.loginPage))
-	mux.Handle("GET /auth/discord", hime.Handler(s.oauthDiscordStart))
-	mux.Handle("GET /auth/discord/callback", hime.Handler(s.oauthDiscordCallback))
+	// {provider} matches exactly one segment, so /auth/discord/callback cannot
+	// be swallowed by /auth/{provider}; an unknown key 404s in the handler.
+	mux.Handle("GET /auth/{provider}", hime.Handler(s.oauthStart))
+	mux.Handle("GET /auth/{provider}/callback", hime.Handler(s.oauthCallback))
 	mux.Handle("POST /logout", hime.Handler(s.logout))
 
 	// Authenticated pages + SSE + partials
@@ -610,8 +623,12 @@ type pageData struct {
 	UserName    string
 	UserRole    string
 	UserID      string
-	UserAvatar  string // Discord CDN avatar URL; empty → letter fallback
+	UserAvatar  string // provider CDN avatar URL; empty → letter fallback
 	LoginNext   string
+	// LoginProviders are the login buttons to render — exactly the providers
+	// that are fully configured. Empty renders the misconfiguration notice
+	// instead of a gate with no way through it.
+	LoginProviders []loginProviderView
 	// Workflow read UI (PR4–7)
 	Project       string
 	RepoCatalog   []config.GitHubRepoRef

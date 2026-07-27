@@ -1,8 +1,8 @@
 {{define "content"}}
-{{/* The gate: mark, nameplate, one action. All layout/CSS lives in layout.tmpl
-     ("Login gate" section) — this page is markup only. Deliberately no policy
-     copy: who may continue is answered by the error flash on the one attempt
-     where it matters. */}}
+{{/* The gate: mark, nameplate, one action per configured login provider. All
+     layout/CSS lives in layout.tmpl ("Login gate" section) — this page is
+     markup only. Deliberately no policy copy: who may continue is answered by
+     the error flash on the one attempt where it matters. */}}
 <div class="login" id="page-login">
   <span class="login-mark" aria-hidden="true"></span>
   <h1>Grok Work</h1>
@@ -10,9 +10,21 @@
   {{if .Error}}
   <div class="flash err login-flash" role="alert">{{.Error}}</div>
   {{end}}
-  {{/* Full navigation: hx-boost would AJAX /auth/discord then follow the Discord
-       OAuth redirect with HX-Request, which Discord CORS rejects. */}}
-  <a class="btn login-cta" href="{{route "auth.discord"}}{{if .LoginNext}}?next={{urlquery .LoginNext}}{{end}}"
-     hx-boost="false" id="login-discord">Log in with Discord</a>
+  {{/* Full navigation on every provider: hx-boost would AJAX /auth/<p> then
+       follow the provider's OAuth redirect with HX-Request, which their CORS
+       rejects. */}}
+  {{range .LoginProviders}}
+  <a class="btn login-cta" data-provider="{{.Key}}" href="{{.StartPath}}{{if $.LoginNext}}?next={{urlquery $.LoginNext}}{{end}}"
+     hx-boost="false" id="login-{{.Key}}">Log in with {{.Label}}</a>
+  {{end}}
+  {{if not .LoginProviders}}
+  {{/* Reachable by misconfiguration (a credential removed from the environment
+       at runtime), and it locks everyone out — so say what is missing rather
+       than render a gate with no door. */}}
+  <p class="login-empty">No login providers are configured. An administrator must set
+    <code>discordClientId</code>/<code>discordClientSecret</code> or
+    <code>webAuth.providers</code> in <code>config.json</code>, plus
+    <code>webPublicBaseURL</code>.</p>
+  {{end}}
 </div>
 {{end}}

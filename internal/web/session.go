@@ -25,9 +25,26 @@ const (
 	sessionsFileName = "web-sessions.json"
 )
 
+// oauthStateCookieFor names the short-lived state cookie for one provider.
+//
+// Discord keeps the historical name so a login already in flight across a
+// restart still completes. Every other provider gets its own cookie, and that
+// separation IS the cross-provider guard: a state minted at /auth/google simply
+// is not present when /auth/github/callback looks for one, so a code obtained
+// from one provider can never be redeemed against another's callback.
+func oauthStateCookieFor(key string) string {
+	if key == config.ActorKindDiscord {
+		return oauthStateCookie
+	}
+	return oauthStateCookie + "_" + key
+}
+
 // Session is a server-side web login record.
 type Session struct {
-	ID            string         `json:"id"`
+	ID string `json:"id"`
+	// DiscordUserID is the actor id, not necessarily a Discord snowflake: since
+	// multi-provider login it may be "google:<sub>" or "github:<id>". The JSON
+	// key is persisted, so it keeps its original name.
 	DiscordUserID string         `json:"discordUserId"`
 	DisplayName   string         `json:"displayName"`
 	AvatarURL     string         `json:"avatarUrl,omitempty"`

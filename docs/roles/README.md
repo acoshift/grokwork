@@ -74,6 +74,8 @@ Web write features (host-level, fail-closed when OAuth is off):
 
 Resolution order for an actor id: **admin list → member list → viewer list → membership of any project (`allowedUserIds` or a `teams.<key>.members` list) → deny**. `webAuth.adminDiscordIds` (and the member/viewer lists) accept namespaced actor ids; a bare snowflake still means Discord.
 
+Login providers: Discord, plus Google and GitHub when `webAuth.providers.google` / `webAuth.providers.github` carry a client id and secret (the secret may come from `GOOGLE_CLIENT_SECRET` / `GITHUB_CLIENT_SECRET` instead). A provider missing either half renders no button **and** its `/auth/<provider>` routes refuse. Non-Discord logins are spelled `google:<sub>` and `github:<numeric id>` — the provider's immutable subject, never an email or a login handle, and one namespace per provider so the same number arriving from two issuers is two different actors. Those are the spellings to put in an allowlist or a team; a denied login names its own actor id in the error message so it can be copied verbatim.
+
 Web and Discord capability checks resolve from the **actor id only** — there is no guild-role lookup on either path, so a team membership means the same thing in chat and in the web UI.
 
 ---
