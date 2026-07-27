@@ -117,6 +117,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"sessions.thread":                    "/sessions/",
 		"ship":                               "/ship",
 		"cases":                              "/cases",
+		"search":                             "/search",
 		"inbox":                              "/inbox",
 		"spend":                              "/spend",
 		"deploys":                            "/deploys",
@@ -225,6 +226,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("ship", "layout.tmpl", "ship.tmpl")
 	tp.ParseFiles("cases", "layout.tmpl", "cases.tmpl")
 	tp.ParseFiles("inbox", "layout.tmpl", "inbox.tmpl")
+	tp.ParseFiles("search", "layout.tmpl", "search.tmpl")
 	tp.ParseFiles("case_new", "layout.tmpl", "case_new.tmpl")
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
 	tp.ParseFiles("spend", "layout.tmpl", "spend.tmpl")
@@ -287,6 +289,10 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /sessions/{threadID}", s.requireAuth(hime.Handler(s.sessionPage)))
 	mux.Handle("GET /ship", s.requireAuth(hime.Handler(s.shipPage)))
 	mux.Handle("GET /cases", s.requireAuth(hime.Handler(s.casesGlobal)))
+	// One box over sessions, cases, tracked PRs/issues and recent commits.
+	// Global shell with ?project= as a data filter (like /ship): results are
+	// ACL-filtered before they are ranked — see search.go.
+	mux.Handle("GET /search", s.requireAuth(hime.Handler(s.searchPage)))
 	mux.Handle("GET /inbox", s.requireAuth(hime.Handler(s.inboxPage)))
 	mux.Handle("GET /worktrees", s.requireAuth(hime.Handler(s.worktreesPage)))
 	// Cross-project deploy board. Read-only and global — triggering stays on
@@ -574,7 +580,9 @@ type pageData struct {
 	RatesConfigured int
 	// SessionSpend is one session's cost, shown on its detail page.
 	SessionSpend spend.Row
-	Config       config.Snapshot
+	// Search results (/search). Already ACL-filtered and capped — see search.go.
+	Search searchResults
+	Config config.Snapshot
 	// Per-project settings tabs (/config/projects/{name}[/tab]).
 	ProjectItem      config.ProjectItem
 	DiscordUserNames map[string]string // Discord user id → display name (best-effort)

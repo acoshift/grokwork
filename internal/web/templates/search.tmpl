@@ -1,0 +1,53 @@
+{{define "content"}}
+<h1 id="page-search">Search</h1>
+<p class="sub">Cases, sessions, tracked pull requests and issues, and recent commits{{if .Search.Project}} in {{.Search.Project}}{{end}}.</p>
+
+<form method="get" action="{{route "search"}}" class="toolbar" id="search-form">
+  <div class="field">
+    <label for="search-q">Query</label>
+    <input id="search-q" type="search" name="q" value="{{.Search.Query}}" placeholder="WEBAPP-14, goal, #42, sha…" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="search-project">Project</label>
+    <select id="search-project" name="project" data-autosubmit>
+      <option value="" {{if eq .Search.Project ""}}selected{{end}}>All projects</option>
+      {{range .Search.Projects}}
+      <option value="{{.}}" {{if eq $.Search.Project .}}selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
+  </div>
+  <button type="submit" class="btn-secondary">Search</button>
+</form>
+
+{{if .Search.Query}}
+  {{if .Search.Groups}}
+  <p class="sub" id="search-summary">{{.Search.Shown}} shown{{if ne .Search.Shown .Search.Total}} of {{.Search.Total}} matched{{end}}.</p>
+  {{range .Search.Groups}}
+  <section class="sr-group" id="search-group-{{.Kind}}">
+    <h2 class="sr-h">{{.Label}} <span class="sr-n">{{.Total}}</span></h2>
+    {{if .Capped}}<p class="sr-cap">Showing the first {{len .Hits}} of {{.Total}} — narrow the query to see the rest.</p>{{end}}
+    <div class="sr-rows">
+      {{range .Hits}}
+      <a class="sr-row" href="{{.Href}}"{{if .External}} target="_blank" rel="noopener"{{end}}>
+        <span class="sr-main">
+          <span class="sr-t">{{.Title}}{{if .External}} ↗{{end}}</span>
+          <span class="sr-s">{{if .Mono}}<span class="mono">{{.Mono}}</span>{{end}}{{if .Project}}{{if .Mono}} · {{end}}{{.Project}}{{end}}{{if .Detail}} · {{.Detail}}{{end}}</span>
+        </span>
+        <span class="badge sr-kind">{{.Badge}}</span>
+      </a>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+  {{else}}
+  <div class="empty" id="search-empty">Nothing matches “{{.Search.Query}}”{{if .Search.Project}} in {{.Search.Project}}{{end}}.</div>
+  {{end}}
+{{else}}
+<div class="empty" id="search-empty">Paste a case key, a PR number, a commit sha, or any words from a goal.</div>
+{{end}}
+
+{{/* The bounds are printed, not implied: a capped list that does not say it is
+     capped reads as "that is all there is". */}}
+<p class="muted sr-bounds" id="search-bounds">Each kind returns at most {{.Search.KindCap}} matches, newest first.
+{{if .Search.CommitsSearched}}Commits: the newest {{.Search.CommitScan}} on <span class="mono">{{.Search.CommitRef}}</span>{{if .Search.CommitRepo}} in <span class="mono">{{.Search.CommitRepo}}</span>{{end}}.{{else if .Search.CommitNote}}Commits: not searched — {{.Search.CommitNote}}{{end}}</p>
+{{end}}

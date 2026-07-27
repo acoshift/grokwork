@@ -150,6 +150,9 @@ func TestPagesRender(t *testing.T) {
 		{"/history", `id="page-history"`},
 		{"/worktrees", `id="page-worktrees"`},
 		{"/worktrees", "Prune idle now"},
+		// Search results render as a full lead view even with no query.
+		{"/search", `id="page-search"`},
+		{"/search", `id="search-form"`},
 		// Cross-project deploy board: renders with no runs on disk at all.
 		{"/deploys", `id="page-deploys-board"`},
 		{"/deploys", `id="live-deploys-board"`},

@@ -32,6 +32,10 @@ var backLinkSections = map[string]string{
 	"worktrees": "Worktrees",
 	"commits":   "Commits",
 	"deploys":   "Deploys",
+	// Search is a board like the others for crumb purposes: its query string is
+	// the filter state, and a case reached by pasting its key should return to
+	// the results rather than to the sessions list.
+	"search": "Search",
 }
 
 // resolveBackLink validates a ?back= value and returns the href to render plus
