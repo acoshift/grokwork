@@ -213,13 +213,13 @@ func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 	base := PolicyInput{ForceInvestigate: true}
 
 	grokPol := BuildRunPolicy(base)
-	if grokPol.Tools == nil || *grokPol.Tools != "read_file,grep" {
+	if grokPol.Tools == nil || *grokPol.Tools != "read_file,grep,run_terminal_command" {
 		t.Fatalf("grok tools=%v", grokPol.Tools)
 	}
 
 	base.Agent = grokrun.AgentClaude
 	claudePol := BuildRunPolicy(base)
-	if claudePol.Tools == nil || *claudePol.Tools != "Read,Grep,Glob" {
+	if claudePol.Tools == nil || *claudePol.Tools != "Read,Grep,Glob,Bash" {
 		t.Fatalf("claude tools=%v", claudePol.Tools)
 	}
 }
@@ -236,7 +236,7 @@ func TestBuildRunPolicyIgnoresForeignToolOverride(t *testing.T) {
 
 	in.Agent = grokrun.AgentClaude
 	pol := BuildRunPolicy(in)
-	if pol.Tools == nil || *pol.Tools != "Read,Grep,Glob" {
+	if pol.Tools == nil || *pol.Tools != "Read,Grep,Glob,Bash" {
 		t.Fatalf("claude should fall back to its own default, got %v", pol.Tools)
 	}
 }

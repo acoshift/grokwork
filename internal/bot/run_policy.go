@@ -70,10 +70,11 @@ type PolicyInput struct {
 }
 
 // DefaultInvestigateTools is the best-effort Wave 1 tools allowlist (K21) for grok.
+// Prefer Agent.DefaultInvestigateTools(); this constant is kept for older call sites.
 // Host probe may refine later; fail-closed tools-off is "" pointer rewrite in grokrun.
-const DefaultInvestigateTools = "read_file,grep"
+const DefaultInvestigateTools = "read_file,grep,run_terminal_command"
 
-// investigateTools picks the read-only allowlist for an investigate run.
+// investigateTools picks the allowlist for an investigate run (file tools + shell).
 //
 // The project override is written in one agent's tool vocabulary. Handing grok
 // names to claude (or the reverse) would not fail loudly — it would resolve to
@@ -298,14 +299,16 @@ func EscalationPackage(e sessionstore.Entry) string {
 func investigatePromptPrefix(branch string) string {
 	lines := []string{
 		"You are investigating code on a shared workflow unit (Discord thread and/or web session).",
-		"Mode: INVESTIGATE (read-only intent). Do NOT commit, push, open a pull request, or modify the remote.",
+		"Mode: INVESTIGATE (diagnostic intent). Do NOT commit, push, open a pull request, or modify the remote.",
 		"Do NOT run `gh pr create`, do NOT push to main/master, and do NOT merge.",
+		"You may use the shell for diagnostics: read logs, run status commands, query databases (e.g. psql SELECT), curl health endpoints, inspect processes.",
+		"Prefer non-destructive commands. Do NOT mutate production data, drop tables, rewrite config, or edit application source as a \"fix\".",
 		"Explain findings in plain language. Prefer reading code and summarizing root cause.",
 		"If you need a code change, say so and stop — a human will start a fix run.",
 		"Do not claim the issue is fixed unless you only confirmed existing behavior.",
 		"",
-		"Filesystem scope: stay inside this unit's cwd/worktree and the project repo.",
-		"Do NOT scan the user's home directory or protected folders.",
+		"Filesystem scope: stay inside this unit's cwd/worktree and the project repo for code inspection.",
+		"Do NOT scan the user's home directory or protected folders for secrets.",
 		"",
 	}
 	if branch != "" {

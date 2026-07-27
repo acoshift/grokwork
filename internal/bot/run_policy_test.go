@@ -115,6 +115,13 @@ func TestInvestigatePromptNoPR(t *testing.T) {
 	if !strings.Contains(p, "INVESTIGATE") {
 		t.Fatal("missing INVESTIGATE")
 	}
+	// Shell is allowed for diagnostics (psql, logs, health checks).
+	if !strings.Contains(p, "shell") || !strings.Contains(p, "psql") {
+		t.Fatalf("investigate must allow diagnostic shell (psql): %s", p)
+	}
+	if !strings.Contains(p, "Do NOT mutate") {
+		t.Fatal("investigate shell guidance must still forbid destructive mutations")
+	}
 }
 
 func TestAttributionFooter(t *testing.T) {

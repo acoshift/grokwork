@@ -122,14 +122,17 @@ func (a Agent) Label() string {
 // session", "the Claude session").
 func (a Agent) SessionLabel() string { return a.Label() + " session" }
 
-// DefaultInvestigateTools is the read-only allowlist for investigate runs.
+// DefaultInvestigateTools is the allowlist for investigate runs: file inspection
+// plus a shell tool so agents can run diagnostic CLIs (psql, dig, curl, …).
 // Tool names are agent-specific vocabulary and are not interchangeable.
+// Shell is not a sandbox — mutate intent stays prompt-enforced (no commits/PRs;
+// GH_TOKEN is still omitted). Project investigateTools may override for grok.
 func (a Agent) DefaultInvestigateTools() string {
 	switch a.Resolve() {
 	case AgentClaude:
-		return "Read,Grep,Glob"
+		return "Read,Grep,Glob,Bash"
 	default:
-		return "read_file,grep"
+		return "read_file,grep,run_terminal_command"
 	}
 }
 
