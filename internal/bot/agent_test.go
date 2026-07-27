@@ -209,35 +209,77 @@ func TestSameAgentTreatsEmptyAsGrok(t *testing.T) {
 
 // The investigate allowlist must match the agent that will run, otherwise the
 // model is handed tool names it does not have and cannot read the repo.
+// Shell is role-gated: without SafeOps/CanShip the list is file-only.
 func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
+	// Zero caps → file-only for both agents.
 	base := PolicyInput{ForceInvestigate: true}
 
 	grokPol := BuildRunPolicy(base)
-	if grokPol.Tools == nil || *grokPol.Tools != "read_file,grep,run_terminal_command" {
-		t.Fatalf("grok tools=%v", grokPol.Tools)
+	if grokPol.Tools == nil || *grokPol.Tools != "read_file,grep" {
+		t.Fatalf("grok file-only tools=%v", grokPol.Tools)
+	}
+	if grokPol.InvestigateShell {
+		t.Fatal("zero caps must not grant investigate shell")
 	}
 
 	base.Agent = grokrun.AgentClaude
 	claudePol := BuildRunPolicy(base)
-	if claudePol.Tools == nil || *claudePol.Tools != "Read,Grep,Glob,Bash" {
-		t.Fatalf("claude tools=%v", claudePol.Tools)
+	if claudePol.Tools == nil || *claudePol.Tools != "Read,Grep,Glob" {
+		t.Fatalf("claude file-only tools=%v", claudePol.Tools)
+	}
+
+	// Builder-class gets shell on both agents.
+	base = PolicyInput{
+		ForceInvestigate: true,
+		Caps:             config.BuiltinCapabilityTemplates["builder"],
+	}
+	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep,run_terminal_command" || !pol.InvestigateShell {
+		t.Fatalf("builder grok tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
+	}
+	base.Agent = grokrun.AgentClaude
+	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "Read,Grep,Glob,Bash" || !pol.InvestigateShell {
+		t.Fatalf("builder claude tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
+	}
+
+	// SafeOps alone (no ship) also unlocks shell — support/ops diagnostics.
+	base = PolicyInput{
+		ForceInvestigate: true,
+		Caps:             config.Capabilities{Investigate: true, SafeOps: true},
+		Agent:            grokrun.AgentGrok,
+	}
+	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep,run_terminal_command" || !pol.InvestigateShell {
+		t.Fatalf("safeOps grok tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
 	}
 }
 
-// A project override is written in one agent's vocabulary. Passing grok names to
-// claude yields an allowlist of zero real tools, so the override is only applied
-// to the agent it was written for.
+// A project override is written in one agent's vocabulary and only applies when
+// shell is role-allowed. Passing grok names to claude yields zero real tools, so
+// the override is only applied to the agent it was written for.
 func TestBuildRunPolicyIgnoresForeignToolOverride(t *testing.T) {
-	in := PolicyInput{ForceInvestigate: true, InvestigateTools: "read_file,list_dir"}
+	// Investigator (no shell): override must not re-open shell via project config.
+	in := PolicyInput{
+		ForceInvestigate: true,
+		InvestigateTools: "read_file,grep,run_terminal_command",
+		Caps:             config.BuiltinCapabilityTemplates["investigator"],
+	}
+	if pol := BuildRunPolicy(in); pol.Tools == nil || *pol.Tools != "read_file,grep" || pol.InvestigateShell {
+		t.Fatalf("investigator must stay file-only despite override: tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
+	}
 
+	// Builder: grok honors override; claude keeps its own shell default.
+	in = PolicyInput{
+		ForceInvestigate: true,
+		InvestigateTools: "read_file,list_dir",
+		Caps:             config.BuiltinCapabilityTemplates["builder"],
+	}
 	if pol := BuildRunPolicy(in); pol.Tools == nil || *pol.Tools != "read_file,list_dir" {
-		t.Fatalf("grok should honor its own override: %v", pol.Tools)
+		t.Fatalf("grok should honor its own override when shell allowed: %v", pol.Tools)
 	}
 
 	in.Agent = grokrun.AgentClaude
 	pol := BuildRunPolicy(in)
 	if pol.Tools == nil || *pol.Tools != "Read,Grep,Glob,Bash" {
-		t.Fatalf("claude should fall back to its own default, got %v", pol.Tools)
+		t.Fatalf("claude should fall back to its own shell default, got %v", pol.Tools)
 	}
 }
 

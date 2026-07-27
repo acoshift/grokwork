@@ -30,15 +30,18 @@ Built-in flag matrix (source: `internal/config/capabilities.go`):
 | `investigate` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `draftCustomerReply` | ✓ | ✓ | | ✓ | ✓ |
 | `fileEscalation` | ✓ | | | ✓ | ✓ |
+| `safeOps` | | | | | |
 | `startSessions` | | | ✓ | ✓ | ✓ |
 | `githubWrites` | | | ✓ | ✓ | ✓ |
 | `approve` | | | | ✓ | ✓ |
 | `merge` | | | | | ✓ |
 | `adminProject` | | | | | ✓ |
 
-`RequestChange` and `SafeOps` exist on the struct but have **no command gates** yet (reserved).
+`RequestChange` remains reserved (no command gates yet).
 
 **Ship rule:** PR/direct ship requires **both** `startSessions` and `githubWrites` (`CanShip()`). Missing `githubWrites` coerces the run to investigate-only (never half-fix).
+
+**Investigate shell:** diagnostic host shell (`psql`, logs, …) on investigate runs is granted when `safeOps` **or** `CanShip()` is true (`CanInvestigateShell()`). Built-in investigator/operator stay file-only; builder-class eng gets shell via ship rights. Grant `safeOps` on a custom template (or `capabilityByUser`) for support/ops who need DB/CLI diagnostics without ship rights.
 
 ---
 

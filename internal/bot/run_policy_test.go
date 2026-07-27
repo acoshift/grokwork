@@ -106,7 +106,7 @@ func TestBuildRunPolicySafeTeamUnmappedInvestigator(t *testing.T) {
 }
 
 func TestInvestigatePromptNoPR(t *testing.T) {
-	p := investigatePromptPrefix("grok/discord/1")
+	p := investigatePromptPrefix("grok/discord/1", false)
 	for _, bad := range []string{"gh pr create` (or", "Open a pull request with"} {
 		if strings.Contains(p, bad) {
 			t.Fatalf("investigate must not instruct PR: %q in\n%s", bad, p)
@@ -115,11 +115,18 @@ func TestInvestigatePromptNoPR(t *testing.T) {
 	if !strings.Contains(p, "INVESTIGATE") {
 		t.Fatal("missing INVESTIGATE")
 	}
-	// Shell is allowed for diagnostics (psql, logs, health checks).
-	if !strings.Contains(p, "shell") || !strings.Contains(p, "psql") {
-		t.Fatalf("investigate must allow diagnostic shell (psql): %s", p)
+	if strings.Contains(p, "psql") {
+		t.Fatal("file-only investigate prompt must not offer shell diagnostics")
 	}
-	if !strings.Contains(p, "Do NOT mutate") {
+	if !strings.Contains(p, "file-inspection") {
+		t.Fatal("file-only prompt should say file-inspection tools only")
+	}
+
+	withShell := investigatePromptPrefix("grok/discord/1", true)
+	if !strings.Contains(withShell, "shell") || !strings.Contains(withShell, "psql") {
+		t.Fatalf("shell investigate must allow diagnostic shell (psql): %s", withShell)
+	}
+	if !strings.Contains(withShell, "Do NOT mutate") {
 		t.Fatal("investigate shell guidance must still forbid destructive mutations")
 	}
 }

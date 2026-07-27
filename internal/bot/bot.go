@@ -1817,12 +1817,12 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	var prefix string
 	switch pol.PrefixKind {
 	case "investigate":
-		prefix = investigatePromptPrefix(wtBranch)
+		prefix = investigatePromptPrefix(wtBranch, pol.InvestigateShell)
 	case "explain":
 		prefix = explainPromptPrefix()
 	case "none":
 		// Should not reach here (bail above); refuse remote prefix.
-		prefix = investigatePromptPrefix(wtBranch)
+		prefix = investigatePromptPrefix(wtBranch, pol.InvestigateShell)
 	case "remote":
 		// Escalation package for case fixing (K4)
 		if pol.Mode == ModeCase {
@@ -1851,7 +1851,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		}
 		prefix += issueBindingPromptMode(issueLines, promptDirect)
 	default:
-		prefix = investigatePromptPrefix(wtBranch)
+		prefix = investigatePromptPrefix(wtBranch, pol.InvestigateShell)
 	}
 	prompt = prefix + prompt
 	if pol.Coerced && present {

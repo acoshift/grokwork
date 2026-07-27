@@ -6,7 +6,8 @@ import (
 )
 
 // Capabilities are project-scoped action flags (fail-closed when zero).
-// Wave 1: RequestChange/SafeOps reserved (no command gates).
+// RequestChange remains reserved (no command gates yet).
+// SafeOps gates diagnostic shell on investigate runs (and deploy requireCapability).
 type Capabilities struct {
 	Investigate        bool `json:"investigate,omitempty"`
 	DraftCustomerReply bool `json:"draftCustomerReply,omitempty"`
@@ -61,6 +62,14 @@ func (c Capabilities) Or(o Capabilities) Capabilities {
 // CanShip is true when both start and github write flags are set (builder-class).
 func (c Capabilities) CanShip() bool {
 	return c.StartSessions && c.GithubWrites
+}
+
+// CanInvestigateShell is true when an investigate run may use host shell tools
+// (psql, logs, health checks, …). Builder-class actors get it via CanShip;
+// support/ops who need diagnostics without ship rights get it via SafeOps on
+// their capability template (or capabilityByUser).
+func (c Capabilities) CanInvestigateShell() bool {
+	return c.SafeOps || c.CanShip()
 }
 
 // TemplateName lookup: project overlay then builtin. Unknown → zero + false.

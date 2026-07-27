@@ -66,7 +66,8 @@ type capMatrixRow struct {
 }
 
 // capColumns orders capability flags for chips and the legend matrix.
-// RequestChange/SafeOps are wave-1 reserved (no command gates) — omitted.
+// RequestChange stays reserved (no command gates) and is omitted.
+// safeOps gates diagnostic shell on investigate runs.
 var capColumns = []struct {
 	Label string
 	Get   func(config.Capabilities) bool
@@ -74,6 +75,7 @@ var capColumns = []struct {
 	{"investigate", func(c config.Capabilities) bool { return c.Investigate }},
 	{"draft reply", func(c config.Capabilities) bool { return c.DraftCustomerReply }},
 	{"escalate", func(c config.Capabilities) bool { return c.FileEscalation }},
+	{"safe ops", func(c config.Capabilities) bool { return c.SafeOps }},
 	{"sessions", func(c config.Capabilities) bool { return c.StartSessions }},
 	{"github", func(c config.Capabilities) bool { return c.GithubWrites }},
 	{"merge", func(c config.Capabilities) bool { return c.Merge }},

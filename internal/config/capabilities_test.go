@@ -110,3 +110,24 @@ func TestConfigFileRoundTripCapabilities(t *testing.T) {
 		t.Fatal("SafeTeamMode not loaded")
 	}
 }
+
+func TestCanInvestigateShell(t *testing.T) {
+	if BuiltinCapabilityTemplates["investigator"].CanInvestigateShell() {
+		t.Fatal("investigator must not get host shell")
+	}
+	if BuiltinCapabilityTemplates["operator"].CanInvestigateShell() {
+		t.Fatal("operator must not get host shell without safeOps")
+	}
+	if !BuiltinCapabilityTemplates["builder"].CanInvestigateShell() {
+		t.Fatal("builder CanShip implies investigate shell")
+	}
+	if !BuiltinCapabilityTemplates["admin"].CanInvestigateShell() {
+		t.Fatal("admin CanShip implies investigate shell")
+	}
+	if !(Capabilities{SafeOps: true}).CanInvestigateShell() {
+		t.Fatal("SafeOps alone must unlock investigate shell")
+	}
+	if (Capabilities{}).CanInvestigateShell() {
+		t.Fatal("zero caps must not unlock shell")
+	}
+}

@@ -122,18 +122,43 @@ func (a Agent) Label() string {
 // session", "the Claude session").
 func (a Agent) SessionLabel() string { return a.Label() + " session" }
 
-// DefaultInvestigateTools is the allowlist for investigate runs: file inspection
-// plus a shell tool so agents can run diagnostic CLIs (psql, dig, curl, …).
+// DefaultInvestigateTools is the file-only allowlist for investigate runs.
 // Tool names are agent-specific vocabulary and are not interchangeable.
-// Shell is not a sandbox — mutate intent stays prompt-enforced (no commits/PRs;
-// GH_TOKEN is still omitted). Project investigateTools may override for grok.
+// Shell is added separately when the actor may use diagnostics (see
+// InvestigateTools). Project investigateTools may override for grok when shell
+// is allowed.
 func (a Agent) DefaultInvestigateTools() string {
 	switch a.Resolve() {
 	case AgentClaude:
-		return "Read,Grep,Glob,Bash"
+		return "Read,Grep,Glob"
 	default:
-		return "read_file,grep,run_terminal_command"
+		return "read_file,grep"
 	}
+}
+
+// ShellInvestigateTool is the agent-specific shell tool name, or empty if none.
+func (a Agent) ShellInvestigateTool() string {
+	switch a.Resolve() {
+	case AgentClaude:
+		return "Bash"
+	default:
+		return "run_terminal_command"
+	}
+}
+
+// InvestigateTools returns the investigate allowlist for this agent.
+// When shell is true, the diagnostic shell tool is included (not a sandbox —
+// mutate intent stays prompt-enforced; GH_TOKEN is still omitted by policy).
+func (a Agent) InvestigateTools(shell bool) string {
+	base := a.DefaultInvestigateTools()
+	if !shell {
+		return base
+	}
+	sh := a.ShellInvestigateTool()
+	if sh == "" {
+		return base
+	}
+	return base + "," + sh
 }
 
 // DefaultBin is the binary name looked up on PATH when config leaves it unset.

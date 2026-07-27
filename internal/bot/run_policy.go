@@ -47,6 +47,9 @@ type RunPolicy struct {
 	AllowDirectIntegrate bool
 	DirtyTreeWarn        bool
 	Coerced              bool // StartSessions without GithubWrites coerced to investigate
+	// InvestigateShell is true when the investigate allowlist includes host shell
+	// (role-gated: SafeOps or CanShip). Used for prompt contract, not CLI flags.
+	InvestigateShell bool
 }
 
 // PolicyInput is the pure decision input for BuildRunPolicy.
@@ -69,24 +72,30 @@ type PolicyInput struct {
 	Agent grokrun.Agent
 }
 
-// DefaultInvestigateTools is the best-effort Wave 1 tools allowlist (K21) for grok.
-// Prefer Agent.DefaultInvestigateTools(); this constant is kept for older call sites.
-// Host probe may refine later; fail-closed tools-off is "" pointer rewrite in grokrun.
-const DefaultInvestigateTools = "read_file,grep,run_terminal_command"
+// DefaultInvestigateTools is the file-only Wave 1 allowlist (K21) for grok.
+// Prefer grokrun.Agent.InvestigateTools; this constant is kept for older call sites.
+const DefaultInvestigateTools = "read_file,grep"
 
-// investigateTools picks the allowlist for an investigate run (file tools + shell).
+// investigateTools picks the allowlist for an investigate run.
 //
-// The project override is written in one agent's tool vocabulary. Handing grok
-// names to claude (or the reverse) would not fail loudly — it would resolve to
-// an allowlist of zero real tools, leaving the model unable to read the repo and
-// producing a confidently empty investigation. So an override only applies to
-// the agent whose names it is written in; other agents get their own default.
-func investigateTools(agent grokrun.Agent, override string) string {
+// Shell is role-gated: only SafeOps or builder-class (CanShip) actors get host
+// shell tools. Plain investigators stay file-only.
+//
+// The project override is written in one agent's tool vocabulary and only
+// applies when shell is allowed (otherwise an override that listed Bash would
+// re-open host shell for support). Handing grok names to claude (or the reverse)
+// would resolve to an allowlist of zero real tools, so an override only applies
+// to the agent whose names it is written in; other agents get their own default.
+func investigateTools(agent grokrun.Agent, override string, caps config.Capabilities) string {
+	shell := caps.CanInvestigateShell()
+	if !shell {
+		return agent.InvestigateTools(false)
+	}
 	override = strings.TrimSpace(override)
 	if override != "" && agent.Resolve() == grokrun.AgentGrok {
 		return override
 	}
-	return agent.DefaultInvestigateTools()
+	return agent.InvestigateTools(true)
 }
 
 // BuildRunPolicy is a pure function: mode × caps × ship → gates (testable without Discord).
@@ -155,7 +164,7 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 				rk = RunKindInvestigate
 			}
 		}
-		toolsCopy := investigateTools(in.Agent, in.InvestigateTools)
+		toolsCopy := investigateTools(in.Agent, in.InvestigateTools, in.Caps)
 		pol := RunPolicy{
 			Mode:                 mode,
 			Phase:                phase,
@@ -175,12 +184,14 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 			AllowDirectIntegrate: false,
 			DirtyTreeWarn:        true,
 			Coerced:              coerced,
+			InvestigateShell:     toolsListHasShell(in.Agent, toolsCopy),
 		}
 		if mode == ModeExplain || phase == sessionstore.PhaseAnswered {
 			pol.PrefixKind = "explain"
 			pol.PostCompletion = "none"
 			empty := ""
 			pol.Tools = &empty // tools-off rewrite
+			pol.InvestigateShell = false
 		}
 		return pol
 	}
@@ -295,22 +306,47 @@ func EscalationPackage(e sessionstore.Entry) string {
 	return b.String()
 }
 
+// toolsListHasShell reports whether the comma allowlist includes this agent's shell tool.
+func toolsListHasShell(agent grokrun.Agent, tools string) bool {
+	sh := agent.ShellInvestigateTool()
+	if sh == "" || strings.TrimSpace(tools) == "" {
+		return false
+	}
+	for _, part := range strings.Split(tools, ",") {
+		if strings.TrimSpace(part) == sh {
+			return true
+		}
+	}
+	return false
+}
+
 // investigatePromptPrefix is the non-shipping contract (no PR, no direct ship).
-func investigatePromptPrefix(branch string) string {
+// shell is true when the actor's role granted diagnostic host shell tools.
+func investigatePromptPrefix(branch string, shell bool) string {
 	lines := []string{
 		"You are investigating code on a shared workflow unit (Discord thread and/or web session).",
-		"Mode: INVESTIGATE (diagnostic intent). Do NOT commit, push, open a pull request, or modify the remote.",
+		"Mode: INVESTIGATE (read-only intent). Do NOT commit, push, open a pull request, or modify the remote.",
 		"Do NOT run `gh pr create`, do NOT push to main/master, and do NOT merge.",
-		"You may use the shell for diagnostics: read logs, run status commands, query databases (e.g. psql SELECT), curl health endpoints, inspect processes.",
-		"Prefer non-destructive commands. Do NOT mutate production data, drop tables, rewrite config, or edit application source as a \"fix\".",
-		"Explain findings in plain language. Prefer reading code and summarizing root cause.",
+	}
+	if shell {
+		lines = append(lines,
+			"You may use the shell for diagnostics: read logs, run status commands, query databases (e.g. psql SELECT), curl health endpoints, inspect processes.",
+			"Prefer non-destructive commands. Do NOT mutate production data, drop tables, rewrite config, or edit application source as a \"fix\".",
+		)
+	} else {
+		lines = append(lines,
+			"You have file-inspection tools only (no shell). Prefer reading code and summarizing root cause.",
+		)
+	}
+	lines = append(lines,
+		"Explain findings in plain language.",
 		"If you need a code change, say so and stop — a human will start a fix run.",
 		"Do not claim the issue is fixed unless you only confirmed existing behavior.",
 		"",
 		"Filesystem scope: stay inside this unit's cwd/worktree and the project repo for code inspection.",
 		"Do NOT scan the user's home directory or protected folders for secrets.",
 		"",
-	}
+	)
 	if branch != "" {
 		lines = append([]string{
 			"Isolated git worktree for this workflow unit / thread.",
