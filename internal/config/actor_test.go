@@ -42,6 +42,94 @@ func TestUnknownNamespaceNotCoercedToDiscord(t *testing.T) {
 	}
 }
 
+// TestLoginProviderActorKindsAreRegistered: an unregistered kind is passed
+// through un-folded, so "Google:123" and "google:123" would be two different
+// actors and "google:  " would normalize to a non-empty garbage id.
+func TestLoginProviderActorKindsAreRegistered(t *testing.T) {
+	cases := map[string]string{
+		"google:sub-1":  "google:sub-1",
+		"Google:sub-1":  "google:sub-1", // kind case-folded
+		"GOOGLE: sub-1": "google:sub-1",
+		"google:Sub-1":  "google:Sub-1", // subject case preserved
+		"github:42":     "github:42",
+		"GitHub: 42 ":   "github:42",
+		"google:":       "", // namespace with no subject is not an actor
+		"google:  ":     "",
+		"github:":       "",
+	}
+	for in, want := range cases {
+		if got := NormalizeActorID(in); got != want {
+			t.Errorf("NormalizeActorID(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if !SameActor("Google:sub-1", "google:sub-1") {
+		t.Error("case-differing spellings of the same Google actor must match")
+	}
+	if !SameActor("github:42", "GitHub:42") {
+		t.Error("case-differing spellings of the same GitHub actor must match")
+	}
+	for _, id := range []string{"google:sub-1", "github:42"} {
+		if IsDiscordActor(id) {
+			t.Errorf("%q reported as a Discord actor — it would be DMed and looked up for guild roles", id)
+		}
+	}
+	if got := ActorKind("github:42"); got != ActorKindGitHub {
+		t.Errorf("ActorKind(github:42) = %q", got)
+	}
+	if got := ActorSubject("google:sub-1"); got != "sub-1" {
+		t.Errorf("ActorSubject(google:sub-1) = %q", got)
+	}
+	// A bare id still means Discord — no existing config changes meaning.
+	if got := NormalizeActorID("424242424242424242"); got != "discord:424242424242424242" {
+		t.Errorf("bare id = %q, want the discord namespace", got)
+	}
+}
+
+// TestProviderSubjectSpacesDoNotCollide is the namespace-collision guard, and
+// the reason each provider gets its own kind instead of a shared "oidc:".
+// Subject spaces are independent per issuer: GitHub user id 12345 and a Google
+// "sub" of 12345 are different people, and a Discord snowflake of 12345 is a
+// third. Any pair matching here means one of them inherits the others' team
+// memberships and admin rights.
+func TestProviderSubjectSpacesDoNotCollide(t *testing.T) {
+	ids := []string{"google:12345", "github:12345", "discord:12345", "12345", "oidc:12345", "web:12345"}
+	for i, a := range ids {
+		for j, b := range ids {
+			// "discord:12345" and the bare "12345" are the one intended pair.
+			same := i == j || (a == "12345" && b == "discord:12345") || (a == "discord:12345" && b == "12345")
+			if got := SameActor(a, b); got != same {
+				t.Errorf("SameActor(%q, %q) = %v, want %v", a, b, got, same)
+			}
+		}
+	}
+
+	// And the same collision through the real authorization path.
+	c := &Config{
+		WebAuth:  &WebAuthConfig{Enabled: true, AdminDiscordIDs: []string{"google:12345"}},
+		Projects: ProjectsMap{"p": {AllowedUserIDs: []string{"github:777"}}},
+	}
+	if role, ok := c.ResolveWebRoleForConfig("google:12345"); !ok || role != WebRoleAdmin {
+		t.Fatalf("google admin = (%q,%v), want (admin,true)", role, ok)
+	}
+	for _, impostor := range []string{"github:12345", "discord:12345", "12345", "oidc:12345"} {
+		if role, ok := c.ResolveWebRoleForConfig(impostor); ok {
+			t.Errorf("%q inherited the google:12345 admin grant as %q", impostor, role)
+		}
+	}
+	if role, ok := c.ResolveWebRoleForConfig("github:777"); !ok || role != WebRoleMember {
+		t.Fatalf("github project member = (%q,%v), want (member,true)", role, ok)
+	}
+	if _, ok := c.ResolveWebRoleForConfig("google:777"); ok {
+		t.Error("google:777 inherited the github:777 project grant")
+	}
+	if !c.AccessAllowed("p", "github:777") {
+		t.Error("a GitHub actor must be grantable on a project allowlist")
+	}
+	if c.AccessAllowed("p", "777") {
+		t.Error("a bare snowflake matched a github:-namespaced allowlist entry")
+	}
+}
+
 func TestSameActorAcrossSpellings(t *testing.T) {
 	if !SameActor("1234", "discord:1234") {
 		t.Error("bare and namespaced Discord ids must match")

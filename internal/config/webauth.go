@@ -40,6 +40,10 @@ type WebAuthConfig struct {
 	MemberDiscordIDs []string        `json:"memberDiscordIds,omitempty"`
 	ViewerDiscordIDs []string        `json:"viewerDiscordIds,omitempty"`
 	Features         WebAuthFeatures `json:"features,omitempty"`
+	// Providers holds the login providers beside Discord (whose credentials keep
+	// their historical top-level keys). Pointer + omitempty so a Discord-only
+	// config round-trips unchanged through the web config UI's save.
+	Providers *WebAuthProviders `json:"providers,omitempty"`
 }
 
 // WebAuthEnabled reports whether Discord OAuth web auth is turned on.
@@ -270,12 +274,9 @@ func (c *Config) ValidateWebAuth() error {
 	}
 	var missing []string
 	// sessionSecret is optional: sessions are opaque server-side IDs, not signed cookies.
-	if strings.TrimSpace(c.EffectiveClientID()) == "" {
-		missing = append(missing, "discordClientId (or decodable bot token)")
-	}
-	if c.DiscordClientSecretValue() == "" {
-		missing = append(missing, "discordClientSecret (or DISCORD_CLIENT_SECRET)")
-	}
+	// At least one login provider must be fully configured — which one is up to
+	// the deployment, so a Google-only install needs no Discord OAuth app.
+	missing = append(missing, c.missingProviderFields()...)
 	if c.WebPublicBaseURLValue() == "" {
 		missing = append(missing, "webPublicBaseURL (or GROK_WORK_PUBLIC_BASE_URL)")
 	}
@@ -325,6 +326,9 @@ func (c *Config) applyWebAuthBootstrap() {
 	c.WebAuth.AdminDiscordIDs = cleanIDList(c.WebAuth.AdminDiscordIDs)
 	c.WebAuth.MemberDiscordIDs = cleanIDList(c.WebAuth.MemberDiscordIDs)
 	c.WebAuth.ViewerDiscordIDs = cleanIDList(c.WebAuth.ViewerDiscordIDs)
+	if c.WebAuth.Enabled {
+		c.warnHalfConfiguredProviders()
+	}
 }
 
 func cleanIDList(ids []string) []string {
@@ -372,5 +376,10 @@ func cloneWebAuth(w *WebAuthConfig) *WebAuthConfig {
 	out.MemberDiscordIDs = slices.Clone(w.MemberDiscordIDs)
 	out.ViewerDiscordIDs = slices.Clone(w.ViewerDiscordIDs)
 	out.Features = w.Features
+	// Deep-copy, and never drop: saveLocked marshals webAuth through this clone,
+	// so a field missing here is silently deleted from config.json the next time
+	// anyone saves from the web config UI — locking out every provider user with
+	// no error anywhere.
+	out.Providers = cloneWebAuthProviders(w.Providers)
 	return &out
 }

@@ -102,6 +102,10 @@
     "adminDiscordIds": [],
     "memberDiscordIds": [],
     "viewerDiscordIds": [],
+    "providers": {
+      "google": { "clientId": "", "clientSecret": "" },
+      "github": { "clientId": "", "clientSecret": "" }
+    },
     "features": {
       "githubWrites": false,
       "merge": false,

@@ -12,10 +12,17 @@ import "strings"
 // ActorKindWeb is not new: sessionstore.Entry.CreatedBy has recorded "web:<id>"
 // for web-created units since that feature shipped, and this makes the same
 // spelling valid in an allowlist.
+// ActorKindGoogle and ActorKindGitHub are the login providers added alongside
+// Discord. They get one namespace each, deliberately NOT a shared "oidc:" one:
+// subject spaces are independent per issuer, so a GitHub user id of 12345 and a
+// Google "sub" of 12345 are different people. Folding them together would let
+// either inherit the other's team memberships and admin rights.
 const (
 	ActorKindDiscord = "discord"
 	ActorKindWeb     = "web"
 	ActorKindOIDC    = "oidc"
+	ActorKindGoogle  = "google"
+	ActorKindGitHub  = "github"
 )
 
 // knownActorKinds are the namespaces this build understands.
@@ -23,6 +30,8 @@ var knownActorKinds = map[string]struct{}{
 	ActorKindDiscord: {},
 	ActorKindWeb:     {},
 	ActorKindOIDC:    {},
+	ActorKindGoogle:  {},
+	ActorKindGitHub:  {},
 }
 
 // NormalizeActorID canonicalizes an actor id to "<kind>:<subject>".
