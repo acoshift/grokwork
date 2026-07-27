@@ -22,7 +22,9 @@ type oauthIdentity struct {
 	// Handle is the provider's mutable public handle, set only where one exists
 	// and is worth keeping: GitHub's login, which git attribution needs to build
 	// the noreply address. It is display metadata like Name — never compared,
-	// never resolved against, and refreshed from the provider on every login.
+	// never resolved against, and refreshed from the provider on every login
+	// through THAT provider (which is why the cache also expires; see
+	// identity.MaxHandleAge).
 	Handle string
 }
 
@@ -53,12 +55,13 @@ func loginProviderOrder() []string { return config.OAuthProviderKinds() }
 func authStartPath(key string) string    { return "/auth/" + key }
 func authCallbackPath(key string) string { return "/auth/" + key + "/callback" }
 
-// authLinkPath starts a LINK flow: the same provider handshake as a login, but
-// finishing by attaching the identity to the signed-in account instead of
-// minting a session from it. It shares the callback — which flow a callback
-// completes is decided by the state cookie it carries, never by the URL, so
-// there is exactly one place that redeems a code.
-func authLinkPath(key string) string { return "/auth/" + key + "/link" }
+// A LINK flow — the same provider handshake, finishing by attaching the identity
+// to the signed-in account instead of minting a session — has no per-provider
+// start path. It begins at POST /account/link, which requireAccount CSRF-checks,
+// because a link ends in an irreversible merge (see postAccountLink). It shares
+// the callback above: which flow a callback completes is decided by the state
+// cookie it carries, never by the URL, so there is exactly one place that
+// redeems a code.
 
 // actorIDFor maps a provider subject onto the actor id space.
 //

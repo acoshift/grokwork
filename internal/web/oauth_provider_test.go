@@ -622,6 +622,9 @@ func TestAuthRoutesMatchProviderTable(t *testing.T) {
 	if len(keys) != 3 {
 		t.Fatalf("provider order=%v", keys)
 	}
+	if got := f.srv.app.Route("account.link"); got != "/account/link" {
+		t.Errorf("route account.link=%q want /account/link", got)
+	}
 	for _, key := range keys {
 		if got := f.srv.app.Route("auth." + key); got != authStartPath(key) {
 			t.Errorf("route auth.%s=%q want %q", key, got, authStartPath(key))
@@ -629,15 +632,19 @@ func TestAuthRoutesMatchProviderTable(t *testing.T) {
 		if got := f.srv.app.Route("auth." + key + ".callback"); got != authCallbackPath(key) {
 			t.Errorf("route auth.%s.callback=%q want %q", key, got, authCallbackPath(key))
 		}
-		// Every provider can also be LINKED to an account, and the account page
-		// renders these by name — a missing entry there is a dead button.
-		if got := f.srv.app.Route("auth." + key + ".link"); got != authLinkPath(key) {
-			t.Errorf("route auth.%s.link=%q want %q", key, got, authLinkPath(key))
+		// Linking deliberately has NO per-provider start route: it would be a
+		// state-changing GET, and one cross-site click completed a whole account
+		// merge through it. The provider travels in the body of POST /account/link
+		// instead, which is CSRF-checked — see TestLinkStartRequiresCSRFAndHasNoGETRoute.
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/auth/"+key+"/link", nil))
+		if w.Code != http.StatusNotFound && w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("GET /auth/%s/link status=%d, want it unrouted", key, w.Code)
 		}
 		if _, ok := f.srv.provider(key); !ok {
 			t.Errorf("no provider adapter for %q", key)
 		}
-		w := httptest.NewRecorder()
+		w = httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, authStartPath(key), nil))
 		if w.Code == http.StatusNotFound {
 			t.Errorf("%s start route is not wired", authStartPath(key))

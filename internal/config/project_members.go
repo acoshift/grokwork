@@ -13,6 +13,17 @@ func projectHasAllowlist(pc ProjectConfig) bool {
 	return len(pc.AllowedUserIDs) > 0 || projectTeamsHaveMembers(pc)
 }
 
+// actorHasProjectAccess is AccessAllowed against an already-held ProjectConfig,
+// for callers that hold c.mu (RewriteActorID) or that are examining a project
+// value they have not stored yet. It must stay the same predicate AccessAllowed
+// applies, or "can this id do anything here" gets two answers.
+func actorHasProjectAccess(pc ProjectConfig, userID string) bool {
+	if strings.TrimSpace(userID) == "" || !projectHasAllowlist(pc) {
+		return false
+	}
+	return containsID(pc.AllowedUserIDs, userID) || teamsContainActor(pc, userID)
+}
+
 // ProjectHasAllowlist reports whether the named project grants access to anyone.
 func (c *Config) ProjectHasAllowlist(name string) bool {
 	if c == nil {
@@ -34,13 +45,10 @@ func (c *Config) AccessAllowed(project, userID string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	pc, ok := c.Projects[project]
-	if !ok || !projectHasAllowlist(pc) {
+	if !ok {
 		return false
 	}
-	if containsID(pc.AllowedUserIDs, userID) {
-		return true
-	}
-	return teamsContainActor(pc, userID)
+	return actorHasProjectAccess(pc, userID)
 }
 
 // UserOnAnyProject reports whether the actor is a direct member or a team member

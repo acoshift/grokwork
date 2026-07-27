@@ -37,7 +37,7 @@
         <td>{{.Label}}{{if .Canonical}} <span class="badge">canonical</span>{{end}}</td>
         <td class="mono">{{.ActorID}}</td>
         <td class="mono muted">{{.Subject}}</td>
-        <td>{{if .Name}}{{.Name}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>{{if .Name}}{{.Name}}{{else}}<span class="muted">—</span>{{end}}{{if .HandleStale}} <span class="badge">handle unverified</span>{{end}}</td>
         <td class="mono muted">{{if .LinkedAt}}{{.LinkedAt}}{{else}}—{{end}}</td>
         <td class="row-actions">
           {{if and (not .Canonical) $.AccountLinkingOn}}
@@ -60,6 +60,14 @@
     capability entry written with a linked login can never match, because a
     session never carries one.
   </p>
+  {{if .AccountHandleStale}}
+  <p class="sub" id="account-handle-stale" style="margin:0.4rem 0 0">
+    A GitHub name can be renamed and re-registered by somebody else, so it is
+    trusted only for a while after you last signed in with GitHub. An
+    <em>unverified</em> handle means git attribution is off for that login — sign
+    in with GitHub once to turn it back on.
+  </p>
+  {{end}}
 </div>
 
 {{if .AccountLinkingOn}}
@@ -73,7 +81,13 @@
   </p>
   <div class="form-actions">
     {{range .AccountLinkOptions}}
-    <a class="btn" href="{{.LinkPath}}" hx-boost="false" id="account-link-{{.Key}}">Link {{.Label}}…</a>
+    {{/* A POST, not a link: starting this ends in an irreversible merge, so it
+         carries the CSRF token like every other mutation. */}}
+    <form method="post" action="{{route "account.link"}}">
+      {{template "csrf" $}}
+      <input type="hidden" name="provider" value="{{.Key}}">
+      <button type="submit" class="btn" id="account-link-{{.Key}}">Link {{.Label}}…</button>
+    </form>
     {{end}}
   </div>
   {{else}}

@@ -306,23 +306,34 @@ func (s *Server) oauthStart(ctx *hime.Context) error {
 	return ctx.Redirect(authURL)
 }
 
-// oauthLinkStart begins attaching another login to the signed-in account.
+// postAccountLink begins attaching another login to the signed-in account.
 //
 // It is oauthStart with two differences, and both are the whole security model:
 // the state lands in the LINK cookie (so it can never complete a login), and
 // the cookie carries the id of the web session that started it (so the callback
 // can refuse to attach an identity to a session that did not ask for it).
 //
-// A GET is safe here even though it has no CSRF token: forging this request
-// only makes the victim's browser start a flow that will attach whatever the
-// VICTIM authenticates as, to the victim's own account. The dangerous
-// direction — the attacker's identity onto the victim's account — is what the
-// session binding refuses.
-func (s *Server) oauthLinkStart(ctx *hime.Context) error {
+// It is a POST — under requireAccount, which CSRF-checks mutations — because
+// starting a link IS the mutation. As a GET it was a one-click cross-site
+// takeover primitive: a top-level navigation carries the SameSite=Lax session
+// cookie, GitHub re-authorizes an already-approved app with no prompt, and its
+// callback is another top-level navigation carrying both Lax cookies, so the
+// whole flow completed without the account owner doing anything but clicking a
+// link. "It only attaches whatever the victim authenticates as" was never
+// harmless once absorbing arrived — that merge rewrites config.json and
+// sessions.json, revokes the other login's sessions, and unlink does not undo it
+// — and on a shared machine, or with the victim talked into signing in as some
+// other GitHub account, it hands the attacker a login that resolves to the
+// victim's account.
+//
+// The provider comes from the form rather than the path so the token and the
+// provider arrive in the same request body, and Sec-Fetch-Site is checked as
+// belt and braces on browsers that send it.
+func (s *Server) postAccountLink(ctx *hime.Context) error {
 	if !s.cfg.WebAuthEnabled() {
 		return ctx.Redirect("/")
 	}
-	key := ctx.PathValue("provider")
+	key := strings.TrimSpace(ctx.PostFormValue("provider"))
 	p, known := s.provider(key)
 	if !known {
 		return ctx.Status(http.StatusNotFound).Error("unknown login provider")
@@ -333,6 +344,11 @@ func (s *Server) oauthLinkStart(ctx *hime.Context) error {
 	}
 	if sess == nil {
 		return ctx.RedirectTo("login", map[string]string{"err": "log in before linking another login"})
+	}
+	if !sameOriginRequest(ctx.Request) {
+		err := fmt.Errorf("link refused: start it from the account page")
+		s.auditIdentity(ctx, audit.ActionIdentityLink, err, map[string]any{"provider": key})
+		return s.accountRedirect(ctx, "", err.Error())
 	}
 	// Same gate as the login route: a hidden button is not a gate, and no state
 	// cookie is written for a provider whose credentials are missing.
@@ -371,7 +387,19 @@ func (s *Server) oauthLinkStart(ctx *hime.Context) error {
 		ctx.ResponseWriter().WriteHeader(http.StatusNoContent)
 		return nil
 	}
+	// 303 (hime picks it for a non-GET) so the browser follows with a GET.
 	return ctx.Redirect(authURL)
+}
+
+// sameOriginRequest reports whether a browser said this request came from our own
+// page. Absent means a client that does not send the header at all, which is
+// allowed — the CSRF token is the real gate and this is the second lock.
+func sameOriginRequest(r *http.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))) {
+	case "", "same-origin":
+		return true
+	}
+	return false
 }
 
 // oauthFlow is what the state cookie says a callback is completing.
@@ -510,16 +538,6 @@ func (s *Server) oauthCallback(ctx *hime.Context) error {
 	// way it always did. See internal/identity for why the alternative (teaching
 	// every comparison about aliases) was rejected.
 	loginActor := actorIDFor(key, id.Subject)
-	// A GitHub login is mutable and the numeric id is not, so the cached handle
-	// is re-proven on every sign-in, not only at link time: attribution writes
-	// "@login" into public git history, and a renamed account would otherwise
-	// keep being credited under a name that now belongs to someone else. Only a
-	// login that is ALREADY an alias is touched — RefreshHandle never creates a
-	// binding — so this is a no-op for everyone who has not linked. Best effort:
-	// a stale handle must not cost anybody their login.
-	if err := s.identity.RefreshHandle(loginActor, id.Handle); err != nil {
-		log.Printf("warn: identity: refresh handle for %s: %v", loginActor, err)
-	}
 	actor := s.identity.Canonical(loginActor)
 	role, ok := s.cfg.ResolveWebRoleForConfig(actor)
 	if !ok {
@@ -542,6 +560,23 @@ func (s *Server) oauthCallback(ctx *hime.Context) error {
 			msg += " — if you already have access with another login, sign in with that one and link this one at /account"
 		}
 		return ctx.RedirectTo("login", map[string]string{"err": msg})
+	}
+	// A GitHub login is mutable and the numeric id is not, so the cached handle is
+	// re-proven on every GITHUB sign-in, not only at link time: attribution writes
+	// "@login" into public git history, and a renamed account would otherwise keep
+	// being credited under a name that now belongs to someone else. It is only
+	// this provider's own sign-ins that can re-prove it, which is why the cache
+	// also expires (identity.MaxHandleAge) — signing in with Discord says nothing
+	// about a GitHub name.
+	//
+	// After the authorization check on purpose: the callback is reachable by any
+	// GitHub user, and caching a handle for every stranger who completes OAuth
+	// would let the store grow without bound. Refreshing only for a sign-in that
+	// was accepted bounds it by the allowlist. RefreshHandle never creates a link,
+	// so an unlinked login only ever gets its numeric id → login cache updated.
+	// Best effort: a stale handle must not cost anybody their login.
+	if err := s.identity.RefreshHandle(loginActor, id.Handle); err != nil {
+		log.Printf("warn: identity: refresh handle for %s: %v", loginActor, err)
 	}
 	name := id.Name
 	if strings.TrimSpace(name) == "" {

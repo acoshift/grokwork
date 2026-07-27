@@ -23,6 +23,11 @@
 // config.NormalizeActorID): namespaces stay distinct and a link is an explicit,
 // audited assertion by the person who owns both logins, never an inference from
 // a matching email or handle.
+//
+// The file also carries a small cache of GitHub logins (see Handle), keyed by
+// GitHub actor id rather than by alias. It is the mutable half of git
+// attribution, so it is proved by an OAuth round trip, stamped with when, and
+// expires — a link is permanent, a name is not.
 package identity
 
 import (
@@ -48,14 +53,30 @@ const FileName = "identity-links.json"
 // what a stolen session can append to the file before somebody notices.
 const MaxAliasesPerCanonical = 8
 
-// Link is one alias's binding to a canonical account.
+// MaxHandleAge is how long a cached GitHub login may be believed.
 //
-// Handle caches the GitHub login for a "github:" alias (empty for every other
-// kind). It is metadata, never identity: a GitHub login can be renamed and the
-// freed name re-registered by a stranger, so the numeric id in the alias key is
-// the identity and the handle is refreshed from the provider on every login and
-// link. Attribution (slice 4) needs it to build the noreply address, which is
-// why it is cached here rather than re-fetched.
+// The handle is the only mutable half of attribution: GitHub lets an account
+// rename and lets the freed name be re-registered by anybody, immediately. It is
+// re-proven whenever that person signs in WITH GitHub — but a Discord- or
+// Google-first user may never do that again after linking once, and a person who
+// works only from Discord may never touch the web at all. Their handle would then
+// be believed forever, and the three surfaces that render "@login" (the PR footer,
+// the "On behalf of @" comment, `gh pr edit --add-reviewer`) would publicly name
+// whoever owns that name now.
+//
+// So a handle expires. Past this window GitHubFor reports nothing, every caller
+// omits the trailer and the mention, and the person gets attribution back by
+// signing in with GitHub once. That is the design's own safe default — no
+// attribution beats wrong attribution, which looks like it worked. The numeric id
+// never expires because it cannot go stale.
+const MaxHandleAge = 30 * 24 * time.Hour
+
+// handleRecheckFloor is how stale a still-correct handle must be before a
+// re-proof rewrites the file. Without it every sign-in would write, just to move
+// a timestamp; with it the common path stays one read lock and no disk I/O.
+const handleRecheckFloor = time.Hour
+
+// Link is one alias's binding to a canonical account.
 //
 // Every field is a value type, so handing out a Link is already a detached
 // copy. A future slice/map/pointer field would break that — see
@@ -65,19 +86,57 @@ type Link struct {
 	// hand-written "42424" and a "discord:42424" cannot become two accounts.
 	// Readers get it back in wire form — see Store.Canonical.
 	Canonical string    `json:"canonical"`
-	Handle    string    `json:"handle,omitempty"`
 	LinkedAt  time.Time `json:"linkedAt,omitzero"`
 }
 
-// Store is data/identity-links.json: normalized alias actor id → Link.
+// Handle caches the GitHub login proved for one "github:<numeric id>" actor id.
 //
-// The map is keyed by the ALIAS because that is the lookup every mint point
+// It is metadata, never identity: the numeric id in the KEY is the identity, and
+// the login is a renameable label on it. Attribution needs the label to build the
+// noreply address and to write "@login", which is why it is cached rather than
+// re-fetched on every run.
+//
+// Keyed by the GitHub actor id rather than by an alias, because an account whose
+// canonical id IS its GitHub login (a GitHub-first signup) has no alias to hang
+// this off, and used to get no attribution at all with no way to fix it.
+//
+// CheckedAt is when the login was last proved by an OAuth round trip — link or
+// sign-in. It is what MaxHandleAge is measured against, so a record with no
+// stamp (a file written before this existed) reads as unproven, not as fresh.
+type Handle struct {
+	Login     string    `json:"login"`
+	CheckedAt time.Time `json:"checkedAt,omitzero"`
+}
+
+// storeFile is the on-disk shape of data/identity-links.json.
+//
+// The file used to BE the alias→link map, with the handle inline on each link.
+// Handles moved out because they are keyed by a different thing (a GitHub actor
+// id, which may be a canonical rather than an alias) and have a different
+// lifetime (they expire; a link does not). Legacy files still load — see load.
+type storeFile struct {
+	Links   map[string]Link   `json:"links"`
+	Handles map[string]Handle `json:"handles"`
+}
+
+// legacyLink is one entry of the pre-handles-map file format.
+type legacyLink struct {
+	Canonical string    `json:"canonical"`
+	Handle    string    `json:"handle"`
+	LinkedAt  time.Time `json:"linkedAt"`
+}
+
+// Store is data/identity-links.json: normalized alias actor id → Link, plus the
+// GitHub handle cache.
+//
+// The link map is keyed by the ALIAS because that is the lookup every mint point
 // makes ("who is this login?"), and it is what makes one-hop resolution a
 // single map read.
 type Store struct {
 	mu       sync.RWMutex
 	filePath string
 	links    map[string]Link
+	handles  map[string]Handle
 	warnings []string
 	now      func() time.Time
 }
@@ -97,6 +156,7 @@ func New(dataDir string) (*Store, error) {
 	s := &Store{
 		filePath: filepath.Join(dataDir, FileName),
 		links:    map[string]Link{},
+		handles:  map[string]Handle{},
 		now:      time.Now,
 	}
 	if err := s.load(); err != nil {
@@ -122,21 +182,62 @@ func (s *Store) load() error {
 	if len(strings.TrimSpace(string(raw))) == 0 {
 		return nil
 	}
-	var stored map[string]Link
-	if err := json.Unmarshal(raw, &stored); err != nil {
+	// Which format this is, decided by structure rather than by a version field
+	// we would have had to add retroactively: the legacy file's keys are actor
+	// ids, and "links" is not one (it normalizes to "discord:links", which no
+	// provider can mint). Guessing wrong in either direction silently drops every
+	// binding, which is why this probes instead of trying one and falling back on
+	// error — encoding/json ignores unknown fields, so the wrong shape decodes
+	// happily into an empty one.
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil {
 		return fmt.Errorf("parse %s: %w", FileName, err)
 	}
-	s.links, s.warnings = sanitize(stored)
+	var f storeFile
+	if _, isNew := probe["links"]; isNew {
+		if err := json.Unmarshal(raw, &f); err != nil {
+			return fmt.Errorf("parse %s: %w", FileName, err)
+		}
+	} else {
+		var legacy map[string]legacyLink
+		if err := json.Unmarshal(raw, &legacy); err != nil {
+			return fmt.Errorf("parse %s: %w", FileName, err)
+		}
+		f = migrateLegacy(legacy)
+	}
+	s.links, s.handles, s.warnings = sanitize(f)
 	return nil
 }
 
+// migrateLegacy lifts the inline handles of the old format into the handle map.
+//
+// The link's own timestamp becomes the handle's CheckedAt: at link time the
+// handle WAS proved, and it is the only proof instant the old format recorded. A
+// link with no timestamp yields an unstamped handle, which reads as unproven —
+// under-attributing, the safe direction.
+func migrateLegacy(legacy map[string]legacyLink) storeFile {
+	f := storeFile{
+		Links:   make(map[string]Link, len(legacy)),
+		Handles: map[string]Handle{},
+	}
+	for key, l := range legacy {
+		f.Links[key] = Link{Canonical: l.Canonical, LinkedAt: l.LinkedAt}
+		if strings.TrimSpace(l.Handle) != "" {
+			f.Handles[key] = Handle{Login: l.Handle, CheckedAt: l.LinkedAt}
+		}
+	}
+	return f
+}
+
 // sanitize validates a freshly decoded file, returning the links to keep (with
-// both sides normalized) and a warning per link dropped.
+// both sides normalized), the handle cache to keep, and a warning per record
+// dropped.
 //
 // Every rule fails CLOSED — a link it cannot prove unambiguous is dropped, and
 // the person falls back to their unlinked identity. Iteration is over sorted
 // keys throughout so both the drops and the warnings are deterministic.
-func sanitize(stored map[string]Link) (map[string]Link, []string) {
+func sanitize(f storeFile) (map[string]Link, map[string]Handle, []string) {
+	stored := f.Links
 	var warnings []string
 	warn := func(format string, args ...any) {
 		warnings = append(warnings, "[warn] identity: "+fmt.Sprintf(format, args...))
@@ -218,7 +319,43 @@ func sanitize(stored map[string]Link) (map[string]Link, []string) {
 		}
 	}
 
-	return kept, warnings
+	return kept, sanitizeHandles(f.Handles, warn), warnings
+}
+
+// sanitizeHandles validates the handle cache: keys are GitHub actor ids and the
+// login is a non-empty label.
+//
+// A handle is only a cache, so dropping one costs that person attribution until
+// their next GitHub sign-in — never access. Two spellings of one id are dropped
+// rather than resolved, on the same reasoning as a duplicated alias: a cache that
+// disagrees with itself about who "999" is must not pick a winner.
+func sanitizeHandles(stored map[string]Handle, warn func(string, ...any)) map[string]Handle {
+	byID := map[string][]string{}
+	for _, rawKey := range slices.Sorted(maps.Keys(stored)) {
+		id := config.NormalizeActorID(rawKey)
+		login := strings.TrimPrefix(strings.TrimSpace(stored[rawKey].Login), "@")
+		switch {
+		case id == "" || config.ActorKind(id) != config.ActorKindGitHub:
+			warn("dropped cached handle keyed %q: only a GitHub actor id has a login.", rawKey)
+		case login == "":
+			warn("dropped cached handle for %q: it names no login.", rawKey)
+		default:
+			byID[id] = append(byID[id], rawKey)
+		}
+	}
+	kept := make(map[string]Handle, len(byID))
+	for _, id := range slices.Sorted(maps.Keys(byID)) {
+		keys := byID[id]
+		if len(keys) > 1 {
+			warn("dropped %d conflicting cached handles for %q (%s): one GitHub id has one login.",
+				len(keys), id, strings.Join(quoteAll(keys), ", "))
+			continue
+		}
+		h := stored[keys[0]]
+		h.Login = strings.TrimPrefix(strings.TrimSpace(h.Login), "@")
+		kept[id] = h
+	}
+	return kept
 }
 
 func quoteAll(ids []string) []string {
@@ -311,6 +448,12 @@ type AliasLink struct {
 	Alias    string
 	Handle   string
 	LinkedAt time.Time
+	// HandleCheckedAt is when the handle was last proved, and HandleFresh whether
+	// that is recent enough for attribution to use it (MaxHandleAge). The page
+	// renders a stale handle as stale rather than hiding it: "the name we have is
+	// no longer trusted, sign in with GitHub" is actionable, a blank cell is not.
+	HandleCheckedAt time.Time
+	HandleFresh     bool
 }
 
 // LinksOf returns the account's linked logins, ordered like AliasesOf.
@@ -328,22 +471,68 @@ func (s *Store) LinksOf(canonical string) []AliasLink {
 	out := make([]AliasLink, 0, len(aliases))
 	for _, alias := range aliases {
 		link := s.links[alias]
+		h := s.handles[alias]
 		out = append(out, AliasLink{
-			Alias:    wireForm(alias),
-			Handle:   link.Handle,
-			LinkedAt: link.LinkedAt,
+			Alias:           wireForm(alias),
+			Handle:          h.Login,
+			LinkedAt:        link.LinkedAt,
+			HandleCheckedAt: h.CheckedAt,
+			HandleFresh:     s.handleFreshLocked(h),
 		})
 	}
 	return out
 }
 
-// GitHubFor returns the GitHub login and numeric id linked to an account.
+// HandleOf reports the cached GitHub login for one GitHub actor id.
 //
-// The numeric id is the alias's own subject (the identity); the login is the
-// cached handle. ok is false when the account has no GitHub login linked — or
-// when the one it has carries no handle, since "<id>+@users.noreply.github.com"
-// is a malformed address and no attribution is better than wrong attribution.
-// A second GitHub alias that does carry a handle is still used.
+// The account page needs this for the row that is the account ITSELF — a
+// GitHub-first signup whose canonical id is its GitHub login has no AliasLink to
+// read it from. fresh mirrors GitHubFor's own rule, so the page cannot claim
+// attribution that attribution would refuse.
+func (s *Store) HandleOf(githubActorID string) (login string, checkedAt time.Time, fresh bool) {
+	if s == nil {
+		return "", time.Time{}, false
+	}
+	id := config.NormalizeActorID(githubActorID)
+	if id == "" || config.ActorKind(id) != config.ActorKindGitHub {
+		return "", time.Time{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	h, ok := s.handles[id]
+	if !ok {
+		return "", time.Time{}, false
+	}
+	return h.Login, h.CheckedAt, s.handleFreshLocked(h)
+}
+
+// handleFreshLocked reports whether a cached handle may still be believed.
+//
+// An unstamped record is NOT fresh: it comes from a file written before proofs
+// were recorded, and treating "we never wrote down when we checked" as "we just
+// checked" is the whole failure this bound exists to close.
+func (s *Store) handleFreshLocked(h Handle) bool {
+	if h.Login == "" || h.CheckedAt.IsZero() {
+		return false
+	}
+	return !s.now().After(h.CheckedAt.Add(MaxHandleAge))
+}
+
+// GitHubFor returns the GitHub login and numeric id of an account's GitHub login.
+//
+// The numeric id is that login's own subject (the identity); the login name is
+// the cached handle. The account's OWN id is considered first: a GitHub-first
+// signup is "github:<id>" and has no alias to find, and walking only the aliases
+// left that person permanently unattributable with nothing they could do about it
+// — /account offers no button for a provider already on the account, and linking
+// your own canonical login back onto itself is refused as a self-link.
+//
+// ok is false when the account has no GitHub login at all, when the one it has
+// has no cached handle, and when that handle is older than MaxHandleAge. All
+// three are the same answer on purpose: "<id>+@users.noreply.github.com" is a
+// malformed address, and an expired handle may name somebody else now — no
+// attribution is better than wrong attribution, which looks like it worked. A
+// second GitHub login that does carry a fresh handle is still used.
 func (s *Store) GitHubFor(canonical string) (login, numericID string, ok bool) {
 	if s == nil {
 		return "", "", false
@@ -354,18 +543,30 @@ func (s *Store) GitHubFor(canonical string) (login, numericID string, ok bool) {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, alias := range s.aliasesOfLocked(c) {
-		if config.ActorKind(alias) != config.ActorKindGitHub {
+	for _, id := range s.githubLoginsLocked(c) {
+		subject := config.ActorSubject(id)
+		h := s.handles[id]
+		if subject == "" || !s.handleFreshLocked(h) {
 			continue
 		}
-		id := config.ActorSubject(alias)
-		handle := s.links[alias].Handle
-		if id == "" || handle == "" {
-			continue
-		}
-		return handle, id, true
+		return h.Login, subject, true
 	}
 	return "", "", false
+}
+
+// githubLoginsLocked lists the GitHub actor ids that are this account: itself
+// when it is one, then its GitHub aliases in AliasesOf order.
+func (s *Store) githubLoginsLocked(canonical string) []string {
+	var out []string
+	if config.ActorKind(canonical) == config.ActorKindGitHub {
+		out = append(out, canonical)
+	}
+	for _, alias := range s.aliasesOfLocked(canonical) {
+		if config.ActorKind(alias) == config.ActorKindGitHub {
+			out = append(out, alias)
+		}
+	}
+	return out
 }
 
 // NoreplyEmail builds the git author address for a linked GitHub account.
@@ -391,43 +592,52 @@ func NoreplyEmail(login, numericID string) string {
 	return numericID + "+" + login + "@users.noreply.github.com"
 }
 
-// RefreshHandle re-caches the GitHub login of an already-linked alias.
+// RefreshHandle re-caches the GitHub login just proved by a sign-in or a link.
 //
 // A GitHub login is mutable — the person renames the account, or transfers the
-// name — while the numeric id in the alias key never changes. So the handle is
-// refreshed from the provider on every sign-in, not just at link time, or the
-// noreply address we write into commit trailers would keep naming a login that
-// now belongs to somebody else.
+// name — while the numeric id never changes. So the handle is re-proved on every
+// GitHub sign-in, not just at link time, or the noreply address and the "@login"
+// we write into public history would keep naming a login that now belongs to
+// somebody else. The stamp it records is what MaxHandleAge expires, for the
+// majority who sign in through some OTHER provider and never come back here.
 //
-// Deliberately narrow, because this runs on every login:
-//   - it never CREATES a link. A login that is not already an alias has nothing
-//     to refresh, and inventing a binding from a sign-in is exactly the
-//     inference the whole package refuses to make.
-//   - an unchanged handle writes nothing, so the common path costs one read
-//     lock and no disk I/O.
+// Deliberately narrow, because this runs on every GitHub login:
+//   - it never creates a LINK. Caching "999 is called alice" is a fact GitHub
+//     just told us; asserting "999 is this account" is the inference the whole
+//     package refuses to make from a sign-in. Only the first happens here — the
+//     handle map is keyed by GitHub id and says nothing about ownership.
+//   - an unchanged handle re-stamped less than handleRecheckFloor ago writes
+//     nothing, so the common path costs one read lock and no disk I/O.
 //   - an EMPTY handle is ignored rather than stored. The provider not returning
 //     a login is a hiccup, and dropping the cached one would silently turn off
-//     that person's attribution (GitHubFor skips a handle-less alias).
-func (s *Store) RefreshHandle(alias, handle string) error {
+//     that person's attribution (GitHubFor skips a handle-less login).
+//
+// The caller decides WHOSE handles are worth keeping: web's login callback only
+// refreshes once the sign-in is authorized, so the cache is bounded by the
+// allowlist instead of by everyone on GitHub who can reach the callback.
+func (s *Store) RefreshHandle(githubActorID, handle string) error {
 	if s == nil {
 		return nil
 	}
-	a := config.NormalizeActorID(alias)
+	a := config.NormalizeActorID(githubActorID)
 	handle = strings.TrimPrefix(strings.TrimSpace(handle), "@")
 	if a == "" || handle == "" || config.ActorKind(a) != config.ActorKindGitHub {
 		return nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	prev, ok := s.links[a]
-	if !ok || prev.Handle == handle {
+	now := s.now().UTC()
+	prev, existed := s.handles[a]
+	if existed && prev.Login == handle && now.Sub(prev.CheckedAt) < handleRecheckFloor {
 		return nil
 	}
-	next := prev
-	next.Handle = handle
-	s.links[a] = next
+	s.handles[a] = Handle{Login: handle, CheckedAt: now}
 	if err := s.save(); err != nil {
-		s.links[a] = prev
+		if existed {
+			s.handles[a] = prev
+		} else {
+			delete(s.handles, a)
+		}
 		return err
 	}
 	return nil
@@ -436,7 +646,7 @@ func (s *Store) RefreshHandle(alias, handle string) error {
 // Link binds alias to canonical, refreshing the cached handle.
 //
 // Re-linking an alias to the account it already belongs to only refreshes the
-// handle (a login does this on every sign-in) and keeps the original LinkedAt,
+// handle (a GitHub sign-in does this too) and keeps the original LinkedAt,
 // which is the fact worth remembering. Re-pointing it at a DIFFERENT account is
 // refused: silently moving a login would move every grant that resolves through
 // it, so the owner has to unlink first.
@@ -483,11 +693,17 @@ func (s *Store) Link(alias, canonical, handle string) error {
 		return fmt.Errorf("%s already has the maximum of %d linked logins", wireForm(c), MaxAliasesPerCanonical)
 	}
 
-	next := Link{Canonical: c, Handle: handle, LinkedAt: s.now().UTC()}
+	next := Link{Canonical: c, LinkedAt: s.now().UTC()}
 	if existed && !prev.LinkedAt.IsZero() {
 		next.LinkedAt = prev.LinkedAt
 	}
 	s.links[a] = next
+	// The OAuth round trip that produced this link just proved the handle, so it
+	// is stamped now rather than at the (possibly much older) link time.
+	prevHandle, hadHandle := s.handles[a]
+	if handle != "" {
+		s.handles[a] = Handle{Login: handle, CheckedAt: s.now().UTC()}
+	}
 	if err := s.save(); err != nil {
 		// Keep memory and disk agreeing: a link that works until the next
 		// restart is worse than one that never took.
@@ -496,6 +712,13 @@ func (s *Store) Link(alias, canonical, handle string) error {
 		} else {
 			delete(s.links, a)
 		}
+		if handle != "" {
+			if hadHandle {
+				s.handles[a] = prevHandle
+			} else {
+				delete(s.handles, a)
+			}
+		}
 		return err
 	}
 	return nil
@@ -503,6 +726,11 @@ func (s *Store) Link(alias, canonical, handle string) error {
 
 // Unlink removes a login binding. Unlinking something that is not linked is
 // not an error — the account page can be submitted twice.
+//
+// The GitHub handle cached for that login is left alone: it says "999 is called
+// alice", which is still true and still that login's own fact, and GitHubFor only
+// ever consults the handles of an account and its aliases. Deleting it would also
+// throw away the proof stamp of a login that is now an account in its own right.
 func (s *Store) Unlink(alias string) error {
 	if s == nil {
 		return fmt.Errorf("identity store is not configured")
@@ -526,7 +754,7 @@ func (s *Store) Unlink(alias string) error {
 }
 
 func (s *Store) save() error {
-	raw, err := json.MarshalIndent(s.links, "", "  ")
+	raw, err := json.MarshalIndent(storeFile{Links: s.links, Handles: s.handles}, "", "  ")
 	if err != nil {
 		return err
 	}

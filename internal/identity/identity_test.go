@@ -151,8 +151,8 @@ func TestGitHubForFindsGitHubAliasAndIgnoresOthers(t *testing.T) {
 	}
 	// A non-GitHub alias must not cache a handle at all — GitHubFor would
 	// otherwise have a display name where it expects a login.
-	if h := s.links["google:sub-1"].Handle; h != "" {
-		t.Fatalf("google alias kept handle %q, want it dropped", h)
+	if h, ok := s.handles["google:sub-1"]; ok {
+		t.Fatalf("google alias kept handle %q, want it dropped", h.Login)
 	}
 	if _, _, ok := s.GitHubFor("42424"); ok {
 		t.Fatal("GitHubFor found a GitHub login with only a Google alias linked")
@@ -180,8 +180,11 @@ func TestGitHubForFindsGitHubAliasAndIgnoresOthers(t *testing.T) {
 func TestGitHubForSkipsHandlelessAlias(t *testing.T) {
 	dir := t.TempDir()
 	writeLinks(t, dir, `{
-	  "github:111": {"canonical": "42424"},
-	  "github:222": {"canonical": "42424", "handle": "alice"}
+	  "links": {
+	    "github:111": {"canonical": "42424"},
+	    "github:222": {"canonical": "42424"}
+	  },
+	  "handles": {"github:222": {"login": "alice", "checkedAt": "`+nowStamp()+`"}}
 	}`)
 	s, err := New(dir)
 	if err != nil {
@@ -193,7 +196,7 @@ func TestGitHubForSkipsHandlelessAlias(t *testing.T) {
 	}
 
 	only := t.TempDir()
-	writeLinks(t, only, `{"github:111": {"canonical": "42424"}}`)
+	writeLinks(t, only, `{"links": {"github:111": {"canonical": "42424"}}}`)
 	s2, err := New(only)
 	if err != nil {
 		t.Fatal(err)
@@ -202,6 +205,9 @@ func TestGitHubForSkipsHandlelessAlias(t *testing.T) {
 		t.Fatal("GitHubFor returned ok for a handleless alias")
 	}
 }
+
+// nowStamp is an RFC3339 "just proved" instant for hand-written fixtures.
+func nowStamp() string { return time.Now().UTC().Format(time.RFC3339) }
 
 func TestLinkRefreshesHandleAndKeepsLinkedAt(t *testing.T) {
 	s, _ := newStore(t)
@@ -215,11 +221,17 @@ func TestLinkRefreshesHandleAndKeepsLinkedAt(t *testing.T) {
 		t.Fatalf("re-Link: %v", err)
 	}
 	got := s.links["github:999"]
-	if got.Handle != "alice-renamed" {
-		t.Fatalf("handle = %q, want it refreshed to alice-renamed", got.Handle)
+	if h := s.handles["github:999"]; h.Login != "alice-renamed" {
+		t.Fatalf("handle = %q, want it refreshed to alice-renamed", h.Login)
 	}
 	if !got.LinkedAt.Equal(first) {
 		t.Fatalf("LinkedAt = %v, want the original %v", got.LinkedAt, first)
+	}
+	// The re-link is a fresh proof of the handle, so its stamp moves even though
+	// the link's does not: one records ownership (immutable), the other when a
+	// mutable name was last verified.
+	if h := s.handles["github:999"]; !h.CheckedAt.Equal(first.Add(72 * time.Hour)) {
+		t.Fatalf("handle checkedAt = %v, want the re-link time", h.CheckedAt)
 	}
 }
 
@@ -420,14 +432,19 @@ func TestSaveIsAtomicAndPrivate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var stored map[string]Link
+	var stored storeFile
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		t.Fatalf("stored file does not parse: %v", err)
 	}
 	// The canonical is stored NORMALIZED so two spellings cannot become two
 	// accounts; only readers see the wire form.
-	if got := stored["github:999"].Canonical; got != "discord:42424" {
+	if got := stored.Links["github:999"].Canonical; got != "discord:42424" {
 		t.Fatalf("stored canonical = %q, want discord:42424", got)
+	}
+	// The handle rides in its own map, keyed by the GitHub id, with the instant it
+	// was proved — the stamp MaxHandleAge expires it against.
+	if got := stored.Handles["github:999"]; got.Login != "alice" || got.CheckedAt.IsZero() {
+		t.Fatalf("stored handle = %+v", got)
 	}
 }
 

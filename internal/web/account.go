@@ -42,14 +42,18 @@ type accountIdentityRow struct {
 	Canonical bool
 	// LinkedAt is when the link was made (empty for the canonical row).
 	LinkedAt string
+	// HandleStale marks a GitHub login whose cached handle is too old to be
+	// believed (identity.MaxHandleAge). Git attribution is off for that login
+	// until the person signs in with GitHub again, and the row says so rather
+	// than going blank — a name we no longer trust is not the same as no name.
+	HandleStale bool
 }
 
 // accountLinkOption is a "Link…" button for a provider this account has no
 // login from yet.
 type accountLinkOption struct {
-	Key      string
-	Label    string
-	LinkPath string
+	Key   string
+	Label string
 }
 
 // requireAccount gates the self-service account routes: a live session, plus
@@ -136,14 +140,35 @@ func (s *Server) accountPage(ctx *hime.Context) error {
 	canonical := sess.DiscordUserID
 	d.AccountIdentities = s.accountIdentities(canonical, sess.DisplayName)
 	d.AccountLinkOptions = s.accountLinkOptions(d.AccountIdentities)
+	for _, row := range d.AccountIdentities {
+		if row.HandleStale {
+			d.AccountHandleStale = true
+			break
+		}
+	}
 	return s.viewPage(ctx, "account", d)
 }
 
 // accountIdentities lists the canonical login first, then each alias.
 func (s *Server) accountIdentities(canonical, displayName string) []accountIdentityRow {
-	rows := []accountIdentityRow{accountIdentityRowFor(canonical, displayName, true, identity.AliasLink{})}
+	// The canonical row shows the account profile name — except when the account
+	// IS a GitHub login (a GitHub-first signup), where the cached handle and its
+	// freshness are the attribution facts that row has to carry. Nothing else on
+	// the page could show them: that login has no AliasLink.
+	head := accountIdentityRowFor(canonical, displayName, true, identity.AliasLink{})
+	if config.ActorKind(canonical) == config.ActorKindGitHub {
+		// The "Linked" cell stays empty: this login was never linked to anything,
+		// it IS the account. Only the handle and whether it is still trusted move.
+		if login, _, fresh := s.identity.HandleOf(canonical); login != "" {
+			head.Name = login
+			head.HandleStale = !fresh
+		}
+	}
+	rows := []accountIdentityRow{head}
 	for _, link := range s.identity.LinksOf(canonical) {
-		rows = append(rows, accountIdentityRowFor(link.Alias, link.Handle, false, link))
+		row := accountIdentityRowFor(link.Alias, link.Handle, false, link)
+		row.HandleStale = link.Handle != "" && !link.HandleFresh
+		rows = append(rows, row)
 	}
 	return rows
 }
@@ -201,7 +226,7 @@ func (s *Server) accountLinkOptions(have []accountIdentityRow) []accountLinkOpti
 		if !known || !s.providerConfigured(key) {
 			continue
 		}
-		out = append(out, accountLinkOption{Key: key, Label: p.Label(), LinkPath: authLinkPath(key)})
+		out = append(out, accountLinkOption{Key: key, Label: p.Label()})
 	}
 	return out
 }
@@ -218,6 +243,13 @@ func (s *Server) accountLinkOptions(have []accountIdentityRow) []accountLinkOpti
 // So the link is authorized by the session that STARTED it: the callback must
 // arrive in the same browser session whose id was baked into the state cookie.
 // No live session, or a different one, is refused and audited.
+//
+// That covers the attacker's identity onto the victim's account. The other
+// direction — the victim's own identity attached without the victim asking, which
+// with auto-absorb is an irreversible merge — is covered at the START, by
+// postAccountLink being a CSRF-checked POST. Both halves are needed: this one
+// cannot tell a deliberate click from a lured one, and the token cannot tell
+// whose identity is arriving at the callback.
 func (s *Server) verifyLinkSession(ctx *hime.Context, flow oauthFlow) (*Session, error) {
 	sess := sessionFromContext(ctx.Context())
 	if sess == nil {

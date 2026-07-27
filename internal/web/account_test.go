@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -21,16 +22,50 @@ func sessCookie(sid string) *http.Cookie {
 	return &http.Cookie{Name: sessionCookieName, Value: sid}
 }
 
-// startLink drives GET /auth/<key>/link as the given session and returns the
-// link state cookie it issued (nil when none was).
-func startLink(t *testing.T, h http.Handler, key, sid string) *http.Cookie {
+// csrfFor reads a session's CSRF token off the account page, the way a browser
+// does — which also keeps the page and the route from drifting apart.
+func csrfFor(t *testing.T, h http.Handler, sid string) string {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, authLinkPath(key), nil)
+	req := httptest.NewRequest(http.MethodGet, "/account", nil)
+	req.AddCookie(sessCookie(sid))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	m := csrfInputRe.FindStringSubmatch(w.Body.String())
+	if m == nil {
+		t.Fatalf("no csrf input on /account (status=%d)", w.Code)
+	}
+	return m[1]
+}
+
+var csrfInputRe = regexp.MustCompile(`name="csrf" value="([^"]+)"`)
+
+// postLinkStart drives POST /account/link with the given form values.
+func postLinkStart(t *testing.T, h http.Handler, sid, csrf, provider string) *httptest.ResponseRecorder {
+	t.Helper()
+	form := url.Values{"provider": {provider}}
+	if csrf != "" {
+		form.Set("csrf", csrf)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/account/link", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if sid != "" {
 		req.AddCookie(sessCookie(sid))
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
+	return w
+}
+
+// startLink starts a link flow as the given session and returns the link state
+// cookie it issued (nil when none was). It looks the session's CSRF token up
+// rather than taking it, so callers keep reading as "this session starts a link".
+func startLink(t *testing.T, h http.Handler, key, sid string) *http.Cookie {
+	t.Helper()
+	csrf := ""
+	if sid != "" {
+		csrf = csrfFor(t, h, sid)
+	}
+	w := postLinkStart(t, h, sid, csrf, key)
 	for _, c := range w.Result().Cookies() {
 		if c.Name == oauthLinkStateCookieFor(key) && c.Value != "" {
 			return c
@@ -158,6 +193,92 @@ func TestLinkRefusedWhenCallbackSessionIsNotTheInitiator(t *testing.T) {
 	ev := lastAudit(t, f, audit.ActionIdentityLink)
 	if ev.OK {
 		t.Fatalf("refusal was audited as a success: %+v", ev)
+	}
+}
+
+// Starting a link is a MUTATION and must be CSRF-protected.
+//
+// As a GET it was a one-click account merge: a cross-site top-level navigation
+// carries the SameSite=Lax session cookie, so the state cookie was minted for the
+// victim's own session; the provider re-authorizes an already-approved app with no
+// prompt and redirects back — another top-level navigation carrying both Lax
+// cookies — so verifyLinkSession matched and the link plus its absorb completed
+// with no further interaction. That rewrites config.json and sessions.json, and
+// unlinking does not put them back. On a shared machine (or with the victim
+// signed into somebody else's GitHub) it ends with the attacker's login resolving
+// to the victim's account.
+func TestLinkStartRequiresCSRFAndHasNoGETRoute(t *testing.T) {
+	f := newAuthFixture(t, withProviders(false, true))
+	linkFixture(t, f, nil)
+	h := f.srv.Handler()
+	sid, _, err := f.srv.LoginAs("admin-1", "Admin", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	linkCookie := func(w *httptest.ResponseRecorder) *http.Cookie {
+		for _, c := range w.Result().Cookies() {
+			if c.Name == oauthLinkStateCookieFor(config.ActorKindGitHub) && c.Value != "" {
+				return c
+			}
+		}
+		return nil
+	}
+
+	// No token: refused before a state cookie exists, so the flow cannot even be
+	// started, let alone completed.
+	w := postLinkStart(t, h, sid, "", config.ActorKindGitHub)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d want 403 for a link start with no CSRF token", w.Code)
+	}
+	if c := linkCookie(w); c != nil {
+		t.Fatalf("a tokenless link start minted state %q", c.Value)
+	}
+
+	// A wrong token is no better than none.
+	if w := postLinkStart(t, h, sid, "not-the-token", config.ActorKindGitHub); w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d want 403 for a forged CSRF token", w.Code)
+	}
+
+	// And the old GET route is gone: it is what the attack navigated to, and no
+	// token can be attached to a link somebody else planted.
+	for _, p := range []string{"/auth/github/link", "/auth/google/link", "/auth/discord/link"} {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		req.AddCookie(sessCookie(sid))
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound && w.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("GET %s status=%d — a link must not start from a navigation", p, w.Code)
+		}
+		if c := linkCookie(w); c != nil {
+			t.Fatalf("GET %s minted link state %q", p, c.Value)
+		}
+	}
+
+	// A cross-site POST is refused too, on the header a browser sets itself —
+	// belt and braces behind the token.
+	form := url.Values{"provider": {config.ActorKindGitHub}, "csrf": {csrfFor(t, h, sid)}}
+	req := httptest.NewRequest(http.MethodPost, "/account/link", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	req.AddCookie(sessCookie(sid))
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if c := linkCookie(w); c != nil {
+		t.Fatalf("a cross-site link start minted state %q", c.Value)
+	}
+
+	// With the token, from our own page, it works — and the whole flow still
+	// completes, so the fix did not just close the door on the feature.
+	state := startLink(t, h, config.ActorKindGitHub, sid)
+	if state == nil {
+		t.Fatal("a same-origin link start with a valid token issued no state cookie")
+	}
+	if msg := redirectErr(t, finishLink(t, h, config.ActorKindGitHub, state, "h-admin", sid)); msg != "" {
+		t.Fatalf("link refused: %q", msg)
+	}
+	if got := f.srv.identity.Canonical("github:999"); got != "admin-1" {
+		t.Fatalf("Canonical(github:999)=%q want admin-1", got)
 	}
 }
 
@@ -579,15 +700,17 @@ func TestAccountPageRendersIdentitiesAndLinkOptions(t *testing.T) {
 		"canonical",
 		`action="/account/unlink"`,
 		`name="csrf"`,
+		`action="/account/link"`,
 		// Only Google is configured-and-unlinked: Discord is the canonical's own
 		// provider and GitHub is already an alias.
-		`href="/auth/google/link"`,
+		`value="google"`,
+		`id="account-link-google"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("account page missing %q", want)
 		}
 	}
-	for _, unwanted := range []string{`href="/auth/github/link"`, `href="/auth/discord/link"`} {
+	for _, unwanted := range []string{`id="account-link-github"`, `id="account-link-discord"`} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("account page offers %q for a provider already on the account", unwanted)
 		}
@@ -595,17 +718,13 @@ func TestAccountPageRendersIdentitiesAndLinkOptions(t *testing.T) {
 	// No capability gate: a viewer may start a link flow for their own logins.
 	// (Gating it would leave the least-privileged person permanently split
 	// across two identities with no way to ask for it to be fixed.)
-	req = httptest.NewRequest(http.MethodGet, authLinkPath(config.ActorKindGoogle), nil)
-	req.AddCookie(sessCookie(sid))
-	w = httptest.NewRecorder()
-	f.srv.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusFound || !strings.Contains(w.Header().Get("Location"), "accounts.google.com") {
+	w = postLinkStart(t, f.srv.Handler(), sid, csrfFor(t, f.srv.Handler(), sid), config.ActorKindGoogle)
+	if w.Code != http.StatusSeeOther || !strings.Contains(w.Header().Get("Location"), "accounts.google.com") {
 		t.Fatalf("viewer could not start a link: status=%d loc=%q", w.Code, w.Header().Get("Location"))
 	}
 
 	// Signed out, the same route is closed.
-	w = httptest.NewRecorder()
-	f.srv.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, authLinkPath(config.ActorKindGoogle), nil))
+	w = postLinkStart(t, f.srv.Handler(), "", "", config.ActorKindGoogle)
 	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/login") {
 		t.Fatalf("anonymous link start: status=%d loc=%q", w.Code, loc)
 	}

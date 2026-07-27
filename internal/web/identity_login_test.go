@@ -146,7 +146,7 @@ func TestUnlinkedLoginAuditIsUnchanged(t *testing.T) {
 
 // A GitHub login is renameable and the freed name is immediately re-registrable,
 // so the handle cached against the alias is metadata that has to be re-proven on
-// every sign-in — not just at link time. Nothing else in the tree exercises the
+// every GitHub sign-in — not just at link time. Nothing else in the tree exercises the
 // wire from oauthCallback to identity.RefreshHandle: the store's own tests can
 // only show that refreshing works if somebody calls it, and dropping the call
 // from the callback leaves attribution writing "@alice" into public git history
@@ -186,10 +186,17 @@ func TestRenamedGitHubHandleRefreshesOnNextLogin(t *testing.T) {
 	}
 }
 
-// The same call must be inert for the overwhelming majority of sign-ins. If a
-// login could acquire a link merely by being used, attribution would start
-// naming a GitHub account nobody ever asserted was theirs — the exact inference
-// the whole package refuses to make, arriving through the back door.
+// A sign-in must not create a LINK. If a login could acquire one merely by being
+// used, grants and ownership would start resolving onto an account nobody ever
+// asserted was theirs — the exact inference the whole package refuses to make,
+// arriving through the back door.
+//
+// It does cache the GitHub handle for the id that just signed in, and that is not
+// the same claim: "999 is called alice" is a fact GitHub returned, while "999 is
+// this account" is the inference. The cache is what makes a GitHub-first account
+// (canonical id "github:999", no alias anywhere) attributable at all — walking
+// only the aliases left that person with no trailer and no way to get one, since
+// /account offers no button for a provider already on the account.
 func TestLoginWithoutALinkCreatesNoBinding(t *testing.T) {
 	f := newAuthFixture(t, func(cfg *config.Config) {
 		withProviders(false, true)(cfg)
@@ -207,7 +214,28 @@ func TestLoginWithoutALinkCreatesNoBinding(t *testing.T) {
 	if aliases := st.AliasesOf("github:999"); len(aliases) != 0 {
 		t.Fatalf("aliases=%v", aliases)
 	}
-	if login, id, ok := st.GitHubFor("github:999"); ok {
-		t.Fatalf("GitHubFor invented (%q,%q) for an unlinked login", login, id)
+	if links := st.LinksOf("github:999"); len(links) != 0 {
+		t.Fatalf("links=%+v — a sign-in must not bind anything", links)
+	}
+	// The handle it DID cache belongs to the account that just proved it, and is
+	// what gives a GitHub-first signup attribution.
+	login, id, ok := st.GitHubFor("github:999")
+	if !ok || login != "alice" || id != "999" {
+		t.Fatalf("GitHubFor=(%q,%q,%v) want the login this account signed in as", login, id, ok)
+	}
+}
+
+// The handle cache is bounded by who may sign in: the callback is reachable by any
+// GitHub user on the internet, and caching a handle for each of them would let the
+// store grow without limit on refused logins.
+func TestRefusedLoginCachesNoHandle(t *testing.T) {
+	f := newAuthFixture(t, withProviders(false, true))
+	st := linkFixture(t, f, nil)
+	// github:999 is on no allowlist here, so the login is denied.
+	if w := loginVia(t, f.srv.Handler(), config.ActorKindGitHub, "h-admin", ""); sessionCookie(w) != "" {
+		t.Fatal("an unauthorized login was admitted")
+	}
+	if login, _, ok := st.GitHubFor("github:999"); ok {
+		t.Fatalf("a refused login cached the handle %q", login)
 	}
 }

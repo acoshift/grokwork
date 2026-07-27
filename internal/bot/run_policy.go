@@ -382,7 +382,10 @@ type AttributionInput struct {
 	// trailer and no @login at all rather than a half-filled one.
 	//
 	// The numeric id is GitHub's immutable subject and is what makes the noreply
-	// address survive a rename; the login is a cache refreshed on every sign-in.
+	// address survive a rename; the login is a cache, re-proved on every GITHUB
+	// sign-in and expiring after identity.MaxHandleAge — signing in with Discord
+	// says nothing about a GitHub name, and a renamed-then-re-registered name
+	// would otherwise keep being mentioned in public history.
 	GitHubLogin     string
 	GitHubNumericID string
 

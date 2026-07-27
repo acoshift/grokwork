@@ -26,6 +26,10 @@ import (
 //   - No duplicates. Where the list already names the account, the alias entry
 //     is dropped rather than replaced — otherwise absorbing would leave the same
 //     person in an allowlist twice, and in a team's member list twice.
+//   - No escalation. Per project, the capabilities the account can exercise
+//     afterwards are a subset of what the two logins could exercise separately
+//     before — see the capabilityByUser branch, which is where a dormant entry
+//     would otherwise go live.
 //
 // Nothing is written when nothing changed: config.json is a live file other
 // agents read, and rewriting it to prove a no-op is pure risk.
@@ -55,6 +59,17 @@ func (c *Config) RewriteActorID(from, to string) (int, error) {
 	}
 	for name, pc := range c.Projects {
 		changed := false
+		// Whether each id could exercise anything on this project BEFORE the
+		// rewrite. capabilityByUser is not an access grant (AccessAllowed reads
+		// only allowedUserIds + teams), so an entry for a non-member is inert —
+		// an expected state the roster UI even labels "Inert". Absorbing puts
+		// membership and an inert entry on the same id, and ResolveCapabilities
+		// ORs capabilityByUser with every team template, which would make that
+		// entry go live. Linking is self-service (any signed-in user), so an
+		// admin-granted template must never become reachable by linking two
+		// logins you already own. See the capabilityByUser branch below.
+		aliasHadAccess := actorHasProjectAccess(pc, from)
+		canonicalHadAccess := actorHasProjectAccess(pc, to)
 		if next := rewriteIDList(pc.AllowedUserIDs, from, to, &n); !slices.Equal(next, pc.AllowedUserIDs) {
 			pc.AllowedUserIDs = next
 			changed = true
@@ -80,6 +95,21 @@ func (c *Config) RewriteActorID(from, to string) (int, error) {
 		// either way; its template is carried over only when the account has no
 		// mapping of its own, since the account's own capability level is the
 		// one already in force for the session doing the linking.
+		//
+		// The two extra rules keep the post-link capability set a SUBSET of what
+		// the two logins could exercise separately, per project:
+		//
+		//   - The alias's template is NOT carried when the alias had no access
+		//     here and the account did: it was inert, and moving it onto a member
+		//     id activates it (support → adminProject in one self-service click).
+		//   - The account's OWN template is dropped when the account had no access
+		//     here and the alias did: the rewrite is what makes the account a
+		//     member, so its previously inert entry would go live. This branch
+		//     needs no alias entry at all, which is why the guard cannot live only
+		//     in the carry-over path.
+		//
+		// Neither had access → nothing goes live either way, so the map is left
+		// carrying the operator's intent rather than silently losing it.
 		if len(pc.CapabilityByUser) > 0 {
 			var aliasKey, canonicalKey string
 			for k := range pc.CapabilityByUser {
@@ -90,18 +120,26 @@ func (c *Config) RewriteActorID(from, to string) (int, error) {
 					canonicalKey = k
 				}
 			}
-			if aliasKey != "" {
+			carryAlias := aliasKey != "" && canonicalKey == "" && (aliasHadAccess || !canonicalHadAccess)
+			dropCanonical := canonicalKey != "" && aliasHadAccess && !canonicalHadAccess
+			if aliasKey != "" || dropCanonical {
 				caps := make(map[string]string, len(pc.CapabilityByUser))
 				for k, v := range pc.CapabilityByUser {
 					caps[k] = v
 				}
 				template := caps[aliasKey]
-				delete(caps, aliasKey)
-				if canonicalKey == "" {
+				if aliasKey != "" {
+					delete(caps, aliasKey)
+					n++
+				}
+				if dropCanonical {
+					delete(caps, canonicalKey)
+					n++
+				}
+				if carryAlias {
 					caps[to] = template
 				}
 				pc.CapabilityByUser = caps
-				n++
 				changed = true
 			}
 		}

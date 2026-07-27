@@ -117,9 +117,10 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// a provider may actually be used is decided by providerConfigured inside
 	// the handler (see oauth_provider.go). TestAuthRoutesMatchProviderTable pins
 	// these against authStartPath / authCallbackPath so the two cannot drift.
-	// Each provider also gets an "auth.<p>.link" route: the same handshake,
-	// finishing by attaching the identity to the signed-in account instead of
-	// minting a session (see account.go).
+	// Linking another login runs the same handshake but starts at ONE route,
+	// "account.link" — a POST carrying the provider and a CSRF token, because
+	// starting a link mutates the account (see postAccountLink). There is
+	// deliberately no per-provider GET that begins it.
 	app.Routes(hime.Routes{
 		"home":                               "/",
 		"login":                              "/login",
@@ -129,11 +130,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"auth.google.callback":               "/auth/google/callback",
 		"auth.github":                        "/auth/github",
 		"auth.github.callback":               "/auth/github/callback",
-		"auth.discord.link":                  "/auth/discord/link",
-		"auth.google.link":                   "/auth/google/link",
-		"auth.github.link":                   "/auth/github/link",
 		"logout":                             "/logout",
 		"account":                            "/account",
+		"account.link":                       "/account/link",
 		"account.unlink":                     "/account/unlink",
 		"history":                            "/history",
 		"history.thread":                     "/history/",
@@ -300,13 +299,17 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// be swallowed by /auth/{provider}; an unknown key 404s in the handler.
 	mux.Handle("GET /auth/{provider}", hime.Handler(s.oauthStart))
 	mux.Handle("GET /auth/{provider}/callback", hime.Handler(s.oauthCallback))
-	// Linking another login is not public: it needs the session it will attach
-	// to. The callback stays public (the provider redirects to it) and re-checks
-	// that session against the one baked into the state cookie.
-	mux.Handle("GET /auth/{provider}/link", s.requireAccount(hime.Handler(s.oauthLinkStart)))
 	mux.Handle("POST /logout", hime.Handler(s.logout))
 	// Self-service account: your logins, whatever your role.
+	//
+	// Starting a link is a POST under requireAccount (session + CSRF), because it
+	// ends in an irreversible merge of two identities: as a GET, one cross-site
+	// click completed the whole flow through SameSite=Lax cookies and a silent
+	// provider re-authorization. The callback stays public — the provider
+	// redirects to it — and re-checks the session against the one baked into the
+	// state cookie.
 	mux.Handle("GET /account", s.requireAuth(hime.Handler(s.accountPage)))
+	mux.Handle("POST /account/link", s.requireAccount(hime.Handler(s.postAccountLink)))
 	mux.Handle("POST /account/unlink", s.requireAccount(hime.Handler(s.postAccountUnlink)))
 
 	// Authenticated pages + SSE + partials
@@ -649,6 +652,11 @@ type pageData struct {
 	AccountIdentities  []accountIdentityRow
 	AccountLinkOptions []accountLinkOption
 	AccountLinkingOn   bool
+	// AccountHandleStale is true when some GitHub login on the account has a
+	// handle too old to be trusted (identity.MaxHandleAge). It gates the note
+	// explaining the expiry, which is worth saying exactly when it bites and is
+	// noise on an account with no GitHub login at all.
+	AccountHandleStale bool
 	// Workflow read UI (PR4–7)
 	Project       string
 	RepoCatalog   []config.GitHubRepoRef
