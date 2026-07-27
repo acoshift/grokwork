@@ -133,6 +133,16 @@ func (l *Logger) Append(ev Event) error {
 		ev.Time = ev.Time.UTC()
 	}
 
+	// Scrub here rather than at the call sites. Most of what lands in Error is
+	// subprocess stderr — git, gh, a project's verify command — whose wording is
+	// nobody's to control, and the audit file is kept, so one forgotten call site
+	// is a permanent leak. Doing it in Append also makes the guarantee uniform
+	// across surfaces: the Discord path scrubbed while the web path wrote gh
+	// stderr verbatim, so the same action logged a path or not depending on which
+	// button the operator happened to press.
+	ev.Error = ScrubPaths(ev.Error)
+	ev.Detail = scrubDetail(ev.Detail)
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
 

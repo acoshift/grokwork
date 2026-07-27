@@ -3,7 +3,6 @@ package bot
 import (
 	"errors"
 	"log"
-	"regexp"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -124,29 +123,14 @@ func (b *Bot) auditCmdMsg(action string, m *discordgo.MessageCreate, project str
 	b.auditCmd(action, ActorFromUser(m.Author), m.ChannelID, project, err, detail)
 }
 
-// auditPathChar is one character of a path: everything up to whitespace or a
-// quote form, since those are what a message wraps a path in.
-const auditPathChar = "[^\\s\"'`)]"
-
-// auditPathRE matches absolute filesystem paths and managed worktree paths.
-//
-// Deliberately not anchored on a leading delimiter (unlike reAbsUnixPath in
-// customer_sanitize.go): the text this guards is mostly git/gh stderr, where a
-// path arrives glued to a colon — "fatal: not a git repository:/Users/…".
-var auditPathRE = regexp.MustCompile(`(?i)(?:` +
-	`[A-Za-z]:\\` + auditPathChar + `+` + // C:\Users\…
-	`|/(?:Users|home|var|tmp|private|opt|usr|Volumes|Applications|Library)/` + auditPathChar + `*` +
-	`|data/worktrees/` + auditPathChar + `*)`)
-
 // scrubAuditPaths removes filesystem paths from text bound for the audit log.
 //
-// Applied centrally rather than per call site because most strings that reach
-// here are subprocess stderr — git, gh, a project's verify command — whose
-// wording is nobody's to control, and one forgotten call site is a permanent path
-// leak into a file that is kept.
+// The implementation moved to internal/audit, which applies it to every Event in
+// Append. That covers both surfaces by construction: this package scrubbed its
+// own rows while internal/web wrote gh stderr verbatim, so whether an identical
+// action leaked a path depended on which button the operator pressed. This
+// wrapper stays because bot code scrubs a few strings before they reach an
+// Event.
 func scrubAuditPaths(s string) string {
-	if s == "" {
-		return s
-	}
-	return auditPathRE.ReplaceAllString(s, "[path]")
+	return audit.ScrubPaths(s)
 }

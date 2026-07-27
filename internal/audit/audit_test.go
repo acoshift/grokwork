@@ -1,8 +1,10 @@
 package audit
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -92,5 +94,77 @@ func TestEmptyActionRejected(t *testing.T) {
 	}
 	if err := log.Append(Event{}); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// TestAppendScrubsPathsFromEveryWriter pins the guarantee at the layer that can
+// actually make it: Append. Scrubbing used to live in internal/bot, so a Discord
+// /reset wrote "[path]" while the identical web action wrote gh stderr verbatim
+// — the same question answered differently depending on which button the
+// operator pressed. Both surfaces construct their own Logger from cfg.DataDir
+// and share nothing else, so Append is the only common chokepoint.
+func TestAppendScrubsPathsFromEveryWriter(t *testing.T) {
+	dir := t.TempDir()
+	l, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
+	l.now = func() time.Time { return day }
+
+	err = l.Append(Event{
+		Action: "pr.review.github",
+		Actor:  "discord:1",
+		// Shaped like real gh stderr, where the path is glued to a colon.
+		Error: "failed to run gh: open /Users/someone/Projects/secret-client/body.md: no such file",
+		Detail: map[string]any{
+			"repoDir": "/srv/checkouts/secret-client",
+			"notes":   []string{"wrote /tmp/gh-body-123", "ok"},
+			"number":  7,
+			"url":     "https://github.com/o/r/pull/7",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := l.ReadDay(day)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(events))
+	}
+	ev := events[0]
+
+	for _, leak := range []string{"/Users/someone", "/srv/checkouts", "/tmp/gh-body-123", "secret-client"} {
+		if strings.Contains(ev.Error, leak) {
+			t.Errorf("Error leaked %q: %s", leak, ev.Error)
+		}
+		if strings.Contains(fmt.Sprint(ev.Detail), leak) {
+			t.Errorf("Detail leaked %q: %v", leak, ev.Detail)
+		}
+	}
+
+	// A URL is the most useful field in the log and must survive: a blanket
+	// "redact anything with slashes" would shred every PR link.
+	if got := fmt.Sprint(ev.Detail["url"]); got != "https://github.com/o/r/pull/7" {
+		t.Errorf("URL was scrubbed: %q", got)
+	}
+	if got := fmt.Sprint(ev.Detail["number"]); got != "7" {
+		t.Errorf("non-string detail mangled: %q", got)
+	}
+}
+
+// TestScrubDetailDoesNotMutateCaller: call sites build detail maps inline and
+// sometimes reuse them, so an audit write must not edit a caller's data.
+func TestScrubDetailDoesNotMutateCaller(t *testing.T) {
+	detail := map[string]any{"dir": "/Users/x/repo", "list": []string{"/home/y/z"}}
+	_ = scrubDetail(detail)
+	if detail["dir"] != "/Users/x/repo" {
+		t.Errorf("caller's map was mutated: %v", detail["dir"])
+	}
+	if detail["list"].([]string)[0] != "/home/y/z" {
+		t.Errorf("caller's slice was mutated: %v", detail["list"])
 	}
 }
