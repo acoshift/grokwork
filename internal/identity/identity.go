@@ -425,6 +425,46 @@ func (s *Store) AliasesOf(canonical string) []string {
 	return out
 }
 
+// DiscordSubjectFor returns the bare Discord snowflake this account can be
+// reached at, whether that is the account's own id or one of its linked logins.
+//
+// Canonical-at-mint means an account's id is whichever login it was created
+// with, so a Google-first person who later linked Discord has a canonical id
+// that is not snowflake-shaped — while still being perfectly reachable in
+// Discord. Anything that must address a human *in Discord* (a DM, an @mention,
+// a reviewer request that pings) has to ask this rather than test the shape of
+// the id it happens to hold, or absorb silently removes people from those
+// surfaces the moment they link a second login.
+//
+// ok is false when no Discord login is attached, which is a real state: a
+// Google-only user cannot be mentioned in Discord and callers must degrade
+// (the inbox, or simply omitting them) rather than invent a target.
+func (s *Store) DiscordSubjectFor(canonical string) (string, bool) {
+	c := config.NormalizeActorID(canonical)
+	if c == "" {
+		return "", false
+	}
+	if config.ActorKind(c) == config.ActorKindDiscord {
+		if sub := config.ActorSubject(c); sub != "" {
+			return sub, true
+		}
+	}
+	if s == nil {
+		return "", false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, alias := range s.aliasesOfLocked(c) {
+		if config.ActorKind(alias) != config.ActorKindDiscord {
+			continue
+		}
+		if sub := config.ActorSubject(alias); sub != "" {
+			return sub, true
+		}
+	}
+	return "", false
+}
+
 // aliasesOfLocked returns the normalized aliases of a normalized canonical id.
 func (s *Store) aliasesOfLocked(canonical string) []string {
 	var out []string

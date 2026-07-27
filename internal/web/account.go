@@ -3,6 +3,7 @@ package web
 import (
 	"crypto/subtle"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -401,8 +402,28 @@ func (s *Server) postAccountUnlink(ctx *hime.Context) error {
 	if err := s.identity.Unlink(alias); err != nil {
 		return fail(err)
 	}
+	// Revoke the sessions the detached login can still be acting through.
+	//
+	// Unlink is the one remediation this feature offers for "that login is not
+	// mine any more", so it has to end the access, not just the association. A
+	// session minted before the unlink carries the canonical actor id and keeps
+	// working, and sessionStore.Get slides ExpiresAt forward on every request,
+	// so an attacker actively using it never ages out. The link path already
+	// revokes for the same reason; this is the mirror of it.
+	//
+	// Sessions record no minting login, so the alias's own sessions cannot be
+	// singled out — every session on this account is revoked and the person
+	// signs in again. Over-revoking is the safe direction: the alternative
+	// leaves the compromised one alive.
+	if s.webSessions != nil {
+		if revoked, err := s.webSessions.RevokeActor(canonical); err != nil {
+			log.Printf("account: unlink revoke sessions: %v", err)
+		} else {
+			detail["sessionsRevoked"] = revoked
+		}
+	}
 	s.auditIdentity(ctx, audit.ActionIdentityUnlink, nil, detail)
-	return s.accountRedirect(ctx, providerLabel(config.ActorKind(alias))+" login unlinked", "")
+	return s.accountRedirect(ctx, providerLabel(config.ActorKind(alias))+" login unlinked — sign in again", "")
 }
 
 // lastLoginFor reports whether removing alias would lock the account out.

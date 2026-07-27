@@ -481,10 +481,12 @@ func (s *Server) reviewerOptions(project string) []reviewerOption {
 	// the Discord notification still does.
 	collect := func(p config.ProjectItem) {
 		for _, id := range p.MemberIDs {
-			if !config.IsDiscordActor(id) {
-				continue
-			}
-			if sub := config.ActorSubject(id); sub != "" {
+			// Ask the identity store rather than testing the shape of the id.
+			// After a link, a member's stored id is their canonical one, which
+			// may be "google:…" even though they are reachable in Discord
+			// through a linked alias — filtering on shape here would drop a
+			// builder from the reviewer list the moment they linked a login.
+			if sub, ok := s.identity.DiscordSubjectFor(id); ok {
 				ids[sub] = struct{}{}
 			}
 		}

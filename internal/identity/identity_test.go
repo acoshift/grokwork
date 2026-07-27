@@ -557,3 +557,47 @@ func TestLinksOfCarriesHandleAndTimestamp(t *testing.T) {
 		t.Fatalf("nil store returned %d rows", n)
 	}
 }
+
+// TestDiscordSubjectForFindsALinkedDiscordLogin pins the reverse lookup that
+// keeps linked people reachable in Discord.
+//
+// Canonical-at-mint means an account's id is whichever login created it, so a
+// Google-first person who links Discord has a non-snowflake canonical id while
+// being perfectly reachable in Discord. Anything addressing a human *in Discord*
+// must resolve through here instead of testing the shape of the id it holds —
+// otherwise linking a second login silently removes someone from DMs, mentions
+// and the reviewer list.
+func TestDiscordSubjectForFindsALinkedDiscordLogin(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const snowflake = "424242424242424242"
+	if err := s.Link(snowflake, "google:alice", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Google-canonical account, reachable through its Discord alias.
+	got, ok := s.DiscordSubjectFor("google:alice")
+	if !ok || got != snowflake {
+		t.Fatalf("DiscordSubjectFor(google:alice) = (%q,%v), want (%q,true)", got, ok, snowflake)
+	}
+
+	// A Discord-canonical account answers with its own id, linked or not.
+	got, ok = s.DiscordSubjectFor(snowflake)
+	if !ok || got != snowflake {
+		t.Fatalf("DiscordSubjectFor(discord) = (%q,%v), want (%q,true)", got, ok, snowflake)
+	}
+
+	// No Discord login anywhere is a real state — callers must degrade, not
+	// invent a target.
+	if got, ok := s.DiscordSubjectFor("google:bob"); ok {
+		t.Fatalf("DiscordSubjectFor(unlinked google) = (%q,true), want not ok", got)
+	}
+	var nilStore *Store
+	if _, ok := nilStore.DiscordSubjectFor("google:alice"); ok {
+		t.Fatal("nil store reported a Discord subject")
+	}
+}

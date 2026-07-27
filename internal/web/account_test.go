@@ -801,3 +801,31 @@ func countActor(ids []string, want string) int {
 	}
 	return n
 }
+
+// TestUnlinkRevokesSessions pins the remediation half of unlink.
+//
+// Unlink is the only answer this feature offers to "that login is not mine any
+// more". Removing the association without ending the access leaves a session
+// minted before the unlink acting as the account — and sessionStore.Get slides
+// ExpiresAt forward on every request, so an attacker actively using one never
+// ages out. The link path already revokes for this reason; this is its mirror.
+func TestUnlinkRevokesSessions(t *testing.T) {
+	f, sid := absorbFixture(t)
+	if msg := redirectErr(t, linkVia(t, f, config.ActorKindGitHub, "h-admin", sid)); msg != "" {
+		t.Fatalf("link refused: %q", msg)
+	}
+	sess, _, ok := f.srv.webSessions.Get(sid)
+	if !ok {
+		t.Fatal("session gone")
+	}
+	if msg := redirectErr(t, postUnlink(t, f, sid, sess.CSRF, "github:999")); msg != "" {
+		t.Fatalf("unlink refused: %q", msg)
+	}
+
+	if _, _, ok := f.srv.webSessions.Get(sid); ok {
+		t.Fatal("the session survived unlink — a detached login can still act as the account")
+	}
+	if ev := lastAudit(t, f, audit.ActionIdentityUnlink); ev.Detail["sessionsRevoked"] == nil {
+		t.Fatalf("unlink did not record how many sessions it revoked: %+v", ev.Detail)
+	}
+}
