@@ -21,6 +21,7 @@ import (
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/identity"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/markdown"
 	"github.com/acoshift/grokwork/internal/reviewstore"
@@ -47,6 +48,10 @@ type Server struct {
 	oauthGoogle GoogleOAuth  // nil → HTTPGoogleOAuth
 	oauthGitHub GitHubOAuth  // nil → HTTPGitHubOAuth
 	audit       *audit.Logger
+	// identity resolves a login to the account it belongs to, at the one place a
+	// web actor id is minted (oauthCallback). It is the bot's instance, not a
+	// second one over the same file — see bot.SetIdentity.
+	identity *identity.Store
 	// Test injectables (nil → production defaults).
 	ghRunner ghpr.Runner
 	deploys  *deploy.Engine
@@ -92,7 +97,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	if err != nil {
 		panic("web: deploy engine: " + err.Error())
 	}
-	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, webUsers: webUsers, audit: auditLog, deploys: deployEngine}
+	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, webUsers: webUsers, audit: auditLog, deploys: deployEngine, identity: b.Identity()}
 	s.wireDeployNotifier()
 	app := hime.New()
 	app.Address(cfg.ListenAddr())

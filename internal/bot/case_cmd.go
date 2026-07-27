@@ -39,7 +39,7 @@ func (b *Bot) handleCase(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	}
 	// Capability: Investigate or FileEscalation
 	if b.cfg != nil {
-		caps := b.cfg.ResolveCapabilities(proj.Name, m.Author.ID)
+		caps := b.cfg.ResolveCapabilities(proj.Name, b.authorActorID(m))
 		if !caps.Investigate && !caps.FileEscalation && !caps.StartSessions {
 			b.auditCmdMsg(audit.ActionSessionStart, m, proj.Name, errAuditDeniedCapability,
 				map[string]any{"origin": "discord-case"})
@@ -80,7 +80,7 @@ func (b *Bot) handleCase(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			return
 		}
 	}
-	actor := ActorFromUser(m.Author)
+	actor := b.actorFromUser(m.Author)
 	// Detail carries the case's own ids and severity, never the customer-facing
 	// title — that is the one field of an intake guaranteed to be their words.
 	caseDetail := map[string]any{"origin": "discord-case", "severity": severity, "ref": ref}
@@ -188,7 +188,7 @@ func (b *Bot) handleEscalate(s *discordgo.Session, m *discordgo.MessageCreate, p
 	// else is handing it to engineering, which leaves it unassigned.
 	var caps config.Capabilities
 	if b.cfg != nil {
-		caps = b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
+		caps = b.cfg.ResolveCapabilities(e.Project, b.authorActorID(m))
 		if !canEscalateCase(caps) {
 			b.auditCmdMsg(audit.ActionCaseEscalate, m, e.Project, errAuditDeniedCapability, caseAuditDetail(e, nil))
 			replyText(s, m, "You're not allowed to escalate cases (need fileEscalation or builder caps).")
@@ -200,7 +200,7 @@ func (b *Bot) handleEscalate(s *discordgo.Session, m *discordgo.MessageCreate, p
 	note = stripCmdPrefix(note, "/escalate", "escalate")
 	out, err := b.EscalateCase(EscalateCaseOpts{
 		ThreadID:      m.ChannelID,
-		Actor:         ActorFromUser(m.Author),
+		Actor:         b.actorFromUser(m.Author),
 		Note:          note,
 		TakeOwnership: caps.CanShip(),
 	})
@@ -239,9 +239,10 @@ func (b *Bot) handleCloseCase(s *discordgo.Session, m *discordgo.MessageCreate, 
 		replyText(s, m, "This thread is not a case.")
 		return
 	}
+	authorID := b.authorActorID(m)
 	if !b.canControlThread(m, e) {
 		// Investigators who own the case can close
-		if e.OwnerID != "" && m.Author != nil && e.OwnerID != m.Author.ID {
+		if e.OwnerID != "" && authorID != "" && e.OwnerID != authorID {
 			b.auditCmdMsg(audit.ActionCaseClose, m, e.Project, errAuditDeniedControl, caseAuditDetail(e, nil))
 			replyText(s, m, "Only the case owner, co-owner, or a project admin can close.")
 			return
@@ -265,8 +266,8 @@ func (b *Bot) handleCloseCase(s *discordgo.Session, m *discordgo.MessageCreate, 
 		ent.Resolution = res
 		ent.ResolutionNote = note
 		ent.ResolvedAt = now
-		if m.Author != nil {
-			ent.ResolvedBy = m.Author.ID
+		if authorID != "" {
+			ent.ResolvedBy = authorID
 		}
 		ent.Label = label
 		// K18: do NOT set LabelManual — closed phase freezes auto-label in sessionstore.
@@ -300,7 +301,7 @@ func (b *Bot) handleCustomerUpdate(s *discordgo.Session, m *discordgo.MessageCre
 		return
 	}
 	if b.cfg != nil && m.Author != nil {
-		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
+		caps := b.cfg.ResolveCapabilities(e.Project, b.authorActorID(m))
 		if !caps.DraftCustomerReply && !canEscalateCase(caps) {
 			b.auditCmdMsg(audit.ActionCaseCustomerUpdate, m, e.Project, errAuditDeniedCapability, caseAuditDetail(e, nil))
 			replyText(s, m, "You're not allowed to draft customer updates (need draftCustomerReply).")
@@ -363,7 +364,7 @@ func (b *Bot) handleReopenCase(s *discordgo.Session, m *discordgo.MessageCreate,
 	}
 	allowed := b.canControlThread(m, e)
 	if !allowed && b.cfg != nil && m.Author != nil {
-		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
+		caps := b.cfg.ResolveCapabilities(e.Project, b.authorActorID(m))
 		allowed = CanReopenCaseCaps(caps)
 	}
 	if !allowed {
@@ -376,11 +377,7 @@ func (b *Bot) handleReopenCase(s *discordgo.Session, m *discordgo.MessageCreate,
 		replyText(s, m, "Usage: `@Grok /reopen [investigate|fixing]` (default investigate).")
 		return
 	}
-	actorID := ""
-	if m.Author != nil {
-		actorID = m.Author.ID
-	}
-	err := b.ReopenCase(m.ChannelID, actorID, phase)
+	err := b.ReopenCase(m.ChannelID, b.authorActorID(m), phase)
 	// toPhase, not phase: caseAuditDetail owns "phase" and it means the phase the
 	// case was in when the command arrived (closed, here).
 	b.auditCmdMsg(audit.ActionCaseReopen, m, e.Project, err, caseAuditDetail(e, map[string]any{"toPhase": phase}))
@@ -429,7 +426,7 @@ func (b *Bot) handleAnswer(s *discordgo.Session, m *discordgo.MessageCreate, par
 		return
 	}
 	if b.cfg != nil && m.Author != nil {
-		caps := b.cfg.ResolveCapabilities(e.Project, m.Author.ID)
+		caps := b.cfg.ResolveCapabilities(e.Project, b.authorActorID(m))
 		if !caps.DraftCustomerReply && !canEscalateCase(caps) {
 			b.auditCmdMsg(audit.ActionCaseAnswer, m, e.Project, errAuditDeniedCapability, caseAuditDetail(e, nil))
 			replyText(s, m, "You're not allowed to mark cases answered (need draftCustomerReply or escalate caps).")

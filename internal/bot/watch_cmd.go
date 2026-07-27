@@ -29,13 +29,17 @@ func (b *Bot) handleWatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		return
 	}
+	// The watch list is a list of accounts: whoever is notified must be found
+	// again on the next run whichever login they arrive by. notifyRunDone maps
+	// back to a DMable snowflake at delivery time (discordDMTarget).
+	authorID := b.authorActorID(m)
 	wasWatching := false
 	if e0, ok0 := b.sessions.Get(m.ChannelID); ok0 {
-		wasWatching = e0.IsWatcher(m.Author.ID)
+		wasWatching = e0.IsWatcher(authorID)
 	}
 	var added bool
 	e, ok, err := b.sessions.Patch(m.ChannelID, func(ent *sessionstore.Entry) {
-		added = ent.AddWatcher(m.Author.ID)
+		added = ent.AddWatcher(authorID)
 	})
 	// A vanished unit (Patch found nothing) is a failure, not a silent success:
 	// nobody was added, so the row must not claim otherwise.
@@ -92,9 +96,10 @@ func (b *Bot) handleUnwatch(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		return
 	}
+	authorID := b.authorActorID(m)
 	var removed bool
 	e, ok, err := b.sessions.Patch(m.ChannelID, func(ent *sessionstore.Entry) {
-		removed = ent.RemoveWatcher(m.Author.ID)
+		removed = ent.RemoveWatcher(authorID)
 	})
 	b.auditCmdMsg(audit.ActionSessionUnwatch, m, e.Project, watchAuditErr(err, ok), map[string]any{
 		"removed":  removed,

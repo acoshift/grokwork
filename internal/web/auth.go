@@ -354,24 +354,33 @@ func (s *Server) oauthCallback(ctx *hime.Context) error {
 	redirectURI := s.oauthRedirectURIFor(key)
 	token, err := p.Exchange(ctx.Context(), code, redirectURI, clientID, secret)
 	if err != nil {
-		s.auditLogin(audit.ActorAnonymous, "", false, "token exchange failed")
+		s.auditLogin(audit.ActorAnonymous, "", "", false, "token exchange failed")
 		return ctx.RedirectTo("login", map[string]string{"err": "token exchange failed"})
 	}
 	id, err := p.Identity(ctx.Context(), token)
 	if err != nil || strings.TrimSpace(id.Subject) == "" {
-		s.auditLogin(audit.ActorAnonymous, "", false, "failed to load "+p.Label()+" profile")
+		s.auditLogin(audit.ActorAnonymous, "", "", false, "failed to load "+p.Label()+" profile")
 		return ctx.RedirectTo("login", map[string]string{"err": "failed to load " + p.Label() + " profile"})
 	}
-	actor := actorIDFor(key, id.Subject)
+	// Canonical-at-mint: this is the only place a web actor id is born, so it is
+	// the only place that has to know about linked logins. Everything downstream —
+	// the session cookie, role resolution, the durable profile key, ownership,
+	// spend, the per-user run cap — sees the ACCOUNT and keeps comparing ids the
+	// way it always did. See internal/identity for why the alternative (teaching
+	// every comparison about aliases) was rejected.
+	loginActor := actorIDFor(key, id.Subject)
+	actor := s.identity.Canonical(loginActor)
 	role, ok := s.cfg.ResolveWebRoleForConfig(actor)
 	if !ok {
-		s.auditLogin(actor, "", false, "not authorized")
+		s.auditLogin(actor, loginActor, "", false, "not authorized")
 		// A brand-new Google/GitHub account is a member of nothing, which is the
 		// correct fail-closed outcome — but the person cannot guess the exact
 		// allowlist string, so name it. Discord's message is left byte-identical
 		// (its actor id is the snowflake they already know).
+		// A Discord login that resolved to some other account is no longer "the
+		// snowflake they already know" either, so it gets the id too.
 		msg := "not authorized for this Grok Work instance"
-		if key != config.ActorKindDiscord {
+		if key != config.ActorKindDiscord || actor != loginActor {
 			msg += " (" + actor + ")"
 		}
 		return ctx.RedirectTo("login", map[string]string{"err": msg})
@@ -383,19 +392,30 @@ func (s *Server) oauthCallback(ctx *hime.Context) error {
 	avatar := id.AvatarURL
 	sess, err := s.webSessions.Create(actor, name, avatar, role)
 	if err != nil {
-		s.auditLogin(actor, string(role), false, "session create failed")
+		s.auditLogin(actor, loginActor, string(role), false, "session create failed")
 		return ctx.Status(http.StatusInternalServerError).Error("session: " + err.Error())
 	}
-	// Durable profile (name + avatar URL); not cleared on logout.
+	// Durable profile (name + avatar URL); not cleared on logout. Keyed by the
+	// account, so the name and avatar are whichever login signed in most recently
+	// — one person, one profile.
 	if s.webUsers != nil {
 		_ = s.webUsers.Upsert(actor, name, avatar)
 	}
-	s.auditLogin(actor, string(role), true, "")
+	s.auditLogin(actor, loginActor, string(role), true, "")
 	s.SetSessionCookie(ctx.ResponseWriter(), sess.ID)
 	return ctx.Redirect(next)
 }
 
-func (s *Server) auditLogin(actor, role string, ok bool, errMsg string) {
+// auditLogin records one login attempt.
+//
+// Both ids are kept. Actor is the account the session will carry, which is what
+// every other audit row and every grant is written against; loginActor is the
+// login actually used to get in. Recording only the account would make "which of
+// their logins was this" unanswerable — and that question is the entire point of
+// an audit trail once one person can arrive three ways. It is written only when
+// the two differ, so an unlinked login (the overwhelming majority) keeps the row
+// it always had.
+func (s *Server) auditLogin(actor, loginActor, role string, ok bool, errMsg string) {
 	if s == nil || s.audit == nil {
 		return
 	}
@@ -404,6 +424,9 @@ func (s *Server) auditLogin(actor, role string, ok bool, errMsg string) {
 		action = audit.ActionLoginFail
 	}
 	ev := audit.Event{Action: action, Actor: actor, Role: role, OK: ok}
+	if loginActor != "" && loginActor != actor {
+		ev.Detail = map[string]any{"loginActor": loginActor}
+	}
 	if errMsg != "" {
 		ev.Error = errMsg
 	}

@@ -245,7 +245,7 @@ func (b *Bot) setThreadGoal(s *discordgo.Session, threadID, goal string, m *disc
 			}
 		}
 		if m != nil && m.Author != nil {
-			ensureSessionOwner(ent, m.Author.ID, m.Author.String())
+			ensureSessionOwner(ent, b.authorActorID(m), m.Author.String())
 		}
 	}); err != nil {
 		return err
@@ -261,7 +261,7 @@ func (b *Bot) setThreadGoal(s *discordgo.Session, threadID, goal string, m *disc
 		}
 	}
 	if m != nil && m.Author != nil {
-		ensureSessionOwner(&e, m.Author.ID, m.Author.String())
+		ensureSessionOwner(&e, b.authorActorID(m), m.Author.String())
 	}
 	return b.sessions.Set(threadID, e)
 }

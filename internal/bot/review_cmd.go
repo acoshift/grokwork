@@ -55,7 +55,13 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		return
 	}
 
-	reviewerID, rest := parseReviewArgs(parsed.Prompt)
+	// reviewerMention is the snowflake that was <@…>-mentioned; reviewerID is the
+	// account it belongs to. The two are separate on purpose: the stored request
+	// and the membership check must follow the account (so "My reviews" finds it
+	// whichever login they sign in with), while a Discord mention only renders
+	// from a snowflake — and the GitHub map is keyed by Discord id.
+	reviewerMention, rest := parseReviewArgs(parsed.Prompt)
+	reviewerID := b.canonicalActorID(reviewerMention)
 	if reviewerID == "" {
 		if _, err := discordReply(s, m.ChannelID, reviewHelpText(), ref(m)); err != nil {
 			log.Printf("error: reply review-help: %v", err)
@@ -86,7 +92,7 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 			errors.New("reviewer is not a member of this project"),
 			map[string]any{"reviewerId": reviewerID})
 		if _, err := discordReply(s, m.ChannelID,
-			fmt.Sprintf("<@%s> is not on this project's allowlist.", reviewerID), ref(m)); err != nil {
+			fmt.Sprintf("<@%s> is not on this project's allowlist.", reviewerMention), ref(m)); err != nil {
 			log.Printf("error: reply review-allow: %v", err)
 		}
 		return
@@ -103,7 +109,7 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		Project:       e.Project,
 		ThreadID:      m.ChannelID,
 		HeadSHA:       pr.HeadSHA,
-		RequesterID:   m.Author.ID,
+		RequesterID:   b.authorActorID(m),
 		RequesterName: m.Author.String(),
 		ReviewerID:    reviewerID,
 		Note:          note,
@@ -127,7 +133,7 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 	cwd := b.prViewCwd(e)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	ghLogin, ghErr := requestFormalGitHubReview(ctx, nil, b.cfg, cwd, pr.Owner, pr.Repo, pr.Number, reviewerID)
+	ghLogin, ghErr := requestFormalGitHubReview(ctx, nil, b.cfg, cwd, pr.Owner, pr.Repo, pr.Number, reviewerMention)
 	// OK stays true: the audited mutation is the team request, which succeeded. The
 	// formal GitHub request is an echo of it and reports itself as a detail — a
 	// failed echo must not make the row read as "no review was requested".
@@ -137,7 +143,7 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 	b.auditCmdMsg(audit.ActionPRReviewRequest, m, e.Project, nil, reviewDetail)
 
 	msg := formatReviewRequestReply(reviewRequestReply{
-		ReviewerID:  reviewerID,
+		ReviewerID:  reviewerMention,
 		RequesterID: m.Author.ID,
 		Owner:       pr.Owner,
 		Repo:        pr.Repo,
@@ -177,6 +183,9 @@ func requestFormalGitHubReview(ctx context.Context, run ghpr.Runner, cfg *config
 	return login, err
 }
 
+// reviewRequestReply is the in-thread announcement. Its two ids are Discord
+// snowflakes for <@…> rendering, NOT account ids — the stored request keys on
+// the account (see handleReview), which may not be a snowflake at all.
 type reviewRequestReply struct {
 	ReviewerID  string
 	RequesterID string

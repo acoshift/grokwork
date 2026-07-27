@@ -40,7 +40,7 @@ func (b *Bot) handleCheckpoint(s *discordgo.Session, m *discordgo.MessageCreate,
 		}
 	}
 	label := stripCmdPrefix(parsed.Prompt, "/checkpoint", "checkpoint")
-	meta, err := b.createCheckpoint(m.ChannelID, e, ActorFromUser(m.Author), label)
+	meta, err := b.createCheckpoint(m.ChannelID, e, b.actorFromUser(m.Author), label)
 	// The label is free text the user typed and stays out; the ref and sha are what
 	// a later "who reset this worktree to what" question needs. No cwd — that is a path.
 	b.auditCmdMsg(audit.ActionGitCheckpoint, m, e.Project, err, map[string]any{
@@ -214,10 +214,7 @@ func (b *Bot) restoreCheckpoint(s *discordgo.Session, m *discordgo.MessageCreate
 		log.Printf("git.checkpoint_restore fail thread=%s id=%s: %v", threadID, cp.ID, err)
 		return err
 	}
-	actor := ""
-	if m.Author != nil {
-		actor = m.Author.ID
-	}
+	actor := b.authorActorID(m)
 	log.Printf("git.checkpoint_restore ok thread=%s id=%s sha=%s actor=%s", threadID, cp.ID, shortSHA(liveSHA), actor)
 	return nil
 }
@@ -226,7 +223,7 @@ func (b *Bot) actorCanShip(m *discordgo.MessageCreate, project string) bool {
 	if b.cfg == nil || m == nil || m.Author == nil {
 		return false
 	}
-	caps := b.cfg.ResolveCapabilities(project, m.Author.ID)
+	caps := b.cfg.ResolveCapabilities(project, b.authorActorID(m))
 	return caps.CanShip()
 }
 
@@ -234,7 +231,7 @@ func (b *Bot) actorCanApprove(m *discordgo.MessageCreate, project string) bool {
 	if b.cfg == nil || m == nil || m.Author == nil {
 		return false
 	}
-	caps := b.cfg.ResolveCapabilities(project, m.Author.ID)
+	caps := b.cfg.ResolveCapabilities(project, b.authorActorID(m))
 	return caps.Approve || caps.AdminProject || caps.CanShip()
 }
 

@@ -222,7 +222,7 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		}
 		e = sessionstore.Entry{Project: projName}
 		if m.Author != nil {
-			ensureSessionOwner(&e, m.Author.ID, m.Author.String())
+			ensureSessionOwner(&e, b.authorActorID(m), m.Author.String())
 		}
 	}
 
@@ -242,7 +242,7 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		cleared := len(e.Issues)
 		e.ClearIssues()
 		if m.Author != nil {
-			ensureSessionOwner(&e, m.Author.ID, m.Author.String())
+			ensureSessionOwner(&e, b.authorActorID(m), m.Author.String())
 		}
 		if e.Project == "" {
 			parentID := parentChannelID(s, threadID)
@@ -360,7 +360,7 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		e.UpsertIssueForceKeyword(iss)
 	}
 	if m.Author != nil {
-		ensureSessionOwner(&e, m.Author.ID, m.Author.String())
+		ensureSessionOwner(&e, b.authorActorID(m), m.Author.String())
 	}
 	if e.Project == "" {
 		e.Project = projName

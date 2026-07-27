@@ -54,10 +54,7 @@ func (b *Bot) handleDequeue(s *discordgo.Session, m *discordgo.MessageCreate, pa
 		}
 		return
 	}
-	uid := ""
-	if m.Author != nil {
-		uid = m.Author.ID
-	}
+	uid := b.authorActorID(m)
 	// Resolved before the lock: projectForThread can hit the Discord API to find a
 	// thread's parent channel, and st.mu gates the run/drain path.
 	project := b.projectForThread(s, m.ChannelID)
@@ -114,10 +111,7 @@ func (b *Bot) handleCancelMine(s *discordgo.Session, m *discordgo.MessageCreate)
 		}
 		return
 	}
-	uid := ""
-	if m.Author != nil {
-		uid = m.Author.ID
-	}
+	uid := b.authorActorID(m)
 	if uid == "" {
 		return
 	}

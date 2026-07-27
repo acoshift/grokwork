@@ -21,6 +21,7 @@ import (
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/identity"
 	"github.com/acoshift/grokwork/internal/inbox"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/runjournal"
@@ -103,6 +104,10 @@ type Bot struct {
 	runs     *runjournal.Store
 	events   *timeline.Store
 	inbox    *inbox.Store
+	// identity resolves a login to the account it belongs to. Installed once at
+	// startup via SetIdentity and read-only thereafter; see identity.go for why
+	// every Discord-born actor id passes through it.
+	identity *identity.Store
 	// audit is the Discord command surface's trail (audit_cmd.go). Deliberately a
 	// second Logger over the same directory as web's: each Append is one small
 	// O_APPEND write, which the kernel serializes across descriptors, so the two
@@ -1193,7 +1198,7 @@ func (b *Bot) checkMessageAccess(s *discordgo.Session, m *discordgo.MessageCreat
 			project,
 		)
 	}
-	if b.isAllowedUser(m.Author.ID, project) {
+	if b.isAllowedUser(b.authorActorID(m), project) {
 		return true, project, ""
 	}
 	return false, project, fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
@@ -1368,7 +1373,7 @@ func (b *Bot) handleTaskOrigin(
 	}
 	item := taskItem{
 		s: s, m: m, parsed: parsed, proj: proj, threadID: threadID,
-		actor:            ActorFromUser(m.Author),
+		actor:            b.actorFromUser(m.Author),
 		source:           SourceDiscord,
 		origin:           SourceDiscord,
 		taskID:           taskID,
@@ -1379,9 +1384,9 @@ func (b *Bot) handleTaskOrigin(
 		statusMsgID:      statusMsgID,
 	}
 	if m.Author != nil {
-		item.createdBy = m.Author.ID
+		item.createdBy = item.actor.ID
 		item.createdByName = m.Author.String()
-		item.authorID = m.Author.ID
+		item.authorID = item.actor.ID
 		item.authorName = m.Author.String()
 	}
 	// startDetail is the session.start detail for this dispatch: what was asked
@@ -1557,7 +1562,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	s, m, parsed, proj, threadID := item.s, item.m, item.parsed, item.proj, item.threadID
 	actor := item.actor
 	if actor.ID == "" && m != nil && m.Author != nil {
-		actor = ActorFromUser(m.Author)
+		actor = b.actorFromUser(m.Author)
 	}
 	// Prefer live gateway session when item.s is nil (web path).
 	if s == nil {
@@ -1676,7 +1681,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			sendChunks(s, threadID, "Could not create git worktree: "+wtErr.Error())
 		}
 		if present && s != nil {
-			b.notifyRunFailed(s, threadID, taskAuthorID(item, m), time.Since(job.start))
+			b.notifyRunFailed(s, threadID, b.taskAuthorID(item, m), time.Since(job.start))
 		}
 		return
 	}
@@ -1734,7 +1739,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 					sendChunks(s, threadID, msg)
 				}
 				if present && s != nil {
-					b.notifyRunFailed(s, threadID, taskAuthorID(item, m), time.Since(job.start))
+					b.notifyRunFailed(s, threadID, b.taskAuthorID(item, m), time.Since(job.start))
 				}
 				return
 			}
@@ -1766,7 +1771,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 				}
 				sendChunks(s, threadID, msg)
 				if present && s != nil {
-					b.notifyRunFailed(s, threadID, taskAuthorID(item, m), time.Since(job.start))
+					b.notifyRunFailed(s, threadID, b.taskAuthorID(item, m), time.Since(job.start))
 				}
 				return
 			}
@@ -2168,14 +2173,14 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	// thread, where the status message failed to post, still skips: the thread exists
 	// but Discord was refusing writes.)
 	if s != nil && (present || !b.hasDiscordSurface(threadID)) {
-		b.notifyRunDone(s, threadID, taskAuthorID(item, m), result, elapsed)
+		b.notifyRunDone(s, threadID, b.taskAuthorID(item, m), result, elapsed)
 	}
 }
 
 func (b *Bot) recordTurn(threadID string, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration) {
 	actor := Actor{}
 	if m != nil {
-		actor = ActorFromUser(m.Author)
+		actor = b.actorFromUser(m.Author)
 	}
 	b.recordTurnActor(threadID, actor, m, project, userPrompt, result, elapsed)
 }
@@ -2204,7 +2209,7 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 	user, userID := actor.String(), actor.ID
 	if user == "" && m != nil && m.Author != nil {
 		user = m.Author.String()
-		userID = m.Author.ID
+		userID = b.authorActorID(m)
 	}
 	msgID := ""
 	if m != nil {

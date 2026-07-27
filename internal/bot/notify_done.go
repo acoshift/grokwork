@@ -3,7 +3,6 @@ package bot
 import (
 	"fmt"
 	"log"
-	"slices"
 	"strings"
 	"time"
 
@@ -176,6 +175,11 @@ func (b *Bot) notifyRunDoneSend(threadID, authorID string, result grokrun.Result
 	if len(ids) == 0 {
 		return
 	}
+	// Recipients are accounts; a mention needs the Discord login behind one. An
+	// account with no Discord login linked is left as-is, exactly as before —
+	// Discord renders it as literal text rather than dropping the person from a
+	// message that is also telling everyone else the run finished.
+	ids = b.discordMentionIDs(ids)
 	msg := formatNotifyDoneMessage(ids, outcome, elapsed)
 	if msg == "" {
 		return
@@ -204,14 +208,19 @@ func (b *Bot) notifyRunDoneDM(threadID, authorID string, result grokrun.Result, 
 	// through Discord OAuth. Anyone else cannot be DMed — but "cannot push to them"
 	// must not mean "never tell them", which is what dropping the id did. They get
 	// an inbox entry instead, and only Discord-shaped ids go on to the DM fan-out.
+	// A Discord LOGIN linked to this account is a valid DM target even when the
+	// account id itself is not snowflake-shaped (discordDMTarget); the inbox
+	// entry, by contrast, stays keyed on the account.
 	var unreachable []string
-	ids = slices.DeleteFunc(ids, func(id string) bool {
-		if looksLikeDiscordUserID(id) {
-			return false
+	targets := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if dmID, ok := b.discordDMTarget(id); ok {
+			targets = append(targets, dmID)
+			continue
 		}
 		unreachable = append(unreachable, id)
-		return true
-	})
+	}
+	ids = targets
 	if len(unreachable) > 0 {
 		b.deliverInbox(unreachable, threadID, outcome, elapsed)
 	}
@@ -296,9 +305,13 @@ func discordDMSend(s *discordgo.Session) dmSend {
 }
 
 // taskAuthorID resolves who queued/started this run for notify policy.
-func taskAuthorID(item taskItem, m *discordgo.MessageCreate) string {
-	if m != nil && m.Author != nil && m.Author.ID != "" {
-		return m.Author.ID
+//
+// The message branch canonicalizes: the ids it is compared and deduped against
+// (WatcherIDs, item.actor.ID) are accounts, so a raw snowflake here would ping
+// a linked user twice — once as their Discord login and once as their account.
+func (b *Bot) taskAuthorID(item taskItem, m *discordgo.MessageCreate) string {
+	if id := b.authorActorID(m); id != "" {
+		return id
 	}
 	if item.actor.ID != "" {
 		return item.actor.ID

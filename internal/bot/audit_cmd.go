@@ -120,7 +120,7 @@ func (b *Bot) auditCmdMsg(action string, m *discordgo.MessageCreate, project str
 	if m == nil {
 		return
 	}
-	b.auditCmd(action, ActorFromUser(m.Author), m.ChannelID, project, err, detail)
+	b.auditCmd(action, b.actorFromUser(m.Author), m.ChannelID, project, err, detail)
 }
 
 // scrubAuditPaths removes filesystem paths from text bound for the audit log.

@@ -16,6 +16,7 @@ import (
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/deploy"
 	"github.com/acoshift/grokwork/internal/history"
+	"github.com/acoshift/grokwork/internal/identity"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 	"github.com/acoshift/grokwork/internal/web"
 )
@@ -36,7 +37,18 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// One store, shared by both surfaces: it decides which account a login is, so
+	// two copies over one file would each cache their own map and disagree the
+	// moment somebody links. Fatal on error for the same reason identity.New
+	// refuses a malformed file — booting with an empty link table silently demotes
+	// every linked user to a stranger, and the next link would overwrite the file.
+	links, err := identity.New(cfg.DataDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	b := bot.New(cfg, sessions, hist)
+	b.SetIdentity(links)
 	b.EnableReadyGate()
 
 	// Single-instance lock under data/runs/.lock (when journal store is available).

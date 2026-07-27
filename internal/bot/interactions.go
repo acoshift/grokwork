@@ -37,6 +37,9 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 		respondEphemeral(s, i, "Could not resolve your Discord user.")
 		return
 	}
+	// A click mints an actor id exactly like a message does; resolve it once here
+	// so every gate below asks about the account, not the login.
+	actorID := b.userActorID(user)
 
 	// Wave 2 decision buttons (gd:d:<thread>:<qid>:<idx>)
 	if tid, qid, idx, ok := parseDecisionCustomID(data.CustomID); ok {
@@ -49,7 +52,7 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 			return
 		}
 		project := b.projectForThread(s, tid)
-		if project == "" || !b.isAllowedUser(user.ID, project) {
+		if project == "" || !b.isAllowedUser(actorID, project) {
 			msg := "You're not allowed to use Grok on this project."
 			if project != "" {
 				msg = fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
@@ -77,7 +80,7 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 	}
 
 	project := b.projectForThread(s, threadID)
-	if project == "" || !b.isAllowedUser(user.ID, project) {
+	if project == "" || !b.isAllowedUser(actorID, project) {
 		msg := "You're not allowed to use Grok on this project."
 		if project != "" {
 			msg = fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
@@ -132,7 +135,7 @@ func (b *Bot) handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCr
 		return
 	}
 	project := b.projectForThread(s, threadID)
-	if project == "" || !b.isAllowedUser(user.ID, project) {
+	if project == "" || !b.isAllowedUser(b.userActorID(user), project) {
 		msg := "You're not allowed to use Grok on this project."
 		if project != "" {
 			msg = fmt.Sprintf("You're not allowed to use Grok on project **%s**.", project)
@@ -171,8 +174,8 @@ func (b *Bot) handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCr
 func (b *Bot) interactionCancel(
 	s *discordgo.Session, i *discordgo.InteractionCreate, threadID, project string, user *discordgo.User,
 ) {
-	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(user.ID, e) {
-		b.auditCmd(audit.ActionSessionCancel, ActorFromUser(user), threadID, project,
+	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(b.userActorID(user), e) {
+		b.auditCmd(audit.ActionSessionCancel, b.actorFromUser(user), threadID, project,
 			errAuditDeniedControl, buttonAuditDetail)
 		respondEphemeral(s, i, denyControlText(e, "cancel"))
 		return
@@ -180,12 +183,12 @@ func (b *Bot) interactionCancel(
 	msg, ok := b.cancelCurrentRun(threadID, user.String())
 	if !ok {
 		// Same distinction /cancel makes: "nothing was running" is not a denial.
-		b.auditCmd(audit.ActionSessionCancel, ActorFromUser(user), threadID, project,
+		b.auditCmd(audit.ActionSessionCancel, b.actorFromUser(user), threadID, project,
 			errors.New(msg), buttonAuditDetail)
 		respondEphemeral(s, i, msg)
 		return
 	}
-	b.auditCmd(audit.ActionSessionCancel, ActorFromUser(user), threadID, project, nil, buttonAuditDetail)
+	b.auditCmd(audit.ActionSessionCancel, b.actorFromUser(user), threadID, project, nil, buttonAuditDetail)
 	// Ack privately + announce in thread (matches /cancel visibility).
 	respondEphemeral(s, i, msg)
 	if _, err := discordSend(s, threadID, msg+" (via button · <@"+user.ID+">)"); err != nil {
@@ -200,8 +203,8 @@ func (b *Bot) interactionCancel(
 func (b *Bot) interactionResetPrompt(
 	s *discordgo.Session, i *discordgo.InteractionCreate, threadID, project string, user *discordgo.User,
 ) {
-	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(user.ID, e) {
-		b.auditCmd(audit.ActionSessionReset, ActorFromUser(user), threadID, project,
+	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(b.userActorID(user), e) {
+		b.auditCmd(audit.ActionSessionReset, b.actorFromUser(user), threadID, project,
 			errAuditDeniedControl, buttonAuditDetail)
 		respondEphemeral(s, i, denyControlText(e, "reset"))
 		return
@@ -225,10 +228,10 @@ func (b *Bot) interactionResetPrompt(
 func (b *Bot) interactionResetConfirm(
 	s *discordgo.Session, i *discordgo.InteractionCreate, threadID, project string, user *discordgo.User,
 ) {
-	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(user.ID, e) {
+	if e, ok := b.sessions.Get(threadID); ok && !b.canControlUser(b.userActorID(user), e) {
 		// Reachable when control changed between the prompt and the click, so it is a
 		// real refusal of a real attempt and gets its own row.
-		b.auditCmd(audit.ActionSessionReset, ActorFromUser(user), threadID, project,
+		b.auditCmd(audit.ActionSessionReset, b.actorFromUser(user), threadID, project,
 			errAuditDeniedControl, buttonAuditDetail)
 		// Replace the confirm prompt (drops Yes/Never mind).
 		respondUpdateMessage(s, i, denyControlText(e, "reset"))
@@ -237,7 +240,7 @@ func (b *Bot) interactionResetConfirm(
 	msg, err := b.resetThreadCore(threadID)
 	// Recorded before the error branch: a reset that dropped the worktree and then
 	// failed halfway is exactly the row an operator needs.
-	b.auditCmd(audit.ActionSessionReset, ActorFromUser(user), threadID, project, err, buttonAuditDetail)
+	b.auditCmd(audit.ActionSessionReset, b.actorFromUser(user), threadID, project, err, buttonAuditDetail)
 	if err != nil {
 		respondUpdateMessage(s, i, msg)
 		return

@@ -42,7 +42,7 @@ func (b *Bot) handleLabel(s *discordgo.Session, m *discordgo.MessageCreate, pars
 		}
 		e = sessionstore.Entry{Project: projName}
 		if m.Author != nil {
-			ensureSessionOwner(&e, m.Author.ID, m.Author.String())
+			ensureSessionOwner(&e, b.authorActorID(m), m.Author.String())
 		}
 	}
 
@@ -94,7 +94,7 @@ func (b *Bot) handleLabel(s *discordgo.Session, m *discordgo.MessageCreate, pars
 		return
 	}
 	if m.Author != nil {
-		ensureSessionOwner(&e, m.Author.ID, m.Author.String())
+		ensureSessionOwner(&e, b.authorActorID(m), m.Author.String())
 	}
 	if e.Project == "" {
 		parentID := parentChannelID(s, threadID)

@@ -21,7 +21,7 @@ func (b *Bot) canControlThread(m *discordgo.MessageCreate, e sessionstore.Entry)
 	if m == nil || m.Author == nil {
 		return false
 	}
-	return b.canControlUser(m.Author.ID, e)
+	return b.canControlUser(b.authorActorID(m), e)
 }
 
 func (b *Bot) denyControl(s *discordgo.Session, m *discordgo.MessageCreate, e sessionstore.Entry, action string) {
@@ -41,6 +41,10 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author == nil {
 		return
 	}
+	// Ownership is an account, not a login: resolved once here, then compared and
+	// stored as-is. The <@…> mentions below deliberately keep m.Author.ID — those
+	// address the Discord user who typed the command, not the account.
+	authorID := b.authorActorID(m)
 
 	e, ok := b.sessions.Get(m.ChannelID)
 	if !ok {
@@ -52,7 +56,7 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 			projName = p.Name
 		}
 		e = sessionstore.Entry{Project: projName}
-		e.SetOwner(m.Author.ID, m.Author.String())
+		e.SetOwner(authorID, m.Author.String())
 		err := b.sessions.Set(m.ChannelID, e)
 		b.auditCmdMsg(audit.ActionSessionClaim, m, projName, err, map[string]any{"shell": true})
 		if err != nil {
@@ -70,7 +74,7 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	if e.IsOwner(m.Author.ID) {
+	if e.IsOwner(authorID) {
 		if _, err := discordReply(s, m.ChannelID, "You already own this thread.", ref(m)); err != nil {
 			log.Printf("error: reply claim-already: %v", err)
 		}
@@ -81,8 +85,8 @@ func (b *Bot) handleClaim(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// Claim is a full takeover: reset co-owners, then keep only the previous primary
 	// so the list does not grow unbounded across repeated claims.
 	e.CoOwnerIDs = nil
-	e.SetOwner(m.Author.ID, m.Author.String())
-	if prevID != "" && prevID != m.Author.ID {
+	e.SetOwner(authorID, m.Author.String())
+	if prevID != "" && prevID != authorID {
 		e.AddCoOwner(prevID)
 	}
 	err := b.sessions.Set(m.ChannelID, e)
@@ -125,6 +129,10 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
+	// Both sides resolved to accounts: handing off to your own second login is
+	// still handing off to yourself, and the new owner id has to be the account
+	// so they keep control whichever way they log in next.
+	authorID := b.authorActorID(m)
 	target := firstMentionedUser(s, m)
 	if target == nil {
 		if _, err := discordReply(s, m.ChannelID, "Mention who should take ownership: `@Grok /hand-off @user`.", ref(m)); err != nil {
@@ -132,7 +140,8 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		return
 	}
-	if target.ID == m.Author.ID {
+	targetID := b.userActorID(target)
+	if targetID == authorID {
 		if _, err := discordReply(s, m.ChannelID, "You already have the thread — no hand-off needed.", ref(m)); err != nil {
 			log.Printf("error: reply handoff-self: %v", err)
 		}
@@ -148,11 +157,11 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 			projName = p.Name
 		}
 		e = sessionstore.Entry{Project: projName}
-		e.SetOwner(m.Author.ID, m.Author.String())
-		e.HandOff(target.ID, target.String())
+		e.SetOwner(authorID, m.Author.String())
+		e.HandOff(targetID, target.String())
 		err := b.sessions.Set(m.ChannelID, e)
 		b.auditCmdMsg(audit.ActionSessionHandOff, m, projName, err, map[string]any{
-			"toId":  target.ID,
+			"toId":  targetID,
 			"shell": true,
 		})
 		if err != nil {
@@ -172,19 +181,19 @@ func (b *Bot) handleHandOff(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	if !b.canControlUser(m.Author.ID, e) {
-		b.auditCmdMsg(audit.ActionSessionHandOff, m, e.Project, errAuditDeniedControl, map[string]any{"toId": target.ID})
+	if !b.canControlUser(authorID, e) {
+		b.auditCmdMsg(audit.ActionSessionHandOff, m, e.Project, errAuditDeniedControl, map[string]any{"toId": targetID})
 		b.denyControl(s, m, e, "hand off this thread")
 		return
 	}
 	// Unowned: claim as author first so HandOff records them as co-owner.
 	if !e.HasOwner() {
-		e.SetOwner(m.Author.ID, m.Author.String())
+		e.SetOwner(authorID, m.Author.String())
 	}
 
-	e.HandOff(target.ID, target.String())
+	e.HandOff(targetID, target.String())
 	err := b.sessions.Set(m.ChannelID, e)
-	b.auditCmdMsg(audit.ActionSessionHandOff, m, e.Project, err, map[string]any{"toId": target.ID})
+	b.auditCmdMsg(audit.ActionSessionHandOff, m, e.Project, err, map[string]any{"toId": targetID})
 	if err != nil {
 		log.Printf("error: handoff save thread=%s: %v", m.ChannelID, err)
 		if _, sendErr := discordReply(s, m.ChannelID, "Could not save ownership: "+err.Error(), ref(m)); sendErr != nil {
@@ -326,7 +335,7 @@ func (b *Bot) bindThreadOwner(threadID, project string, m *discordgo.MessageCrea
 	if m == nil {
 		return
 	}
-	b.bindThreadOwnerActor(threadID, project, ActorFromUser(m.Author))
+	b.bindThreadOwnerActor(threadID, project, b.actorFromUser(m.Author))
 }
 
 // bindThreadOwnerActor is the Discord-optional owner bind path.

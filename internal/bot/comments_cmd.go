@@ -120,7 +120,7 @@ func (b *Bot) handleAddress(s *discordgo.Session, m *discordgo.MessageCreate, pa
 		replyText(s, m, "No unresolved review comments or PR comments to address.")
 		return
 	}
-	actor := ActorFromUser(m.Author)
+	actor := b.actorFromUser(m.Author)
 	res, err := b.StartAddressReview(AddressReviewOpts{
 		Project:      e.Project,
 		Actor:        actor,

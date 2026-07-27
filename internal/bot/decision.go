@@ -237,7 +237,7 @@ func (b *Bot) handleDecisionClick(s *discordgo.Session, i *discordgo.Interaction
 		"Human answered decision `%s`.\nQuestion: %s\nAnswer: %s\nContinue with this choice.",
 		qid, prompt, answer,
 	)
-	actor := ActorFromUser(user)
+	actor := b.actorFromUser(user)
 	parentID := parentChannelID(s, threadID)
 	proj, err := b.resolveProject(parentID)
 	if err != nil {
