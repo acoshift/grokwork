@@ -51,6 +51,19 @@ func (c *Config) RewriteActorID(from, to string) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// Snapshot before mutating so a failed save can be undone.
+	//
+	// Without this the rewrite lands in memory and only the persist fails, which
+	// silently disarms the documented recovery: finishOAuthLink tells the caller
+	// to link again, but a retry finds `from` already gone from the in-memory
+	// lists, computes n == 0 and returns before it would ever call saveLocked —
+	// so the file is never repaired while the process lives. After a restart the
+	// config reloads from disk still naming the alias, and since every
+	// comparison now runs against the canonical id, the grant matches nobody.
+	// Under-granting, silently, with a comment promising it was fixable.
+	prevProjects := cloneProjectsMap(c.Projects)
+	prevWebAuth := cloneWebAuth(c.WebAuth)
+
 	n := 0
 	if c.WebAuth != nil {
 		c.WebAuth.AdminDiscordIDs = rewriteIDList(c.WebAuth.AdminDiscordIDs, from, to, &n)
@@ -151,6 +164,10 @@ func (c *Config) RewriteActorID(from, to string) (int, error) {
 		return 0, nil
 	}
 	if err := c.saveLocked(); err != nil {
+		// Roll back to what is still on disk, so in-memory and file agree and a
+		// retry sees the same work to do.
+		c.Projects = prevProjects
+		c.WebAuth = prevWebAuth
 		return 0, err
 	}
 	return n, nil

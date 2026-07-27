@@ -303,3 +303,66 @@ func countID(ids []string, want string) int {
 	}
 	return n
 }
+
+// TestRewriteActorIDRollsBackOnSaveFailure pins the recovery finishOAuthLink
+// documents: "a rewrite that fails halfway leaves the person correctly linked
+// with some grants still on the old id — repairable by simply linking again,
+// which redoes the (idempotent) rewrite."
+//
+// That promise only holds if a failed save leaves NO trace in memory. Without
+// the rollback the rewrite lands in memory anyway, so a retry finds `from`
+// already gone, computes n == 0 and returns before it would call saveLocked —
+// the file is never repaired while the process lives, and after a restart the
+// config reloads still naming the alias, which (with every comparison now
+// running against the canonical id) matches nobody.
+func TestRewriteActorIDRollsBackOnSaveFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a read-only directory does not block root")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"discordToken":"t","projects":{},"channels":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{
+		ConfigPath: path,
+		DataDir:    dir,
+		Projects: ProjectsMap{"app": ProjectConfig{
+			Path:           dir,
+			AllowedUserIDs: []string{"111"},
+		}},
+		Channels: map[string]string{},
+	}
+
+	// Make the save fail: writeFileAtomic cannot create its temp file.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	n, err := cfg.RewriteActorID("111", "google:alice")
+	if err == nil {
+		t.Fatal("expected the save to fail")
+	}
+	if n != 0 {
+		t.Fatalf("reported %d rewrites despite failing to persist", n)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// In-memory must still name the alias, or the retry below is a no-op.
+	if !containsID(cfg.Projects["app"].AllowedUserIDs, "111") {
+		t.Fatalf("failed save left the rewrite in memory: %v", cfg.Projects["app"].AllowedUserIDs)
+	}
+
+	// The documented repair now works.
+	n, err = cfg.RewriteActorID("111", "google:alice")
+	if err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	if n == 0 {
+		t.Fatal("retry rewrote nothing — the documented recovery is a no-op")
+	}
+	if !containsID(cfg.Projects["app"].AllowedUserIDs, "google:alice") {
+		t.Fatalf("retry did not rewrite: %v", cfg.Projects["app"].AllowedUserIDs)
+	}
+}
