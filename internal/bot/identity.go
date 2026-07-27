@@ -82,6 +82,24 @@ func (b *Bot) authorActorID(m *discordgo.MessageCreate) string {
 	return b.userActorID(m.Author)
 }
 
+// githubIdentityFor resolves an account to the GitHub facts that may appear in
+// public git history: the login written as "@login", and the immutable numeric
+// id the Co-authored-by noreply address is built from.
+//
+// This replaced an admin-maintained config.discordUserGitHub map, and the
+// difference is the point: attribution now follows a login the person PROVED by
+// signing in with it, so a wrong entry is no longer possible. The cost is that
+// somebody who has not linked gets nothing — deliberately, and exactly what an
+// unmapped user got before. ok is false unless BOTH halves are known, and every
+// caller then omits the trailer and the mention entirely rather than emitting a
+// half-filled one: a trailer that attributes to nobody looks like it worked.
+func (b *Bot) githubIdentityFor(actorID string) (login, numericID string, ok bool) {
+	if b == nil {
+		return "", "", false
+	}
+	return b.identity.GitHubFor(actorID)
+}
+
 // discordDMTarget resolves an account back to a Discord snowflake that can be
 // mentioned or DMed.
 //

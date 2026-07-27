@@ -162,9 +162,6 @@ type Config struct {
 	MaxConcurrentRunsUser *int `json:"maxConcurrentRunsUser,omitempty"`
 	// GrokEnvDenylist is extra env var name prefixes stripped from Grok children (Layer A).
 	GrokEnvDenylist []string `json:"grokEnvDenylist,omitempty"`
-	// DiscordUserGitHub maps Discord user snowflake → GitHub identity for Tier A
-	// attribution (commit trailers / PR footer). Host remains the pusher; no tokens.
-	DiscordUserGitHub map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
 	// NotifyOnDone controls when the run author is @mentioned after a Grok run:
 	// never | errors | always | long_only. Empty/omitted → errors.
 	// MaxConcurrentDeploys caps host-wide concurrent deploy runs.
@@ -184,13 +181,6 @@ type Config struct {
 
 	catalogMu    sync.Mutex
 	catalogCache map[string]catalogCacheEntry
-}
-
-// GitHubIdentity is a Discord-mapped GitHub profile for attribution only (Tier A).
-type GitHubIdentity struct {
-	Login string `json:"login"`           // required for map usefulness; bare login without @
-	Name  string `json:"name,omitempty"`  // optional display name for Co-authored-by
-	Email string `json:"email,omitempty"` // optional; default id+login@users.noreply.github.com
 }
 
 // CapabilityMapItem is a user → template row for the project config UI.
@@ -337,20 +327,10 @@ type Snapshot struct {
 	FeatureGitHubWrites bool
 	FeatureMerge        bool
 	FeaturePRReviews    bool
-	// GitHubIdentities is the Tier A Discord→GitHub map (sorted by Discord id).
-	GitHubIdentities []GitHubIdentityItem
 	// NotifyOnDone effective: never | errors | always | long_only.
 	NotifyOnDone string
 	// NotifyOnDoneLongMs effective long_only threshold.
 	NotifyOnDoneLongMs int
-}
-
-// GitHubIdentityItem is one Discord user → GitHub profile row for the config UI.
-type GitHubIdentityItem struct {
-	DiscordUserID string
-	Login         string
-	Name          string
-	Email         string
 }
 
 // DefaultShutdownTimeoutMs is used when shutdownTimeoutMs is unset/invalid.
@@ -580,6 +560,26 @@ func legacyRoleGrantProjects(raw []byte) []string {
 	return out
 }
 
+// legacyGitHubIdentityIDs returns the Discord ids that still carry a hand-written
+// discordUserGitHub mapping, sorted.
+//
+// Like legacyRoleGrantProjects this reads the raw bytes, because the parsed
+// Config no longer has the field to inspect. It reports the KEYS rather than a
+// count: the whole point of the warning is that the operator has to go and tell
+// those specific people to link their GitHub account, and "3 mappings dropped"
+// is not something anyone can act on. The GitHub logins are deliberately not
+// echoed — they were an admin's guess at somebody's handle, and repeating an
+// unproven claim is what this change exists to stop.
+func legacyGitHubIdentityIDs(raw []byte) []string {
+	var top struct {
+		DiscordUserGitHub map[string]json.RawMessage `json:"discordUserGitHub"`
+	}
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return nil // the real parse already reported this
+	}
+	return slices.Sorted(maps.Keys(top.DiscordUserGitHub))
+}
+
 func Load() (*Config, error) {
 	path := EnvWork("CONFIG")
 	if path == "" {
@@ -611,6 +611,22 @@ func Load() (*Config, error) {
 				"projects.%s.teams.<team>.members (namespaced actor ids, e.g. \"discord:123\") "+
 				"or to allowedUserIds. Until then nobody gains access to %q from a Discord role.\n",
 			name, name, name)
+	}
+
+	// discordUserGitHub is gone too, and its loss is silent in a nastier way: a
+	// dropped grant stops somebody working, whereas dropped attribution just
+	// stops appearing in commit trailers, which nobody notices for weeks. An
+	// admin's guess at a handle is no longer accepted as identity — the person
+	// proves it themselves by linking their GitHub login — so name the people
+	// whose attribution just stopped, because this warning is the only signal
+	// anyone gets.
+	if ids := legacyGitHubIdentityIDs(raw); len(ids) > 0 {
+		fmt.Fprintf(os.Stderr,
+			"[warn] discordUserGitHub is no longer supported and was IGNORED for %d user(s): %s. "+
+				"Commit trailers and \"@login\" mentions now come only from a GitHub login the person "+
+				"linked themselves — ask each of them to sign in to the web UI and link GitHub at /account. "+
+				"Until they do they simply get no attribution (no wrong trailer, no invented @login).\n",
+			len(ids), strings.Join(ids, ", "))
 	}
 
 	if token := os.Getenv("DISCORD_BOT_TOKEN"); token != "" {
@@ -713,51 +729,50 @@ func (c *Config) saveLocked() error {
 	// Re-read existing file so unknown/extra fields from other tools are not wiped
 	// for keys we don't own; we rewrite the full known schema.
 	out := struct {
-		DiscordToken              string                    `json:"discordToken"`
-		DiscordClientID           string                    `json:"discordClientId,omitempty"`
-		DiscordClientSecret       string                    `json:"discordClientSecret,omitempty"`
-		Projects                  ProjectsMap               `json:"projects"`
-		Channels                  map[string]string         `json:"channels"`
-		GrokBin                   string                    `json:"grokBin"`
-		Agent                     string                    `json:"agent,omitempty"`
-		ClaudeBin                 string                    `json:"claudeBin,omitempty"`
-		SummarizeModel            string                    `json:"summarizeModel,omitempty"`
-		ReviewModel               string                    `json:"reviewModel,omitempty"`
-		ModelRates                map[string]ModelRate      `json:"modelRates,omitempty"`
-		ClaudeExtraArgs           []string                  `json:"claudeExtraArgs,omitempty"`
-		ClaudeIncludeAnthropicEnv *bool                     `json:"claudeIncludeAnthropicEnv,omitempty"`
-		Yolo                      *bool                     `json:"yolo"`
-		Model                     string                    `json:"model"`
-		MaxTurns                  int                       `json:"maxTurns"`
-		TimeoutMs                 int                       `json:"timeoutMs"`
-		ExtraArgs                 []string                  `json:"extraArgs"`
-		SummarizeThreadTitle      *bool                     `json:"summarizeThreadTitle"`
-		SummarizeTimeoutMs        int                       `json:"summarizeTimeoutMs"`
-		WorktreeIsolation         *bool                     `json:"worktreeIsolation"`
-		WorktreeDir               string                    `json:"worktreeDir,omitempty"`
-		WorktreeIdleTTLDays       *int                      `json:"worktreeIdleTTLDays,omitempty"`
-		TerminalSessionTTLDays    *int                      `json:"terminalSessionTTLDays,omitempty"`
-		HTTPListen                string                    `json:"httpListen,omitempty"`
-		WebPublicBaseURL          string                    `json:"webPublicBaseURL,omitempty"`
-		DiscordGuildID            string                    `json:"discordGuildId,omitempty"`
-		WebMergeMethod            string                    `json:"webMergeMethod,omitempty"`
-		DiscordPRLink             string                    `json:"discordPRLink,omitempty"`
-		WebAuth                   *WebAuthConfig            `json:"webAuth,omitempty"`
-		RiskyPathGlobs            []string                  `json:"riskyPathGlobs,omitempty"`
-		AutoFixCI                 *bool                     `json:"autoFixCI,omitempty"`
-		AutoFixCIMax              int                       `json:"autoFixCIMax,omitempty"`
-		BoardStaleDays            *int                      `json:"boardStaleDays,omitempty"`
-		BoardDigestChannel        string                    `json:"boardDigestChannel,omitempty"`
-		ResumeActiveRuns          *bool                     `json:"resumeActiveRuns,omitempty"`
-		ShutdownTimeoutMs         int                       `json:"shutdownTimeoutMs,omitempty"`
-		MaxConcurrentRuns         *int                      `json:"maxConcurrentRuns,omitempty"`
-		MaxConcurrentRunsUser     *int                      `json:"maxConcurrentRunsUser,omitempty"`
-		GrokEnvDenylist           []string                  `json:"grokEnvDenylist,omitempty"`
-		DiscordUserGitHub         map[string]GitHubIdentity `json:"discordUserGitHub,omitempty"`
-		NotifyOnDone              string                    `json:"notifyOnDone,omitempty"`
-		NotifyOnDoneLongMs        int                       `json:"notifyOnDoneLongMs,omitempty"`
-		MaxConcurrentDeploys      *int                      `json:"maxConcurrentDeploys,omitempty"`
-		DeployRunRetention        *int                      `json:"deployRunRetention,omitempty"`
+		DiscordToken              string               `json:"discordToken"`
+		DiscordClientID           string               `json:"discordClientId,omitempty"`
+		DiscordClientSecret       string               `json:"discordClientSecret,omitempty"`
+		Projects                  ProjectsMap          `json:"projects"`
+		Channels                  map[string]string    `json:"channels"`
+		GrokBin                   string               `json:"grokBin"`
+		Agent                     string               `json:"agent,omitempty"`
+		ClaudeBin                 string               `json:"claudeBin,omitempty"`
+		SummarizeModel            string               `json:"summarizeModel,omitempty"`
+		ReviewModel               string               `json:"reviewModel,omitempty"`
+		ModelRates                map[string]ModelRate `json:"modelRates,omitempty"`
+		ClaudeExtraArgs           []string             `json:"claudeExtraArgs,omitempty"`
+		ClaudeIncludeAnthropicEnv *bool                `json:"claudeIncludeAnthropicEnv,omitempty"`
+		Yolo                      *bool                `json:"yolo"`
+		Model                     string               `json:"model"`
+		MaxTurns                  int                  `json:"maxTurns"`
+		TimeoutMs                 int                  `json:"timeoutMs"`
+		ExtraArgs                 []string             `json:"extraArgs"`
+		SummarizeThreadTitle      *bool                `json:"summarizeThreadTitle"`
+		SummarizeTimeoutMs        int                  `json:"summarizeTimeoutMs"`
+		WorktreeIsolation         *bool                `json:"worktreeIsolation"`
+		WorktreeDir               string               `json:"worktreeDir,omitempty"`
+		WorktreeIdleTTLDays       *int                 `json:"worktreeIdleTTLDays,omitempty"`
+		TerminalSessionTTLDays    *int                 `json:"terminalSessionTTLDays,omitempty"`
+		HTTPListen                string               `json:"httpListen,omitempty"`
+		WebPublicBaseURL          string               `json:"webPublicBaseURL,omitempty"`
+		DiscordGuildID            string               `json:"discordGuildId,omitempty"`
+		WebMergeMethod            string               `json:"webMergeMethod,omitempty"`
+		DiscordPRLink             string               `json:"discordPRLink,omitempty"`
+		WebAuth                   *WebAuthConfig       `json:"webAuth,omitempty"`
+		RiskyPathGlobs            []string             `json:"riskyPathGlobs,omitempty"`
+		AutoFixCI                 *bool                `json:"autoFixCI,omitempty"`
+		AutoFixCIMax              int                  `json:"autoFixCIMax,omitempty"`
+		BoardStaleDays            *int                 `json:"boardStaleDays,omitempty"`
+		BoardDigestChannel        string               `json:"boardDigestChannel,omitempty"`
+		ResumeActiveRuns          *bool                `json:"resumeActiveRuns,omitempty"`
+		ShutdownTimeoutMs         int                  `json:"shutdownTimeoutMs,omitempty"`
+		MaxConcurrentRuns         *int                 `json:"maxConcurrentRuns,omitempty"`
+		MaxConcurrentRunsUser     *int                 `json:"maxConcurrentRunsUser,omitempty"`
+		GrokEnvDenylist           []string             `json:"grokEnvDenylist,omitempty"`
+		NotifyOnDone              string               `json:"notifyOnDone,omitempty"`
+		NotifyOnDoneLongMs        int                  `json:"notifyOnDoneLongMs,omitempty"`
+		MaxConcurrentDeploys      *int                 `json:"maxConcurrentDeploys,omitempty"`
+		DeployRunRetention        *int                 `json:"deployRunRetention,omitempty"`
 	}{
 		DiscordToken:              c.DiscordToken,
 		DiscordClientID:           c.DiscordClientID,
@@ -799,7 +814,6 @@ func (c *Config) saveLocked() error {
 		MaxConcurrentRuns:         cloneIntPtr(c.MaxConcurrentRuns),
 		MaxConcurrentRunsUser:     cloneIntPtr(c.MaxConcurrentRunsUser),
 		GrokEnvDenylist:           slices.Clone(c.GrokEnvDenylist),
-		DiscordUserGitHub:         cloneGitHubIdentityMap(c.DiscordUserGitHub),
 		NotifyOnDone:              c.NotifyOnDone,
 		NotifyOnDoneLongMs:        c.NotifyOnDoneLongMs,
 		MaxConcurrentDeploys:      cloneIntPtr(c.MaxConcurrentDeploys),
@@ -1293,22 +1307,6 @@ func (c *Config) Snapshot() Snapshot {
 		channels = append(channels, ChannelItem{ChannelID: id, Project: c.Channels[id]})
 	}
 
-	ghIDs := make([]string, 0, len(c.DiscordUserGitHub))
-	for id := range c.DiscordUserGitHub {
-		ghIDs = append(ghIDs, id)
-	}
-	slices.Sort(ghIDs)
-	githubIdentities := make([]GitHubIdentityItem, 0, len(ghIDs))
-	for _, id := range ghIDs {
-		ent := c.DiscordUserGitHub[id]
-		githubIdentities = append(githubIdentities, GitHubIdentityItem{
-			DiscordUserID: id,
-			Login:         strings.TrimPrefix(strings.TrimSpace(ent.Login), "@"),
-			Name:          strings.TrimSpace(ent.Name),
-			Email:         strings.TrimSpace(ent.Email),
-		})
-	}
-
 	idleDays := DefaultWorktreeIdleTTLDays
 	if c.WorktreeIdleTTLDays != nil {
 		idleDays = *c.WorktreeIdleTTLDays
@@ -1370,7 +1368,6 @@ func (c *Config) Snapshot() Snapshot {
 		Projects:                  projects,
 		Channels:                  channels,
 		ProjectNames:              names,
-		GitHubIdentities:          githubIdentities,
 		HTTPListen:                c.HTTPListen,
 		GrokBin:                   c.GrokBin,
 		Model:                     c.Model,

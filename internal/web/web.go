@@ -179,11 +179,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.removeProjectUser":           "/config/projects/users/remove",
 		"config.addChannel":                  "/config/channels",
 		"config.removeChannel":               "/config/channels/remove",
-		"config.setGitHubIdentity":           "/config/github-identities",
-		"config.removeGitHubIdentity":        "/config/github-identities/remove",
 		"config.bot":                         "/config/bot",
 		"config.channels":                    "/config/channels",
-		"config.identities":                  "/config/github-identities",
 		"config.projectNew":                  "/config/projects/new",
 		"config.run":                         "/config/run",
 		"config.agent":                       "/config/agent",
@@ -257,7 +254,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("config", "layout.tmpl", "config.tmpl")
 	tp.ParseFiles("config_bot", "layout.tmpl", "config_bot.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_channels", "layout.tmpl", "config_channels.tmpl", "config_shared.tmpl")
-	tp.ParseFiles("config_identities", "layout.tmpl", "config_identities.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_project_new", "layout.tmpl", "config_project_new.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_run", "layout.tmpl", "config_run.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_agent", "layout.tmpl", "config_agent.tmpl", "config_shared.tmpl")
@@ -517,24 +513,21 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/users/remove", s.requireAdmin(hime.Handler(s.removeProjectUser)))
 	mux.Handle("POST /config/channels", s.requireAdmin(hime.Handler(s.addChannel)))
 	mux.Handle("POST /config/channels/remove", s.requireAdmin(hime.Handler(s.removeChannel)))
-	mux.Handle("POST /config/github-identities", s.requireAdmin(hime.Handler(s.setGitHubIdentity)))
-	mux.Handle("POST /config/github-identities/remove", s.requireAdmin(hime.Handler(s.removeGitHubIdentity)))
 	// Config drill-in pages: the hub keeps grouped rows only; every section
 	// lives on a focused sub-page with its own POST handler (no shared
 	// "section" dispatcher — each write has a distinct route + audit entry).
-	mux.Handle("GET /config/bot", s.requireAdmin(hime.Handler(s.configSubPage("config_bot", "Discord bot", false))))
-	mux.Handle("GET /config/channels", s.requireAdmin(hime.Handler(s.configSubPage("config_channels", "Channel map", false))))
-	mux.Handle("GET /config/github-identities", s.requireAdmin(hime.Handler(s.configSubPage("config_identities", "GitHub attribution", true))))
-	mux.Handle("GET /config/projects/new", s.requireAdmin(hime.Handler(s.configSubPage("config_project_new", "Add project", false))))
-	mux.Handle("GET /config/run", s.requireAdmin(hime.Handler(s.configSubPage("config_run", "Run limits", false))))
-	mux.Handle("GET /config/agent", s.requireAdmin(hime.Handler(s.configSubPage("config_agent", "Coding agent", false))))
-	mux.Handle("GET /config/worktrees", s.requireAdmin(hime.Handler(s.configSubPage("config_worktrees", "Worktrees", false))))
-	mux.Handle("GET /config/board", s.requireAdmin(hime.Handler(s.configSubPage("config_board", "Team activity board", false))))
-	mux.Handle("GET /config/notify", s.requireAdmin(hime.Handler(s.configSubPage("config_notify", "Run notifications", false))))
-	mux.Handle("GET /config/ci", s.requireAdmin(hime.Handler(s.configSubPage("config_ci", "CI triage", false))))
-	mux.Handle("GET /config/pr-links", s.requireAdmin(hime.Handler(s.configSubPage("config_prlinks", "Discord PR links", false))))
-	mux.Handle("GET /config/risky", s.requireAdmin(hime.Handler(s.configSubPage("config_risky", "Completion risk paths", false))))
-	mux.Handle("GET /config/model-rates", s.requireAdmin(hime.Handler(s.configSubPage("config_rates", "Model rates", false))))
+	mux.Handle("GET /config/bot", s.requireAdmin(hime.Handler(s.configSubPage("config_bot", "Discord bot"))))
+	mux.Handle("GET /config/channels", s.requireAdmin(hime.Handler(s.configSubPage("config_channels", "Channel map"))))
+	mux.Handle("GET /config/projects/new", s.requireAdmin(hime.Handler(s.configSubPage("config_project_new", "Add project"))))
+	mux.Handle("GET /config/run", s.requireAdmin(hime.Handler(s.configSubPage("config_run", "Run limits"))))
+	mux.Handle("GET /config/agent", s.requireAdmin(hime.Handler(s.configSubPage("config_agent", "Coding agent"))))
+	mux.Handle("GET /config/worktrees", s.requireAdmin(hime.Handler(s.configSubPage("config_worktrees", "Worktrees"))))
+	mux.Handle("GET /config/board", s.requireAdmin(hime.Handler(s.configSubPage("config_board", "Team activity board"))))
+	mux.Handle("GET /config/notify", s.requireAdmin(hime.Handler(s.configSubPage("config_notify", "Run notifications"))))
+	mux.Handle("GET /config/ci", s.requireAdmin(hime.Handler(s.configSubPage("config_ci", "CI triage"))))
+	mux.Handle("GET /config/pr-links", s.requireAdmin(hime.Handler(s.configSubPage("config_prlinks", "Discord PR links"))))
+	mux.Handle("GET /config/risky", s.requireAdmin(hime.Handler(s.configSubPage("config_risky", "Completion risk paths"))))
+	mux.Handle("GET /config/model-rates", s.requireAdmin(hime.Handler(s.configSubPage("config_rates", "Model rates"))))
 	mux.Handle("POST /config/model-rates", s.requireAdmin(hime.Handler(s.updateModelRates)))
 	mux.Handle("POST /config/run", s.requireAdmin(hime.Handler(s.updateRunSettings)))
 	mux.Handle("POST /config/agent", s.requireAdmin(hime.Handler(s.updateAgentSettings)))
@@ -966,13 +959,6 @@ func (s *Server) configPage(ctx *hime.Context) error {
 	d.Config = s.cfg.Snapshot()
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
-	if len(d.Config.GitHubIdentities) > 0 {
-		ids := make([]string, 0, len(d.Config.GitHubIdentities))
-		for _, row := range d.Config.GitHubIdentities {
-			ids = append(ids, row.DiscordUserID)
-		}
-		d.DiscordUserNames = s.resolveDiscordUserNames(ids)
-	}
 	return s.viewPage(ctx, "config", d)
 }
 
@@ -1144,10 +1130,8 @@ func (s *Server) partialConfigChannels(ctx *hime.Context) error {
 }
 
 // configSubPage renders one focused config drill-in page. All sub-pages share
-// the hub's data shape (a fresh config snapshot + flash/err from the query);
-// withIdentities additionally resolves Discord display names, which may call
-// the Discord API — only the attribution page pays that cost.
-func (s *Server) configSubPage(tmpl, title string, withIdentities bool) func(*hime.Context) error {
+// the hub's data shape: a fresh config snapshot plus flash/err from the query.
+func (s *Server) configSubPage(tmpl, title string) func(*hime.Context) error {
 	return func(ctx *hime.Context) error {
 		d := s.basePage(ctx)
 		d.Title = title + " · Config"
@@ -1155,13 +1139,6 @@ func (s *Server) configSubPage(tmpl, title string, withIdentities bool) func(*hi
 		d.Config = s.cfg.Snapshot()
 		d.Flash = ctx.FormValue("ok")
 		d.Error = ctx.FormValue("err")
-		if withIdentities && len(d.Config.GitHubIdentities) > 0 {
-			ids := make([]string, 0, len(d.Config.GitHubIdentities))
-			for _, row := range d.Config.GitHubIdentities {
-				ids = append(ids, row.DiscordUserID)
-			}
-			d.DiscordUserNames = s.resolveDiscordUserNames(ids)
-		}
 		return s.viewPage(ctx, tmpl, d)
 	}
 }
@@ -1691,36 +1668,6 @@ func (s *Server) removeChannel(ctx *hime.Context) error {
 		return s.configPageRedirect(ctx, "config.channels", "", err)
 	}
 	return s.configPageRedirect(ctx, "config.channels", msg, nil)
-}
-
-func (s *Server) setGitHubIdentity(ctx *hime.Context) error {
-	discordID := strings.TrimSpace(ctx.PostFormValue("discordUserId"))
-	login := strings.TrimSpace(ctx.PostFormValue("login"))
-	name := strings.TrimSpace(ctx.PostFormValue("name"))
-	email := strings.TrimSpace(ctx.PostFormValue("email"))
-	err := s.cfg.SetGitHubIdentity(discordID, config.GitHubIdentity{
-		Login: login, Name: name, Email: email,
-	})
-	s.auditAction(ctx, audit.ActionConfigSetGitHubIdent, err, map[string]any{
-		"discordUserId": discordID, "login": login,
-	})
-	if err != nil {
-		return s.configPageRedirect(ctx, "config.identities", "", err)
-	}
-	msg := fmt.Sprintf("Mapped Discord %s → @%s", discordID, strings.TrimPrefix(login, "@"))
-	return s.configPageRedirect(ctx, "config.identities", msg, nil)
-}
-
-func (s *Server) removeGitHubIdentity(ctx *hime.Context) error {
-	discordID := strings.TrimSpace(ctx.PostFormValue("discordUserId"))
-	err := s.cfg.RemoveGitHubIdentity(discordID)
-	s.auditAction(ctx, audit.ActionConfigRemoveGitHubIdent, err, map[string]any{
-		"discordUserId": discordID,
-	})
-	if err != nil {
-		return s.configPageRedirect(ctx, "config.identities", "", err)
-	}
-	return s.configPageRedirect(ctx, "config.identities", fmt.Sprintf("Removed GitHub map for Discord %s", discordID), nil)
 }
 
 // configPageRedirect sends a config write back to the page it came from

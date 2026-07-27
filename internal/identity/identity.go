@@ -368,6 +368,71 @@ func (s *Store) GitHubFor(canonical string) (login, numericID string, ok bool) {
 	return "", "", false
 }
 
+// NoreplyEmail builds the git author address for a linked GitHub account.
+//
+// GitHub's per-account noreply address is the only email we may put in public
+// git history. It attributes correctly — GitHub matches the numeric id, so the
+// commit lands on the person's profile and contribution graph — without
+// publishing a personal address that they never consented to have committed.
+// It also cannot go stale the way a cached real email can: the id is immutable,
+// and a renamed account keeps working because the id, not the login, is what
+// GitHub matches on.
+//
+// Both halves are required. "<id>+@users.noreply.github.com" and
+// "+login@users.noreply.github.com" are malformed addresses that attribute to
+// nobody, and a trailer that attributes to nobody is worse than no trailer:
+// it looks like the feature worked.
+func NoreplyEmail(login, numericID string) string {
+	login = strings.TrimPrefix(strings.TrimSpace(login), "@")
+	numericID = strings.TrimSpace(numericID)
+	if login == "" || numericID == "" {
+		return ""
+	}
+	return numericID + "+" + login + "@users.noreply.github.com"
+}
+
+// RefreshHandle re-caches the GitHub login of an already-linked alias.
+//
+// A GitHub login is mutable — the person renames the account, or transfers the
+// name — while the numeric id in the alias key never changes. So the handle is
+// refreshed from the provider on every sign-in, not just at link time, or the
+// noreply address we write into commit trailers would keep naming a login that
+// now belongs to somebody else.
+//
+// Deliberately narrow, because this runs on every login:
+//   - it never CREATES a link. A login that is not already an alias has nothing
+//     to refresh, and inventing a binding from a sign-in is exactly the
+//     inference the whole package refuses to make.
+//   - an unchanged handle writes nothing, so the common path costs one read
+//     lock and no disk I/O.
+//   - an EMPTY handle is ignored rather than stored. The provider not returning
+//     a login is a hiccup, and dropping the cached one would silently turn off
+//     that person's attribution (GitHubFor skips a handle-less alias).
+func (s *Store) RefreshHandle(alias, handle string) error {
+	if s == nil {
+		return nil
+	}
+	a := config.NormalizeActorID(alias)
+	handle = strings.TrimPrefix(strings.TrimSpace(handle), "@")
+	if a == "" || handle == "" || config.ActorKind(a) != config.ActorKindGitHub {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev, ok := s.links[a]
+	if !ok || prev.Handle == handle {
+		return nil
+	}
+	next := prev
+	next.Handle = handle
+	s.links[a] = next
+	if err := s.save(); err != nil {
+		s.links[a] = prev
+		return err
+	}
+	return nil
+}
+
 // Link binds alias to canonical, refreshing the cached handle.
 //
 // Re-linking an alias to the account it already belongs to only refreshes the

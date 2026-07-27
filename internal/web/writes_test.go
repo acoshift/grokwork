@@ -12,6 +12,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/identity"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -144,11 +145,24 @@ func captureCommentBodies(t *testing.T) (*Server, *config.Config, *[]string) {
 	return srv, cfg, &bodies
 }
 
-func TestIssueCommentOnBehalfOfMapped(t *testing.T) {
-	srv, cfg, bodies := captureCommentBodies(t)
-	if err := cfg.SetGitHubIdentity("member-1", config.GitHubIdentity{Login: "member-gh", Name: "Member"}); err != nil {
+// linkGitHubIdentity attaches a proven GitHub login to an account, which is the
+// only source of "On behalf of @login" now that the admin-maintained
+// discordUserGitHub map is gone.
+func linkGitHubIdentity(t *testing.T, srv *Server, account, numericID, handle string) {
+	t.Helper()
+	st, err := identity.New(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
+	if err := st.Link("github:"+numericID, account, handle); err != nil {
+		t.Fatal(err)
+	}
+	srv.identity = st
+}
+
+func TestIssueCommentOnBehalfOfLinked(t *testing.T) {
+	srv, _, bodies := captureCommentBodies(t)
+	linkGitHubIdentity(t, srv, "member-1", "999", "member-gh")
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +193,7 @@ func TestIssueCommentOnBehalfOfMapped(t *testing.T) {
 	}
 }
 
-func TestIssueCommentUnmappedUnchanged(t *testing.T) {
+func TestIssueCommentUnlinkedUnchanged(t *testing.T) {
 	srv, _, bodies := captureCommentBodies(t)
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
@@ -200,15 +214,13 @@ func TestIssueCommentUnmappedUnchanged(t *testing.T) {
 		t.Fatalf("bodies=%v", *bodies)
 	}
 	if strings.Contains((*bodies)[0], "On behalf of") {
-		t.Fatal("unmapped must not invent prefix")
+		t.Fatal("an account with no linked GitHub login must not get an invented prefix")
 	}
 }
 
-func TestPRCommentOnBehalfOfMapped(t *testing.T) {
-	srv, cfg, bodies := captureCommentBodies(t)
-	if err := cfg.SetGitHubIdentity("member-1", config.GitHubIdentity{Login: "@mem"}); err != nil {
-		t.Fatal(err)
-	}
+func TestPRCommentOnBehalfOfLinked(t *testing.T) {
+	srv, _, bodies := captureCommentBodies(t)
+	linkGitHubIdentity(t, srv, "member-1", "4242", "@mem")
 	sid, csrf, err := srv.LoginAs("member-1", "Mem", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
@@ -239,11 +251,9 @@ func TestPRCommentOnBehalfOfMapped(t *testing.T) {
 	}
 }
 
-func TestIssueCloseCommentOnBehalfOfMapped(t *testing.T) {
-	srv, cfg, bodies := captureCommentBodies(t)
-	if err := cfg.SetGitHubIdentity("member-1", config.GitHubIdentity{Login: "closer"}); err != nil {
-		t.Fatal(err)
-	}
+func TestIssueCloseCommentOnBehalfOfLinked(t *testing.T) {
+	srv, _, bodies := captureCommentBodies(t)
+	linkGitHubIdentity(t, srv, "member-1", "77", "closer")
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)

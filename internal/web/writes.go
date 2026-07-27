@@ -67,16 +67,15 @@ func (s *Server) requireMember(next http.Handler) http.Handler {
 }
 
 // attributeCommentBody prefixes host-bot GitHub comment bodies with
-// "On behalf of @login …" when the session Discord user is in the Tier A map.
+// "On behalf of @login …" when the acting account has a linked GitHub login.
+//
+// The id from sessionDisplay is already the account (canonical-at-mint), which
+// is the only key the link is recorded under. No link → the body goes out
+// unchanged: the bot's own comment, with no invented handle attached to it.
 func (s *Server) attributeCommentBody(ctx *hime.Context, body string) string {
 	id, name := s.sessionDisplay(ctx)
-	login := ""
-	if s.cfg != nil {
-		if gh, ok := s.cfg.LookupGitHubIdentity(id); ok {
-			login = gh.Login
-		}
-	}
-	return bot.OnBehalfOfCommentBody(id, name, login, body)
+	login, _, _ := s.identity.GitHubFor(id)
+	return bot.OnBehalfOfCommentBody(name, login, body)
 }
 
 func (s *Server) postIssueComment(ctx *hime.Context) error {

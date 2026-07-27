@@ -143,3 +143,71 @@ func TestUnlinkedLoginAuditIsUnchanged(t *testing.T) {
 		t.Fatalf("unlinked login wrote a redundant loginActor: %v", last.Detail)
 	}
 }
+
+// A GitHub login is renameable and the freed name is immediately re-registrable,
+// so the handle cached against the alias is metadata that has to be re-proven on
+// every sign-in — not just at link time. Nothing else in the tree exercises the
+// wire from oauthCallback to identity.RefreshHandle: the store's own tests can
+// only show that refreshing works if somebody calls it, and dropping the call
+// from the callback leaves attribution writing "@alice" into public git history
+// forever after alice renamed herself.
+func TestRenamedGitHubHandleRefreshesOnNextLogin(t *testing.T) {
+	f := newAuthFixture(t, withProviders(false, true))
+	st := linkFixture(t, f, nil)
+	if err := st.Link("github:999", "admin-1", "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if login, id, ok := st.GitHubFor("admin-1"); !ok || login != "alice" || id != "999" {
+		t.Fatalf("before rename: (%q,%q,%v)", login, id, ok)
+	}
+
+	// The person renames alice → alice-renamed on GitHub. The numeric id, which
+	// is the identity, is unchanged — only the handle moved.
+	f.github.CodeToUser["h-admin"] = GitHubUser{ID: 999, Login: "alice-renamed", Name: "Alice GH"}
+
+	if w := loginVia(t, f.srv.Handler(), config.ActorKindGitHub, "h-admin", ""); sessionCookie(w) == "" {
+		t.Fatalf("login failed (loc=%q)", w.Header().Get("Location"))
+	}
+
+	login, id, ok := st.GitHubFor("admin-1")
+	if !ok || login != "alice-renamed" || id != "999" {
+		t.Fatalf("after rename: (%q,%q,%v) want the new handle against the same id", login, id, ok)
+	}
+	// Attribution therefore follows the rename, and follows it via the id.
+	if got := identity.NoreplyEmail(login, id); got != "999+alice-renamed@users.noreply.github.com" {
+		t.Fatalf("trailer email=%q", got)
+	}
+	// Refreshing must not have invented a second binding or moved the account.
+	if aliases := st.AliasesOf("admin-1"); len(aliases) != 1 || aliases[0] != "github:999" {
+		t.Fatalf("aliases=%v — refresh must only update, never link", aliases)
+	}
+	if got := st.Canonical("github:999"); got != "admin-1" {
+		t.Fatalf("canonical=%q", got)
+	}
+}
+
+// The same call must be inert for the overwhelming majority of sign-ins. If a
+// login could acquire a link merely by being used, attribution would start
+// naming a GitHub account nobody ever asserted was theirs — the exact inference
+// the whole package refuses to make, arriving through the back door.
+func TestLoginWithoutALinkCreatesNoBinding(t *testing.T) {
+	f := newAuthFixture(t, func(cfg *config.Config) {
+		withProviders(false, true)(cfg)
+		cfg.WebAuth.AdminDiscordIDs = append(cfg.WebAuth.AdminDiscordIDs, "github:999")
+	})
+	st := linkFixture(t, f, nil)
+
+	if w := loginVia(t, f.srv.Handler(), config.ActorKindGitHub, "h-admin", ""); sessionCookie(w) == "" {
+		t.Fatalf("login failed (loc=%q)", w.Header().Get("Location"))
+	}
+
+	if got := st.Canonical("github:999"); got != "github:999" {
+		t.Fatalf("canonical=%q — a sign-in must not link anything", got)
+	}
+	if aliases := st.AliasesOf("github:999"); len(aliases) != 0 {
+		t.Fatalf("aliases=%v", aliases)
+	}
+	if login, id, ok := st.GitHubFor("github:999"); ok {
+		t.Fatalf("GitHubFor invented (%q,%q) for an unlinked login", login, id)
+	}
+}

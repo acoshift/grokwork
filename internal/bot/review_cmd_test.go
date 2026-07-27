@@ -2,15 +2,12 @@ package bot
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/identity"
 )
 
 func TestParseReviewArgs(t *testing.T) {
@@ -52,78 +49,66 @@ func TestParseMessageReview(t *testing.T) {
 	}
 }
 
-func TestResolveMappedGitHubLogin(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(path, []byte(`{
-  "discordToken": "tok",
-  "projects": {"app": {"path": "`+filepath.ToSlash(dir)+`", "allowedUserIds": ["u1"]}},
-  "channels": {},
-  "grokBin": "grok"
-}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(path)
+// linkedIdentity builds an identity store with one GitHub login attached to an
+// account, which is the only way attribution is established now that the
+// admin-maintained discordUserGitHub map is gone.
+func linkedIdentity(t *testing.T, canonical, numericID, handle string) *identity.Store {
+	t.Helper()
+	st, err := identity.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	var cfg config.Config
-	if err := json.Unmarshal(raw, &cfg); err != nil {
+	if err := st.Link("github:"+numericID, canonical, handle); err != nil {
 		t.Fatal(err)
 	}
-	cfg.ConfigPath = path
+	return st
+}
 
-	if got := ResolveMappedGitHubLogin(nil, "1"); got != "" {
-		t.Fatalf("nil cfg: %q", got)
+func TestResolveLinkedGitHubLogin(t *testing.T) {
+	if got := ResolveLinkedGitHubLogin(nil, "1"); got != "" {
+		t.Fatalf("nil store: %q", got)
 	}
-	if got := ResolveMappedGitHubLogin(&cfg, "missing"); got != "" {
-		t.Fatalf("empty map: %q", got)
-	}
-	if err := cfg.SetGitHubIdentity("42", config.GitHubIdentity{Login: "@alice-gh", Name: "Alice"}); err != nil {
+	empty, err := identity.New(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ResolveMappedGitHubLogin(&cfg, "42"); got != "alice-gh" {
-		t.Fatalf("mapped: %q", got)
+	if got := ResolveLinkedGitHubLogin(empty, "42"); got != "" {
+		t.Fatalf("nothing linked: %q", got)
 	}
-	if got := ResolveMappedGitHubLogin(&cfg, "99"); got != "" {
-		t.Fatalf("unmapped other user: %q", got)
+
+	// The link records the handle with the @ already stripped, and the lookup is
+	// keyed on the ACCOUNT rather than on any one of its logins.
+	links := linkedIdentity(t, "42", "777", "@alice-gh")
+	if got := ResolveLinkedGitHubLogin(links, "42"); got != "alice-gh" {
+		t.Fatalf("linked: %q", got)
 	}
-	// Empty / whitespace-only login is rejected by Set; lookup of missing stays empty.
-	if err := cfg.SetGitHubIdentity("empty", config.GitHubIdentity{Login: "  "}); err == nil {
-		t.Fatal("expected empty login rejected")
+	if got := ResolveLinkedGitHubLogin(links, "99"); got != "" {
+		t.Fatalf("another account must not borrow the link: %q", got)
 	}
-	if got := ResolveMappedGitHubLogin(&cfg, "empty"); got != "" {
-		t.Fatalf("empty login must stay unmapped: %q", got)
+	// A GitHub login linked without a handle attributes to nobody, so it must
+	// read as unlinked rather than produce a bare "@".
+	noHandle, err := identity.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := noHandle.Link("github:5", "u5", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := ResolveLinkedGitHubLogin(noHandle, "u5"); got != "" {
+		t.Fatalf("handle-less link must stay unattributed: %q", got)
 	}
 }
 
-func TestRequestFormalGitHubReviewMapped(t *testing.T) {
+func TestRequestFormalGitHubReviewLinked(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(path, []byte(`{
-  "discordToken": "tok",
-  "projects": {"app": {"path": "`+filepath.ToSlash(dir)+`", "allowedUserIds": ["rev1"]}},
-  "channels": {},
-  "grokBin": "grok"
-}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := os.ReadFile(path)
-	var cfg config.Config
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		t.Fatal(err)
-	}
-	cfg.ConfigPath = path
-	if err := cfg.SetGitHubIdentity("rev1", config.GitHubIdentity{Login: "bob-gh"}); err != nil {
-		t.Fatal(err)
-	}
+	links := linkedIdentity(t, "rev1", "777", "bob-gh")
 
 	var calls []string
 	run := func(ctx context.Context, d, name string, args ...string) ([]byte, error) {
 		calls = append(calls, name+" "+strings.Join(args, " "))
 		return []byte("ok"), nil
 	}
-	login, err := requestFormalGitHubReview(context.Background(), run, &cfg, dir, "acme", "app", 9, "rev1")
+	login, err := requestFormalGitHubReview(context.Background(), run, links, dir, "acme", "app", 9, "rev1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,69 +122,42 @@ func TestRequestFormalGitHubReviewMapped(t *testing.T) {
 		t.Fatalf("want pr edit: %s", calls[0])
 	}
 	if !strings.Contains(calls[0], "--add-reviewer bob-gh") {
-		t.Fatalf("want mapped reviewer: %s", calls[0])
+		t.Fatalf("want linked reviewer: %s", calls[0])
 	}
 	if !strings.Contains(calls[0], "--repo acme/app") {
 		t.Fatalf("want repo: %s", calls[0])
 	}
 }
 
-func TestRequestFormalGitHubReviewUnmappedNoGH(t *testing.T) {
+func TestRequestFormalGitHubReviewUnlinkedNoGH(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(path, []byte(`{
-  "discordToken": "tok",
-  "projects": {"app": {"path": "`+filepath.ToSlash(dir)+`", "allowedUserIds": ["u1"]}},
-  "channels": {},
-  "grokBin": "grok"
-}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := os.ReadFile(path)
-	var cfg config.Config
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		t.Fatal(err)
-	}
-	cfg.ConfigPath = path
+	links := linkedIdentity(t, "somebody-else", "777", "bob-gh")
 
 	calls := 0
 	run := func(ctx context.Context, d, name string, args ...string) ([]byte, error) {
 		calls++
 		return nil, fmt.Errorf("should not run")
 	}
-	login, err := requestFormalGitHubReview(context.Background(), run, &cfg, dir, "acme", "app", 9, "nobody")
+	login, err := requestFormalGitHubReview(context.Background(), run, links, dir, "acme", "app", 9, "nobody")
 	if err != nil {
-		t.Fatalf("unmapped should not error: %v", err)
+		t.Fatalf("unlinked should not error: %v", err)
 	}
 	if login != "" {
 		t.Fatalf("login=%q", login)
 	}
 	if calls != 0 {
-		t.Fatalf("gh must not run for unmapped, calls=%d", calls)
+		t.Fatalf("gh must not run for an unlinked reviewer, calls=%d", calls)
 	}
 }
 
 func TestRequestFormalGitHubReviewGHError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(path, []byte(`{
-  "discordToken": "tok",
-  "projects": {"app": {"path": "`+filepath.ToSlash(dir)+`", "allowedUserIds": ["r"]}},
-  "channels": {},
-  "grokBin": "grok"
-}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := os.ReadFile(path)
-	var cfg config.Config
-	_ = json.Unmarshal(raw, &cfg)
-	cfg.ConfigPath = path
-	_ = cfg.SetGitHubIdentity("r", config.GitHubIdentity{Login: "x"})
+	links := linkedIdentity(t, "r", "12", "x")
 
 	run := func(ctx context.Context, d, name string, args ...string) ([]byte, error) {
 		return nil, errors.New("gh: user not found")
 	}
-	login, err := requestFormalGitHubReview(context.Background(), run, &cfg, dir, "o", "r", 1, "r")
+	login, err := requestFormalGitHubReview(context.Background(), run, links, dir, "o", "r", 1, "r")
 	if login != "x" {
 		t.Fatalf("login=%q", login)
 	}
@@ -240,9 +198,18 @@ func TestFormatReviewRequestReply(t *testing.T) {
 	}
 }
 
-func TestReviewHelpMentionsGitHubMap(t *testing.T) {
+// The help text has to point at the thing the user can actually do. There is no
+// admin GitHub map to be added to any more, so telling somebody to ask for one
+// sends them to a config page that no longer exists.
+func TestReviewHelpPointsAtLinkingNotAConfigMap(t *testing.T) {
 	h := reviewHelpText()
 	if !strings.Contains(h, "GitHub") {
 		t.Fatalf("help should mention GitHub: %s", h)
+	}
+	if !strings.Contains(h, "linked") {
+		t.Fatalf("help should say the login must be linked: %s", h)
+	}
+	if strings.Contains(strings.ToLower(h), "map") {
+		t.Fatalf("help must not send the user to a removed GitHub map: %s", h)
 	}
 }

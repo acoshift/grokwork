@@ -473,10 +473,12 @@ func (s *Server) reviewerOptions(project string) []reviewerOption {
 	// team-only builder invisible to the reviewer dropdown.
 	//
 	// Discord actors only, reduced to the bare snowflake: a review request is
-	// mapped to a GitHub login and mentioned in Discord by that id
-	// (ResolveMappedGitHubLogin, the "discord:%s" note line), and reviewstore
-	// compares reviewer ids verbatim. A non-Discord actor has neither mapping,
-	// so offering one would create a request nobody can act on.
+	// announced by mentioning that id (the "discord:%s" note line) and
+	// reviewstore compares reviewer ids verbatim, so a non-Discord actor would
+	// be a request nobody is ever told about. The GitHub half no longer argues
+	// for this — a linked GitHub login belongs to the *account*
+	// (bot.ResolveLinkedGitHubLogin), whatever provider it signs in with — but
+	// the Discord notification still does.
 	collect := func(p config.ProjectItem) {
 		for _, id := range p.MemberIDs {
 			if !config.IsDiscordActor(id) {

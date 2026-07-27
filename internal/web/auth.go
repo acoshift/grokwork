@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -509,6 +510,16 @@ func (s *Server) oauthCallback(ctx *hime.Context) error {
 	// way it always did. See internal/identity for why the alternative (teaching
 	// every comparison about aliases) was rejected.
 	loginActor := actorIDFor(key, id.Subject)
+	// A GitHub login is mutable and the numeric id is not, so the cached handle
+	// is re-proven on every sign-in, not only at link time: attribution writes
+	// "@login" into public git history, and a renamed account would otherwise
+	// keep being credited under a name that now belongs to someone else. Only a
+	// login that is ALREADY an alias is touched — RefreshHandle never creates a
+	// binding — so this is a no-op for everyone who has not linked. Best effort:
+	// a stale handle must not cost anybody their login.
+	if err := s.identity.RefreshHandle(loginActor, id.Handle); err != nil {
+		log.Printf("warn: identity: refresh handle for %s: %v", loginActor, err)
+	}
 	actor := s.identity.Canonical(loginActor)
 	role, ok := s.cfg.ResolveWebRoleForConfig(actor)
 	if !ok {

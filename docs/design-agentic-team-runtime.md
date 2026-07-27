@@ -49,7 +49,7 @@ Rev 5 snapshot is **historical**. Trust (Wave 1), IDE-free (Wave 2), Support/CS 
 | **K19 policy/RoleIDs snapshot** | **Shipped** | taskItem + journal Snap* fields; live tighten |
 | **history.Turn RunKind** | **Shipped** | RunKind/Mode/Phase on turns |
 | **Filtered Grok child env (Layer A / K26)** | **Shipped** | denylist + omit GH_TOKEN when !IncludeGHToken; Layer B allowlist still deferred |
-| **Attribution trailers (PR8)** | **Shipped (Tier A)** | `discordUserGitHub` map + `BuildAttributionBlock` on ship prompts; host remains pusher |
+| **Attribution trailers (PR8)** | **Shipped (Tier A)** | `BuildAttributionBlock` on ship prompts; host remains pusher. The GitHub login now comes from the actor's **linked** login (`internal/identity`, `Store.GitHubFor`) — the admin-maintained `discordUserGitHub` map that shipped first is **removed** |
 | **Checkpoints / `/undo`** | **Shipped** | `refs/grok-cp/…`; `/checkpoint` `/undo` `/restore` |
 | **Verify harness** | **Shipped** | project `verifyCommands`; `/verify`; config UI; session `LastVerify` panel |
 | **`/sync`** | **Shipped** | fetch + merge origin primary |

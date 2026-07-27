@@ -71,7 +71,7 @@ A user with no Discord account cannot be named in any allowlist:
 - `WebAuthConfig.AdminDiscordIDs` / `MemberDiscordIDs` / `ViewerDiscordIDs` (`internal/config/webauth.go:31-38`) — web RBAC is entirely snowflake-keyed
 - per-project `AllowedUserIDs` / `AllowedRoleIDs` (`internal/config/config.go:200-201`)
 - `CapabilityByUser` / `CapabilityByRole` (`config.go:208-209`)
-- `DiscordUserGitHub map[string]GitHubIdentity` (`config.go:160`) — attribution Tier A
+- ~~`DiscordUserGitHub map[string]GitHubIdentity` — attribution Tier A~~ **resolved**: removed. Attribution reads a **proven** link instead (`internal/identity`, alias actor id → `{canonical, handle}`), so it is keyed on the account and not on a snowflake, and no admin asserts it.
 - `AccessAllowed(project, userID string, roleIDs []string)` (`internal/config/project_members.go:27`) and `ResolveCapabilities(project, userID string, roleIDs []string)` (`internal/config/capabilities.go:157`)
 
 And a sharper problem than the naming: **every web site that resolves capabilities in order to *enforce* something passes `roleIDs = nil`** — `internal/web/fix.go:684,735`, `start.go:35`, `case_new.go:45,58`, `case_actions.go:16,29,51`, `reviews.go:429,487`, `project_config.go:120`. Role-based capability grants — the normal way a team is administered — silently do not apply on the web at all.
@@ -211,7 +211,7 @@ Config keys gain neutral names with the old ones kept as **read-aliases** (never
 | `allowedRoleIds` | `allowedGroupIds` |
 | `capabilityByUser` / `capabilityByRole` | `capabilityByActor` / `capabilityByGroup` |
 | `webAuth.adminDiscordIds` (+member/viewer) | `webAuth.adminActorIds` (+…) |
-| `discordUserGitHub` | `actorGitHub` |
+| ~~`discordUserGitHub`~~ | *n/a — removed, not renamed* (`internal/identity` owns attribution now) |
 
 **Normalization rule (one function, one pinning test):** a bare snowflake-shaped id read from a legacy key normalizes to `discord:<id>`; an id already carrying a known namespace prefix passes through; anything else is rejected at load with a config error rather than guessed. Follow the `TestModelOptionsMatchInference` precedent (`internal/grokrun`) — one table, one test that pins it, so the mapping cannot drift.
 

@@ -1845,12 +1845,11 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			if e, ok := b.sessions.Get(threadID); ok {
 				attr.SessionID = e.SessionID
 			}
-			if b.cfg != nil && actor.ID != "" {
-				if gh, ok := b.cfg.LookupGitHubIdentity(actor.ID); ok {
-					attr.GitHubLogin = gh.Login
-					attr.GitHubName = gh.Name
-					attr.GitHubEmail = gh.Email
-				}
+			// actor.ID is already the account (canonical-at-mint), which is what
+			// the link is recorded against — a Discord alias would find nothing.
+			if login, numericID, ok := b.githubIdentityFor(actor.ID); ok {
+				attr.GitHubLogin = login
+				attr.GitHubNumericID = numericID
 			}
 			prefix += BuildAttributionBlock(attr)
 		}

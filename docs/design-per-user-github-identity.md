@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Research / decision plan (not implemented) |
+| **Status** | Research / decision plan. **Tier A has since shipped** — but *not* via this doc's Discord→GitHub map: the login now comes from a link the person proved by signing in with it (`internal/identity`, `/account`), and the admin-maintained `discordUserGitHub` map that shipped first has been removed. Tier B remains unimplemented. |
 | **Date** | 2026-07-21 |
 | **Repo** | `github.com/acoshift/grokwork` |
 | **Audience** | Operators and engineers familiar with this codebase |

@@ -5,6 +5,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/grokrun"
+	"github.com/acoshift/grokwork/internal/identity"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -370,16 +371,28 @@ func explainPromptPrefix() string {
 	}, "\n")
 }
 
-// AttributionInput is pure input for Tier A ship attribution (no I/O).
+// AttributionInput is pure input for ship attribution (no I/O).
 type AttributionInput struct {
 	PrompterName string // Discord display / Actor.String()
-	PrompterID   string // Discord snowflake
-	ThreadURL    string // Discord jump or empty
 	SessionID    string // optional Grok/session id
-	// GitHub map (optional). Empty Login = unmapped.
-	GitHubLogin string
-	GitHubName  string
-	GitHubEmail string // optional; empty → noreply derived when login set
+
+	// GitHubLogin and GitHubNumericID come from the actor's LINKED GitHub login
+	// (identity.Store.GitHubFor) — a login that person proved by signing in with
+	// it, never an admin's guess. Both empty means not linked, which produces no
+	// trailer and no @login at all rather than a half-filled one.
+	//
+	// The numeric id is GitHub's immutable subject and is what makes the noreply
+	// address survive a rename; the login is a cache refreshed on every sign-in.
+	GitHubLogin     string
+	GitHubNumericID string
+
+	// PrompterID and ThreadURL are accepted and DELIBERATELY never emitted.
+	// Callers have both to hand, and ship text is public git history: a Discord
+	// snowflake or a thread jump link in a commit trailer leaks the internal
+	// workspace forever. Keeping them in the input type is what lets the tests
+	// pass real values in and assert they never come out the other side.
+	PrompterID string
+	ThreadURL  string
 }
 
 // attributionFooter is a thin wrapper for tests / call sites that only have Discord fields.
@@ -391,7 +404,7 @@ func attributionFooter(prompter, prompterID, threadURL string) string {
 	})
 }
 
-// BuildAttributionBlock is the Tier A ship contract block: PR/commit footer + trailers.
+// BuildAttributionBlock is the ship contract block: PR/commit footer + trailers.
 // Host remains the pusher; this only instructs the model what text to include.
 // Human-visible attribution uses display name + optional GitHub @login only —
 // never Discord snowflakes or Discord thread jump links.
@@ -465,7 +478,7 @@ func AttributionPRFooterText(in AttributionInput) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// AttributionCommitTrailers returns Co-authored-by (when mapped) + Prompter name.
+// AttributionCommitTrailers returns Co-authored-by (when linked) + Prompter name.
 // No Discord id and no Discord thread URL.
 func AttributionCommitTrailers(in AttributionInput) string {
 	var lines []string
@@ -485,34 +498,34 @@ func AttributionCommitTrailers(in AttributionInput) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// AttributionAuthorFields returns suggested GIT_AUTHOR name/email for a mapped identity.
-// Unmapped → empty strings.
+// AttributionAuthorFields returns the suggested GIT_AUTHOR name/email for a
+// linked GitHub identity. Not linked, or linked without one of the two halves →
+// empty strings, and every caller drops the trailer entirely.
+//
+// The name is the GitHub login rather than the Discord display name: GitHub
+// matches the co-author on the email, so the name is just the label rendered
+// next to it, and the login is the one spelling that is unambiguous on the
+// platform the commit lands on. A display name is whatever Discord says today.
 func AttributionAuthorFields(in AttributionInput) (name, email string) {
 	login := strings.TrimPrefix(strings.TrimSpace(in.GitHubLogin), "@")
-	if login == "" {
+	email = identity.NoreplyEmail(login, in.GitHubNumericID)
+	if login == "" || email == "" {
 		return "", ""
 	}
-	name = strings.TrimSpace(in.GitHubName)
-	if name == "" {
-		name = login
-	}
-	email = strings.TrimSpace(in.GitHubEmail)
-	if email == "" {
-		email = config.NoreplyGitHubEmail(in.PrompterID, login)
-	}
-	return name, email
+	return login, email
 }
 
-// OnBehalfOfCommentBody prefixes a host-bot GitHub comment when the acting Discord
-// user is mapped to a GitHub login. Unmapped actors and empty/whitespace-only bodies
-// are returned unchanged — no invented @login. Does not include Discord snowflakes.
+// OnBehalfOfCommentBody prefixes a host-bot GitHub comment when the acting
+// account has a linked GitHub login. No link and empty/whitespace-only bodies
+// are returned unchanged — no invented @login. Takes no actor id at all: the
+// comment is public, and there is nothing an internal id could add to it.
 //
-// Example (mapped):
+// Example (linked):
 //
 //	On behalf of @alice (Alice):
 //
 //	please merge when green
-func OnBehalfOfCommentBody(discordID, displayName, githubLogin, body string) string {
+func OnBehalfOfCommentBody(displayName, githubLogin, body string) string {
 	if strings.TrimSpace(body) == "" {
 		return body
 	}
@@ -520,7 +533,6 @@ func OnBehalfOfCommentBody(discordID, displayName, githubLogin, body string) str
 	if login == "" {
 		return body
 	}
-	_ = discordID // kept in signature for call-site compatibility; never written into body
 	displayName = strings.TrimSpace(displayName)
 	var who strings.Builder
 	who.WriteString("On behalf of @")

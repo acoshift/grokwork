@@ -13,8 +13,8 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grokwork/internal/audit"
-	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/identity"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -56,10 +56,10 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 	}
 
 	// reviewerMention is the snowflake that was <@…>-mentioned; reviewerID is the
-	// account it belongs to. The two are separate on purpose: the stored request
-	// and the membership check must follow the account (so "My reviews" finds it
-	// whichever login they sign in with), while a Discord mention only renders
-	// from a snowflake — and the GitHub map is keyed by Discord id.
+	// account it belongs to. The two are separate on purpose: the stored request,
+	// the membership check and the GitHub link all follow the account (so "My
+	// reviews" finds it whichever login they sign in with), while a Discord
+	// mention only renders from a snowflake.
 	reviewerMention, rest := parseReviewArgs(parsed.Prompt)
 	reviewerID := b.canonicalActorID(reviewerMention)
 	if reviewerID == "" {
@@ -128,12 +128,12 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		return
 	}
 
-	// Formal GitHub review request when the reviewer is on the Tier A map.
+	// Formal GitHub review request when the reviewer has linked a GitHub login.
 	// Team store is already saved; GH failure is reported without rolling back.
 	cwd := b.prViewCwd(e)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	ghLogin, ghErr := requestFormalGitHubReview(ctx, nil, b.cfg, cwd, pr.Owner, pr.Repo, pr.Number, reviewerMention)
+	ghLogin, ghErr := requestFormalGitHubReview(ctx, nil, b.identity, cwd, pr.Owner, pr.Repo, pr.Number, reviewerID)
 	// OK stays true: the audited mutation is the team request, which succeeded. The
 	// formal GitHub request is an echo of it and reports itself as a detail — a
 	// failed echo must not make the row read as "no review was requested".
@@ -159,23 +159,25 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 	}
 }
 
-// ResolveMappedGitHubLogin returns the bare GitHub login for a Discord user when
-// present in the Tier A map; empty string means unmapped (do not invent @login).
-func ResolveMappedGitHubLogin(cfg *config.Config, discordUserID string) string {
-	if cfg == nil {
-		return ""
-	}
-	id, ok := cfg.LookupGitHubIdentity(discordUserID)
+// ResolveLinkedGitHubLogin returns the bare GitHub login the ACCOUNT has linked;
+// empty string means no linked GitHub login (do not invent @login).
+//
+// Keyed on the account, not on a Discord snowflake: the link is recorded against
+// whichever login the person was signed in as when they linked, and a Discord id
+// that is itself an alias resolves to that account long before it reaches here.
+func ResolveLinkedGitHubLogin(links *identity.Store, actorID string) string {
+	login, _, ok := links.GitHubFor(actorID)
 	if !ok {
 		return ""
 	}
-	return strings.TrimPrefix(strings.TrimSpace(id.Login), "@")
+	return login
 }
 
-// requestFormalGitHubReview requests a formal PR review via host gh when mapped.
-// Empty login means skip (unmapped); team store is independent. run may be nil.
-func requestFormalGitHubReview(ctx context.Context, run ghpr.Runner, cfg *config.Config, cwd, owner, repo string, number int, discordReviewerID string) (login string, err error) {
-	login = ResolveMappedGitHubLogin(cfg, discordReviewerID)
+// requestFormalGitHubReview requests a formal PR review via host gh when the
+// reviewer has a linked GitHub login. Empty login means skip; the team store is
+// independent. run may be nil.
+func requestFormalGitHubReview(ctx context.Context, run ghpr.Runner, links *identity.Store, cwd, owner, repo string, number int, reviewerActorID string) (login string, err error) {
+	login = ResolveLinkedGitHubLogin(links, reviewerActorID)
 	if login == "" {
 		return "", nil
 	}
@@ -217,13 +219,13 @@ func formatReviewRequestReply(r reviewRequestReply) string {
 	case r.GitHubLogin != "" && r.GitHubErr != nil:
 		msg += fmt.Sprintf("\n⚠️ Team request saved, but GitHub review request for @%s failed: %s", r.GitHubLogin, r.GitHubErr.Error())
 	default:
-		msg += "\n_No GitHub map for this Discord user — team request only (not a formal GitHub review request). Map them under **Config → GitHub map**._"
+		msg += "\n_No GitHub login linked for this user — team request only (not a formal GitHub review request). They can link one themselves on the web **Account** page._"
 	}
 	return msg
 }
 
 func reviewHelpText() string {
-	return "Usage: `@Grok /review @user` · optional PR `#42`, URL, or `owner/repo#n` when the thread has multiple PRs. Mapped users also get a formal GitHub review request."
+	return "Usage: `@Grok /review @user` · optional PR `#42`, URL, or `owner/repo#n` when the thread has multiple PRs. Users who linked a GitHub login also get a formal GitHub review request."
 }
 
 func parseReviewArgs(prompt string) (reviewerID, rest string) {

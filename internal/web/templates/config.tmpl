@@ -28,13 +28,6 @@
         </span>
         <span class="drill-v">{{len .Config.Channels}} channel{{if ne (len .Config.Channels) 1}}s{{end}}</span>
       </a>
-      <a class="drill" href="{{route "config.identities"}}">
-        <span class="drill-main">
-          <span class="drill-t">GitHub attribution</span>
-          <span class="drill-s">Discord user → GitHub login map</span>
-        </span>
-        <span class="drill-v">{{len .Config.GitHubIdentities}} mapped</span>
-      </a>
     </div>
 
     <div class="drill-cap">Agent runtime</div>
