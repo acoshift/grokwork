@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -54,12 +55,25 @@ func TestWatchSessionTools(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// watchSessionTools invokes the callback from its own goroutine while the
+	// poll loop below reads what has arrived so far, so the slice needs a lock.
+	// Reads after <-done need none — close(done) happens after the final
+	// callback — but the polling reads genuinely raced the appends.
+	var mu sync.Mutex
 	var got []string
+	count := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(got)
+	}
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		watchSessionTools(ctx, cwd, sid, func(line string) {
+			mu.Lock()
 			got = append(got, line)
+			mu.Unlock()
 		})
 	}()
 
@@ -77,7 +91,7 @@ func TestWatchSessionTools(t *testing.T) {
 	}
 
 	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && len(got) == 0 {
+	for time.Now().Before(deadline) && count() == 0 {
 		time.Sleep(50 * time.Millisecond)
 	}
 	cancel()
