@@ -628,12 +628,30 @@ func (s *Server) searchCommits(ctx *hime.Context, project, needle string, allowe
 	// multi-repo layout), and a bound that skips them is not a bound.
 	cctx, cancel := context.WithTimeout(ctx.Context(), searchCommitTimeout)
 	defer cancel()
-	catalog, _ := s.cfg.ProjectRepoCatalogWith(cctx, project, nil)
-	active, pickErr := config.ResolveRepoPicker(catalog,
-		strings.TrimSpace(ctx.FormValue("owner")), strings.TrimSpace(ctx.FormValue("repo")))
-	if pickErr != nil && len(catalog) > 0 {
-		res.CommitNote = pickErr.Error()
+	// The catalog is the authorization boundary for ?owner=/?repo= (see
+	// resolveCatalogRepo): a repo the viewer may read is one this project
+	// declares or discovers. So a discovery *failure* is reported rather than
+	// swallowed — dropping the error would silently empty the catalog, and an
+	// empty catalog is exactly the state in which the picker stops checking
+	// anything.
+	catalog, catErr := s.cfg.ProjectRepoCatalogWith(cctx, project, nil)
+	if catErr != nil {
+		res.CommitNote = catErr.Error()
 		return nil
+	}
+	// With no catalog there is nothing to authorize a submitted repo name
+	// against, so the scan is the project root or nothing. ResolveLocalRepo
+	// refuses a traversal outright, but "inside some project" is not the rule
+	// here — the rule is "inside the project this viewer named".
+	var active config.GitHubRepoRef
+	if len(catalog) > 0 {
+		picked, pickErr := config.ResolveRepoPicker(catalog,
+			strings.TrimSpace(ctx.FormValue("owner")), strings.TrimSpace(ctx.FormValue("repo")))
+		if pickErr != nil {
+			res.CommitNote = pickErr.Error()
+			return nil
+		}
+		active = picked
 	}
 	repoPath, pathErr := gitworktree.ResolveLocalRepo(cctx, root, active.Owner, active.Repo)
 	if pathErr != nil {

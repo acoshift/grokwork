@@ -16,12 +16,29 @@ import (
 //
 // owner/repo are used for remote matching; the named-child path uses repo only
 // (common layout: …/deploys-app/api for deploys-app/api).
+//
+// repo names one directory *directly inside* the project, so it must be a
+// single clean path element and is rejected otherwise. The guard lives here
+// rather than in each caller because repo arrives from a `?repo=` query string
+// on every web path that reaches this function, and the only check upstream is
+// a catalog lookup that config.ResolveRepoPicker waves through whenever the
+// catalog is empty (an unconfigured multi-repo project, or a discovery
+// failure). Without it, `../other-project` joins to a checkout outside the
+// project — a git log the viewer's project ACL was never asked about, because
+// the ACL only ever sees the project that was *named*.
 func ResolveLocalRepo(ctx context.Context, projectPath, owner, repo string) (string, error) {
 	projectPath = strings.TrimSpace(projectPath)
 	owner = strings.TrimSpace(owner)
 	repo = strings.TrimSpace(repo)
 	if projectPath == "" {
 		return "", fmt.Errorf("empty project path")
+	}
+	// Checked before the single-repo early return so the answer cannot depend on
+	// whether this project happens to be a layout that reads repo at all: a
+	// malformed name is malformed everywhere. GitHub repo names contain no
+	// separator, so nothing legitimate is turned away.
+	if repo != "" && (repo != filepath.Base(repo) || repo == "." || repo == "..") {
+		return "", fmt.Errorf("invalid repo name %q: must be a single path element", repo)
 	}
 	if IsRepo(projectPath) {
 		return projectPath, nil

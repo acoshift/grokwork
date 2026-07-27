@@ -535,3 +535,98 @@ func TestSearchRankingPutsIdentityMatchesFirst(t *testing.T) {
 		t.Fatal("an exact match ranked below a substring match")
 	}
 }
+
+// TestSearchCommitRepoCannotEscapeTheNamedProject is the commit-kind half of the
+// ACL rule, and the one every other kind gets for free. Cases, sessions, PRs and
+// issues are filtered on the project stamped on the record; a commit scan is
+// filtered on the project *named in the query*, and then reads whatever path
+// ?owner=/?repo= resolve to. When the named project declares no GitHub catalog,
+// config.ResolveRepoPicker returns the submitted pair verbatim — so a joined
+// `../secret` used to read a sibling project's log through a project the viewer
+// legitimately holds, with searchVisible none the wiser.
+func TestSearchCommitRepoCannotEscapeTheNamedProject(t *testing.T) {
+	srv := twoProjectAuthServer(t)
+	var publicPath, secretPath string
+	for _, p := range srv.cfg.Snapshot().Projects {
+		switch p.Name {
+		case "public":
+			publicPath = p.Path
+		case "secret":
+			secretPath = p.Path
+		}
+	}
+	if publicPath == "" || secretPath == "" {
+		t.Fatal("fixture lost a project path")
+	}
+	// `secret` is a real checkout with a quotable subject; `public` is a bare
+	// folder with no catalog, which is the state that disables the picker's
+	// only check.
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", secretPath}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init")
+	if err := os.WriteFile(filepath.Join(secretPath, "f"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "-A")
+	runGit("commit", "-m", "zebra acquisition pricing model")
+
+	memberSID, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := &http.Cookie{Name: sessionCookieName, Value: memberSID}
+	adminSID, _, err := srv.LoginAs("admin-1", "Admin", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := &http.Cookie{Name: sessionCookieName, Value: adminSID}
+
+	// Positive control: the commit is really there and really findable — by
+	// someone who may open the project it lives in, scanning that project's own
+	// root. Without this the traversal assertions would pass on a search that
+	// never reads a log at all.
+	if _, b := getSearch(t, srv, "/search?q=zebra&project=secret", admin); !strings.Contains(b, "zebra acquisition pricing model") {
+		t.Fatalf("admin scanning the project itself found nothing\n%s", b)
+	}
+
+	for _, repo := range []string{"../secret", "..", "../secret/"} {
+		q := "/search?q=zebra&project=public&owner=x&repo=" + url.QueryEscape(repo)
+		code, body := getSearch(t, srv, q, member)
+		if code != http.StatusOK {
+			t.Fatalf("repo=%q status=%d", repo, code)
+		}
+		if strings.Contains(body, "zebra acquisition pricing model") {
+			t.Fatalf("repo=%q read a project the viewer cannot open\n%s", repo, body)
+		}
+		if strings.Contains(body, `id="search-group-commit"`) {
+			t.Fatalf("repo=%q produced commit rows at all\n%s", repo, body)
+		}
+		// The bounds line must not report the traversal as a scanned repo either
+		// — "the newest 300 … in x/../secret" confirms the path exists.
+		if strings.Contains(body, "../secret") {
+			t.Fatalf("repo=%q echoed back as a scanned repo\n%s", repo, body)
+		}
+		if !strings.Contains(body, "Commits: not searched") {
+			t.Fatalf("repo=%q did not report the scan as skipped\n%s", repo, body)
+		}
+	}
+
+	// The commits browser reaches the same resolver from a different route and
+	// leaked identically before the guard moved into it.
+	code, body := getSearch(t, srv, "/projects/public/commits?owner=x&repo=../secret", member)
+	if code != http.StatusOK {
+		t.Fatalf("commits browser status=%d", code)
+	}
+	if strings.Contains(body, "zebra acquisition pricing model") {
+		t.Fatalf("commits browser read the hidden project\n%s", body)
+	}
+}
