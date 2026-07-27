@@ -74,7 +74,9 @@ cp config.example.json config.json
 | `httpListen` | Private-network web UI bind address (default `:8787`; override with `GROK_WORK_HTTP_LISTEN`) |
 | `webPublicBaseURL` | Absolute origin for OAuth redirect URIs (e.g. `http://100.x.y.z:8787`). Required when `webAuth.enabled` |
 | `discordClientSecret` | Discord OAuth2 client secret for web login (or env `DISCORD_CLIENT_SECRET` / `GROK_WORK_DISCORD_CLIENT_SECRET`) |
-| `webAuth` | Optional Discord OAuth for the web UI (see below). Default / omitted = open LAN mode (no login) |
+| `webAuth` | Optional OAuth login for the web UI — Discord, Google and/or GitHub (see below). Default / omitted = open LAN mode (no login) |
+| `webAuth.providers.google` | `{ clientId, clientSecret }` for Google login; secret may instead come from env `GOOGLE_CLIENT_SECRET` / `GROK_WORK_GOOGLE_CLIENT_SECRET` |
+| `webAuth.providers.github` | `{ clientId, clientSecret }` for GitHub login; secret may instead come from env `GITHUB_CLIENT_SECRET` / `GROK_WORK_GITHUB_CLIENT_SECRET` |
 | `discordGuildId` | Optional default Discord server id for deep links when a project omits its own |
 | `projects.<name>.discordGuildId` | Per-project Discord server id (multi-guild); used for “Open in Discord” / web thread URLs |
 | `projects.*.github.repos` | Optional multi-repo catalog (`owner`/`repo`) for Issues UI; omit to discover from git remotes |
@@ -100,7 +102,7 @@ While the process runs it also serves a small server-rendered admin UI (hime + `
 | `/spend` · `/projects/{project}/spend` | What the agent runs cost, by project, actor and session. Tokens always; dollars only for models `modelRates` fully covers, otherwise `≥ $X` plus the unpriced models named |
 | `/config` | Add/remove projects, channel→project map, allowed users and teams, Linear/GitHub project fields, worktree idle TTL, concurrency caps, team board digest, CI auto-fix, completion risk globs |
 | `/config/model-rates` | Per-model token prices behind `/spend` (admin) |
-| `/login` | Discord OAuth login (only when `webAuth.enabled`) |
+| `/login` | OAuth login — one button per **configured** provider (only when `webAuth.enabled`) |
 | `/issues` | Project picker for GitHub issues |
 | `/projects/{project}/issues` | Issue list with multi-repo picker |
 | `/projects/{project}/linear` | Linear issues (when Linear enabled on the project) |
@@ -117,7 +119,7 @@ While the process runs it also serves a small server-rendered admin UI (hime + `
 
 Bind for Tailscale or LAN with `"httpListen": "0.0.0.0:8787"` (or a Tailscale IP).
 
-#### Web auth (optional Discord OAuth)
+#### Web auth (optional OAuth: Discord / Google / GitHub)
 
 By default the UI stays **open on the private network** (no login) so existing configs keep working. To require Discord login:
 
@@ -141,13 +143,43 @@ By default the UI stays **open on the private network** (no login) so existing c
 |-------------|---------|
 | `webAuth.enabled` | Turn on OAuth gates |
 | `webAuth.sessionSecret` | Optional / reserved (web sessions are opaque server-side IDs, not HMAC cookies) |
-| `webAuth.adminDiscordIds` | Actors who may change config / prune worktrees. Namespaced actor ids (`discord:123`, `oidc:alice`); a bare snowflake still means Discord. The JSON key keeps its historical name |
+| `webAuth.adminDiscordIds` | Actors who may change config / prune worktrees. Namespaced actor ids (`discord:123`, `google:<sub>`, `github:<numeric id>`); a bare snowflake still means Discord. The JSON key keeps its historical name |
 | `webAuth.memberDiscordIds` / `viewerDiscordIds` | Optional explicit lists, same namespaced-actor-id form |
+| `webAuth.providers.google` / `.github` | `{ clientId, clientSecret }` per provider — see **Login providers** below |
 | `webAuth.features.*` | `githubWrites`, `merge`, `startSessions` (see table above; all default false) |
 | Project membership | Actors on any project (`allowedUserIds` **or** a `teams.<key>.members` list) get **member** if not in the lists above |
 | `GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID` | If `adminDiscordIds` is empty, merged on boot as the first admin |
 
 When enabled: unauthenticated page GETs redirect to `/login`; config and worktree **POST**s require an **admin** session + CSRF. Static assets stay public. Discord `@Grok` is unchanged (still uses the bot allowlist).
+
+#### Login providers
+
+`/login` renders **one button per fully configured provider** — a provider missing either half of its credential pair shows no button **and** its `/auth/<provider>` + `/auth/<provider>/callback` routes refuse before any network call. At least one provider must be complete when `webAuth.enabled`, or the process refuses to boot; a deployment that logs people in with Google needs no Discord OAuth app.
+
+| Provider | Credentials | Env fallback for the secret | Redirect URI to register | Scopes |
+|----------|-------------|-----------------------------|--------------------------|--------|
+| Discord | `discordClientId` (or decoded from the bot token) + `discordClientSecret` | `DISCORD_CLIENT_SECRET`, `GROK_WORK_DISCORD_CLIENT_SECRET` | `{webPublicBaseURL}/auth/discord/callback` | `identify` |
+| Google | `webAuth.providers.google.clientId` + `.clientSecret` | `GOOGLE_CLIENT_SECRET`, `GROK_WORK_GOOGLE_CLIENT_SECRET` | `{webPublicBaseURL}/auth/google/callback` | `openid email profile` |
+| GitHub | `webAuth.providers.github.clientId` + `.clientSecret` | `GITHUB_CLIENT_SECRET`, `GROK_WORK_GITHUB_CLIENT_SECRET` | `{webPublicBaseURL}/auth/github/callback` | `read:user` |
+
+Client **ids** are read from config only (they are public and travel in the authorize URL); only the **secret** has an env fallback, and a config value always wins over the environment.
+
+```json
+"webAuth": {
+  "enabled": true,
+  "adminDiscordIds": ["YOUR_DISCORD_USER_ID", "google:1029384756", "github:583231"],
+  "providers": {
+    "google": { "clientId": "…apps.googleusercontent.com", "clientSecret": "" },
+    "github": { "clientId": "Iv1.…", "clientSecret": "" }
+  }
+}
+```
+
+**Actor ids.** A non-Discord login is identified by the provider's **immutable subject**, never by an email or a login handle — both can be changed by their owner and the freed value re-registered by a stranger. Google contributes its OIDC `sub`, GitHub its numeric account `id`, and each provider gets its own namespace (`google:` / `github:`), so the same number arriving from two issuers is two different actors. Discord's actor id stays a **bare** snowflake, unchanged from before. Those namespaced strings are what goes in `adminDiscordIds` / `memberDiscordIds` / `viewerDiscordIds`, `projects.*.allowedUserIds` and `projects.*.teams.*.members`.
+
+A brand-new provider account that is a member of nothing logs in at the provider and is then **denied by name**: the login page reports the exact actor id an admin has to allowlist. That is the intended fail-closed path, not an error.
+
+Finding your ids: `curl -sH "Authorization: Bearer <token>" https://api.github.com/user | jq .id`, or read the actor id straight off the denial message after one attempt.
 
 ## 3. Run
 
@@ -381,7 +413,9 @@ rm -f ~/Library/LaunchAgents/com.acoshift.grokwork.plist
 | `GROK_WORK_HTTP_LISTEN` | Override `httpListen` for the web UI |
 | `GROK_WORK_DEBUG` | Post grok stderr into the thread |
 | `GROK_WORK_PUBLIC_BASE_URL` | OAuth public base URL override |
-| `GROK_WORK_DISCORD_CLIENT_SECRET` / `DISCORD_CLIENT_SECRET` | OAuth client secret |
+| `GROK_WORK_DISCORD_CLIENT_SECRET` / `DISCORD_CLIENT_SECRET` | Discord OAuth client secret (`discordClientSecret` wins) |
+| `GROK_WORK_GOOGLE_CLIENT_SECRET` / `GOOGLE_CLIENT_SECRET` | Google login client secret (`webAuth.providers.google.clientSecret` wins) |
+| `GROK_WORK_GITHUB_CLIENT_SECRET` / `GITHUB_CLIENT_SECRET` | GitHub login client secret (`webAuth.providers.github.clientSecret` wins). Distinct from `GH_TOKEN`/`GITHUB_TOKEN`, which are push credentials |
 | `GROK_WORK_SESSION_SECRET` | Optional / reserved (`webAuth.sessionSecret`) |
 | `GROK_WORK_BOOTSTRAP_ADMIN_DISCORD_ID` | First admin when `adminDiscordIds` empty |
 | `LINEAR_API_KEY_<PROJECT>` | Per-project Linear API key when not set in config (`PROJECT` uppercased; non-alnum → `_`) |

@@ -65,6 +65,9 @@ Order is suggested priority, not a commitment. **Code on `main` wins** if this f
 ### Web UI (selected)
 
 - [x] Project-first shell; ship board; sessions; worktrees; config; OAuth-optional web auth
+- [x] **Multi-provider login** — Discord, Google and GitHub behind one `oauthStart`/`oauthCallback` pair (`GET /auth/{provider}`); a button renders only for a provider holding **both** credential halves, and the same predicate gates the route, so a hidden button is never the only gate. Identity is the provider's immutable subject (Google `sub`, GitHub numeric `id`) under a per-provider namespace (`google:` / `github:`); Discord's actor id stays bare. Credentials at `webAuth.providers.<p>.{clientId,clientSecret}` with a secret-only env fallback
+  - [ ] No admin UI for provider credentials — `webAuth.providers` is hand-edited in `config.json`; `/config` neither shows nor edits it (deliberate: it would be the first place the web UI renders a client secret)
+  - [ ] No account linking — one person arriving through two providers is two unrelated actors, each needing its own allowlist/team entry. `config.discordUserGitHub` is still set by hand and is deliberately **not** populated from a GitHub login (commit-attribution identity is a separate decision)
 - [x] Start task web; session continue / cancel / reset / label / goal / claim
 - [x] Issues / Linear list / commits / PR detail / diff review / team PR reviews
 - [x] Bulk fix, commit-review-as-session, markdown bodies, live SSE regions
@@ -102,7 +105,7 @@ See `docs/design-per-user-github-identity.md` Tier A. **Host still pushes/opens 
 
 | Item | Status |
 |------|--------|
-| Web auth + feature flags + project visibility | **Partial** — OAuth optional; config admin-gated when auth on; not forced for all deploys |
+| Web auth + feature flags + project visibility | **Partial** — OAuth optional (Discord / Google / GitHub, each gated on having both credential halves); config admin-gated when auth on; not forced for all deploys. Provider credentials are hand-edited in `config.json`, and no provider account is linked to any other |
 | Per-project **teams** replace Discord roles | **Done** — `projects.<name>.teams` grants access *and* capabilities; `allowedRoleIds` / `capabilityByRole` removed, the Discord mod bypass for `/cancel` `/reset` with them. A named-but-unresolvable capability template fails closed (it used to fall through to *builder*) and `Load` warns for every dangling reference |
 | Layer A env filter | **Done** |
 | Layer B full env allowlist (per-project / host flag) | **Not started** |
