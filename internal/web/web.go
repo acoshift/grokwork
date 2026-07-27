@@ -443,8 +443,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseReopen))))
 	mux.Handle("POST /sessions/{threadID}/case/customer-update",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseCustomerUpdate))))
-	mux.Handle("POST /sessions/{threadID}/case/investigate",
-		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseInvestigate))))
 	mux.Handle("POST /sessions/{threadID}/case/link",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCaseLink))))
 	mux.Handle("POST /sessions/{threadID}/case/unlink",
@@ -778,13 +776,13 @@ type pageData struct {
 	// parity — startSessions feature+role AND investigator-class capability.
 	CanOpenCase bool
 	// Session case panel affordances (Mode=case only).
-	// Investigate/escalate/answer hide on fixing|shipping (eng phases).
-	CanCaseEscalate    bool
-	CanCaseDraft       bool // customer-update (open cases)
-	CanCaseAnswer      bool // knowledge-path answer; not shown on eng phases
-	CanCaseClose       bool // owner/co/admin
-	CanCaseInvestigate bool
-	CanCaseReopen      bool // closed cases only; investigator-class or session control
+	// Escalate/answer hide on fixing|shipping (eng phases). Agent investigate
+	// runs use the docked composer (continue), not a separate rail form.
+	CanCaseEscalate bool
+	CanCaseDraft    bool // customer-update (open cases)
+	CanCaseAnswer   bool // knowledge-path answer; not shown on eng phases
+	CanCaseClose    bool // owner/co/admin
+	CanCaseReopen   bool // closed cases only; investigator-class or session control
 }
 
 func (s *Server) basePage(ctx *hime.Context) pageData {

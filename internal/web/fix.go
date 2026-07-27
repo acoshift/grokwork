@@ -591,7 +591,7 @@ func (s *Server) sessionRedirect(ctx *hime.Context, threadID, ok, errMsg string)
 }
 
 // checkStartRate is the single gate for every route that launches an agent
-// session (Fix, Start composer, case intake/investigate, commit/PR review,
+// session (Fix, Start composer, case continue, commit/PR review,
 // Address CI/review, Continue, deploy pipeline generation, …): each spawns a
 // real coding-CLI child process that costs API money, so one shared per-actor
 // limiter covers all of them rather than each route rolling its own.
@@ -789,8 +789,9 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 		d.QueueItems = s.bot.QueueItems(threadID)
 	}
 	// Case panel affordances when Mode=case.
-	// On eng phases (fixing/shipping), hide support desk actions (investigate,
-	// escalate, answer); keep customer-update + close and the Grok continue box.
+	// On eng phases (fixing/shipping), hide support desk actions (escalate,
+	// answer); keep customer-update + close and the docked composer. Agent
+	// investigate runs go through continue, not a separate rail form.
 	if d.SessionEntry.IsCase() && d.CanStartSession {
 		caps := s.cfg.ResolveCapabilities(d.SessionEntry.Project, d.UserID)
 		closed := d.SessionEntry.IsCaseClosed()
@@ -799,7 +800,6 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 		d.CanCaseDraft = !closed && bot.CanDraftCaseCaps(caps) // customer-update
 		d.CanCaseAnswer = !closed && !shipPhase && bot.CanDraftCaseCaps(caps)
 		d.CanCaseClose = !closed && d.CanControlSession
-		d.CanCaseInvestigate = !closed && !shipPhase && (caps.Investigate || caps.FileEscalation || caps.StartSessions || d.CanControlSession)
 		d.CanCaseReopen = closed && (bot.CanReopenCaseCaps(caps) || d.CanControlSession)
 		// Cross-referencing stays available on a closed case: "the same thing
 		// happened again" is exactly the moment someone reaches for the case

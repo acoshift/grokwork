@@ -1,7 +1,6 @@
 package web
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 
@@ -188,53 +187,6 @@ func (s *Server) postCaseReopen(ctx *hime.Context) error {
 		phase = strings.ToLower(phase)
 	}
 	return s.sessionRedirect(ctx, threadID, "Case reopened · phase "+phase+".", "")
-}
-
-func (s *Server) postCaseInvestigate(ctx *hime.Context) error {
-	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
-	ent, err := s.loadCaseThread(ctx, threadID)
-	if err != nil {
-		return err
-	}
-	if ent.IsCaseClosed() {
-		return s.sessionRedirect(ctx, threadID, "", bot.ErrCaseClosed.Error())
-	}
-	canOpen, _, _ := s.resolveCaseCaps(ctx, ent.Project)
-	if !canOpen && !s.canControlSession(ctx, ent) {
-		return ctx.Status(http.StatusForbidden).Error("forbidden: not allowed to investigate this case")
-	}
-	if err := s.checkStartRate(ctx); err != nil {
-		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
-			"threadId": threadID, "origin": "web-case-investigate",
-		})
-		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
-	}
-	notes := strings.TrimSpace(ctx.PostFormValue("notes"))
-	if notes == "" {
-		notes = "Investigate this case further."
-	}
-	actor := s.fixActor(ctx)
-	res, startErr := s.bot.StartContinue(bot.ContinueOpts{
-		ThreadID: threadID,
-		Project:  ent.Project,
-		Prompt:   notes,
-		Actor:    actor,
-	})
-	s.auditAction(ctx, audit.ActionSessionStart, startErr, map[string]any{
-		"threadId": threadID, "origin": "web-case-investigate",
-		"status": string(res.Status),
-	})
-	if startErr != nil {
-		if errors.Is(startErr, bot.ErrQueueFull) {
-			return ctx.Status(http.StatusConflict).Error(startErr.Error())
-		}
-		return s.sessionRedirect(ctx, threadID, "", startErr.Error())
-	}
-	ok := "Investigate started"
-	if res.Status == bot.FixStatusQueued {
-		ok = "Investigate queued"
-	}
-	return s.sessionRedirect(ctx, threadID, ok, "")
 }
 
 // loadCaseThread enforces access and that the unit is Mode=case.

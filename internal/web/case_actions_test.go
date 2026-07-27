@@ -52,13 +52,25 @@ func TestCasePanelRendersOnSession(t *testing.T) {
 		`id="session-case-actions"`,
 		"Pay wall loops",
 		"btn-case-escalate",
-		"btn-case-investigate",
 		"btn-case-answer",
 		"btn-case-close",
 		"btn-case-customer",
+		// Agent investigate is the docked composer, not a rail form.
+		`id="session-continue-form"`,
+		`id="btn-continue"`,
+		`placeholder="What should the agent look into?"`,
+		"Queues a read-only investigate on this case. Never opens PRs.",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q", want)
+		}
+	}
+	for _, hide := range []string{
+		"btn-case-investigate",
+		"case-investigate-notes",
+	} {
+		if strings.Contains(body, hide) {
+			t.Fatalf("support-phase case must not render investigate rail form %q", hide)
 		}
 	}
 }
@@ -99,6 +111,9 @@ func TestCasePanelHidesSupportActionsOnEngPhases(t *testing.T) {
 			"btn-case-customer",
 			"btn-case-close",
 			"btn-continue", // eng work via Grok box
+			// Eng freeform can ship — keep generic follow-up wording.
+			`placeholder="What should happen next?"`,
+			"Queues a follow-up on this session.",
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("phase=%s missing %q", phase, want)
@@ -108,6 +123,8 @@ func TestCasePanelHidesSupportActionsOnEngPhases(t *testing.T) {
 			"btn-case-investigate",
 			"btn-case-escalate",
 			"btn-case-answer",
+			"What should the agent look into?",
+			"Never opens PRs.",
 		} {
 			if strings.Contains(body, hide) {
 				t.Fatalf("phase=%s should hide %q", phase, hide)
@@ -508,11 +525,11 @@ func TestPostCaseReopenForbiddenWithoutCaps(t *testing.T) {
 	}
 }
 
-// TestPostCaseInvestigateRateLimit429 covers the case board's Investigate
-// action, which starts a real agent run via bot.StartContinue. It previously
-// had no rate gate at all — every other route that launches a session already
-// shares the limiter, and this one was the odd unthrottled one out.
-func TestPostCaseInvestigateRateLimit429(t *testing.T) {
+// TestPostSessionContinueRateLimit429 covers the docked composer follow-up
+// path (POST …/continue → StartContinue). Shares the same start rate limiter
+// as Fix / Start / commit-review; pins that a case support-phase continue is
+// throttled like every other paid launch.
+func TestPostSessionContinueRateLimit429(t *testing.T) {
 	srv, _, b := fixEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
 	_ = srv.cfg.AddProjectAllowedUser("proj", "member-1")
@@ -523,9 +540,9 @@ func TestPostCaseInvestigateRateLimit429(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	form := url.Values{"notes": {"dig deeper"}}
+	form := url.Values{"prompt": {"dig deeper"}}
 	for i := 0; i < 2; i++ {
-		w := postFix(t, srv, "/sessions/t-case-rl/case/investigate", sid, csrf, form)
+		w := postFix(t, srv, "/sessions/t-case-rl/continue", sid, csrf, form)
 		if w.Code == http.StatusTooManyRequests {
 			t.Fatalf("early 429 at %d body=%s", i, w.Body.String())
 		}
@@ -533,7 +550,7 @@ func TestPostCaseInvestigateRateLimit429(t *testing.T) {
 			t.Fatalf("start %d status=%d body=%s", i, w.Code, w.Body.String())
 		}
 	}
-	w := postFix(t, srv, "/sessions/t-case-rl/case/investigate", sid, csrf, form)
+	w := postFix(t, srv, "/sessions/t-case-rl/continue", sid, csrf, form)
 	if w.Code != http.StatusTooManyRequests {
 		t.Fatalf("status=%d want 429 body=%s", w.Code, w.Body.String())
 	}

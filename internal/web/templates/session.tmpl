@@ -78,16 +78,20 @@
      pin session-continue-form out of the fragment). Desktop: sticky at the
      bottom of the conversation column. Phone: fixed bottom bar replacing the
      tab bar on this page (see the :has(#page-session) rules in layout). */}}
+{{/* Support-phase cases (intake/investigate/answered): investigate-oriented copy.
+     Eng phases and non-case sessions keep the generic follow-up wording — freeform
+     can ship there, so "Never opens PRs" would be a product lie. */}}
+{{$caseInvestigate := and .SessionEntry.IsCase (not .SessionEntry.IsCaseClosed) (not .SessionEntry.IsCaseShipPhase)}}
 <div class="composer-dock" id="session-continue-form">
   <form method="post" action="/sessions/{{.ThreadID}}/continue" class="composer">
     {{template "csrf" $}}
     <label for="continue-prompt" class="sr-only">Prompt</label>
-    <textarea id="continue-prompt" name="prompt" rows="1" required placeholder="What should happen next?"></textarea>
+    <textarea id="continue-prompt" name="prompt" rows="1" required placeholder="{{if $caseInvestigate}}What should the agent look into?{{else}}What should happen next?{{end}}"></textarea>
     <button type="submit" id="btn-continue" class="composer-send" title="Send follow-up" aria-label="Send follow-up">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
     </button>
   </form>
-  <p class="composer-hint"><span>Queues a follow-up on this session.</span><span class="composer-kbd"><kbd>⌘</kbd><kbd>↩</kbd> send</span></p>
+  <p class="composer-hint"><span>{{if $caseInvestigate}}Queues a read-only investigate on this case. Never opens PRs.{{else}}Queues a follow-up on this session.{{end}}</span><span class="composer-kbd"><kbd>⌘</kbd><kbd>↩</kbd> send</span></p>
 </div>
 {{end}}
 
@@ -97,8 +101,9 @@
 <aside class="pr-rail" id="page-rail">
 {{template "rail_sheet_head" $}}
 
-{{if and .SessionEntry.IsCase (or .CanCaseInvestigate .CanCaseEscalate .CanCaseAnswer .CanCaseDraft .CanCaseClose .CanCaseReopen .CanLinkCase)}}
-{{/* Case phase forms stay outside the live region so SSE swaps do not wipe typed notes. */}}
+{{if and .SessionEntry.IsCase (or .CanCaseEscalate .CanCaseAnswer .CanCaseDraft .CanCaseClose .CanCaseReopen .CanLinkCase)}}
+{{/* Case phase forms stay outside the live region so SSE swaps do not wipe typed notes.
+     Agent investigate runs go through the docked composer (POST …/continue), not a rail form. */}}
 <div class="rail-group" id="session-case-actions">
   <div class="rail-group-title">Case</div>
   {{if .CanCaseReopen}}
@@ -117,22 +122,6 @@
         <div class="form-actions"><button type="submit" id="btn-case-reopen" class="btn-secondary">Reopen case</button></div>
       </form>
       <p class="rail-note" style="margin-top:0.55rem">Clears resolution; keeps the dossier.</p>
-    </div>
-  </details>
-  {{end}}
-  {{if .CanCaseInvestigate}}
-  <details class="action" open>
-    <summary><span class="action-title">Investigate</span></summary>
-    <div class="action-body">
-      <form method="post" action="/sessions/{{.ThreadID}}/case/investigate">
-        {{template "csrf" $}}
-        <div class="field">
-          <label for="case-investigate-notes">Notes</label>
-          <textarea id="case-investigate-notes" name="notes" rows="3" placeholder="What should the agent look into?"></textarea>
-        </div>
-        <div class="form-actions"><button type="submit" id="btn-case-investigate">Run investigate</button></div>
-      </form>
-      <p class="rail-note" style="margin-top:0.55rem">Never opens PRs. Promotes intake → investigate.</p>
     </div>
   </details>
   {{end}}
