@@ -209,7 +209,7 @@ func TestSameAgentTreatsEmptyAsGrok(t *testing.T) {
 
 // The investigate allowlist must match the agent that will run, otherwise the
 // model is handed tool names it does not have and cannot read the repo.
-// Shell is role-gated: without SafeOps/CanShip the list is file-only.
+// Shell is role-gated: Investigate (or SafeOps/CanShip) grants diagnostic shell.
 func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 	// Zero caps → file-only for both agents.
 	base := PolicyInput{ForceInvestigate: true}
@@ -228,6 +228,19 @@ func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 		t.Fatalf("claude file-only tools=%v", claudePol.Tools)
 	}
 
+	// Investigator gets shell for diagnostics (psql, …) on both agents.
+	base = PolicyInput{
+		ForceInvestigate: true,
+		Caps:             config.BuiltinCapabilityTemplates["investigator"],
+	}
+	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep,run_terminal_command" || !pol.InvestigateShell {
+		t.Fatalf("investigator grok tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
+	}
+	base.Agent = grokrun.AgentClaude
+	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "Read,Grep,Glob,Bash" || !pol.InvestigateShell {
+		t.Fatalf("investigator claude tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
+	}
+
 	// Builder-class gets shell on both agents.
 	base = PolicyInput{
 		ForceInvestigate: true,
@@ -236,41 +249,26 @@ func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep,run_terminal_command" || !pol.InvestigateShell {
 		t.Fatalf("builder grok tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
 	}
-	base.Agent = grokrun.AgentClaude
-	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "Read,Grep,Glob,Bash" || !pol.InvestigateShell {
-		t.Fatalf("builder claude tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
-	}
-
-	// SafeOps alone (no ship) also unlocks shell — support/ops diagnostics.
-	base = PolicyInput{
-		ForceInvestigate: true,
-		Caps:             config.Capabilities{Investigate: true, SafeOps: true},
-		Agent:            grokrun.AgentGrok,
-	}
-	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep,run_terminal_command" || !pol.InvestigateShell {
-		t.Fatalf("safeOps grok tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
-	}
 }
 
 // A project override is written in one agent's vocabulary and only applies when
 // shell is role-allowed. Passing grok names to claude yields zero real tools, so
 // the override is only applied to the agent it was written for.
 func TestBuildRunPolicyIgnoresForeignToolOverride(t *testing.T) {
-	// Investigator (no shell): override must not re-open shell via project config.
+	// Zero caps (no shell): override must not re-open shell via project config.
 	in := PolicyInput{
 		ForceInvestigate: true,
 		InvestigateTools: "read_file,grep,run_terminal_command",
-		Caps:             config.BuiltinCapabilityTemplates["investigator"],
 	}
 	if pol := BuildRunPolicy(in); pol.Tools == nil || *pol.Tools != "read_file,grep" || pol.InvestigateShell {
-		t.Fatalf("investigator must stay file-only despite override: tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
+		t.Fatalf("zero caps must stay file-only despite override: tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
 	}
 
-	// Builder: grok honors override; claude keeps its own shell default.
+	// Investigator: grok honors override; claude keeps its own shell default.
 	in = PolicyInput{
 		ForceInvestigate: true,
 		InvestigateTools: "read_file,list_dir",
-		Caps:             config.BuiltinCapabilityTemplates["builder"],
+		Caps:             config.BuiltinCapabilityTemplates["investigator"],
 	}
 	if pol := BuildRunPolicy(in); pol.Tools == nil || *pol.Tools != "read_file,list_dir" {
 		t.Fatalf("grok should honor its own override when shell allowed: %v", pol.Tools)

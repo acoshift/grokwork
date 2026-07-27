@@ -41,7 +41,7 @@ Built-in flag matrix (source: `internal/config/capabilities.go`):
 
 **Ship rule:** PR/direct ship requires **both** `startSessions` and `githubWrites` (`CanShip()`). Missing `githubWrites` coerces the run to investigate-only (never half-fix).
 
-**Investigate shell:** diagnostic host shell (`psql`, logs, …) on investigate runs is granted when `safeOps` **or** `CanShip()` is true (`CanInvestigateShell()`). Built-in investigator/operator stay file-only; builder-class eng gets shell via ship rights. Grant `safeOps` on a custom template (or `capabilityByUser`) for support/ops who need DB/CLI diagnostics without ship rights.
+**Investigate shell:** diagnostic host shell (`psql`, logs, …) on investigate runs is granted when `investigate`, `safeOps`, or `CanShip()` is true (`CanInvestigateShell()`). Builtin investigator/operator/builder all get shell. The investigate prompt requires **investigation-only** use (read/diagnose; no writes, DDL, restarts, or code “fixes”). Actors with no such flags stay file-only.
 
 ---
 

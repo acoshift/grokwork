@@ -325,13 +325,15 @@ func toolsListHasShell(agent grokrun.Agent, tools string) bool {
 func investigatePromptPrefix(branch string, shell bool) string {
 	lines := []string{
 		"You are investigating code on a shared workflow unit (Discord thread and/or web session).",
-		"Mode: INVESTIGATE (read-only intent). Do NOT commit, push, open a pull request, or modify the remote.",
+		"Mode: INVESTIGATE — diagnosis only. Do NOT commit, push, open a pull request, or modify the remote.",
 		"Do NOT run `gh pr create`, do NOT push to main/master, and do NOT merge.",
 	}
 	if shell {
 		lines = append(lines,
-			"You may use the shell for diagnostics: read logs, run status commands, query databases (e.g. psql SELECT), curl health endpoints, inspect processes.",
-			"Prefer non-destructive commands. Do NOT mutate production data, drop tables, rewrite config, or edit application source as a \"fix\".",
+			"Shell access is for INVESTIGATION ONLY (read/diagnose), not for fixing or changing systems.",
+			"Allowed examples: read logs, status commands, psql/SQL SELECT (and other read-only queries), curl health endpoints, inspect processes, dig/nslookup.",
+			"Forbidden with shell: INSERT/UPDATE/DELETE/DDL, migrations, restarting services, editing app source or config as a \"fix\", rm/mv of product data, anything that changes production state.",
+			"If a write or mutate would help, describe it and stop — a human starts a fix run. Do not apply the change yourself.",
 		)
 	} else {
 		lines = append(lines,

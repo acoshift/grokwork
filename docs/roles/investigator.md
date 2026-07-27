@@ -20,7 +20,8 @@ You need the project’s Discord allowlist (user or role) and a channel mapped t
 ## What they can do
 
 - Open support **cases** (`/case`) when they have investigate (or escalate/start) caps  
-- Run **read-only** investigate / explain-style work (no PR, no push to primary)  
+- Run **investigate** / explain-style work (no PR, no push to primary); investigate may use diagnostic shell (`psql` SELECT, logs, health checks) under an investigation-only prompt — not for mutating systems  
+
 - Freeform messages on cases promote into investigate without shipping  
 - Draft sanitized **customer updates** (`/customer-update`)  
 - Mark the knowledge path **answered** (`/answer`)  

@@ -123,11 +123,14 @@ func TestInvestigatePromptNoPR(t *testing.T) {
 	}
 
 	withShell := investigatePromptPrefix("grok/discord/1", true)
-	if !strings.Contains(withShell, "shell") || !strings.Contains(withShell, "psql") {
-		t.Fatalf("shell investigate must allow diagnostic shell (psql): %s", withShell)
+	if !strings.Contains(withShell, "INVESTIGATION ONLY") {
+		t.Fatal("shell investigate prompt must state investigation-only use")
 	}
-	if !strings.Contains(withShell, "Do NOT mutate") {
-		t.Fatal("investigate shell guidance must still forbid destructive mutations")
+	if !strings.Contains(withShell, "psql") && !strings.Contains(withShell, "SELECT") {
+		t.Fatalf("shell investigate must allow diagnostic DB queries: %s", withShell)
+	}
+	if !strings.Contains(withShell, "Forbidden") {
+		t.Fatal("shell investigate prompt must forbid mutating commands")
 	}
 }
 

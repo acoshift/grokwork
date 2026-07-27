@@ -65,11 +65,11 @@ func (c Capabilities) CanShip() bool {
 }
 
 // CanInvestigateShell is true when an investigate run may use host shell tools
-// (psql, logs, health checks, …). Builder-class actors get it via CanShip;
-// support/ops who need diagnostics without ship rights get it via SafeOps on
-// their capability template (or capabilityByUser).
+// (psql, logs, health checks, …). Anyone with Investigate gets diagnostics
+// (including builtin investigator); SafeOps and CanShip also grant it. Shell is
+// still not a sandbox — the investigate prompt requires non-destructive use only.
 func (c Capabilities) CanInvestigateShell() bool {
-	return c.SafeOps || c.CanShip()
+	return c.Investigate || c.SafeOps || c.CanShip()
 }
 
 // TemplateName lookup: project overlay then builtin. Unknown → zero + false.
