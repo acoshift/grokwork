@@ -43,7 +43,9 @@ cp config.example.json config.json
 | `discordClientId` | Optional application/client ID for the install URL (decoded from the token when empty) |
 | `projects.<name>.allowedUserIds` | Per-project direct members. Namespaced actor ids (`discord:123`, `oidc:alice`); a bare id still means Discord. |
 | `projects.<name>.teams` | `{ "<key>": { "label", "members", "capabilities" } }`. Team membership grants **both** project access and the named capability template. Fail-closed when there are no `allowedUserIds` and no team with members. Replaces the removed `allowedRoleIds` / `capabilityByRole`. **Teams are per project and are not shared:** a `support` team on eight projects is eight `members` lists to keep in sync — for one person on many projects, `allowedUserIds` + `capabilityByUser` is less to maintain. |
-| `projects` | Name → **absolute** path string, or object `{ "path", "github", "linear", "discordChannelId", "discordGuildId", "repoFetchIntervalMinutes" }` |
+| `projects.<name>.caseKey` | Override the prefix new case keys take (`WEBAPP` → `WEBAPP-14`). Empty derives it from the project name; a non-ASCII name falls back to `CASE`. Read **only when minting**, so changing it never renames a case already quoted. Editable on project settings → Workflow |
+| `projects.<name>.sla` | Per-severity case deadlines: `{ "<severity>": { "firstResponseMinutes", "resolutionMinutes" } }`. Both are tri-state — omit one and that clock simply does not run, so a project with no SLA reads as nothing being late rather than everything. An unknown severity key is a **load error**, not an inert row. Editable on project settings → Workflow |
+| `projects` | Name → **absolute** path string, or object `{ "path", "github", "linear", "discordChannelId", "discordGuildId", "repoFetchIntervalMinutes", "caseKey", "sla" }` |
 | `channels` | Discord channel ID → project name (**required**; only way to select a project) |
 | `yolo` | Auto-approve Grok tools (needed for unattended fix/investigate) |
 | `summarizeThreadTitle` | Call Grok once to name the Discord thread before work (default true) |
@@ -55,6 +57,9 @@ cp config.example.json config.json
 | `projects.*.directToPrimary` | When true, new sessions use **No-PR / direct-to-primary** ship: worktree per session, bot fast-forwards primary and pushes (default false / PR mode). Editable on project settings. Sticky per thread after first run. |
 | `resumeActiveRuns` | Persist in-flight runs under `data/runs/` and auto-resume after restart (default `true`). Editable on the Config page |
 | `autoFixCI` / `autoFixCIMax` | Auto-queue CI fixes when checks fail (default off; max attempts per PR, default 2) |
+| `maxConcurrentRuns` | Host-wide cap on simultaneous agent runs (nil/`0` = unlimited). Editable on the Config page |
+| `maxConcurrentRunsUser` | Per-actor cap on simultaneous agent runs (nil/`0` = unlimited). A follow-up queued on a thread the actor is *already* running is not charged against it — the cap counts concurrent runs, not queued work. Editable on the Config page |
+| `modelRates` | Model name → `{ inputPerMTok, outputPerMTok, cacheReadPerMTok, cacheWritePerMTok }`, dollars per **million** tokens. Every field is tri-state because **unset ≠ free**: a turn is priced only when its model has a rate for every class it used, and `/spend` reports the rest as `≥ $X` plus an unpriced count rather than a total that is quietly too low. Cache **write** is its own column on purpose — providers charge a premium for it (1.25× on Anthropic) and defaulting it to the input rate is a wrong number wearing a right one's clothes. Editable at `/config/model-rates` |
 | `maxConcurrentDeploys` | Host-wide cap on simultaneous deploy runs (default `4`). |
 | `deployRunRetention` | Deploy runs kept per service+environment (default `50`). |
 | `projects.*.deploy.enabled` | Turn deploys on for a project. Editable on project settings → Deploy |
@@ -80,7 +85,7 @@ cp config.example.json config.json
 
 ### Web UI (private network / Tailscale)
 
-While the process runs it also serves a small server-rendered admin UI (hime + `html/template` + stdlib SSE). Nav: **Dashboard · Ship · Issues · Sessions · Worktrees · Config**.
+While the process runs it also serves a small server-rendered admin UI (hime + `html/template` + stdlib SSE). The shell is project-first and its mode is derived from the URL alone. Global nav: **Projects · Ship · Cases · Reviews · Deploys · Sessions · Worktrees · Spend · Inbox · Config**; inside `/projects/{name}` it becomes that project's workspace (**Overview · Start task · Ship · Cases · Reviews · Issues · Linear · Commits · Deploys · Sessions · Worktrees · Spend · Settings**). A search box sits above both.
 
 | Path | View |
 |------|------|
@@ -91,7 +96,10 @@ While the process runs it also serves a small server-rendered admin UI (hime + `
 | `/search?q=` | One box over cases, sessions, tracked PRs/issues and recent commits; an exact case key (`WEBAPP-14`) jumps straight to the case |
 | `/history` · `/history/{id}` | Turn-by-turn conversation log (also linked from Discord action bar **History**) |
 | `/worktrees` | List per-thread git worktrees; prune one or all past idle TTL |
-| `/config` | Add/remove projects, channel→project map, allowed users/roles, Linear/GitHub project fields, worktree idle TTL, team board digest, CI auto-fix, completion risk globs |
+| `/deploys` | Cross-project deploy board — one row per project × service × environment: what is live, how old, and what has happened since. A pure read of the run store (no manifest is opened), bounded to the most recently touched runs and it says so when the scan clipped |
+| `/spend` · `/projects/{project}/spend` | What the agent runs cost, by project, actor and session. Tokens always; dollars only for models `modelRates` fully covers, otherwise `≥ $X` plus the unpriced models named |
+| `/config` | Add/remove projects, channel→project map, allowed users and teams, Linear/GitHub project fields, worktree idle TTL, concurrency caps, team board digest, CI auto-fix, completion risk globs |
+| `/config/model-rates` | Per-model token prices behind `/spend` (admin) |
 | `/login` | Discord OAuth login (only when `webAuth.enabled`) |
 | `/issues` | Project picker for GitHub issues |
 | `/projects/{project}/issues` | Issue list with multi-repo picker |
@@ -103,7 +111,7 @@ While the process runs it also serves a small server-rendered admin UI (hime + `
 
 | Feature flag | Effect |
 |--------------|--------|
-| `webAuth.features.githubWrites` | Members can comment / close issues & PRs |
+| `webAuth.features.githubWrites` | Members can comment / close issues & PRs, and submit a **real GitHub review** (`gh pr review --approve\|--request-changes\|--comment`) from the PR page. The GitHub review additionally needs the per-project `githubWrites` capability, checked in the handler and not merely hidden in the rail — it is the only one of grokwork's three "review" actions branch protection counts, and it files under the host `gh` account |
 | `webAuth.features.merge` | Members can merge (default `webMergeMethod`: `squash`). Never passes `--admin` |
 | `webAuth.features.startSessions` | Members can **Fix** from a GitHub/Linear issue, **Address CI / Address review** from a PR, and **Review** a PR or commit (a PR review posts one PR comment; a commit review files issues) |
 
@@ -223,6 +231,8 @@ Project is chosen **only** from `channels` config (parent channel when inside a 
 
 **Thread ownership:** the first `@Grok` author on a thread becomes **owner** (stored on the session). Anyone on the allowlist may still queue tasks (soft open). `@Grok /cancel` and `@Grok /reset` require the owner, a co-owner, or a project admin (a member of a team whose capability template grants `adminProject`). Discord channel permissions no longer grant anything — authorization is per project, not per guild. `@Grok /claim` takes primary ownership (previous owner stays as co-owner). `@Grok /hand-off @user` transfers ownership and posts a short card (goal, status, PR, queue). Unowned legacy sessions stay open for cancel/reset until someone claims or the next task sets an owner.
 
+**Audit:** both surfaces write the same JSONL records under `data/audit/<date>.jsonl`. The web UI logs its mutations; the Discord command surface logs every mutating command **and every refusal**, since a refused `/reset` is exactly what an operator goes looking for. `detail.source` names which surface produced a row, and run dispatches record which affordance started them (a thread task, a completion-card button, `/fix-ci`, `/address`, a decision card) — the action name alone cannot tell them apart. Two things never reach the log on the Discord side: message content and prompts (a task or a customer update can carry customer data — free-text arguments like a checkpoint label are dropped, not trimmed), and local filesystem paths, which are stripped centrally because most strings that land there are git/gh stderr nobody controls.
+
 **Continuity brief:** each thread keeps **one editable (and preferably pinned) brief card** with sticky goal, recent done turns, what’s left (queue/CI/PR), branch, PR links, key changed files, and open questions scraped from the last assistant reply. It refreshes after each non-cancelled run, on `@Grok /hand-off`, and on `@Grok /brief`. Goal defaults to the first task prompt; override with `@Grok /brief goal <text>`. Pinning needs **Pin Messages** for the bot (card still updates without pin). Manage Messages alone is not enough — Discord split pin into its own permission.
 
 **Lifecycle labels:** each thread has a label `open → in_progress → blocked → needs_review → done | abandoned` (empty = open). Auto: first task → `in_progress`; ready (non-draft) open PR → `needs_review`; all PRs merged → `done`; all closed without merge → `abandoned`. Draft-only PRs stay `in_progress`. `@Grok /label blocked` (etc.) sets a **manual** label and pauses auto until `@Grok /label auto` (merge/close still force terminal labels). Shown on `/status`, brief, and hand-off.
@@ -235,7 +245,11 @@ While a task is running, the bot updates the status message every few seconds wi
 
 **Search:** the sidebar box and `/search?q=` answer over cases (key, customer ref, title), sessions (goal, label, thread id), tracked pull requests and issues, and recent commits, grouped by kind. Results only ever include projects the signed-in viewer can open, and an exact case key resolves straight to that case exactly as `/c/<key>` does — a key in a project you cannot open answers identically to one that does not exist. Work per query is bounded and printed at the foot of the page: each kind returns at most 20 matches, and commits are read as the newest 300 on the primary ref of **one** project (pick it in the Project dropdown; an unscoped search reads no git log at all).
 
-**Deploys:** `/projects/<name>/deploys` shows the pipeline the repo declares in `.grokwork/deploy.yaml`, read from the deployed commit rather than the working tree, as a services × environments board. With deploys enabled and the `deploy` feature flag on, each cell gets a Deploy button behind a confirm modal naming service, environment and short SHA; protected environments read as dangerous and need the capability their config demands. A run gets its own page with per-step status and a live log tail, a Cancel button while it runs, and Redeploy once it is terminal — replaying that run's frozen steps at its own commit, which is the phase-1 rollback. Runs queue per service+environment rather than being refused, and are never auto-resumed after a restart (shell steps are not idempotent): an interrupted run is marked as such and recovery is an explicit Redeploy. Note the deploy feature flag is fail-closed with web auth off, like every other write feature — a production deploy needs a signed-in identity for the audit trail and the capability check. See `docs/design-deploy-pipeline.md`.
+**Spend:** every finished turn records the agent, the model it ran on, and its token usage, and `/spend` (plus `/projects/<name>/spend`) folds those into a report by project, actor and session. Tokens and dollars are separate answers on purpose: a turn always contributes its tokens, but contributes dollars only when `modelRates` covers **every** class it used, so a half-filled rate table yields `≥ $X`, a count of unpriced turns, and the offending model names — never a total that is quietly too low. Visibility is applied per turn, so the actor and session tables cannot carry a hidden project's burn rate. The session page carries the same figure for one thread.
+
+**Case SLA:** with `projects.<name>.sla` set, the case board and case pages badge a first-response or resolution deadline that has passed, and `?sla=breached` filters to them. Nothing is stored but timestamps — breach is computed at render time, because a stored flag is wrong the moment a deadline passes with no writer running (the live-region fingerprint folds the flag in, so a clock crossing refreshes the badge without anyone navigating). A round is one open period: reopening a case restarts its response clocks, because a customer who came back is waiting again. Phase `answered` freezes the resolution clock only while the case sits there — the wait is the customer's — and the first-response clock is unaffected, since reaching `answered` *is* a response. A case filed before the stamps existed never breaches.
+
+**Deploys:** `/deploys` is the cross-project board — one row per project × service × environment, with what is live, its age, and whether a newer run failed or is still going. It reads only the run store, so it costs the same for forty services as for one, and it says out loud when the scan clipped rather than reporting a long-quiet lane as "never deployed". `/projects/<name>/deploys` shows the pipeline the repo declares in `.grokwork/deploy.yaml`, read from the deployed commit rather than the working tree, as a services × environments board. With deploys enabled and the `deploy` feature flag on, each cell gets a Deploy button behind a confirm modal naming service, environment and short SHA; protected environments read as dangerous and need the capability their config demands. A run gets its own page with per-step status and a live log tail, a Cancel button while it runs, and Redeploy once it is terminal — replaying that run's frozen steps at its own commit, which is the phase-1 rollback. Runs queue per service+environment rather than being refused, and are never auto-resumed after a restart (shell steps are not idempotent): an interrupted run is marked as such and recovery is an explicit Redeploy. Note the deploy feature flag is fail-closed with web auth off, like every other write feature — a production deploy needs a signed-in identity for the audit trail and the capability check. See `docs/design-deploy-pipeline.md`.
 
 **Worktrees:** when `worktreeIsolation` is on (default) and the project is a git repo, each Discord thread gets its own worktree at `<worktreeDir>/<project>/<threadId>` (default `data/worktrees/…` next to config; override with global `worktreeDir`) on branch `grokwork/<threadId>` (legacy `grok/discord/<threadId>` branches remain managed). New worktrees always run a short-throttle `git fetch --all --prune` (hardcoded 5s) on the main checkout and branch from `origin/*` when present (else local `HEAD`). Separately, an idle background loop keeps remotes fresh for the Commits UI using per-project `repoFetchIntervalMinutes` (default 5; `0` off). Grok runs with `--cwd` set to that worktree so concurrent threads do not share a working tree. `/reset` removes the worktree and deletes the branch. If the branch’s PR is already **merged** or **closed**, the next task (and the PR poller) automatically removes the worktree/branch but **keeps the session entry** so PR links and the closed state stay visible on the sessions list and detail. A follow-up task starts a fresh worktree the same way. Idle worktrees are also pruned after **`worktreeIdleTTLDays`** days without activity (default 30; session `updatedAt`, or directory mtime for orphans). Set to `0` to disable. A background sweep runs daily and skips threads that are currently running or queued. Set `"worktreeIsolation": false` to always use the main project path.
 
@@ -383,9 +397,10 @@ internal/web/          # private admin UI (hime, templates, SSE)
 internal/grokrun/      # exec grok -p
 internal/gitworktree/  # per-thread git worktree isolation
 internal/sessionstore/ # thread → session persistence
-internal/history/      # per-turn conversation log for the web UI
+internal/history/      # per-turn conversation log + token usage for the web UI
+internal/spend/        # folds history turns into a cost report against modelRates
 internal/ghpr/         # gh CLI wrapper (PR/issue state, checks, writes)
 internal/linear/       # Linear GraphQL client
-internal/audit/        # web write audit log under data/audit/
+internal/audit/        # write audit log under data/audit/ (web *and* Discord commands)
 config.example.json
 ```

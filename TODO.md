@@ -59,6 +59,8 @@ Order is suggested priority, not a commitment. **Code on `main` wins** if this f
 - [x] Ship board “from case” badge; keep case sessions after terminal PR cleanup (as shipped)
 - [x] Role docs (`docs/roles/`); support case guide (`docs/support-case-guide.md`)
 - [x] Real-project smoke of support + eng paths (ops)
+- [x] **Case SLA** — per-project, per-severity `firstResponseMinutes` / `resolutionMinutes`; breach computed at render time (never stored), board badge + `?sla=breached` filter, `answered` pauses only the resolution clock, reopen restarts the round
+- [ ] **SLA notifications** — nothing pings when a case breaches; the badge only appears to whoever is looking at the board
 
 ### Web UI (selected)
 
@@ -66,6 +68,12 @@ Order is suggested priority, not a commitment. **Code on `main` wins** if this f
 - [x] Start task web; session continue / cancel / reset / label / goal / claim
 - [x] Issues / Linear list / commits / PR detail / diff review / team PR reviews
 - [x] Bulk fix, commit-review-as-session, markdown bodies, live SSE regions
+- [x] **Search** (`/search?q=`) over cases, sessions, tracked PRs/issues and one project's recent commits; exact case key redirects; visibility applied before ranking; per-kind caps printed on the page
+- [x] **Spend** (`/spend`, `/projects/{p}/spend`, session strip) from per-turn token usage in `internal/history`, priced against `config.modelRates` — tokens always, dollars only where the rate table is complete
+- [x] **Cross-project deploy board** (`/deploys`) — pure read of the run store, bounded scan, says so when clipped
+- [x] **Real GitHub reviews** (`POST /prs/…/github-reviews` → `gh pr review`), kept a separate route and rail action from the grokwork-local team verdict and the agentic review
+- [ ] **Audit reader UI** — the log exists for both surfaces but there is no page over it
+- [ ] **Spend budgets / alerts** — `/spend` reports, it does not enforce; no per-project cap, no warning when a rate is missing until someone opens the page
 
 ### Linear L1
 
@@ -95,10 +103,12 @@ See `docs/design-per-user-github-identity.md` Tier A. **Host still pushes/opens 
 | Item | Status |
 |------|--------|
 | Web auth + feature flags + project visibility | **Partial** — OAuth optional; config admin-gated when auth on; not forced for all deploys |
+| Per-project **teams** replace Discord roles | **Done** — `projects.<name>.teams` grants access *and* capabilities; `allowedRoleIds` / `capabilityByRole` removed, the Discord mod bypass for `/cancel` `/reset` with them. A named-but-unresolvable capability template fails closed (it used to fall through to *builder*) and `Load` warns for every dangling reference |
 | Layer A env filter | **Done** |
 | Layer B full env allowlist (per-project / host flag) | **Not started** |
-| Audit log (web mutations, case/session actions) | **Partial** — not full tool/run/capability trail |
-| Rate limits + concurrency caps | **Partial** — some start rate limits; host/user concurrent-run product incomplete |
+| Audit log (web mutations, case/session actions) | **Done for the command surface** — both web mutations and every Discord command, denials included, in one `audit.Event` shape with `detail.source`; run dispatches record which affordance started them. **Still not a tool/run trail:** individual tool calls, file writes and model output are not audited, and there is no reader UI — `data/audit/*.jsonl` is read with `jq` |
+| Rate limits + concurrency caps | **Done** — `maxConcurrentRuns` (host) + `maxConcurrentRunsUser` (per actor), checked outside the thread lock, not charged to same-thread follow-ups; case-investigate now goes through the same start rate limit as Fix and bulk Fix costs N |
+| Crash-safe state writes | **Done** — `config.json` and `sessions.json` write tmp+fsync+rename+dir-fsync; the session store hands out deep copies so callers cannot alias (or race) its backing slices |
 | OS sandbox for Grok children | **Design only** — `docs/design-agent-sandbox.md` |
 
 ### 4. Team DX leftovers — **partial / open**
@@ -180,8 +190,8 @@ From `design-agentic-team-runtime.md` — only after gates proven:
 |-------|--------|---------|
 | **A. Multi-person basics** | **Done** | Ownership, claim/hand-off, queue social |
 | **B. PR-aware thread** | **Done** | PR cards, completion, CI triage, timeline |
-| **C. Safe team mode** | **Mostly done** | Caps/modes/env Layer A + **attribution Tier A** shipped; audit depth + Layer B remain |
-| **D. Team artifacts** | **Mostly done** | Brief, labels, board, action bar; watchers/notifyOnDone next |
+| **C. Safe team mode** | **Mostly done** | Caps/modes/env Layer A + **attribution Tier A** + **per-project teams** + command-surface audit + concurrency caps shipped; **Layer B env allowlist, a tool/run-level audit trail and any reader UI remain** |
+| **D. Team artifacts** | **Mostly done** | Brief, labels, board, action bar, watchers/notifyOnDone, case SLA badges, spend report; SLA and budget *notifications* not started |
 | **E. Review loop** | **Mostly done** | Issue bind, `/comments`+`/address`, map→GH review request; radar optional |
 | **F. Support / cases** | **Done** | Discord + web case lifecycle |
 | **G. IDE-free (Wave 2)** | **Done** | Checkpoint, verify, sync, decisions |

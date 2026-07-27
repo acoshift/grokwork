@@ -11,7 +11,73 @@ import (
 // to Entry (or to Dossier / OpenQuestion) without extending clone() fails here
 // instead of silently reintroducing the write-through Store.Get used to have.
 func TestEntryCloneDetachesEveryField(t *testing.T) {
-	orig := Entry{
+	orig := cloneFixture()
+
+	got := orig.clone()
+
+	// Value equality must hold — clone detaches memory, it does not drop data.
+	if !reflect.DeepEqual(orig, got) {
+		t.Fatalf("clone changed value:\n orig=%+v\n got =%+v", orig, got)
+	}
+
+	assertDetached(t, reflect.ValueOf(orig), reflect.ValueOf(got), "Entry")
+}
+
+// TestCloneFixtureCoversEveryReferenceField is what makes the guard above a
+// guard at all.
+//
+// assertDetached returns early on a nil or empty slice, map or pointer: there is
+// no backing array to share, so nothing can be proven about it. That means a new
+// Entry field left out of the fixture passes the detachment walk *trivially*,
+// even when clone() never learned to copy it — the exact failure the walk exists
+// to catch, silently exempted by the omission it should have flagged.
+//
+// So the fixture's completeness is asserted separately: every exported
+// reference-typed field, at every depth clone() reaches, must be populated.
+// Adding `Foo []string` to Entry now fails here with the field name until the
+// fixture names it, and only then does the detachment walk get to say whether
+// clone() handles it.
+func TestCloneFixtureCoversEveryReferenceField(t *testing.T) {
+	assertPopulated(t, reflect.ValueOf(cloneFixture()), "Entry")
+}
+
+// assertPopulated fails for every exported slice/map/pointer field that is nil
+// or empty, recursing through pointers and into slice elements.
+func assertPopulated(t *testing.T, v reflect.Value, path string) {
+	t.Helper()
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := range v.NumField() {
+			if !v.Type().Field(i).IsExported() {
+				continue
+			}
+			assertPopulated(t, v.Field(i), path+"."+v.Type().Field(i).Name)
+		}
+	case reflect.Slice:
+		if v.IsNil() || v.Len() == 0 {
+			t.Errorf("%s: clone fixture leaves this slice empty, so the detachment walk skips it — populate it in cloneFixture()", path)
+			return
+		}
+		// One element is enough to prove the backing array is detached; walking
+		// it catches nested reference fields (OpenQuestion.Options).
+		assertPopulated(t, v.Index(0), path+"[0]")
+	case reflect.Map:
+		if v.IsNil() || v.Len() == 0 {
+			t.Errorf("%s: clone fixture leaves this map empty, so the detachment walk skips it — populate it in cloneFixture()", path)
+		}
+	case reflect.Pointer:
+		if v.IsNil() {
+			t.Errorf("%s: clone fixture leaves this pointer nil, so the detachment walk skips it — populate it in cloneFixture()", path)
+			return
+		}
+		assertPopulated(t, v.Elem(), path+"*")
+	}
+}
+
+// cloneFixture is an Entry with every exported reference-typed field populated,
+// at every depth. TestCloneFixtureCoversEveryReferenceField enforces that.
+func cloneFixture() Entry {
+	return Entry{
 		SessionID: "s1",
 		Project:   "p",
 		// SLA clocks are scalars, so the detachment walk below has nothing to
@@ -38,15 +104,6 @@ func TestEntryCloneDetachesEveryField(t *testing.T) {
 			NextActions:  []string{"na"},
 		},
 	}
-
-	got := orig.clone()
-
-	// Value equality must hold — clone detaches memory, it does not drop data.
-	if !reflect.DeepEqual(orig, got) {
-		t.Fatalf("clone changed value:\n orig=%+v\n got =%+v", orig, got)
-	}
-
-	assertDetached(t, reflect.ValueOf(orig), reflect.ValueOf(got), "Entry")
 }
 
 // assertDetached walks two values of the same type and fails on any shared
