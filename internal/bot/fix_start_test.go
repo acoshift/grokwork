@@ -51,7 +51,11 @@ func testFixBot(t *testing.T) (*Bot, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(cfg, store, hist), proj
+	b := New(cfg, store, hist)
+
+	drainBotOnCleanup(t, b)
+
+	return b, proj
 }
 
 func TestBuildGitHubFixPromptContract(t *testing.T) {
