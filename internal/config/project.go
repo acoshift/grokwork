@@ -321,7 +321,9 @@ func ParseVerifyCommandsText(text string) ([]VerifyCommand, error) {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
 	var out []VerifyCommand
-	for i, line := range strings.Split(text, "\n") {
+	i := -1
+	for line := range strings.SplitSeq(text, "\n") {
+		i++
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -545,8 +547,7 @@ func (c *Config) SetProjectDirectToPrimary(name string, enabled bool) error {
 		return fmt.Errorf("project %q not found", name)
 	}
 	if enabled {
-		v := true
-		pc.DirectToPrimary = &v
+		pc.DirectToPrimary = new(true)
 	} else {
 		pc.DirectToPrimary = nil
 	}
@@ -590,8 +591,7 @@ func (c *Config) SetProjectSafeTeam(name string, enabled bool, defaultTemplate, 
 		return fmt.Errorf("unknown capability template %q", defaultTemplate)
 	}
 	if enabled {
-		v := true
-		pc.SafeTeamMode = &v
+		pc.SafeTeamMode = new(true)
 	} else {
 		pc.SafeTeamMode = nil
 	}
@@ -628,8 +628,7 @@ func (c *Config) SetProjectSafeTeamPolicy(name string, enabled bool, defaultTemp
 		return fmt.Errorf("unknown capability template %q", defaultTemplate)
 	}
 	if enabled {
-		v := true
-		pc.SafeTeamMode = &v
+		pc.SafeTeamMode = new(true)
 	} else {
 		pc.SafeTeamMode = nil
 	}

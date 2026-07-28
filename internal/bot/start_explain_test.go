@@ -19,9 +19,8 @@ func TestStartExplainSnapshotPolicyNonShip(t *testing.T) {
 		t.Fatal("expected explain task body in Prompt")
 	}
 
-	yolo := true
 	cfg := &config.Config{
-		Yolo: &yolo,
+		Yolo: new(true),
 		Projects: config.ProjectsMap{
 			"app": {
 				Path:           filepath.Join(t.TempDir(), "app"),

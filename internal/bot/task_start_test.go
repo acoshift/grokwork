@@ -31,10 +31,10 @@ func testBotWithData(t *testing.T) (*Bot, string) {
 		Channels:          map[string]string{"ch1": "app"},
 		DataDir:           filepath.Join(dir, "data"),
 		ConfigPath:        filepath.Join(dir, "config.json"),
-		WorktreeIsolation: boolPtr(false),
+		WorktreeIsolation: new(false),
 		MaxTurns:          5,
 		TimeoutMs:         5000,
-		Yolo:              boolPtr(true),
+		Yolo:              new(true),
 	}
 	store, err := sessionstore.New(cfg.DataDir)
 	if err != nil {
@@ -274,7 +274,7 @@ func TestExecuteTaskDiscordOptionalNilSession(t *testing.T) {
 		createdBy: "user-9", createdByName: "Web User",
 		discordURL: "https://discord.example/threads/web-thread-1",
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	job := &runJob{cancel: cancel, start: time.Now(), project: "app"}
 	claimed, _, err := b.claimOrEnqueue(threadID, job, item)
@@ -339,7 +339,7 @@ func TestStartTaskQueuesAndRuns(t *testing.T) {
 
 	// Hold a fake running job so StartTask enqueues
 	block := make(chan struct{})
-	ctx1, cancel1 := context.WithCancel(context.Background())
+	ctx1, cancel1 := context.WithCancel(t.Context())
 	job1 := &runJob{cancel: cancel1, start: time.Now(), project: "app"}
 	itemHold := taskItem{threadID: threadID, proj: projectRef{Name: "app", Cwd: projPath}}
 	if claimed, _, err := b.claimOrEnqueue(threadID, job1, itemHold); err != nil || !claimed {
@@ -555,7 +555,7 @@ func TestStartTaskQueueFull(t *testing.T) {
 		t.Fatalf("hold: %v %v", claimed, err)
 	}
 	// Distinct authors so same-user replace does not collapse the queue.
-	for i := 0; i < maxFollowupQueue; i++ {
+	for i := range maxFollowupQueue {
 		pos, err := b.StartTask(StartTaskOpts{
 			ThreadID: threadID,
 			Proj:     projectRef{Name: "app", Cwd: projPath},
@@ -633,7 +633,7 @@ func TestExecuteTaskWithAttachmentPaths(t *testing.T) {
 		origin:          SourceWeb,
 		attachmentPaths: []string{att},
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	job := &runJob{cancel: cancel, start: time.Now(), project: "app"}
 	if claimed, _, err := b.claimOrEnqueue(threadID, job, item); err != nil || !claimed {
@@ -666,7 +666,7 @@ func TestExecuteTaskDiscordOriginUsesActor(t *testing.T) {
 		origin:    SourceDiscord,
 		createdBy: "disc-1", createdByName: "DiscordUser#1",
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	job := &runJob{cancel: cancel, start: time.Now(), project: "app"}
 	if claimed, _, err := b.claimOrEnqueue(threadID, job, item); err != nil || !claimed {
@@ -715,7 +715,7 @@ printf '%s\n' '{"type":"end","sessionId":"x","stopReason":"EndTurn","num_turns":
 	b.cfg.TimeoutMs = 60000
 
 	threadID := "cancel-web-1"
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	item := taskItem{
 		parsed:   Parsed{Kind: KindTask, Prompt: "long job"},
 		proj:     projectRef{Name: "app", Cwd: projPath},
@@ -906,7 +906,7 @@ func TestExecuteTaskSetsGoalWithoutDiscord(t *testing.T) {
 		source:   SourceWeb,
 		origin:   SourceWeb,
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	job := &runJob{cancel: cancel, start: time.Now(), project: "app"}
 	if claimed, _, err := b.claimOrEnqueue(threadID, job, item); err != nil || !claimed {
@@ -947,7 +947,7 @@ func TestDrainTaskQueueWebFollowUpNoPanic(t *testing.T) {
 		source:   SourceWeb,
 		origin:   SourceWeb,
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	job := &runJob{cancel: cancel, start: time.Now(), project: "app"}
 	if claimed, _, err := b.claimOrEnqueue(threadID, job, item1); err != nil || !claimed {
 		t.Fatalf("claim1: %v %v", claimed, err)

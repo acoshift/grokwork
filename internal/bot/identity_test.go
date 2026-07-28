@@ -108,8 +108,7 @@ func TestPerUserRunCapCountsOneAccountAcrossProviders(t *testing.T) {
 		snowflake = "424242424242424242"
 		account   = "google:sub-1"
 	)
-	max := 1
-	b := &Bot{cfg: &config.Config{MaxConcurrentRunsUser: &max}}
+	b := &Bot{cfg: &config.Config{MaxConcurrentRunsUser: new(1)}}
 	b.SetIdentity(linkStore(t, map[string]string{snowflake: account}))
 
 	// Run 1: a web dispatch. The web session already carries the canonical id

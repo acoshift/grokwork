@@ -1280,8 +1280,7 @@ func TestCommitReviewStartsSession(t *testing.T) {
 	_ = cfg.SetProjectDiscordChannel("proj", "ch-proj")
 	fakeGrok := writeWebFakeGrok(t)
 	cfg.GrokBin = fakeGrok
-	f := false
-	cfg.WorktreeIsolation = &f
+	cfg.WorktreeIsolation = new(false)
 	bot.SetThreadAPIForTest(srv.bot, &bot.FakeThreadAPI{NextMsg: "m1", NextTh: "th-commit-review"})
 	const sha = "abcdef0123456789abcdef0123456789abcdef01"
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
@@ -1372,7 +1371,7 @@ func TestCommitsListPagination(t *testing.T) {
 	// Page size is 50; return 51 lines so page 1 shows Next.
 	makeLog := func(start, n int) []byte {
 		var b strings.Builder
-		for i := 0; i < n; i++ {
+		for i := range n {
 			sha := fmt.Sprintf("%040x", start+i)
 			fmt.Fprintf(&b, "%s\x1fCommit %d\x1fAlice\x1fa@ex.com\x1f2026-07-20T12:00:00Z\n", sha, start+i)
 		}

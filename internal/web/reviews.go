@@ -529,7 +529,7 @@ func (s *Server) reviewerOptions(project string) []reviewerOption {
 		out = append(out, reviewerOption{ID: id, Name: name})
 	}
 	// Stable-ish sort by name.
-	for i := 0; i < len(out); i++ {
+	for i := range len(out) {
 		for j := i + 1; j < len(out); j++ {
 			if strings.ToLower(out[j].Name) < strings.ToLower(out[i].Name) {
 				out[i], out[j] = out[j], out[i]

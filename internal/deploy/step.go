@@ -185,8 +185,7 @@ func RunStep(ctx context.Context, spec StepSpec, logFile io.Writer, secrets []st
 	}
 
 	if waitErr != nil {
-		var ee *exec.ExitError
-		if errors.As(waitErr, &ee) {
+		if ee, ok := errors.AsType[*exec.ExitError](waitErr); ok {
 			res.ExitCode = ee.ExitCode()
 		} else {
 			res.ExitCode = -1

@@ -331,14 +331,12 @@ func TestStoreConcurrentUpdates(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	for i := range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = s.Update(id, func(run *Run) error {
 				run.Steps[i].Status = StatusSucceeded
 				return nil
 			})
-		}()
+		})
 	}
 	wg.Wait()
 	got, _, _ := s.Get(id)

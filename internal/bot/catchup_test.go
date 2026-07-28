@@ -42,7 +42,7 @@ func TestMarkMessageHandledDedupAndBound(t *testing.T) {
 		t.Fatal("peek should see m1")
 	}
 	// Overflow the cap; the oldest entry is evicted and markable again.
-	for i := 0; i < handledMsgCap+1; i++ {
+	for i := range handledMsgCap + 1 {
 		b.markMessageHandled(fmt.Sprintf("bulk-%d", i))
 	}
 	if b.messageHandled("m1") {

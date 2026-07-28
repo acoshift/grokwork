@@ -175,9 +175,7 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 	out := make([]bulkOne, len(numbers))
 	var wg sync.WaitGroup
 	for i, n := range numbers {
-		wg.Add(1)
-		go func(i, n int) {
-			defer wg.Done()
+		wg.Go(func() {
 			info, _ := ghpr.ViewIssueWith(reqCtx, gh, path, n, owner, repo)
 			title := strings.TrimSpace(info.Title)
 			body := info.Body
@@ -205,7 +203,7 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 				"queuePos": res.QueuePos, "created": res.Created,
 			}
 			s.auditAction(ctx, audit.ActionSessionStart, startErr, detail)
-		}(i, n)
+		})
 	}
 	wg.Wait()
 
@@ -560,7 +558,7 @@ func (s *Server) sessionRedirect(ctx *hime.Context, threadID, ok, errMsg string)
 			parts := strings.SplitN(ok, "&", 2)
 			q.Set("ok", parts[0])
 			// parse remaining as key=value pairs
-			for _, pair := range strings.Split(parts[1], "&") {
+			for pair := range strings.SplitSeq(parts[1], "&") {
 				kv := strings.SplitN(pair, "=", 2)
 				if len(kv) == 2 {
 					q.Set(kv[0], kv[1])

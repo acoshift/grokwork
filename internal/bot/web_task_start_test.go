@@ -161,12 +161,11 @@ func TestStartWebTaskEmptyPrompt(t *testing.T) {
 
 func TestStartWebTaskInvestigatorDeniedFixMode(t *testing.T) {
 	dir := t.TempDir()
-	on := true
 	cfg := &config.Config{
 		Projects: config.ProjectsMap{
 			"app": {
 				Path:             dir,
-				SafeTeamMode:     &on,
+				SafeTeamMode:     new(true),
 				AllowedUserIDs:   []string{"inv1"},
 				CapabilityByUser: map[string]string{"inv1": "investigator"},
 			},
@@ -224,12 +223,11 @@ func TestWantsFixStartMode(t *testing.T) {
 }
 
 func TestRequireCanStartFixInvestigator(t *testing.T) {
-	on := true
 	cfg := &config.Config{
 		Projects: config.ProjectsMap{
 			"app": {
 				Path:             t.TempDir(),
-				SafeTeamMode:     &on,
+				SafeTeamMode:     new(true),
 				AllowedUserIDs:   []string{"inv1", "eng1"},
 				CapabilityByUser: map[string]string{"inv1": "investigator", "eng1": "builder"},
 			},
@@ -247,9 +245,8 @@ func TestRequireCanStartFixInvestigator(t *testing.T) {
 // A web-originated investigate task must never open a PR — same policy path as
 // Discord "/start investigate" (mode select → KindStartInvestigate → snapshot).
 func TestStartWebTaskInvestigateNonShip(t *testing.T) {
-	yolo := true
 	cfg := &config.Config{
-		Yolo: &yolo,
+		Yolo: new(true),
 		Projects: config.ProjectsMap{
 			"app": {
 				Path:           t.TempDir(),

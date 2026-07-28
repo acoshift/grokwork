@@ -195,7 +195,7 @@ func StatPatch(patch []byte, maxFiles int) DiffIndex {
 	text := string(bytes.ReplaceAll(patch, []byte("\r\n"), []byte("\n")))
 	var cur *FileStat
 	inHunk := false
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		switch {
 		case strings.HasPrefix(line, "diff --git "):
 			if len(d.Files) >= maxFiles {

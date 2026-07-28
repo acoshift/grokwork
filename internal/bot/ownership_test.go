@@ -191,13 +191,12 @@ func TestActorAdminsProjectRequiresMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	on := true
 	cfg := &config.Config{
 		DataDir: dir,
 		Projects: config.ProjectsMap{
 			"app": {
 				Path:                    dir,
-				SafeTeamMode:            &on,
+				SafeTeamMode:            new(true),
 				SafeTeamDefaultTemplate: "admin",
 				AllowedUserIDs:          []string{"member1"},
 			},

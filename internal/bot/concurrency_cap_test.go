@@ -13,8 +13,7 @@ import (
 // fire. With real counting, a second concurrent run by the same actor must be
 // refused while a different actor (well under the cap) is still let through.
 func TestPerUserConcurrentRunCapEnforced(t *testing.T) {
-	max := 1
-	b := &Bot{cfg: &config.Config{MaxConcurrentRunsUser: &max}}
+	b := &Bot{cfg: &config.Config{MaxConcurrentRunsUser: new(1)}}
 
 	job1 := &runJob{cancel: func() {}, start: time.Now()}
 	claimed, _, err := b.claimOrEnqueue("t1", job1, taskItem{threadID: "t1", actor: Actor{ID: "alice"}})
@@ -64,8 +63,7 @@ func TestPerUserConcurrentRunCapIgnoresQueued(t *testing.T) {
 
 	// Now turn on a per-user cap of 1 and confirm alice — whose only presence
 	// anywhere is that queued item — can still claim a brand-new thread.
-	max := 1
-	b.cfg = &config.Config{MaxConcurrentRunsUser: &max}
+	b.cfg = &config.Config{MaxConcurrentRunsUser: new(1)}
 	claimed, _, err = b.claimOrEnqueue("t2", &runJob{cancel: func() {}, start: time.Now()}, taskItem{threadID: "t2", actor: Actor{ID: "alice"}})
 	if err != nil || !claimed {
 		t.Fatalf("alice claim on fresh thread should not be blocked by her queued item: claimed=%v err=%v", claimed, err)
@@ -79,8 +77,7 @@ func TestPerUserConcurrentRunCapIgnoresQueued(t *testing.T) {
 // @Grok message on that SAME thread is an ordinary mid-run follow-up and must
 // be queued behind it, not refused as hitting her own cap.
 func TestPerUserConcurrentRunCapAllowsSameThreadFollowUp(t *testing.T) {
-	max := 1
-	b := &Bot{cfg: &config.Config{MaxConcurrentRunsUser: &max}}
+	b := &Bot{cfg: &config.Config{MaxConcurrentRunsUser: new(1)}}
 
 	job1 := &runJob{cancel: func() {}, start: time.Now()}
 	claimed, _, err := b.claimOrEnqueue("t1", job1, taskItem{threadID: "t1", actor: Actor{ID: "alice"}})
@@ -102,8 +99,7 @@ func TestPerUserConcurrentRunCapAllowsSameThreadFollowUp(t *testing.T) {
 // the single active run on a thread must not block a follow-up destined for
 // that same thread's queue.
 func TestHostConcurrentRunCapAllowsSameThreadFollowUp(t *testing.T) {
-	max := 1
-	b := &Bot{cfg: &config.Config{MaxConcurrentRuns: &max}}
+	b := &Bot{cfg: &config.Config{MaxConcurrentRuns: new(1)}}
 
 	job1 := &runJob{cancel: func() {}, start: time.Now()}
 	claimed, _, err := b.claimOrEnqueue("t1", job1, taskItem{threadID: "t1", actor: Actor{ID: "alice"}})

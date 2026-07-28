@@ -2,10 +2,10 @@ package deploy
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/base64"
 	"io"
 	"slices"
-	"sort"
 	"unicode"
 )
 
@@ -64,7 +64,7 @@ func NewRedactor(w io.Writer, values []string) *Redactor {
 	}
 	// Longest first: masking the longer of two overlapping secrets is strictly
 	// safer than masking the shorter and leaving the remainder.
-	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
+	slices.SortFunc(secrets, func(a, b []byte) int { return cmp.Compare(len(b), len(a)) })
 	maxLen := 0
 	if len(secrets) > 0 {
 		maxLen = len(secrets[0])

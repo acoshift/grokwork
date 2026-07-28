@@ -6,12 +6,11 @@ import (
 )
 
 func TestResolveCapabilitiesSafeTeamUnmapped(t *testing.T) {
-	on := true
 	cfg := &Config{
 		Projects: ProjectsMap{
 			"app": {
 				Path:           "/tmp/app",
-				SafeTeamMode:   &on,
+				SafeTeamMode:   new(true),
 				AllowedUserIDs: []string{"u1"},
 			},
 		},
@@ -38,11 +37,10 @@ func TestResolveCapabilitiesBuilderWhenSafeOff(t *testing.T) {
 }
 
 func TestProjectConfigCapabilityMarshalRoundTrip(t *testing.T) {
-	on := true
 	m := ProjectsMap{
 		"app": {
 			Path:                    "/repos/app",
-			SafeTeamMode:            &on,
+			SafeTeamMode:            new(true),
 			SafeTeamDefaultTemplate: "investigator",
 			DefaultMode:             "investigate",
 			CapabilityByUser:        map[string]string{"u1": "builder"},
@@ -85,11 +83,10 @@ func TestProjectConfigCapabilityMarshalRoundTrip(t *testing.T) {
 
 func TestConfigFileRoundTripCapabilities(t *testing.T) {
 	// ProjectsMap JSON round-trip is the critical path for web config save.
-	on := true
 	m := ProjectsMap{
 		"p": {
 			Path:             "/tmp/p",
-			SafeTeamMode:     &on,
+			SafeTeamMode:     new(true),
 			CapabilityByUser: map[string]string{"u": "builder"},
 		},
 	}

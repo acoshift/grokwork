@@ -64,11 +64,10 @@ func TestProjectHasAllowlistIgnoresEmptyTeams(t *testing.T) {
 // TestResolveCapabilitiesByTeamOrsTemplates pins that capabilityByUser and every
 // matching team OR together, exactly as capabilityByUser + capabilityByRole did.
 func TestResolveCapabilitiesByTeamOrsTemplates(t *testing.T) {
-	on := true
 	cfg := &Config{Projects: ProjectsMap{
 		"app": {
 			Path:             "/app",
-			SafeTeamMode:     &on,
+			SafeTeamMode:     new(true),
 			CapabilityByUser: map[string]string{"discord:1": "operator"},
 			Teams: map[string]TeamConfig{
 				"support": {Members: []string{"discord:1", "discord:2"}, Capabilities: "investigator"},
@@ -103,11 +102,10 @@ func TestResolveCapabilitiesByTeamOrsTemplates(t *testing.T) {
 // TestResolveCapabilitiesAccessOnlyTeamFallsBackToDefault: a team with no
 // capabilities named grants access only, so its members land in the unmapped path.
 func TestResolveCapabilitiesAccessOnlyTeamFallsBackToDefault(t *testing.T) {
-	on := true
 	cfg := &Config{Projects: ProjectsMap{
 		"app": {
 			Path:         "/app",
-			SafeTeamMode: &on,
+			SafeTeamMode: new(true),
 			Teams:        map[string]TeamConfig{"guests": {Members: []string{"discord:9"}}},
 		},
 	}}
@@ -273,11 +271,10 @@ func TestLoadWarnsUnresolvedCapabilityTemplate(t *testing.T) {
 // TestResolveCapabilitiesTeamOverlayTemplate: a team may name a project overlay
 // template, not just a builtin.
 func TestResolveCapabilitiesTeamOverlayTemplate(t *testing.T) {
-	on := true
 	cfg := &Config{Projects: ProjectsMap{
 		"app": {
 			Path:         "/app",
-			SafeTeamMode: &on,
+			SafeTeamMode: new(true),
 			CapabilityTemplates: map[string]Capabilities{
 				"shipper": {Investigate: true, StartSessions: true, GithubWrites: true},
 			},

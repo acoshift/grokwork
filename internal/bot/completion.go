@@ -101,7 +101,7 @@ func CollectDiffSummary(ctx context.Context, cwd string, riskyGlobs []string) (D
 			out.DirtyStat = strings.TrimSpace(ds)
 		}
 		// Include untracked / dirty paths in name list and risk scan.
-		for _, line := range strings.Split(porcelain, "\n") {
+		for line := range strings.SplitSeq(porcelain, "\n") {
 			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
@@ -184,7 +184,7 @@ func parseNameStatus(raw string) []string {
 		return nil
 	}
 	var out []string
-	for _, line := range strings.Split(raw, "\n") {
+	for line := range strings.SplitSeq(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -584,7 +584,7 @@ func formatNameStatusLines(entries []string, maxLines int) string {
 	if n < limit {
 		limit = n
 	}
-	for i := 0; i < limit; i++ {
+	for i := range limit {
 		parts := strings.SplitN(entries[i], "\t", 2)
 		if len(parts) != 2 {
 			continue

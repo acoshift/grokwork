@@ -239,8 +239,7 @@ func TestSetProjectDeployEnvPolicyValidates(t *testing.T) {
 	if err := cfg.SetProjectDeployEnvPolicy("app", "prod", DeployEnvPolicy{StepTimeoutMaxMs: &over}); err == nil {
 		t.Fatal("accepted a ceiling above the hard maximum")
 	}
-	zero := 0
-	if err := cfg.SetProjectDeployEnvPolicy("app", "prod", DeployEnvPolicy{StepTimeoutMaxMs: &zero}); err == nil {
+	if err := cfg.SetProjectDeployEnvPolicy("app", "prod", DeployEnvPolicy{StepTimeoutMaxMs: new(0)}); err == nil {
 		t.Fatal("accepted a non-positive ceiling")
 	}
 	if err := cfg.SetProjectDeployEnvPolicy("app", "", DeployEnvPolicy{}); err == nil {

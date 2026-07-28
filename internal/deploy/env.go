@@ -3,7 +3,6 @@ package deploy
 import (
 	"os"
 	"slices"
-	"sort"
 	"strings"
 )
 
@@ -96,7 +95,7 @@ func BuildEnv(vars RunVars, envMap map[string]string) []string {
 		out = append(out, k+"="+v)
 	}
 	// Sorted so a run's environment is reproducible and diffable.
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

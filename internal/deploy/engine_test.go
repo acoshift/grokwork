@@ -79,7 +79,7 @@ func testEngine(t *testing.T, manifest string) (*Engine, *config.Config, string)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 		defer cancel()
 		eng.Stop(ctx)
 	})
@@ -380,7 +380,7 @@ func TestEngineRefusesUnknownEnvironment(t *testing.T) {
 func TestEngineRefusesWhileStopping(t *testing.T) {
 	skipOnWindows(t)
 	eng, _, repo := testEngine(t, twoStepManifest)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	eng.Stop(ctx)
 	_, err := eng.Trigger(context.Background(), TriggerRequest{
@@ -442,7 +442,7 @@ services:
 		t.Fatal(err)
 	}
 	waitRunning(t, eng, run.ID)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	eng.Stop(ctx)
 
@@ -912,7 +912,7 @@ services:
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 		defer cancel()
 		eng.Stop(ctx)
 	})
@@ -966,7 +966,7 @@ services:
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 		defer cancel()
 		eng.Stop(ctx)
 	})
@@ -1029,7 +1029,7 @@ services:
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 		defer cancel()
 		eng.Stop(ctx)
 	})

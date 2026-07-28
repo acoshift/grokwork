@@ -56,7 +56,7 @@ type Review struct {
 	ReviewerName string    `json:"reviewerName,omitempty"`
 	At           time.Time `json:"at"`
 	GHCommentURL string    `json:"ghCommentUrl,omitempty"`
-	GHMirroredAt time.Time `json:"ghMirroredAt,omitempty"`
+	GHMirroredAt time.Time `json:"ghMirroredAt,omitzero"`
 	GHMirrorErr  string    `json:"ghMirrorErr,omitempty"`
 }
 
@@ -76,7 +76,7 @@ type Request struct {
 	Note          string     `json:"note,omitempty"`
 	Status        string     `json:"status"` // pending | completed | cancelled | obsolete
 	CreatedAt     time.Time  `json:"createdAt"`
-	CompletedAt   *time.Time `json:"completedAt,omitempty"`
+	CompletedAt   *time.Time `json:"completedAt,omitzero"`
 	ReviewID      string     `json:"reviewId,omitempty"`
 }
 
@@ -87,7 +87,7 @@ type PRBucket struct {
 	Requests    []Request `json:"requests,omitempty"`
 	LastHeadSHA string    `json:"lastHeadSha,omitempty"`
 	LastState   string    `json:"lastState,omitempty"` // OPEN | MERGED | CLOSED
-	UpdatedAt   time.Time `json:"updatedAt,omitempty"`
+	UpdatedAt   time.Time `json:"updatedAt,omitzero"`
 }
 
 // EffectiveReview is the latest approve/CR per reviewer, with asymmetric stale flags.

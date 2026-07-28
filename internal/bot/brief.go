@@ -550,7 +550,7 @@ func extractOpenQuestions(text string, max int) []string {
 	}
 	var out []string
 	seen := map[string]struct{}{}
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		line = strings.TrimSpace(line)
 		line = strings.TrimLeft(line, "*-• \t")
 		line = strings.TrimSpace(line)

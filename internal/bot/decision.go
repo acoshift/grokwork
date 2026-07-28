@@ -48,7 +48,7 @@ func parseDecisionBlocks(text string) []decisionSpec {
 			case "prompt":
 				d.Prompt = val
 			case "options":
-				for _, opt := range strings.Split(val, "|") {
+				for opt := range strings.SplitSeq(val, "|") {
 					opt = strings.TrimSpace(opt)
 					if opt != "" {
 						d.Options = append(d.Options, opt)

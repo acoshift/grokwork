@@ -59,8 +59,7 @@ func TestResumeActiveRunsEnabledDefaultTrue(t *testing.T) {
 	if !cfg.ResumeActiveRunsEnabled() {
 		t.Fatal("nil should default true")
 	}
-	f := false
-	cfg.ResumeActiveRuns = &f
+	cfg.ResumeActiveRuns = new(false)
 	if cfg.ResumeActiveRunsEnabled() {
 		t.Fatal("explicit false")
 	}
@@ -249,7 +248,7 @@ func TestRecoverFirstTurnUsesNewSessionFlag(t *testing.T) {
 }
 
 func hasArg(argsFileContent, flag string) bool {
-	for _, line := range strings.Split(argsFileContent, "\n") {
+	for line := range strings.SplitSeq(argsFileContent, "\n") {
 		if line == flag {
 			return true
 		}
@@ -269,7 +268,7 @@ func TestCancelMarksJournalCancelling(t *testing.T) {
 	_ = os.WriteFile(sleepBin, []byte("#!/bin/sh\nsleep 60\n"), 0o755)
 	b.cfg.GrokBin = sleepBin
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	job := &runJob{cancel: cancel, start: time.Now(), project: "app"}
 	item := taskItem{
 		threadID: "t-cancel",
@@ -309,7 +308,7 @@ func TestStopCheckpointsInterrupted(t *testing.T) {
 	_ = os.WriteFile(sleepBin, []byte("#!/bin/sh\nsleep 60\n"), 0o755)
 	b.cfg.GrokBin = sleepBin
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	job := &runJob{cancel: cancel, start: time.Now(), project: "app"}
 	item := taskItem{
 		threadID: "t-stop",
@@ -327,7 +326,7 @@ func TestStopCheckpointsInterrupted(t *testing.T) {
 	go b.drainTaskQueue(ctx, cancel, item, job)
 	time.Sleep(80 * time.Millisecond)
 
-	stopCtx, stopCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	stopCtx, stopCancel := context.WithTimeout(t.Context(), 3*time.Second)
 	b.Stop(stopCtx)
 	stopCancel()
 	j2, found, _ := b.Runs().Load("t-stop")
@@ -358,7 +357,7 @@ sleep 60
 	activePrompt := "active-task-body"
 	queuedPrompt := "queued-follow-up-body"
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	job := &runJob{cancel: cancel, start: time.Now(), project: "app"}
 	active := taskItem{
 		threadID: threadID,
@@ -391,7 +390,7 @@ sleep 60
 	for time.Now().Before(deadline) {
 		raw, _ := os.ReadFile(argsFile)
 		n := 0
-		for _, line := range strings.Split(string(raw), "\n") {
+		for line := range strings.SplitSeq(string(raw), "\n") {
 			if line == "exec" {
 				n++
 			}
@@ -403,7 +402,7 @@ sleep 60
 	}
 	rawBefore, _ := os.ReadFile(argsFile)
 	execsBefore := 0
-	for _, line := range strings.Split(string(rawBefore), "\n") {
+	for line := range strings.SplitSeq(string(rawBefore), "\n") {
 		if line == "exec" {
 			execsBefore++
 		}
@@ -412,13 +411,13 @@ sleep 60
 		t.Fatalf("expected at least one grok exec before Stop; args:\n%s", rawBefore)
 	}
 
-	stopCtx, stopCancel := context.WithTimeout(context.Background(), 4*time.Second)
+	stopCtx, stopCancel := context.WithTimeout(t.Context(), 4*time.Second)
 	b.Stop(stopCtx)
 	stopCancel()
 
 	rawAfter, _ := os.ReadFile(argsFile)
 	execsAfter := 0
-	for _, line := range strings.Split(string(rawAfter), "\n") {
+	for line := range strings.SplitSeq(string(rawAfter), "\n") {
 		if line == "exec" {
 			execsAfter++
 		}

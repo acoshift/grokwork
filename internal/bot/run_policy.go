@@ -314,7 +314,7 @@ func toolsListHasShell(agent grokrun.Agent, tools string) bool {
 	if sh == "" || strings.TrimSpace(tools) == "" {
 		return false
 	}
-	for _, part := range strings.Split(tools, ",") {
+	for part := range strings.SplitSeq(tools, ",") {
 		if strings.TrimSpace(part) == sh {
 			return true
 		}

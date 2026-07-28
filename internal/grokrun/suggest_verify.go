@@ -123,7 +123,7 @@ func ExtractVerifyCommandsText(raw string) string {
 	s = stripMarkdownFences(s)
 
 	var lines []string
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -156,7 +156,7 @@ func stripMarkdownFences(s string) string {
 	}
 	var fenced, outside strings.Builder
 	inFence := false
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "```") {
 			inFence = !inFence
 			continue

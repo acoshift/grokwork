@@ -181,7 +181,7 @@ func (c *Config) discoverGitHubRepos(ctx context.Context, project, path string, 
 		addURL(string(raw))
 	}
 	if raw, err := run(ctx, path, "git", "remote"); err == nil {
-		for _, name := range strings.Fields(string(raw)) {
+		for name := range strings.FieldsSeq(string(raw)) {
 			name = strings.TrimSpace(name)
 			if name == "" || name == "origin" {
 				continue
@@ -460,7 +460,7 @@ func (c *Config) ChannelsForProject(project string) []string {
 		}
 	}
 	// sort without importing slices for tiny lists
-	for i := 0; i < len(out); i++ {
+	for i := range len(out) {
 		for j := i + 1; j < len(out); j++ {
 			if out[j] < out[i] {
 				out[i], out[j] = out[j], out[i]

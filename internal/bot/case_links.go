@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -151,10 +152,8 @@ func (b *Bot) LinkCase(threadID, key string) error {
 	// re-submit of a link that already exists would otherwise reorder the case
 	// to the top of every recently-updated list without changing anything.
 	existing := self.RelatedCaseKeys()
-	for _, k := range existing {
-		if k == norm {
-			return nil
-		}
+	if slices.Contains(existing, norm) {
+		return nil
 	}
 	if len(existing) >= MaxRelatedCases {
 		return fmt.Errorf("a case may reference at most %d others", MaxRelatedCases)
@@ -163,10 +162,8 @@ func (b *Bot) LinkCase(threadID, key string) error {
 	// concurrently between the read above and this write is preserved rather
 	// than clobbered — at worst the cap is exceeded by one.
 	_, ok, err := b.sessions.Patch(threadID, func(e *sessionstore.Entry) {
-		for _, k := range e.RelatedCaseKeys() {
-			if k == norm {
-				return
-			}
+		if slices.Contains(e.RelatedCaseKeys(), norm) {
+			return
 		}
 		e.RelatedCases = append(e.RelatedCaseKeys(), norm)
 	})

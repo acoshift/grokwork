@@ -120,7 +120,7 @@ func TestWatcherAddRemove(t *testing.T) {
 
 func TestWatcherCap(t *testing.T) {
 	var e sessionstore.Entry
-	for i := 0; i < sessionstore.MaxWatchers; i++ {
+	for i := range sessionstore.MaxWatchers {
 		if !e.AddWatcher("w" + strconv.Itoa(i)) {
 			t.Fatalf("add %d", i)
 		}

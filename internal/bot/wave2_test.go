@@ -157,7 +157,7 @@ func TestCheckpointCreateRestoreK8(t *testing.T) {
 	if gitworktree.IsCheckpointRefForThread(cp.Ref, "other-thread") {
 		t.Fatal("cross-thread should fail")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	if err := gitworktree.HardResetToSHA(ctx, repo, cp.SHA); err != nil {
 		t.Fatal(err)

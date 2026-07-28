@@ -45,13 +45,11 @@ func TestConcurrentClaimsOnDistinctThreadsDoNotDeadlock(t *testing.T) {
 			var wg sync.WaitGroup
 			start := make(chan struct{})
 			for i, id := range ids {
-				wg.Add(1)
-				go func(id string, i int) {
-					defer wg.Done()
+				wg.Go(func() {
 					<-start // release all claimers at once
 					b.claimOrEnqueue(id, &runJob{cancel: func() {}, start: time.Now()},
 						taskItem{threadID: id, actor: Actor{ID: fmt.Sprintf("actor%d", i)}})
-				}(id, i)
+				})
 			}
 			close(start)
 			wg.Wait()

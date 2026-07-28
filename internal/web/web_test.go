@@ -2198,7 +2198,7 @@ func TestGenerateProjectVerifyDraft(t *testing.T) {
 	}
 
 	// Workflow page shows the draft in the textarea (and survives refresh).
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		req = httptest.NewRequest(http.MethodGet, "/config/projects/proj/workflow", nil)
 		w = httptest.NewRecorder()
 		h.ServeHTTP(w, req)
@@ -2455,8 +2455,7 @@ func TestWorktreePruneRoutes(t *testing.T) {
 	}
 
 	// Idle prune endpoint (no idle trees is fine).
-	days := 30
-	cfg.WorktreeIdleTTLDays = &days
+	cfg.WorktreeIdleTTLDays = new(30)
 	req = httptest.NewRequest(http.MethodPost, "/worktrees/prune-idle", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -2527,7 +2526,7 @@ func TestSSE(t *testing.T) {
 	srv, _, _ := testServer(t)
 	h := srv.Handler()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 
 	req := httptest.NewRequest(http.MethodGet, "/events", nil).WithContext(ctx)

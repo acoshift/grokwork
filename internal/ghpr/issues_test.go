@@ -192,7 +192,7 @@ func jsonMarshalBody(s string) (string, error) {
 	// minimal JSON string escape
 	b := make([]byte, 0, len(s)+2)
 	b = append(b, '"')
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		c := s[i]
 		if c == '\\' || c == '"' {
 			b = append(b, '\\', c)

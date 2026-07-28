@@ -126,7 +126,7 @@ func TestRunStepTimeoutKillsGrandchild(t *testing.T) {
 
 func TestRunStepCancelPropagates(t *testing.T) {
 	skipOnWindows(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		time.Sleep(150 * time.Millisecond)
 		cancel()

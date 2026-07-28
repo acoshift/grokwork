@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"cmp"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -10,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -309,7 +309,7 @@ func (s *Store) List() ([]Run, error) {
 		}
 		out = append(out, r)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].QueuedAt > out[j].QueuedAt })
+	slices.SortFunc(out, func(a, b Run) int { return cmp.Compare(b.QueuedAt, a.QueuedAt) })
 	return out, nil
 }
 

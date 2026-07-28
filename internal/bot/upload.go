@@ -40,7 +40,7 @@ func parseUploadPaths(text string) []string {
 		if len(m) < 2 {
 			continue
 		}
-		for _, line := range strings.Split(m[1], "\n") {
+		for line := range strings.SplitSeq(m[1], "\n") {
 			line = strings.TrimSpace(line)
 			line = strings.TrimPrefix(line, "-")
 			line = strings.TrimPrefix(line, "*")

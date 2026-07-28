@@ -35,7 +35,7 @@ import (
 func drainBotOnCleanup(t *testing.T, b *Bot) {
 	t.Helper()
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		defer cancel()
 		b.Stop(ctx)
 	})

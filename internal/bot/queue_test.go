@@ -65,7 +65,7 @@ func TestQueueFull(t *testing.T) {
 	if claimed, _, err := b.claimOrEnqueue(threadID, job, item); err != nil || !claimed {
 		t.Fatalf("claim: claimed=%v err=%v", claimed, err)
 	}
-	for i := 0; i < maxFollowupQueue; i++ {
+	for i := range maxFollowupQueue {
 		dummy := &runJob{cancel: func() {}}
 		claimed, pos, err := b.claimOrEnqueue(threadID, dummy, taskItem{
 			threadID: threadID,
@@ -123,7 +123,7 @@ func TestClearQueue(t *testing.T) {
 	if _, _, err := b.claimOrEnqueue(threadID, job, taskItem{threadID: threadID}); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, _, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{threadID: threadID}); err != nil {
 			t.Fatal(err)
 		}
@@ -146,11 +146,9 @@ func TestClaimOrEnqueueConcurrent(t *testing.T) {
 	var claimedCount, queuedCount, fullCount int
 	var mu sync.Mutex
 
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ctx, cancel := context.WithCancel(context.Background())
+	for range 20 {
+		wg.Go(func() {
+			ctx, cancel := context.WithCancel(t.Context())
 			_ = ctx
 			job := &runJob{cancel: cancel, start: time.Now()}
 			claimed, _, err := b.claimOrEnqueue(threadID, job, taskItem{threadID: threadID})
@@ -166,7 +164,7 @@ func TestClaimOrEnqueueConcurrent(t *testing.T) {
 				queuedCount++
 				cancel()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if claimedCount != 1 {

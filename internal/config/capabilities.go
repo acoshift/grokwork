@@ -1,6 +1,7 @@
 package config
 
 import (
+	"maps"
 	"slices"
 	"strings"
 )
@@ -265,11 +266,7 @@ func unresolvedTemplateRefs(pc ProjectConfig) []string {
 	if pc.SafeTeamMode != nil && *pc.SafeTeamMode {
 		check("safeTeamDefaultTemplate", pc.SafeTeamDefaultTemplate)
 	}
-	keys := make([]string, 0, len(pc.Teams))
-	for k := range pc.Teams {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(pc.Teams))
 	for _, k := range keys {
 		check("teams."+k+".capabilities", pc.Teams[k].Capabilities)
 	}

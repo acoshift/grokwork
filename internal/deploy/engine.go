@@ -287,8 +287,7 @@ func (e *Engine) Trigger(ctx context.Context, req TriggerRequest) (Run, error) {
 		return run, nil
 	}
 
-	e.wg.Add(1)
-	go e.execute(runCtx, run, lane, req.RepoPath)
+	e.wg.Go(func() { e.execute(runCtx, run, lane, req.RepoPath) })
 	return run, nil
 }
 
@@ -375,8 +374,7 @@ func (e *Engine) promoteNext(lane, finishedID string) {
 		st.activeID = nextID
 		st.cancel = cancel
 		e.mu.Unlock()
-		e.wg.Add(1)
-		go e.execute(ctx, next, lane, repoPath)
+		e.wg.Go(func() { e.execute(ctx, next, lane, repoPath) })
 		e.bump()
 		return
 	}
@@ -534,7 +532,6 @@ func (e *Engine) Cancel(runID string) error {
 
 // execute runs every step of a deploy, then cleans up.
 func (e *Engine) execute(ctx context.Context, run Run, lane, repoPath string) {
-	defer e.wg.Done()
 	defer e.promoteNext(lane, run.ID)
 	defer func() {
 		if r := recover(); r != nil {

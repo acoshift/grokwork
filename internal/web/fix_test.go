@@ -41,8 +41,7 @@ func fixEnabledServer(t *testing.T) (*Server, *config.Config, *bot.Bot) {
 	cfg.ClaudeBin = writeWebFakeClaude(t)
 	cfg.TimeoutMs = 5000
 	// Isolation off for simpler runs
-	f := false
-	cfg.WorktreeIsolation = &f
+	cfg.WorktreeIsolation = new(false)
 
 	// Bot.threadAPI is unexported, so the thread-create path is driven through the
 	// exported SetThreadAPIForTest seam rather than a real gateway.
@@ -379,7 +378,7 @@ func TestFixRateLimit429(t *testing.T) {
 		t.Fatal(err)
 	}
 	form := url.Values{"owner": {"acme"}, "repo": {"app"}, "force_new": {"1"}}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		w := postFix(t, srv, "/projects/proj/issues/50/fix", sid, csrf, form)
 		if w.Code == http.StatusTooManyRequests {
 			t.Fatalf("too early rate limit at %d", i)

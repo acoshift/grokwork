@@ -31,10 +31,10 @@ func testFixBot(t *testing.T) (*Bot, string) {
 		DiscordGuildID:    "guild-1",
 		DataDir:           filepath.Join(dir, "data"),
 		ConfigPath:        filepath.Join(dir, "config.json"),
-		WorktreeIsolation: boolPtr(false),
+		WorktreeIsolation: new(false),
 		MaxTurns:          5,
 		TimeoutMs:         5000,
-		Yolo:              boolPtr(true),
+		Yolo:              new(true),
 	}
 	// preferred channel = mapped
 	pc := cfg.Projects["app"]
@@ -270,7 +270,7 @@ func TestStartFixQueueFull(t *testing.T) {
 	if claimed, _, err := b.claimOrEnqueue(threadID, job, taskItem{threadID: threadID}); err != nil || !claimed {
 		t.Fatal(err)
 	}
-	for i := 0; i < maxFollowupQueue; i++ {
+	for i := range maxFollowupQueue {
 		if claimed, _, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{threadID: threadID}); err != nil || claimed {
 			t.Fatalf("fill %d: %v %v", i, claimed, err)
 		}

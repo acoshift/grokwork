@@ -286,11 +286,10 @@ func TestPruneIdleNowUsesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	days := 30
 	cfg := &config.Config{
 		Projects:            config.PathProjects(map[string]string{"app": repo}),
 		DataDir:             data,
-		WorktreeIdleTTLDays: &days,
+		WorktreeIdleTTLDays: new(30),
 	}
 	b := New(cfg, sessions, nil)
 	n, err := b.PruneIdleNow()
@@ -301,8 +300,7 @@ func TestPruneIdleNowUsesConfig(t *testing.T) {
 		t.Fatalf("n=%d", n)
 	}
 
-	zero := 0
-	cfg.WorktreeIdleTTLDays = &zero
+	cfg.WorktreeIdleTTLDays = new(0)
 	if _, err := b.PruneIdleNow(); err == nil {
 		t.Fatal("expected disabled error")
 	}
@@ -395,8 +393,7 @@ func TestPruneTerminalSessions(t *testing.T) {
 		DataDir:  data,
 	}
 	// enable 30d terminal TTL via pointer
-	days := 30
-	cfg.TerminalSessionTTLDays = &days
+	cfg.TerminalSessionTTLDays = new(30)
 	b := New(cfg, sessions, nil)
 
 	n := b.pruneTerminalSessions(time.Now(), 30*24*time.Hour)

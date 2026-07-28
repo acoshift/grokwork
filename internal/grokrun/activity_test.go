@@ -52,7 +52,7 @@ func TestWatchSessionTools(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// watchSessionTools invokes the callback from its own goroutine while the

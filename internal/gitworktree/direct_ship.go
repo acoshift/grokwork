@@ -153,7 +153,7 @@ func hasTrackedDirt(ctx context.Context, dir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimRight(line, "\r")
 		if line == "" {
 			continue

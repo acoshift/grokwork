@@ -95,7 +95,7 @@ func readAuditEvents(t *testing.T, b *Bot) ([]audit.Event, string) {
 			t.Fatal(err)
 		}
 		raw.Write(body)
-		for _, line := range strings.Split(string(body), "\n") {
+		for line := range strings.SplitSeq(string(body), "\n") {
 			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
@@ -373,11 +373,10 @@ func TestDiscordEscalateAuditMatchesWebActionName(t *testing.T) {
 	if err := os.MkdirAll(proj, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	on := true
 	cfg := &config.Config{
 		Projects: config.ProjectsMap{"app": {
 			Path:           proj,
-			SafeTeamMode:   &on,
+			SafeTeamMode:   new(true),
 			AllowedUserIDs: []string{"eng1", "ops1"},
 			// operator = Investigate only: no fileEscalation, no builder caps.
 			CapabilityByUser: map[string]string{"eng1": "builder", "ops1": "operator"},

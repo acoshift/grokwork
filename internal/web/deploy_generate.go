@@ -2,7 +2,9 @@ package web
 
 import (
 	"errors"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/moonrhythm/hime"
@@ -57,11 +59,7 @@ func (s *Server) postDeployGenerate(ctx *hime.Context) error {
 	for _, env := range envs {
 		if cfg, ok := s.cfg.ProjectDeployEnv(project, env); ok {
 			// Names only. Values are credentials and never enter a prompt.
-			keys := make([]string, 0, len(cfg.Env))
-			for k := range cfg.Env {
-				keys = append(keys, k)
-			}
-			envKeys[env] = keys
+			envKeys[env] = slices.Collect(maps.Keys(cfg.Env))
 		}
 	}
 

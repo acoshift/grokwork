@@ -184,7 +184,7 @@ func (l *Logger) ReadDay(day time.Time) ([]Event, error) {
 		return nil, err
 	}
 	var out []Event
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

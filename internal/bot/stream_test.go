@@ -186,7 +186,7 @@ func TestStreamPosterMultiMessageSealNoDoublePost(t *testing.T) {
 	// Build text well over 2 Discord messages.
 	chunk := strings.Repeat("word ", 500) // ~2500 chars per chunk
 	var body strings.Builder
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		body.WriteString(chunk)
 		body.WriteString("\nSECTION_" + itoa(i) + "\n")
 	}
@@ -224,7 +224,7 @@ func TestStreamPosterMultiMessageSealNoDoublePost(t *testing.T) {
 	}
 	finalBodies := finalBodiesByID(sends, edits)
 	joined := strings.Join(finalBodies, "")
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		mark := "SECTION_" + itoa(i)
 		if c := strings.Count(joined, mark); c != 1 {
 			t.Fatalf("%s appears %d times in sealed bodies (want 1). bodies=%d joinedLen=%d",

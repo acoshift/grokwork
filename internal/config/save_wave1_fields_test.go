@@ -32,10 +32,8 @@ func TestSaveLockedPreservesWave1RootFields(t *testing.T) {
 	}
 	cfg.ConfigPath = path
 	cfg.DataDir = dir
-	max := 4
-	maxU := 2
-	cfg.MaxConcurrentRuns = &max
-	cfg.MaxConcurrentRunsUser = &maxU
+	cfg.MaxConcurrentRuns = new(4)
+	cfg.MaxConcurrentRunsUser = new(2)
 	cfg.GrokEnvDenylist = []string{"CUSTOM_SECRET_"}
 
 	cfg.mu.Lock()

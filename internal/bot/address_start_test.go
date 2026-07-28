@@ -34,10 +34,10 @@ func testAddressBot(t *testing.T) (*Bot, string) {
 		DiscordGuildID:    "guild-1",
 		DataDir:           filepath.Join(dir, "data"),
 		ConfigPath:        filepath.Join(dir, "config.json"),
-		WorktreeIsolation: boolPtr(false),
+		WorktreeIsolation: new(false),
 		MaxTurns:          5,
 		TimeoutMs:         5000,
-		Yolo:              boolPtr(true),
+		Yolo:              new(true),
 	}
 	pc := cfg.Projects["app"]
 	pc.DiscordChannelID = "ch-app"

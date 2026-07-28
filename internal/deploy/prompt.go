@@ -2,7 +2,7 @@ package deploy
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -84,7 +84,7 @@ func BuildManifestPrompt(opts ManifestPromptOpts) string {
 			fmt.Fprintf(&b, "- `%s`", env)
 			if keys := opts.EnvKeys[env]; len(keys) > 0 {
 				sorted := append([]string(nil), keys...)
-				sort.Strings(sorted)
+				slices.Sort(sorted)
 				fmt.Fprintf(&b, " — variables available to its steps: `$%s`", strings.Join(sorted, "`, `$"))
 			} else {
 				b.WriteString(" — no variables configured yet")

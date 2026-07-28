@@ -67,7 +67,7 @@ func parseHunkStarts(header string) (oldStart, newStart int, ok bool) {
 		return 0, 0, false
 	}
 	var haveOld, haveNew bool
-	for _, f := range strings.Fields(header) {
+	for f := range strings.FieldsSeq(header) {
 		switch {
 		case !haveOld && strings.HasPrefix(f, "-"):
 			oldStart, haveOld = parseHunkStart(f[1:])

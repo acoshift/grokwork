@@ -298,14 +298,13 @@ func TestStartFixOnCaseDeniedWithoutEscalateCaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	on := true
 	// Builtin "operator" = Investigate only (no FileEscalation/StartSessions/GithubWrites).
 	// Builtin "investigator" includes FileEscalation (may escalate by design).
 	cfg := &config.Config{
 		Projects: config.ProjectsMap{
 			"app": {
 				Path:             dir,
-				SafeTeamMode:     &on,
+				SafeTeamMode:     new(true),
 				AllowedUserIDs:   []string{"ops1", "eng1"},
 				CapabilityByUser: map[string]string{"ops1": "operator", "eng1": "builder"},
 			},

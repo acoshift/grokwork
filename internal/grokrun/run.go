@@ -706,7 +706,7 @@ func writePromptFile(prompt string) (path string, cleanup func(), err error) {
 func encodeSessionDir(abs string) string {
 	var b strings.Builder
 	b.Grow(len(abs) * 3)
-	for i := 0; i < len(abs); i++ {
+	for i := range len(abs) {
 		c := abs[i]
 		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
 			c == '-' || c == '_' || c == '.' || c == '~' {
@@ -779,7 +779,7 @@ func cleanTitle(raw string) string {
 	if s == "" {
 		return ""
 	}
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -811,7 +811,7 @@ func NewSessionID() string {
 	if _, err := rand.Read(b[:]); err != nil {
 		// crypto/rand failure is effectively impossible; still emit UUID shape.
 		now := time.Now().UnixNano()
-		for i := 0; i < 8; i++ {
+		for i := range 8 {
 			b[i] = byte(now >> (8 * i))
 		}
 		for i := 8; i < 16; i++ {

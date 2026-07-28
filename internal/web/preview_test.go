@@ -1,13 +1,14 @@
 package web
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -43,7 +44,6 @@ func TestPreviewServer(t *testing.T) {
 		}
 		return p
 	}
-	safeOn := true
 	cfg := &config.Config{
 		DiscordToken:    "tok",
 		DiscordClientID: "424242424242424242",
@@ -55,7 +55,7 @@ func TestPreviewServer(t *testing.T) {
 			"webapp": {
 				Path:           mkProj("webapp"),
 				AllowedUserIDs: []string{"111111111111111111", "222222222222222222"},
-				SafeTeamMode:   &safeOn,
+				SafeTeamMode:   new(true),
 				// SLA targets so the case board shows breached / on-hold chips
 				// and the Workflow tab renders a filled-in form.
 				SLA: map[string]config.SLATarget{
@@ -481,7 +481,7 @@ func previewChangeset() []previewFile {
 		seen[f.path] = len(out)
 		out = append(out, f)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].path < out[j].path })
+	slices.SortFunc(out, func(a, b previewFile) int { return cmp.Compare(a.path, b.path) })
 	return out
 }
 
@@ -542,7 +542,7 @@ func previewFilePatch(f previewFile) string {
 	hunks := max(1, min(9, (adds+dels)/40))
 	oldLn, newLn := 1+rnd(60), 0
 	newLn = oldLn
-	for h := 0; h < hunks; h++ {
+	for h := range hunks {
 		hA, hD := adds/(hunks-h), dels/(hunks-h)
 		adds -= hA
 		dels -= hD
@@ -551,19 +551,19 @@ func previewFilePatch(f previewFile) string {
 			ctxN = 0
 		}
 		fmt.Fprintf(&b, "@@ -%d,%d +%d,%d @@ func ApplyEntry\n", oldLn, hD+ctxN*2, newLn, hA+ctxN*2)
-		for i := 0; i < ctxN; i++ {
+		for range ctxN {
 			b.WriteString(" " + line() + "\n")
 			oldLn++
 			newLn++
 		}
 		for a, d := hA, hD; a > 0 || d > 0; {
 			burst := 1 + rnd(6)
-			for i := 0; i < min(burst, d); i++ {
+			for range min(burst, d) {
 				b.WriteString("-" + line() + "\n")
 				oldLn++
 			}
 			d -= min(burst, d)
-			for i := 0; i < min(burst, a); i++ {
+			for range min(burst, a) {
 				b.WriteString("+" + line() + "\n")
 				newLn++
 			}
@@ -574,7 +574,7 @@ func previewFilePatch(f previewFile) string {
 				newLn++
 			}
 		}
-		for i := 0; i < ctxN; i++ {
+		for range ctxN {
 			b.WriteString(" " + line() + "\n")
 			oldLn++
 			newLn++

@@ -169,8 +169,7 @@ func newStreamPosterWith(msg messageMessenger, channelID string) *streamPoster {
 		wake:        make(chan struct{}, 1),
 		stop:        make(chan struct{}),
 	}
-	p.wg.Add(1)
-	go p.flushLoop()
+	p.wg.Go(p.flushLoop)
 	return p
 }
 
@@ -281,7 +280,6 @@ func (p *streamPoster) Text() string {
 }
 
 func (p *streamPoster) flushLoop() {
-	defer p.wg.Done()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {

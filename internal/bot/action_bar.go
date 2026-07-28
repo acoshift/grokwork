@@ -187,7 +187,7 @@ func continueModal(threadID string) *discordgo.InteractionResponse {
 							Label:       "Follow-up task",
 							Style:       discordgo.TextInputParagraph,
 							Placeholder: "What should Grok do next?",
-							Required:    boolPtr(true),
+							Required:    new(true),
 							MaxLength:   maxContinuePrompt,
 							MinLength:   1,
 						},

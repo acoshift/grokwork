@@ -55,10 +55,10 @@ func TestResolveRunCwdWebVsDiscordPrefix(t *testing.T) {
 		Channels:          map[string]string{"ch1": "app"},
 		DataDir:           filepath.Join(dir, "data"),
 		ConfigPath:        filepath.Join(dir, "config.json"),
-		WorktreeIsolation: boolPtr(true),
+		WorktreeIsolation: new(true),
 		MaxTurns:          5,
 		TimeoutMs:         5000,
-		Yolo:              boolPtr(true),
+		Yolo:              new(true),
 	}
 	store, err := sessionstore.New(cfg.DataDir)
 	if err != nil {

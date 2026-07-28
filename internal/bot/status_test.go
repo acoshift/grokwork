@@ -34,7 +34,7 @@ func TestStatusSnapshot(t *testing.T) {
 	b := New(cfg, store, hist)
 
 	// Inject an active run via claimOrEnqueue (real bot path).
-	_, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	job := &runJob{cancel: cancel, start: time.Now().Add(-3 * time.Second), project: "app"}
 	claimed, _, err := b.claimOrEnqueue("thread-run", job, taskItem{threadID: "thread-run"})

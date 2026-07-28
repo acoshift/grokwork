@@ -1,8 +1,9 @@
 package bot
 
 import (
+	"cmp"
 	"log"
-	"sort"
+	"slices"
 	"strconv"
 	"time"
 
@@ -272,8 +273,8 @@ func snowflakeFromTime(t time.Time) string {
 // sortMessagesByID orders a REST batch oldest-first so replayed tasks queue in
 // send order (the API does not guarantee ordering with `after`).
 func sortMessagesByID(msgs []*discordgo.Message) {
-	sort.Slice(msgs, func(i, j int) bool {
-		return snowflakeUint(msgs[i]) < snowflakeUint(msgs[j])
+	slices.SortFunc(msgs, func(a, b *discordgo.Message) int {
+		return cmp.Compare(snowflakeUint(a), snowflakeUint(b))
 	})
 }
 

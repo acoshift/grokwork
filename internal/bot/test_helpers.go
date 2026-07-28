@@ -102,7 +102,7 @@ func FillQueueForTest(b *Bot, threadID, project string) error {
 	if err != nil || !claimed {
 		return fmt.Errorf("claim: claimed=%v err=%v", claimed, err)
 	}
-	for i := 0; i < maxFollowupQueue; i++ {
+	for i := range maxFollowupQueue {
 		c, _, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{threadID: threadID})
 		if err != nil || c {
 			return fmt.Errorf("enqueue %d: claimed=%v err=%v", i, c, err)

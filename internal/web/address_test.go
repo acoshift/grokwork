@@ -574,7 +574,7 @@ func TestAddressRateLimit429(t *testing.T) {
 		t.Fatal(err)
 	}
 	form := url.Values{"project": {"proj"}, "force_new": {"1"}}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		w := postFix(t, srv, "/prs/acme/app/9/address-ci", sid, csrf, form)
 		if w.Code == http.StatusTooManyRequests {
 			t.Fatalf("early 429 at %d", i)

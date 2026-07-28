@@ -414,7 +414,7 @@ func TestSortShipRowsStableAcrossUpdatedAt(t *testing.T) {
 		{ThreadID: "t-draft", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 15, State: "DRAFT", RawState: "OPEN", UpdatedAt: "2026-07-19T00:00:00Z"},
 	}
 	// Shuffle input order; result must be deterministic.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		in := append([]ShipPRRow(nil), rows...)
 		if i == 1 {
 			in[0], in[3] = in[3], in[0]

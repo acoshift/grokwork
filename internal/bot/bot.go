@@ -2698,8 +2698,6 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-func boolPtr(v bool) *bool { return &v }
-
 func mentionsUser(m *discordgo.MessageCreate, userID string) bool {
 	for _, u := range m.Mentions {
 		if u.ID == userID {

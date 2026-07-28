@@ -541,7 +541,7 @@ func TestPostSessionContinueRateLimit429(t *testing.T) {
 		t.Fatal(err)
 	}
 	form := url.Values{"prompt": {"dig deeper"}}
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		w := postFix(t, srv, "/sessions/t-case-rl/continue", sid, csrf, form)
 		if w.Code == http.StatusTooManyRequests {
 			t.Fatalf("early 429 at %d body=%s", i, w.Body.String())

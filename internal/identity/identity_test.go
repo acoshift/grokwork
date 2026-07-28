@@ -486,22 +486,18 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	for i := range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 50 {
 				s.Canonical("github:999")
 				s.AliasesOf("42424")
 				s.GitHubFor("42424")
 			}
-		}()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		})
+		wg.Go(func() {
 			alias := fmt.Sprintf("google:sub-%d", i)
 			_ = s.Link(alias, "42424", "")
 			_ = s.Unlink(alias)
-		}()
+		})
 	}
 	wg.Wait()
 	if got := s.Canonical("github:999"); got != "42424" {

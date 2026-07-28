@@ -51,7 +51,7 @@ func SanitizeCustomerUpdate(raw string) (clean string, hits []string) {
 	// stable-ish order
 	if len(hits) > 1 {
 		// simple bubble for few kinds
-		for i := 0; i < len(hits); i++ {
+		for i := range len(hits) {
 			for j := i + 1; j < len(hits); j++ {
 				if hits[j] < hits[i] {
 					hits[i], hits[j] = hits[j], hits[i]

@@ -183,7 +183,7 @@ func TestLiveHTTPLaunch(t *testing.T) {
 	}
 
 	// SSE: read first event
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/events", nil)
 	if err != nil {

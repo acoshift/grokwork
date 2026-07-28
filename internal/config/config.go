@@ -1091,7 +1091,7 @@ func (c *Config) DiscordPRDisplayURL(owner, repo string, number int, githubURL s
 // Keep alphanumerics, hyphen, underscore, and dot unescaped (GitHub slug chars).
 func pathEscapeSegment(s string) string {
 	var b strings.Builder
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		c := s[i]
 		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
 			c == '-' || c == '_' || c == '.' {
@@ -1117,7 +1117,7 @@ func (c *Config) SetRiskyPathGlobsFromText(text string, useDefault bool) error {
 		return c.saveLocked()
 	}
 	var globs []string
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -1512,11 +1512,7 @@ func teamItems(pc ProjectConfig) []TeamItem {
 	if len(pc.Teams) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(pc.Teams))
-	for k := range pc.Teams {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(pc.Teams))
 	out := make([]TeamItem, 0, len(keys))
 	for _, k := range keys {
 		t := pc.Teams[k]

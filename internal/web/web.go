@@ -1251,7 +1251,7 @@ func (s *Server) setProjectGitHub(ctx *hime.Context) error {
 	name := ctx.PostFormValue("name")
 	text := ctx.PostFormValue("repos")
 	var repos []config.GitHubRepoRef
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -1830,7 +1830,7 @@ func (s *Server) updateRiskyPathSettings(ctx *hime.Context) error {
 	msg := "Risky path globs set to built-in defaults"
 	if !useDefault {
 		n := 0
-		for _, line := range strings.Split(ctx.PostFormValue("riskyPathGlobs"), "\n") {
+		for line := range strings.SplitSeq(ctx.PostFormValue("riskyPathGlobs"), "\n") {
 			line = strings.TrimSpace(line)
 			if line != "" && !strings.HasPrefix(line, "#") {
 				n++

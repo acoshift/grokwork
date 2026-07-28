@@ -278,14 +278,14 @@ func CommentPRWithURL(ctx context.Context, run Runner, repoDir, owner, repo stri
 }
 
 func firstHTTPURL(s string) string {
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "https://") || strings.HasPrefix(line, "http://") {
 			return line
 		}
 	}
 	// Sometimes URL is embedded mid-line.
-	for _, field := range strings.Fields(s) {
+	for field := range strings.FieldsSeq(s) {
 		if strings.HasPrefix(field, "https://") || strings.HasPrefix(field, "http://") {
 			return field
 		}

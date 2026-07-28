@@ -41,7 +41,7 @@ func TestCreateCheckpointAndReset(t *testing.T) {
 	runGitTest(t, repo, "commit", "-m", "v1")
 	runGitTest(t, repo, "branch", "-M", "main")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	sha1, err := HeadSHA(ctx, repo)

@@ -217,17 +217,14 @@ func TestCatalogCacheNoRace(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 32; i++ {
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			_, _ = cfg.ProjectRepoCatalogWith(context.Background(), "disc", run)
-		}()
-		go func() {
-			defer wg.Done()
+	for range 32 {
+		wg.Go(func() {
+			_, _ = cfg.ProjectRepoCatalogWith(t.Context(), "disc", run)
+		})
+		wg.Go(func() {
 			_ = cfg.SetProjectGitHubRepos("disc", []GitHubRepoRef{{Owner: "disc", Repo: "main"}})
 			_ = cfg.SetProjectGitHubRepos("disc", nil) // back to discover
-		}()
+		})
 	}
 	wg.Wait()
 }

@@ -147,11 +147,7 @@ func teamsForActor(pc ProjectConfig, actorID string) []TeamConfig {
 	if strings.TrimSpace(actorID) == "" || len(pc.Teams) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(pc.Teams))
-	for k := range pc.Teams {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
+	keys := slices.Sorted(maps.Keys(pc.Teams))
 	var out []TeamConfig
 	for _, k := range keys {
 		t := pc.Teams[k]

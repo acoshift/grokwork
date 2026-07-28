@@ -29,13 +29,12 @@ func auditCapsBot(t *testing.T) (*Bot, string) {
 	if err := os.MkdirAll(proj, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	on := true
 	cfg := &config.Config{
 		GrokBin:   "false", // a run that starts must die immediately
 		ClaudeBin: "false",
 		Projects: config.ProjectsMap{"app": {
 			Path:           proj,
-			SafeTeamMode:   &on,
+			SafeTeamMode:   new(true),
 			AllowedUserIDs: []string{"u1", "u2", "admin1"},
 			// "replier" is deliberately not a builtin: every builtin except this
 			// shape grants Investigate, which passes the freeform gate.
@@ -49,10 +48,10 @@ func auditCapsBot(t *testing.T) (*Bot, string) {
 		Channels:          map[string]string{"ch1": "app"},
 		DataDir:           filepath.Join(dir, "data"),
 		ConfigPath:        filepath.Join(dir, "config.json"),
-		WorktreeIsolation: boolPtr(false),
+		WorktreeIsolation: new(false),
 		MaxTurns:          5,
 		TimeoutMs:         5000,
-		Yolo:              boolPtr(true),
+		Yolo:              new(true),
 	}
 	store, err := sessionstore.New(cfg.DataDir)
 	if err != nil {
