@@ -53,7 +53,7 @@ func TestProjectRepoCatalogConfigured(t *testing.T) {
 func TestProjectRepoCatalogLegacyAndDiscover(t *testing.T) {
 	cfg := &Config{
 		Projects: ProjectsMap{
-			"leg": {Path: "/leg", GitHub: &ProjectGitHubConfig{Owner: "o", Repo: "r"}},
+			"leg":  {Path: "/leg", GitHub: &ProjectGitHubConfig{Owner: "o", Repo: "r"}},
 			"disc": {Path: "/disc"},
 		},
 	}
@@ -105,8 +105,8 @@ func TestResolveRepoPicker(t *testing.T) {
 func TestPreferDiscordChannel(t *testing.T) {
 	cfg := &Config{
 		Projects: ProjectsMap{
-			"app": {Path: "/a", DiscordChannelID: "ch-pref"},
-			"api": {Path: "/b"},
+			"app":   {Path: "/a", DiscordChannelID: "ch-pref"},
+			"api":   {Path: "/b"},
 			"multi": {Path: "/c"},
 		},
 		Channels: map[string]string{

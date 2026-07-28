@@ -140,13 +140,13 @@ func TestWebAuthEnabledWithBootstrapEnv(t *testing.T) {
 	}
 	cfgPath := filepath.Join(dir, "config.json")
 	raw, _ := json.Marshal(map[string]any{
-		"discordToken":         "test-token",
-		"discordClientId":      "424242424242424242",
-		"discordClientSecret":  "sec",
-		"webPublicBaseURL":     "http://127.0.0.1:8787",
-		"allowedUserIds":       []string{"u1"},
-		"projects":             map[string]string{"p": projDir},
-		"channels":             map[string]string{"c": "p"},
+		"discordToken":        "test-token",
+		"discordClientId":     "424242424242424242",
+		"discordClientSecret": "sec",
+		"webPublicBaseURL":    "http://127.0.0.1:8787",
+		"allowedUserIds":      []string{"u1"},
+		"projects":            map[string]string{"p": projDir},
+		"channels":            map[string]string{"c": "p"},
 		"webAuth": map[string]any{
 			"enabled":       true,
 			"sessionSecret": "sess-secret-32chars-minimum!!!!",

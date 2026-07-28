@@ -21,10 +21,10 @@ type TrackedIssue struct {
 	Provider string `json:"provider,omitempty"`
 
 	// GitHub fields
-	Number  int    `json:"number,omitempty"`
-	URL     string `json:"url,omitempty"`
-	Owner   string `json:"owner,omitempty"`
-	Repo    string `json:"repo,omitempty"`
+	Number int    `json:"number,omitempty"`
+	URL    string `json:"url,omitempty"`
+	Owner  string `json:"owner,omitempty"`
+	Repo   string `json:"repo,omitempty"`
 	// Keyword is "Fixes" (close on merge) or "Refs" (link only). Empty → Refs.
 	Keyword string `json:"keyword,omitempty"`
 

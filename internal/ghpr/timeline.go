@@ -9,11 +9,11 @@ import (
 type TimelineKind string
 
 const (
-	TimelineApproved          TimelineKind = "approved"
-	TimelineChangesRequested  TimelineKind = "changes_requested"
-	TimelineCIGreen           TimelineKind = "ci_green"
-	TimelineMerged            TimelineKind = "merged"
-	TimelineClosed            TimelineKind = "closed"
+	TimelineApproved         TimelineKind = "approved"
+	TimelineChangesRequested TimelineKind = "changes_requested"
+	TimelineCIGreen          TimelineKind = "ci_green"
+	TimelineMerged           TimelineKind = "merged"
+	TimelineClosed           TimelineKind = "closed"
 )
 
 // TimelineEvent is one transition detected between two PR snapshots.

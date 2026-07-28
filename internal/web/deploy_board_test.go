@@ -343,7 +343,7 @@ func TestDeploysBoardNeverClaimsNeverDeployedOnAClippedScan(t *testing.T) {
 	inFlight := seedDeployRun(t, srv, deploy.Run{
 		Project: "proj", Service: "api", Env: "prod",
 		SHA: "n3wshaa", ShortSHA: "n3wshaa", Status: deploy.StatusRunning,
-		QueuedAt: "2026-07-20T00:00:00Z",
+		QueuedAt:  "2026-07-20T00:00:00Z",
 		ActorName: "Dana Ops",
 	})
 	// Pin the scan order: the six-week-old success falls outside the window,

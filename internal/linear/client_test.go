@@ -27,13 +27,13 @@ func TestGetByIdentifier(t *testing.T) {
 				"issues": map[string]any{
 					"nodes": []map[string]any{
 						{
-							"id":         "uuid-1",
-							"identifier": "ENG-123",
-							"title":      "Fix auth",
-							"url":        "https://linear.app/acme/issue/ENG-123",
+							"id":          "uuid-1",
+							"identifier":  "ENG-123",
+							"title":       "Fix auth",
+							"url":         "https://linear.app/acme/issue/ENG-123",
 							"description": "Details here",
-							"state":      map[string]string{"name": "In Progress"},
-							"team":       map[string]string{"key": "ENG"},
+							"state":       map[string]string{"name": "In Progress"},
+							"team":        map[string]string{"key": "ENG"},
 						},
 					},
 				},
