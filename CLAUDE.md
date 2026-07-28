@@ -26,6 +26,10 @@ GROKWORK_WEB_PREVIEW=1 [GROKWORK_WEB_PREVIEW_DELAY_MS=800] \
 
 Running the bot requires `config.json` (copy `config.example.json`). Go 1.26.5+.
 
+## Go coding
+
+When writing or changing Go code, use **`/use-modern-go`**: load that skill and apply its guidelines for the version in `go.mod` (currently 1.26). Prefer current language and stdlib idioms (`any`, `min`/`max`, `slices`/`maps`/`cmp`, `for range n`, `strings.SplitSeq` when ranging, `wg.Go`, `errors.AsType`, `new(expr)` for pointers, `t.Context()` in tests, `omitzero` for `time.Time`/`time.Duration`, …) over legacy patterns. Do not use features newer than `go.mod`. Modernity is not a license to change behavior — keep refactors logic-preserving unless the task says otherwise.
+
 ## Workflow
 
 Multiple agents often work on this repo **in parallel**. Avoid editing the shared main checkout in place.
