@@ -79,7 +79,8 @@ func testEngine(t *testing.T, manifest string) (*Engine, *config.Config, string)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		// t.Context is already canceled when Cleanup runs.
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		eng.Stop(ctx)
 	})
@@ -912,7 +913,8 @@ services:
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		// t.Context is already canceled when Cleanup runs.
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		eng.Stop(ctx)
 	})
@@ -966,7 +968,8 @@ services:
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		// t.Context is already canceled when Cleanup runs.
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		eng.Stop(ctx)
 	})
@@ -1029,7 +1032,8 @@ services:
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+		// t.Context is already canceled when Cleanup runs.
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		eng.Stop(ctx)
 	})
