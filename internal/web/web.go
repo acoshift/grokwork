@@ -271,6 +271,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("login", "layout.tmpl", "login.tmpl")
 	tp.ParseFiles("account", "layout.tmpl", "account.tmpl")
 	tp.ParseFiles("issues", "layout.tmpl", "issues.tmpl")
+	tp.ParseFiles("issue_new", "layout.tmpl", "issue_new.tmpl")
 	tp.ParseFiles("issue_detail", "layout.tmpl", "issue_detail.tmpl")
 	tp.ParseFiles("linear_issues", "layout.tmpl", "linear_issues.tmpl")
 	tp.ParseFiles("linear_detail", "layout.tmpl", "linear_detail.tmpl")
@@ -362,6 +363,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// Retired feature-first hubs → launcher.
 	mux.Handle("GET /issues", s.requireAuth(hime.Handler(s.redirectHome)))
 	mux.Handle("GET /projects/{project}/issues", s.requireAuth(hime.Handler(s.issuesList)))
+	// Literal /new before {n}: ServeMux prefers the more specific pattern, but
+	// keep the order obvious so a future catch-all cannot swallow the form.
+	mux.Handle("GET /projects/{project}/issues/new", s.requireAuth(hime.Handler(s.issueNewPage)))
 	mux.Handle("GET /projects/{project}/issues/{n}", s.requireAuth(hime.Handler(s.issueDetail)))
 	mux.Handle("GET /projects/{project}/linear", s.requireAuth(hime.Handler(s.linearList)))
 	mux.Handle("GET /projects/{project}/linear/{identifier}", s.requireAuth(hime.Handler(s.linearDetail)))
@@ -389,6 +393,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /prs/{owner}/{repo}/{n}/diff", s.requireAuth(hime.Handler(s.prDiffPage)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}/diff/file", s.requireAuth(hime.Handler(s.prDiffFile)))
 	// GitHub writes (PR8–9): always registered; request-time feature + role gates.
+	mux.Handle("POST /projects/{project}/issues/new",
+		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postIssueNew))))
 	mux.Handle("POST /projects/{project}/issues/{n}/comments",
 		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postIssueComment))))
 	mux.Handle("POST /projects/{project}/issues/{n}/close",
@@ -805,6 +811,11 @@ type pageData struct {
 	// Case intake (/projects/{project}/cases/new + board CTAs): Discord /case
 	// parity — startSessions feature+role AND investigator-class capability.
 	CanOpenCase bool
+	// Issue create (/projects/{project}/issues/new + list CTA): githubWrites
+	// feature+role (CanGitHubWrite) AND per-project GithubWrites capability.
+	CanCreateIssue bool
+	// IssueKind is the kind radio prefill on the new-issue form ("feature"|"bug").
+	IssueKind string
 	// Session case panel affordances (Mode=case only).
 	// Escalate/answer hide on fixing|shipping (eng phases). Agent investigate
 	// runs use the docked composer (continue), not a separate rail form.

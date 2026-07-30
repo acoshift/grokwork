@@ -152,6 +152,7 @@ func (s *Server) issuesPageShell(ctx *hime.Context) (pageData, error) {
 	d.RepoCatalog = catalog
 	d.LinearEnabled = s.cfg.ProjectLinearEnabled(project)
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
+	d.CanCreateIssue = s.canCreateIssue(d, project)
 	if err != nil {
 		// Still render page with error if catalog empty / bad picker.
 		d.Error = err.Error()

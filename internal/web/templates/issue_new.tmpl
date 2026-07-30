@@ -1,0 +1,68 @@
+{{define "content"}}
+<p class="pr-crumb">
+  <a href="/projects/{{.Project}}/issues{{if and .ActiveOwner .ActiveRepo}}?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}{{end}}">← {{.Project}} issues</a>
+</p>
+<h1 id="page-issue-new">New issue <span class="muted" style="font-weight:500;font-size:1.05rem">· {{.Project}}</span></h1>
+<p class="sub">Files a GitHub issue under the host <span class="mono">gh</span> account — a feature or a bug, labeled accordingly.</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if .CanCreateIssue}}
+{{/* Form stays out of any live region — this page has none — so nothing wipes typed text. */}}
+<div class="section card" id="issue-new-form">
+  <form class="stack" method="post" action="/projects/{{.Project}}/issues/new">
+    {{template "csrf" $}}
+    <div class="field">
+      <label id="issue-kind-label">Kind</label>
+      <div class="sev-picker" role="radiogroup" aria-labelledby="issue-kind-label">
+        <label class="sev-opt sev-medium"><input type="radio" name="kind" value="feature" {{if ne .IssueKind "bug"}}checked{{end}}><span>Feature</span></label>
+        <label class="sev-opt sev-high"><input type="radio" name="kind" value="bug" {{if eq .IssueKind "bug"}}checked{{end}}><span>Bug</span></label>
+      </div>
+    </div>
+    {{if gt (len .RepoCatalog) 1}}
+    <div class="field">
+      <label for="issue-repo-pick">Repository</label>
+      <select id="issue-repo-pick" name="repo_full">
+        {{range .RepoCatalog}}
+        <option value="{{.Owner}}/{{.Repo}}" {{if and (eq .Owner $.ActiveOwner) (eq .Repo $.ActiveRepo)}}selected{{end}}>{{.Owner}}/{{.Repo}}</option>
+        {{end}}
+      </select>
+    </div>
+    {{else}}
+    <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    {{if and .ActiveOwner .ActiveRepo}}
+    <p class="rail-note" style="margin:0">Repository: <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span></p>
+    {{end}}
+    {{end}}
+    <div class="field">
+      <label for="issue-title">Title</label>
+      <input type="text" id="issue-title" name="title" required placeholder="e.g. Export CSV from the reports page">
+    </div>
+    <div class="field">
+      <label for="issue-body">Body <span class="muted">(optional)</span></label>
+      <textarea id="issue-body" name="body" rows="10" placeholder="Motivation, scope, acceptance criteria — or repro steps, expected vs actual…"></textarea>
+      <p class="rail-note" style="margin-top:0.4rem">Customer-reported problems belong in a <a href="/projects/{{.Project}}/cases/new">case</a> (severity, SLA, customer ref) — not here.</p>
+    </div>
+    <div class="form-actions"><button type="submit" id="btn-issue-new">Create issue</button></div>
+  </form>
+</div>
+{{else}}
+<div class="section card">
+  <p class="rail-note">Read-only access — creating an issue needs a member role plus the per-project <span class="mono">githubWrites</span> capability (and the deployment <span class="mono">githubWrites</span> feature).</p>
+</div>
+{{end}}
+
+<div class="section card" id="issue-new-context">
+  <h2>What happens</h2>
+  <p class="sub" style="margin-top:0">
+    The issue is filed by the host <span class="mono">gh</span> account. When your account has a linked GitHub login, the body is prefixed with <span class="mono">On behalf of @login</span>.
+  </p>
+  <p class="sub" style="margin-top:0.35rem">
+    Kind maps to a label (<span class="mono">feature</span> or <span class="mono">bug</span>). If the repo does not have that label, it is dropped and the issue is still created.
+  </p>
+  <p class="sub" style="margin-top:0.35rem">
+    After create you land on the issue detail page in this project.
+  </p>
+</div>
+{{end}}

@@ -1,5 +1,12 @@
 {{define "content"}}
-<h1 id="page-issues-list">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· issues</span></h1>
+<div class="pr-title-row">
+  <h1 id="page-issues-list">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· issues</span></h1>
+  {{if .CanCreateIssue}}
+  <div class="pr-head-links">
+    <a class="btn btn-compact" href="/projects/{{.Project}}/issues/new?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}">New issue</a>
+  </div>
+  {{end}}
+</div>
 <p class="sub">
   Repo: <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span>
   {{if .LinearEnabled}} · <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}
