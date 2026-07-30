@@ -1,6 +1,6 @@
 # Feature epics: a GitHub issue as a multi-session requirement
 
-Status: phase 0 shipping (issue creation); phases 1–3 designed, not started.
+Status: phases 0–1 shipped; phases 2–3 designed.
 
 ## Problem
 
@@ -65,20 +65,20 @@ Phase 0 adds `/projects/{name}/issues/new`:
 - Image attachments in issue bodies are out of scope (GitHub's upload CDN has
   no clean `gh` path); revisit after the epic phases.
 
-## Phase 1 — the issue page becomes the feature hub
+## Phase 1 — the issue page becomes the feature hub (shipped)
 
-- `bot.FindByIssue(owner, repo, n)` mirroring `FindByPR`.
-- Issue detail gains a **Sessions** section: every unit tracking the issue,
-  with phase, label, owner and PR states. Rows carry the `?back=` provenance
-  crumb (already allowlisted in `backlink.go`). Visibility is the viewer's
-  project ACL, applied before rendering — the same containment rule search and
-  related-case links enforce.
-- A **Start session from this issue** dispatch on the issue rail: web-native
-  unit (the stream lands on the page the user is redirected to, the
-  commit-review reasoning), prompt pre-filled with issue title/body/URL, the
-  issue bound at creation, goal stamped from the title. Gate: `startSessions`;
-  the model field sits behind `requireCanSelectModel` like the other dispatch
-  cards.
+- `bot.FindByIssue` already existed (it powers the Fix reuse picker); Phase 1
+  surfaces it as a hub section rather than inventing a second reverse index.
+- Issue detail gains a **Sessions** section: every unit tracking the issue
+  (including terminal/done sessions — the feature's history), with label,
+  owner and busy/queue state. Rows carry the `?back=` provenance crumb
+  (`/projects/{name}/issues/{n}` is allowlisted in `backlink.go`). Visibility
+  is the viewer's project ACL, applied before rendering — the same containment
+  rule search and related-case links enforce.
+- **Start session from this issue** is already covered by the existing Fix
+  dispatch on the issue rail (reuse picker + force-new). A dedicated non-fix
+  dispatch (generic "start a session" with a free-form goal) is deferred to
+  Phase 2's per-item starts.
 
 ## Phase 2 — agent-assisted breakdown
 

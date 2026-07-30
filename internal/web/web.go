@@ -761,6 +761,15 @@ type pageData struct {
 	// Fix-with-Grok / session view
 	FixHits       []bot.IssueSessionHit
 	ShowFixPicker bool
+	// IssueSessions is every unit in this project that binds the viewed GitHub
+	// issue (bot.FindByIssue with includeTerminal). Terminal sessions are the
+	// feature's history — the hub shows them, unlike the fix reuse picker which
+	// only offers live units to continue.
+	IssueSessions []bot.IssueSessionHit
+	// IssueBackURL is this issue detail page (owner/repo query included),
+	// stamped onto session row links as ?back= so the session crumb returns
+	// here instead of to the sessions list (see backlink.go).
+	IssueBackURL string
 	// PR detail "Session" head link: the unit to jump to from a PR, and how
 	// many bind it (>1 means the link is the most recent, not the only one).
 	PRSessionThreadID string

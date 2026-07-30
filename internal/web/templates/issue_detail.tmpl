@@ -79,6 +79,47 @@
 </div>
 {{end}}
 
+{{if .IssueSessions}}
+<div class="section card" id="issue-sessions">
+  <h2>Sessions ({{len .IssueSessions}})</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Goal</th><th>Status</th><th>Owner</th></tr></thead>
+    <tbody>
+    {{range .IssueSessions}}
+      <tr>
+        <td>
+          <a href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}&amp;back={{urlquery $.IssueBackURL}}">{{if .Goal}}{{.Goal}}{{else}}{{.ThreadID}}{{end}}</a>
+        </td>
+        <td>
+          {{if eq .Label "done"}}
+          <span class="badge status-done">done</span>
+          {{else if eq .Label "abandoned"}}
+          <span class="badge status-cancelled">abandoned</span>
+          {{else if eq .Label "needs_review"}}
+          <span class="badge status-warn">needs review</span>
+          {{else if eq .Label "in_progress"}}
+          <span class="badge live">in progress</span>
+          {{else if eq .Label "blocked"}}
+          <span class="badge status-warn">blocked</span>
+          {{else if .Label}}
+          <span class="badge">{{.Label}}</span>
+          {{else}}
+          <span class="muted">—</span>
+          {{end}}
+          {{if .Busy}} · running{{end}}
+          {{if gt .QueueLen 0}} · queued ({{.QueueLen}}){{end}}
+        </td>
+        <td>{{if .OwnerName}}{{.OwnerName}}{{else if .OwnerID}}<span class="muted">{{.OwnerID}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  <p class="rail-note">Sessions bind this issue when their prompt mentions it or a fix is dispatched from here.</p>
+</div>
+{{end}}
+
 <div class="section">
   <h2>Comments <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Issue.Comments}})</span></h2>
   {{range .Issue.Comments}}

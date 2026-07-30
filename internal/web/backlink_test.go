@@ -17,6 +17,8 @@ func TestResolveBackLinkRejectsAnythingButAKnownBoard(t *testing.T) {
 		"/projects/webapp/cases?phase=fixing": {"/projects/webapp/cases?phase=fixing", "Cases"},
 		"/sessions":                           {"/sessions", "Sessions"},
 		"/projects/webapp/ship":               {"/projects/webapp/ship", "Ship"},
+		// Issue detail is a board for crumb purposes (feature hub provenance).
+		"/projects/p/issues/42?owner=o&repo=r": {"/projects/p/issues/42?owner=o&repo=r", "Issue"},
 	}
 	for in, want := range good {
 		href, label, ok := resolveBackLink(in)
@@ -39,6 +41,10 @@ func TestResolveBackLinkRejectsAnythingButAKnownBoard(t *testing.T) {
 		"/projects/webapp",
 		"/projects//cases",
 		"/projects/webapp/cases/extra",
+		// Issue number must be all ASCII digits (segment check already rejects
+		// empty/dot segments; digits-only keeps the allowlist tight).
+		"/projects/p/issues/42abc",
+		"/projects/p/issues/../42",
 		// url.Parse decodes these into "//cases" and "/../config" — a raw-string
 		// guard passes them and the browser then reads the first as
 		// protocol-relative, i.e. off-origin.

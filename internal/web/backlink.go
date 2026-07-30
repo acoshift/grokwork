@@ -79,7 +79,10 @@ func resolveBackLink(raw string) (href, label string, ok bool) {
 }
 
 // backLinkLabel names the board a path points at: "/cases" globally,
-// "/projects/{name}/cases" inside a workspace. Anything else is unknown.
+// "/projects/{name}/cases" inside a workspace. The issue detail page is a
+// board for crumb purposes too — a session opened from an issue hub should
+// return to that issue (`/projects/{name}/issues/{n}`). Anything else is
+// unknown.
 //
 // Segments are checked individually rather than after trimming slashes: an
 // empty one means a doubled separator (a protocol-relative URL once it reaches
@@ -105,8 +108,21 @@ func backLinkLabel(path string) (string, bool) {
 	case len(parts) == 4 && parts[1] == "projects":
 		label, ok := backLinkSections[parts[3]]
 		return label, ok
+	case len(parts) == 5 && parts[1] == "projects" && parts[3] == "issues" && allDigits(parts[4]):
+		return "Issue", true
 	}
 	return "", false
+}
+
+// allDigits reports whether s is non-empty and every byte is an ASCII digit.
+// Used to keep the issue-detail crumb allowlist tight (reject /issues/42abc).
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	return strings.IndexFunc(s, func(r rune) bool {
+		return r < '0' || r > '9'
+	}) < 0
 }
 
 // caseBoardURL is the board a case unit belongs to — the workspace board when

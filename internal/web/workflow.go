@@ -341,6 +341,14 @@ func (s *Server) issueDetail(ctx *hime.Context) error {
 	if d.ShowFixPicker || len(d.FixHits) > 1 {
 		d.ShowFixPicker = true
 	}
+	// Feature hub: every bound session (including done/abandoned) plus a
+	// provenance URL for session-row crumbs. includeTerminal is deliberate —
+	// finished units are the history of the feature, not clutter.
+	if s.bot != nil {
+		d.IssueSessions = s.bot.FindByIssue(project, active.Owner, active.Repo, n, true)
+	}
+	d.IssueBackURL = "/projects/" + url.PathEscape(project) + "/issues/" + nStr +
+		"?owner=" + url.QueryEscape(active.Owner) + "&repo=" + url.QueryEscape(active.Repo)
 	return s.viewPage(ctx, "issue_detail", d)
 }
 
