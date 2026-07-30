@@ -20,12 +20,13 @@ const FixStatusOpened FixStartStatus = "opened"
 // StartCaseOpts opens a support case from the web. Same unit and lifecycle as
 // the Discord path, "@Grok /case [severity] [ref:ID] <title>" (case_cmd.go).
 type StartCaseOpts struct {
-	Project  string
-	Title    string // customer-facing title (required)
-	Severity string // low|medium|high|critical (default medium)
-	Ref      string // optional external ticket id (ZD-4821, ACME-231, …)
-	Notes    string // optional intake notes; non-empty → queue an investigate run
-	Actor    Actor
+	Project         string
+	Title           string // customer-facing title (required)
+	Severity        string // low|medium|high|critical (default medium)
+	Ref             string // optional external ticket id (ZD-4821, ACME-231, …)
+	Notes           string // optional intake notes; non-empty → queue an investigate run
+	Actor           Actor
+	AttachmentPaths []string // staged web images; notes or attachments queue investigate
 }
 
 // StartCase creates a work unit and the case shell (Mode=case, Phase=intake).
@@ -63,7 +64,7 @@ func (b *Bot) StartCase(opts StartCaseOpts) (FixStartResult, error) {
 	}
 	// finish runs after the shell exists so the policy snapshot sees Mode=case.
 	finish := func(threadID, discordURL string) (FixStartResult, error) {
-		if notes == "" {
+		if notes == "" && len(opts.AttachmentPaths) == 0 {
 			return FixStartResult{
 				Status:     FixStatusOpened,
 				ThreadID:   threadID,
@@ -72,7 +73,7 @@ func (b *Bot) StartCase(opts StartCaseOpts) (FixStartResult, error) {
 			}, nil
 		}
 		prompt := caseIntakePrompt(severity, ref, title, notes)
-		return b.startWebTask(threadID, project, cwd, prompt, KindStartInvestigate, opts.Actor, discordURL, true)
+		return b.startWebTask(threadID, project, cwd, prompt, KindStartInvestigate, opts.Actor, discordURL, opts.AttachmentPaths, true)
 	}
 	webNative := func() (FixStartResult, error) {
 		unitID, err := b.allocWebNativeUnit(project, func(id string) error { return bind(id, "") })
@@ -130,6 +131,9 @@ func caseStarterContent(actor Actor, severity, ref, title string) string {
 // caseIntakePrompt frames the queued investigate run: a fresh headless session
 // has no thread backlog to read, so the customer-facing context rides the prompt.
 func caseIntakePrompt(severity, ref, title, notes string) string {
+	if notes == "" {
+		notes = "(no intake notes — see attached files)"
+	}
 	var sb strings.Builder
 	sb.WriteString("Support case (severity ")
 	sb.WriteString(severity)

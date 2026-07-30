@@ -3351,6 +3351,59 @@
       cursor: pointer;
     }
     .composer-send:hover { opacity: 0.85; }
+    .composer-attach {
+      flex-shrink: 0;
+      width: 2.15rem;
+      height: 2.15rem;
+      padding: 0;
+      border: 1px solid var(--border-strong);
+      border-radius: 50%;
+      background: transparent;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .composer-attach:hover { color: var(--text); border-color: var(--focus-border); }
+    .attach-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin: 0.45rem 0.4rem 0;
+    }
+    .attach-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      max-width: 100%;
+      padding: 0.15rem 0.4rem 0.15rem 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .attach-chip-name {
+      font-family: var(--mono);
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 14rem;
+    }
+    .attach-chip-size { color: var(--muted-soft); flex-shrink: 0; }
+    .attach-chip-remove {
+      flex-shrink: 0;
+      border: none;
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0 0.15rem;
+      font-size: 0.95rem;
+      line-height: 1;
+    }
+    .attach-chip-remove:hover { color: var(--text); }
     .composer-hint {
       display: flex;
       justify-content: space-between;
@@ -5047,6 +5100,10 @@
     // that measurement; the phone action-sheet button reads it. Published
     // rather than assumed, because a constant offset puts the button on top of
     // the input after a few typed lines.
+    // Attach chips grow the dock without any input or htmx event, so the
+    // measurement also has to follow raw size changes, not just the triggers
+    // below — hence the ResizeObserver (re-observing the same node is a no-op).
+    var dockRO = window.ResizeObserver ? new ResizeObserver(function () { publishDockHeight(); }) : null;
     function publishDockHeight() {
       var dock = document.getElementById("session-continue-form");
       var root = document.documentElement.style;
@@ -5055,6 +5112,7 @@
         return;
       }
       root.setProperty("--gw-dock-h", dock.offsetHeight + "px");
+      if (dockRO) dockRO.observe(dock);
     }
     function composerInput(e) {
       var t = e.target;
@@ -5084,6 +5142,121 @@
     });
     // No scroll management: turns render newest-first, so the latest/live
     // turn is already at the top and the composer is position-pinned.
+  })();
+  (function () {
+    // Image attach chips for any file input marked data-attach-chips.
+    // DataTransfer keeps a mutable selection so chips can remove individual
+    // files (input.files is otherwise read-only). Paste-to-attach works when
+    // the form also has a textarea.
+    function fmtBytes(n) {
+      if (n >= 1048576) return (n / 1048576).toFixed(1) + " MiB";
+      if (n >= 1024) return (n / 1024).toFixed(1) + " KiB";
+      return n + " B";
+    }
+    function bindAttachInput(input) {
+      if (!input || input._gwAttachBound) return;
+      input._gwAttachBound = true;
+      var chipId = input.getAttribute("data-attach-chips");
+      var chips = chipId ? document.getElementById(chipId) : null;
+      var dt = new DataTransfer();
+      var pasteN = 0;
+
+      function sync() {
+        input.files = dt.files;
+        if (!chips) return;
+        chips.innerHTML = "";
+        if (!dt.files.length) {
+          chips.hidden = true;
+          return;
+        }
+        chips.hidden = false;
+        for (var i = 0; i < dt.files.length; i++) {
+          (function (idx, f) {
+            var chip = document.createElement("span");
+            chip.className = "attach-chip";
+            var name = document.createElement("span");
+            name.className = "attach-chip-name";
+            name.textContent = f.name;
+            name.title = f.name;
+            var size = document.createElement("span");
+            size.className = "attach-chip-size";
+            size.textContent = fmtBytes(f.size);
+            var rm = document.createElement("button");
+            rm.type = "button";
+            rm.className = "attach-chip-remove";
+            rm.setAttribute("aria-label", "Remove " + f.name);
+            rm.textContent = "×";
+            rm.addEventListener("click", function () {
+              var next = new DataTransfer();
+              for (var j = 0; j < dt.files.length; j++) {
+                if (j !== idx) next.items.add(dt.files[j]);
+              }
+              dt = next;
+              sync();
+            });
+            chip.appendChild(name);
+            chip.appendChild(size);
+            chip.appendChild(rm);
+            chips.appendChild(chip);
+          })(i, dt.files[i]);
+        }
+      }
+
+      input.addEventListener("change", function () {
+        for (var i = 0; i < input.files.length; i++) {
+          dt.items.add(input.files[i]);
+        }
+        sync();
+      });
+
+      var btnId = input.getAttribute("data-attach-button");
+      if (btnId) {
+        var btn = document.getElementById(btnId);
+        if (btn) {
+          btn.addEventListener("click", function () { input.click(); });
+        }
+      }
+
+      var form = input.closest("form");
+      if (form) {
+        var ta = form.querySelector("textarea");
+        if (ta) {
+          ta.addEventListener("paste", function (e) {
+            var items = e.clipboardData && e.clipboardData.items;
+            if (!items) return;
+            var added = false;
+            for (var i = 0; i < items.length; i++) {
+              var it = items[i];
+              if (!it || it.kind !== "file" || (it.type && it.type.indexOf("image/") !== 0)) continue;
+              var f = it.getAsFile();
+              if (!f) continue;
+              pasteN++;
+              var ext = (it.type && it.type.split("/")[1]) || "png";
+              if (ext === "jpeg") ext = "jpg";
+              var named = new File([f], "pasted-" + pasteN + "." + ext, { type: f.type || "image/png" });
+              dt.items.add(named);
+              added = true;
+            }
+            if (added) {
+              e.preventDefault();
+              sync();
+            }
+          });
+        }
+      }
+    }
+
+    function setupAttachInputs() {
+      var list = document.querySelectorAll("input[type=file][data-attach-chips]");
+      for (var i = 0; i < list.length; i++) bindAttachInput(list[i]);
+    }
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", setupAttachInputs);
+    } else {
+      setupAttachInputs();
+    }
+    document.body.addEventListener("htmx:afterSettle", setupAttachInputs);
+    document.body.addEventListener("htmx:historyRestore", setupAttachInputs);
   })();
   (function () {
     var statusEl = document.getElementById("sse-status");

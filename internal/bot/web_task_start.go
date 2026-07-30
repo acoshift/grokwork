@@ -126,7 +126,7 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 		if err := bind(threadID, discordURL); err != nil {
 			return FixStartResult{}, err
 		}
-		return b.startWebTask(threadID, project, cwd, prompt, kind, opts.Actor, discordURL, true)
+		return b.startWebTask(threadID, project, cwd, prompt, kind, opts.Actor, discordURL, nil, true)
 	}
 	return b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, func(unitID string) error {
 		return bind(unitID, "")

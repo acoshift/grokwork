@@ -86,14 +86,15 @@ func (b *Bot) Runs() *runjournal.Store {
 
 // materializeTaskFiles downloads/copies attachments into the durable run journal tree
 // and resolves ReferencedPrompt. Does not hold threadState.mu (K11).
-func (b *Bot) materializeTaskFiles(ctx context.Context, threadID, taskID string, m *discordgo.MessageCreate, webPaths []string, related *discordgo.Message) (paths []string, refPrompt string, err error) {
+// copied is true when the durable-copy path ran (resume on with a runs store).
+func (b *Bot) materializeTaskFiles(ctx context.Context, threadID, taskID string, m *discordgo.MessageCreate, webPaths []string, related *discordgo.Message) (paths []string, refPrompt string, copied bool, err error) {
 	if b == nil || b.runs == nil || !b.resumeEnabled() {
 		// No durable store / flag off: keep web paths as-is; Discord downloads later in executeTask.
-		return append([]string(nil), webPaths...), "", nil
+		return append([]string(nil), webPaths...), "", false, nil
 	}
 	destDir := b.runs.TaskFilesDir(threadID, taskID)
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 
 	if len(webPaths) > 0 {
@@ -106,7 +107,7 @@ func (b *Bot) materializeTaskFiles(ctx context.Context, threadID, taskID string,
 			dst := filepath.Join(destDir, name)
 			if err := copyFile(p, dst); err != nil {
 				_ = os.RemoveAll(destDir)
-				return nil, "", fmt.Errorf("copy attachment %q: %w", name, err)
+				return nil, "", false, fmt.Errorf("copy attachment %q: %w", name, err)
 			}
 			paths = append(paths, dst)
 		}
@@ -118,7 +119,7 @@ func (b *Bot) materializeTaskFiles(ctx context.Context, threadID, taskID string,
 			saved, dlErr := downloadAttachments(ctx, atts, destDir)
 			if dlErr != nil {
 				_ = os.RemoveAll(destDir)
-				return nil, "", dlErr
+				return nil, "", false, dlErr
 			}
 			for _, s := range saved {
 				paths = append(paths, s.Path)
@@ -128,7 +129,7 @@ func (b *Bot) materializeTaskFiles(ctx context.Context, threadID, taskID string,
 			refPrompt = formatReferencedPrompt(related)
 		}
 	}
-	return paths, refPrompt, nil
+	return paths, refPrompt, true, nil
 }
 
 func formatReferencedPrompt(related *discordgo.Message) string {

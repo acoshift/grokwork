@@ -10,7 +10,7 @@
 {{if .CanOpenCase}}
 {{/* Form stays out of any live region — this page has none — so nothing wipes typed text. */}}
 <div class="section card" id="case-new-form">
-  <form class="stack" method="post" action="/projects/{{.Project}}/cases/new">
+  <form class="stack" method="post" action="/projects/{{.Project}}/cases/new" enctype="multipart/form-data">
     {{template "csrf" $}}
     <div class="field">
       <label for="case-title">Customer-facing title</label>
@@ -32,7 +32,13 @@
     <div class="field">
       <label for="case-notes">Intake notes <span class="muted">(optional)</span></label>
       <textarea id="case-notes" name="notes" rows="6" placeholder="Repro steps, affected accounts, error text…"></textarea>
-      <p class="rail-note" style="margin-top:0.4rem">With notes, an investigate run starts right away. Empty notes log the case intake-only.</p>
+      <p class="rail-note" style="margin-top:0.4rem">With notes or images, an investigate run starts right away. Empty intake logs the case intake-only.</p>
+    </div>
+    <div class="field">
+      <label for="case-images">Images <span class="muted">(optional)</span></label>
+      <input type="file" id="case-images" name="images" accept="image/*" multiple data-attach-chips="case-attach-chips">
+      <div class="attach-chips" id="case-attach-chips" hidden></div>
+      <p class="rail-note" style="margin-top:0.4rem">Images are handed to the investigate run (same as Discord attachments).</p>
     </div>
     <div class="form-actions"><button type="submit" id="btn-case-new">Open case</button></div>
   </form>

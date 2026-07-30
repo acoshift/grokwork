@@ -147,8 +147,12 @@ type StartTaskOpts struct {
 	Proj            projectRef
 	Prompt          string
 	Actor           Actor
-	Source          string // SourceDiscord | SourceWeb
-	DG              *discordgo.Session
+	Source string // SourceDiscord | SourceWeb
+	DG     *discordgo.Session
+	// AttachmentPaths are local files for the model prompt (Discord downloads or
+	// web staging). StartTask takes ownership: sources staged under
+	// <DataDir>/attachments/web are deleted once copied into the run-journal tree;
+	// when resume is off they are deleted after the run consumes them.
 	AttachmentPaths []string
 	Origin          string // session Origin field
 	CreatedBy       string
@@ -183,10 +187,13 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 	}
 	taskID := runjournal.NewTaskID()
 	matCtx, matCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	paths, _, matErr := b.materializeTaskFiles(matCtx, threadID, taskID, nil, opts.AttachmentPaths, nil)
+	paths, _, copied, matErr := b.materializeTaskFiles(matCtx, threadID, taskID, nil, opts.AttachmentPaths, nil)
 	matCancel()
 	if matErr != nil {
 		return 0, fmt.Errorf("materialize attachments: %w", matErr)
+	}
+	if copied && b.cfg != nil {
+		removeWebStagedAttachments(b.cfg.DataDir, opts.AttachmentPaths)
 	}
 
 	item := taskItem{

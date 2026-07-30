@@ -256,7 +256,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		if err := b.bindFixIssue(threadID, project, tracked, opts.Actor, discordURL, true); err != nil {
 			return FixStartResult{}, err
 		}
-		return b.startWebTask(threadID, project, cwd, prompt, KindTask, opts.Actor, discordURL, true)
+		return b.startWebTask(threadID, project, cwd, prompt, KindTask, opts.Actor, discordURL, nil, true)
 	}
 	// No gateway/threadAPI: web-native unit (no createWorkflowThread).
 	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
@@ -278,7 +278,7 @@ func (b *Bot) startWebNativeUnit(project, cwd, prompt string, kind Kind, actor A
 	if err != nil {
 		return FixStartResult{}, err
 	}
-	return b.startWebTask(unitID, project, cwd, prompt, kind, actor, "", true)
+	return b.startWebTask(unitID, project, cwd, prompt, kind, actor, "", nil, true)
 }
 
 // allocWebNativeUnit allocates a w_* unit id and binds metadata without starting
@@ -307,19 +307,20 @@ func (b *Bot) allocWebNativeUnit(project string, bind func(unitID string) error)
 	return unitID, nil
 }
 
-func (b *Bot) startWebTask(threadID, project, cwd, prompt string, kind Kind, actor Actor, discordURL string, created bool) (FixStartResult, error) {
+func (b *Bot) startWebTask(threadID, project, cwd, prompt string, kind Kind, actor Actor, discordURL string, attachmentPaths []string, created bool) (FixStartResult, error) {
 	pos, err := b.StartTask(StartTaskOpts{
-		ThreadID:      threadID,
-		Proj:          projectRef{Name: project, Cwd: cwd},
-		Prompt:        prompt,
-		Kind:          kind,
-		Actor:         actor,
-		Source:        SourceWeb,
-		Origin:        SourceWeb,
-		CreatedBy:     actor.ID,
-		CreatedByName: actor.DisplayName,
-		DiscordURL:    discordURL,
-		DG:            b.Discord(),
+		ThreadID:        threadID,
+		Proj:            projectRef{Name: project, Cwd: cwd},
+		Prompt:          prompt,
+		Kind:            kind,
+		Actor:           actor,
+		Source:          SourceWeb,
+		Origin:          SourceWeb,
+		CreatedBy:       actor.ID,
+		CreatedByName:   actor.DisplayName,
+		DiscordURL:      discordURL,
+		DG:              b.Discord(),
+		AttachmentPaths: attachmentPaths,
 	})
 	if err != nil {
 		return FixStartResult{}, err

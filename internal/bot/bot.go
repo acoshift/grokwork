@@ -170,6 +170,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) 
 		} else {
 			b.audit = al
 		}
+		// Crashed-process web staging orphans die at boot; resume-on recovery
+		// reads journal-tree copies, so wiping the staging root is safe.
+		if err := os.RemoveAll(webStagingRoot(cfg.DataDir)); err != nil {
+			log.Printf("warn: clear web attachment staging: %v", err)
+		}
 	}
 	if host, err := os.Hostname(); err == nil {
 		b.hostname = host
@@ -1343,7 +1348,7 @@ func (b *Bot) handleTaskOrigin(
 		}
 	}
 	matCtx, matCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	paths, refPrompt, matErr := b.materializeTaskFiles(matCtx, threadID, taskID, m, nil, related)
+	paths, refPrompt, _, matErr := b.materializeTaskFiles(matCtx, threadID, taskID, m, nil, related)
 	matCancel()
 	if matErr != nil {
 		log.Printf("error: materialize thread=%s: %v", threadID, matErr)
@@ -1722,6 +1727,11 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 
 	// Prefer durable paths (web / materialize); fail closed if listed but missing.
 	if len(item.attachmentPaths) > 0 {
+		// Resume-off: paths may still point at web staging — remove after the run
+		// consumes them. Resume-on paths live in the journal tree and do not match.
+		if b.cfg != nil {
+			defer removeWebStagedAttachments(b.cfg.DataDir, item.attachmentPaths)
+		}
 		var files []savedAttachment
 		for _, p := range item.attachmentPaths {
 			if _, stErr := os.Stat(p); stErr != nil {

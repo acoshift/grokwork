@@ -48,10 +48,15 @@ func (s *Server) canOpenCase(d pageData, project string) bool {
 }
 
 // postCaseNew creates the case shell (Mode=case, Phase=intake) and redirects to
-// the session workspace. Notes queue an investigate run; empty notes stay
-// intake-only, exactly like Discord "/case".
+// the session workspace. Notes or images queue an investigate run; empty intake
+// stays intake-only, exactly like Discord "/case".
 func (s *Server) postCaseNew(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
+	// Multipart must be parsed before any PostFormValue (default limits).
+	uploads, upErr := s.formImageUploads(ctx)
+	if upErr != nil {
+		return s.caseNewRedirect(ctx, project, upErr.Error())
+	}
 	if err := s.ensureProjectAccess(ctx, project); err != nil {
 		return forbiddenProject(ctx, err)
 	}
@@ -74,15 +79,22 @@ func (s *Server) postCaseNew(ctx *hime.Context) error {
 		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
 	}
 
+	paths, cleanup, stageErr := s.bot.SaveWebAttachments(uploads)
+	if stageErr != nil {
+		return s.caseNewRedirect(ctx, project, stageErr.Error())
+	}
+	investigate := notes != "" || len(paths) > 0
 	res, startErr := s.bot.StartCase(bot.StartCaseOpts{
 		Project: project, Title: title, Severity: severity, Ref: ref, Notes: notes, Actor: actor,
+		AttachmentPaths: paths,
 	})
 	detail := map[string]any{
 		"project": project, "origin": "web-case", "severity": severity,
-		"ref": ref, "investigate": notes != "",
+		"ref": ref, "investigate": investigate, "attachments": len(paths),
 		"threadId": res.ThreadID, "status": string(res.Status), "created": res.Created,
 	}
 	if startErr != nil {
+		cleanup()
 		s.auditAction(ctx, audit.ActionSessionStart, startErr, detail)
 		if errors.Is(startErr, bot.ErrQueueFull) {
 			return ctx.Status(http.StatusConflict).Error(startErr.Error())
@@ -92,7 +104,7 @@ func (s *Server) postCaseNew(ctx *hime.Context) error {
 	s.auditAction(ctx, audit.ActionSessionStart, nil, detail)
 
 	ok := "Case opened"
-	if notes != "" {
+	if investigate {
 		ok = "Case opened · investigating"
 		if res.Status == bot.FixStatusQueued {
 			ok = "Case opened · investigate queued"

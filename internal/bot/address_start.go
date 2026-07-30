@@ -101,10 +101,11 @@ func (b *Bot) resolveDispatchCLI(project string, actor Actor, model string) (con
 
 // ContinueOpts queues a freeform follow-up on an existing thread only.
 type ContinueOpts struct {
-	ThreadID string
-	Project  string // optional; taken from session when empty
-	Prompt   string
-	Actor    Actor
+	ThreadID        string
+	Project         string // optional; taken from session when empty
+	Prompt          string
+	Actor           Actor
+	AttachmentPaths []string // staged web images; ownership transfers to StartTask
 }
 
 // StartContinue runs StartTask on an existing work unit (never creates a thread).
@@ -150,16 +151,17 @@ func (b *Bot) StartContinue(opts ContinueOpts) (FixStartResult, error) {
 	}
 	offline := !b.DiscordReady()
 	pos, err := b.StartTask(StartTaskOpts{
-		ThreadID:      threadID,
-		Proj:          projectRef{Name: project, Cwd: cwd},
-		Prompt:        prompt,
-		Actor:         opts.Actor,
-		Source:        SourceWeb,
-		Origin:        SourceWeb,
-		CreatedBy:     opts.Actor.ID,
-		CreatedByName: opts.Actor.DisplayName,
-		DiscordURL:    discordURL,
-		DG:            b.Discord(),
+		ThreadID:        threadID,
+		Proj:            projectRef{Name: project, Cwd: cwd},
+		Prompt:          prompt,
+		Actor:           opts.Actor,
+		Source:          SourceWeb,
+		Origin:          SourceWeb,
+		CreatedBy:       opts.Actor.ID,
+		CreatedByName:   opts.Actor.DisplayName,
+		DiscordURL:      discordURL,
+		DG:              b.Discord(),
+		AttachmentPaths: opts.AttachmentPaths,
 	})
 	if err != nil {
 		return FixStartResult{}, err

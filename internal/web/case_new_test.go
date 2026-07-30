@@ -340,7 +340,7 @@ func TestCaseNewPageForm(t *testing.T) {
 	for _, want := range []string{
 		`id="page-case-new"`,
 		`id="btn-case-new"`,
-		`<form class="stack" method="post" action="/projects/proj/cases/new">`,
+		`<form class="stack" method="post" action="/projects/proj/cases/new" enctype="multipart/form-data">`,
 		`name="title"`,
 		`name="severity"`,
 		`value="medium" checked`,
@@ -348,6 +348,8 @@ func TestCaseNewPageForm(t *testing.T) {
 		`value="low"`,
 		`name="ref"`,
 		`name="notes"`,
+		`name="images"`,
+		`id="case-images"`,
 		// Intake contract copy: no run until investigate, never ships.
 		`intake`,
 		`never ship code`,

@@ -137,7 +137,7 @@ func promptWithAttachments(userPrompt string, files []savedAttachment) string {
 	} else {
 		b.WriteString("Please review the attached files.\n\n")
 	}
-	b.WriteString("Attached files from Discord (read these paths with your tools):\n")
+	b.WriteString("Attached files (read these paths with your tools):\n")
 	for _, f := range files {
 		ctype := f.ContentType
 		if ctype == "" {

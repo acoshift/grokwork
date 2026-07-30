@@ -16,6 +16,12 @@ import (
 	"github.com/acoshift/grokwork/internal/ghpr"
 )
 
+// memberMutationBodyLimit bounds mutating request bodies on member routes.
+// Generous over the 50 MiB attachment total (multipart framing + form fields);
+// beyond it the CSRF token cannot be read and the request 403s. Bodies in the
+// 50–64 MiB gap parse fine and get SaveWebAttachments' friendlier total error.
+const memberMutationBodyLimit = 64 << 20
+
 // requireFeature rejects when the named write feature is off (404).
 func (s *Server) requireFeature(feature string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +63,10 @@ func (s *Server) requireMember(next http.Handler) http.Handler {
 			return
 		}
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch || r.Method == http.MethodDelete {
+			// Cap the body BEFORE checkCSRF: its FormValue fallback is what parses
+			// a multipart body (spilling to disk uncapped otherwise), so a limit
+			// installed later in a handler arrives after the bytes already landed.
+			r.Body = http.MaxBytesReader(w, r.Body, memberMutationBodyLimit)
 			if !s.checkCSRF(r, sess) {
 				http.Error(w, "forbidden: invalid csrf token", http.StatusForbidden)
 				return

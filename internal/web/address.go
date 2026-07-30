@@ -159,6 +159,11 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 	if threadID == "" {
 		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
 	}
+	// Multipart must be parsed before any PostFormValue (default limits).
+	uploads, upErr := s.formImageUploads(ctx)
+	if upErr != nil {
+		return s.sessionRedirect(ctx, threadID, "", upErr.Error())
+	}
 	project, err := s.ensureThreadAccess(ctx, threadID)
 	if err != nil {
 		return forbiddenProject(ctx, err)
@@ -177,12 +182,21 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 		})
 		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
 	}
+	paths, cleanup, stageErr := s.bot.SaveWebAttachments(uploads)
+	if stageErr != nil {
+		return s.sessionRedirect(ctx, threadID, "", stageErr.Error())
+	}
 	actor := s.fixActor(ctx)
 	res, startErr := s.bot.StartContinue(bot.ContinueOpts{
 		ThreadID: threadID, Project: project, Prompt: prompt, Actor: actor,
+		AttachmentPaths: paths,
 	})
-	detail := map[string]any{"kind": "continue", "threadId": threadID, "project": project}
+	detail := map[string]any{
+		"kind": "continue", "threadId": threadID, "project": project,
+		"attachments": len(paths),
+	}
 	if startErr != nil {
+		cleanup()
 		s.auditAction(ctx, audit.ActionSessionStart, startErr, detail)
 		if errors.Is(startErr, bot.ErrQueueFull) {
 			return ctx.Status(http.StatusConflict).Error(startErr.Error())
