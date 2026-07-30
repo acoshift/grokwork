@@ -122,10 +122,14 @@ type Bot struct {
 	bootGen   uint64
 	hostname  string
 
-	discordMu   sync.RWMutex
-	discord     *discordgo.Session // gateway session after Register
-	threadAPI   threadAPI          // tests inject; nil → wrap discord
-	reconnectMu sync.Mutex         // serializes forced gateway reconnects
+	discordMu sync.RWMutex
+	discord   *discordgo.Session // gateway session after Register
+	threadAPI threadAPI          // tests inject; nil → wrap discord
+	// ghRunner is optional; nil → ghpr defaultRunner. Web installs its injectable
+	// runner so checklist annotation edits go through the same path as other
+	// issue writes (and tests can assert body-file content without a real gh).
+	ghRunner    ghpr.Runner
+	reconnectMu sync.Mutex // serializes forced gateway reconnects
 
 	// Catch-up sweep state (catchup.go).
 	coverageMs      atomic.Int64 // unix ms of last moment gateway coverage was believed complete

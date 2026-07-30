@@ -431,6 +431,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssuesBulkFix))))
 	mux.Handle("POST /projects/{project}/issues/{n}/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssueFix))))
+	// Feature epic Phase 2: plan breakdown + per-item session starts.
+	mux.Handle("POST /projects/{project}/issues/{n}/plan",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssuePlan))))
+	mux.Handle("POST /projects/{project}/issues/{n}/items/start",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssueItemStart))))
 	mux.Handle("POST /projects/{project}/linear/{identifier}/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postLinearFix))))
 	// Address CI / Continue / Address review (PR11b–11c)
@@ -770,6 +775,15 @@ type pageData struct {
 	// stamped onto session row links as ?back= so the session crumb returns
 	// here instead of to the sessions list (see backlink.go).
 	IssueBackURL string
+	// IssueTasklist is the parsed GitHub tasklist from the issue body (Phase 2
+	// breakdown). Empty when the body has no checkbox items.
+	IssueTasklist []bot.TasklistItem
+	// CanPlanFeature gates "Plan this feature" / per-item Start session; same
+	// as CanStartSession (feature+role).
+	CanPlanFeature bool
+	// TasklistDone/Total are checked/total counts for the progress strip.
+	TasklistDone  int
+	TasklistTotal int
 	// PR detail "Session" head link: the unit to jump to from a PR, and how
 	// many bind it (>1 means the link is the most recent, not the only one).
 	PRSessionThreadID string

@@ -1,6 +1,6 @@
 # Feature epics: a GitHub issue as a multi-session requirement
 
-Status: phases 0–1 shipped; phases 2–3 designed.
+Status: phases 0–2 shipped; phase 3 designed.
 
 ## Problem
 
@@ -80,12 +80,12 @@ Phase 0 adds `/projects/{name}/issues/new`:
   dispatch (generic "start a session" with a free-form goal) is deferred to
   Phase 2's per-item starts.
 
-## Phase 2 — agent-assisted breakdown
+## Phase 2 — agent-assisted breakdown (shipped)
 
-- **Plan this feature** rail action: an investigate-mode session whose prompt
-  contract is to read the issue and the repo, then write a GitHub tasklist
-  (`- [ ]` markdown) back onto the issue via `gh` — GitHub renders tasklists
-  natively, so the breakdown is visible to people who never open grokwork.
+- **Plan this feature** rail action: a web-native session whose prompt contract
+  is to read the issue and the repo, then write a GitHub tasklist (`- [ ]`
+  markdown) back onto the issue via `gh` — GitHub renders tasklists natively,
+  so the breakdown is visible to people who never open grokwork.
 - The bot **parses the tasklist deterministically** (plain markdown scan, no
   model call — the `completion.go` stance) and renders the items on the issue
   page, each with its own Start session pre-filled with that item's scope.
@@ -96,6 +96,9 @@ Phase 0 adds `/projects/{name}/issues/new`:
   the collision surface small.
 - The parse must ignore checkboxes inside code fences, and an unparseable
   body degrades to "no breakdown", never an error page.
+- **Progress strip shipped with Phase 2** (free once the parser renders): the
+  issue page shows checked/total derived from the parse on render — never
+  stored. Phase 3 remains the automation that flips boxes when PRs merge.
 
 ## Phase 3 — deterministic progress
 
@@ -103,9 +106,8 @@ Phase 0 adds `/projects/{name}/issues/new`:
   checks the box (`- [x]`) via `gh` — audited under its own action constant,
   gated on the project `GithubWrites` capability like every host-credential
   write.
-- The issue page shows a checked/total progress strip derived from the parse
-  on render — never stored. A stored progress flag is wrong the minute reality
-  moves with no writer running (the case-SLA rule).
+- Progress strip rendering already shipped in Phase 2; this phase is only the
+  box-checking automation.
 
 ## Explicitly out of scope
 

@@ -208,6 +208,32 @@ func truncateForErr(s string, n int) string {
 	return s[:n] + "…"
 }
 
+// EditIssueBody replaces a GitHub issue body via body-file.
+func EditIssueBody(ctx context.Context, repoDir, owner, repo string, number int, body string) error {
+	return EditIssueBodyWith(ctx, defaultRunner, repoDir, owner, repo, number, body)
+}
+
+// EditIssueBodyWith is EditIssueBody with an injectable runner.
+func EditIssueBodyWith(ctx context.Context, run Runner, repoDir, owner, repo string, number int, body string) error {
+	if run == nil {
+		run = defaultRunner
+	}
+	if number <= 0 {
+		return fmt.Errorf("invalid issue number")
+	}
+	path, cleanup, err := writeBodyFile(body)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	args := []string{"issue", "edit", strconv.Itoa(number), "--body-file", path}
+	if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
+		args = append(args, "--repo", o+"/"+r)
+	}
+	_, err = run(ctx, repoDir, "gh", args...)
+	return err
+}
+
 // CommentIssue posts a comment on a GitHub issue via body-file.
 func CommentIssue(ctx context.Context, repoDir, owner, repo string, number int, body string) error {
 	return CommentIssueWith(ctx, defaultRunner, repoDir, owner, repo, number, body)

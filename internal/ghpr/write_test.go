@@ -112,6 +112,54 @@ func TestParseCreateIssueOutputURL(t *testing.T) {
 	}
 }
 
+func TestEditIssueBodyWithBodyFile(t *testing.T) {
+	var saw []string
+	var bodyPath string
+	const body = "updated body\n\n## Breakdown\n- [ ] a"
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		saw = append([]string{name}, args...)
+		for i, a := range args {
+			if a == "--body-file" && i+1 < len(args) {
+				bodyPath = args[i+1]
+				b, err := os.ReadFile(bodyPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(b) != body {
+					t.Fatalf("body file=%q", b)
+				}
+			}
+		}
+		return []byte("ok"), nil
+	}
+	if err := EditIssueBodyWith(context.Background(), run, "/repo", "o", "r", 12, body); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(saw, " ")
+	if !strings.Contains(joined, "issue edit 12") || !strings.Contains(joined, "--body-file") {
+		t.Fatalf("args=%v", saw)
+	}
+	if !strings.Contains(joined, "--repo o/r") {
+		t.Fatalf("missing --repo: %v", saw)
+	}
+	if bodyPath == "" {
+		t.Fatal("no body file")
+	}
+	if _, err := os.Stat(bodyPath); !os.IsNotExist(err) {
+		t.Fatalf("body file should be removed: %v", err)
+	}
+}
+
+func TestEditIssueBodyInvalidNumber(t *testing.T) {
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		t.Fatal("should not run")
+		return nil, nil
+	}
+	if err := EditIssueBodyWith(context.Background(), run, "/r", "o", "r", 0, "x"); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestCommentIssueUsesBodyFile(t *testing.T) {
 	var saw []string
 	var bodyPath string

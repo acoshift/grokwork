@@ -349,6 +349,16 @@ func (s *Server) issueDetail(ctx *hime.Context) error {
 	}
 	d.IssueBackURL = "/projects/" + url.PathEscape(project) + "/issues/" + nStr +
 		"?owner=" + url.QueryEscape(active.Owner) + "&repo=" + url.QueryEscape(active.Repo)
+	// Phase 2 breakdown: parse any tasklist in the body (marker is documentation
+	// only — the parser does not require <!-- grokwork:tasklist -->).
+	d.IssueTasklist = bot.ParseTasklist(d.Issue.Body)
+	d.CanPlanFeature = d.CanStartSession
+	d.TasklistTotal = len(d.IssueTasklist)
+	for _, it := range d.IssueTasklist {
+		if it.Checked {
+			d.TasklistDone++
+		}
+	}
 	return s.viewPage(ctx, "issue_detail", d)
 }
 

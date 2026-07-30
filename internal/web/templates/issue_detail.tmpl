@@ -79,6 +79,37 @@
 </div>
 {{end}}
 
+{{if .IssueTasklist}}
+<div class="section card" id="issue-breakdown">
+  <h2>Breakdown <span class="muted" style="font-weight:500;font-size:0.9rem">{{.TasklistDone}}/{{.TasklistTotal}}</span></h2>
+  <ul class="issue-tasklist" style="list-style:none;margin:0;padding:0;">
+  {{range .IssueTasklist}}
+    <li class="issue-tasklist-item" style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid var(--border);">
+      <span class="badge {{if .Checked}}status-done{{else}}muted{{end}}" style="flex-shrink:0;min-width:1.5rem;text-align:center" title="{{if .Checked}}done{{else}}open{{end}}">{{if .Checked}}✓{{else}}○{{end}}</span>
+      <span style="flex:1;min-width:0">{{.Text}}</span>
+      <span style="flex-shrink:0">
+      {{if .ThreadID}}
+        <a class="btn btn-compact btn-secondary" href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}&amp;back={{urlquery $.IssueBackURL}}">session</a>
+      {{else if $.CanPlanFeature}}
+        <form method="post" action="/projects/{{$.Project}}/issues/{{$.Issue.Number}}/items/start" style="display:inline;margin:0">
+          {{template "csrf" $}}
+          <input type="hidden" name="owner" value="{{$.ActiveOwner}}">
+          <input type="hidden" name="repo" value="{{$.ActiveRepo}}">
+          <input type="hidden" name="raw_line" value="{{.RawLine}}">
+          <button type="submit" class="btn btn-compact btn-secondary"
+            data-confirm="Start a session for: {{.Text}}?"
+            data-confirm-title="Start checklist item"
+            data-confirm-ok="Start session">Start session</button>
+        </form>
+      {{end}}
+      </span>
+    </li>
+  {{end}}
+  </ul>
+  <p class="rail-note">Items come from the issue body's GitHub tasklist. Starting one links the new session on that line.</p>
+</div>
+{{end}}
+
 {{if .IssueSessions}}
 <div class="section card" id="issue-sessions">
   <h2>Sessions ({{len .IssueSessions}})</h2>
@@ -176,6 +207,24 @@
     <div class="form-actions"><button type="submit" id="btn-fix-github">Fix with Grok</button></div>
   </form>
   <p class="rail-note">Starts or reuses a session for this issue. Grok opens or updates a PR; it never merges.</p>
+  {{if .CanPlanFeature}}
+  <form method="post" action="/projects/{{.Project}}/issues/{{.Issue.Number}}/plan" class="grok-dispatch" style="margin-top:0.75rem">
+    {{template "csrf" $}}
+    <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    <div class="form-actions">
+      {{if .IssueTasklist}}
+      <button type="submit" id="btn-plan-feature" class="btn-secondary"
+        data-confirm="Re-plan will rewrite the Breakdown section on this issue. Continue?"
+        data-confirm-title="Re-plan feature"
+        data-confirm-ok="Re-plan">Re-plan</button>
+      {{else}}
+      <button type="submit" id="btn-plan-feature">Plan this feature</button>
+      {{end}}
+    </div>
+  </form>
+  <p class="rail-note">{{if .IssueTasklist}}Re-writes the Breakdown tasklist on the issue.{{else}}Starts a session that writes a tasklist breakdown onto the issue.{{end}} Does not implement code.</p>
+  {{end}}
 </div>
 {{end}}
 

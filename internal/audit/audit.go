@@ -32,6 +32,7 @@ const (
 	ActionIssueComment           = "issue.comment"
 	ActionIssueClose             = "issue.close"
 	ActionIssueCreate            = "issue.create"
+	ActionIssueChecklistLink     = "issue.checklist.link" // bot appended a session link to a tasklist line
 	ActionPRComment              = "pr.comment"
 	ActionPRClose                = "pr.close"
 	ActionPRMerge                = "pr.merge"
