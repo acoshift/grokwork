@@ -32,7 +32,8 @@ const (
 	ActionIssueComment           = "issue.comment"
 	ActionIssueClose             = "issue.close"
 	ActionIssueCreate            = "issue.create"
-	ActionIssueChecklistLink     = "issue.checklist.link" // bot appended a session link to a tasklist line
+	ActionIssueChecklistLink     = "issue.checklist.link"  // bot appended a session link to a tasklist line
+	ActionIssueChecklistCheck    = "issue.checklist.check" // bot flipped a tasklist box after all session PRs merged
 	ActionPRComment              = "pr.comment"
 	ActionPRClose                = "pr.close"
 	ActionPRMerge                = "pr.merge"

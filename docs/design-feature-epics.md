@@ -1,6 +1,6 @@
 # Feature epics: a GitHub issue as a multi-session requirement
 
-Status: phases 0–2 shipped; phase 3 designed.
+Status: phases 0–3 shipped.
 
 ## Problem
 
@@ -98,14 +98,23 @@ Phase 0 adds `/projects/{name}/issues/new`:
   body degrades to "no breakdown", never an error page.
 - **Progress strip shipped with Phase 2** (free once the parser renders): the
   issue page shows checked/total derived from the parse on render — never
-  stored. Phase 3 remains the automation that flips boxes when PRs merge.
+  stored. Phase 3 is the automation that flips boxes when PRs merge.
 
-## Phase 3 — deterministic progress
+## Phase 3 — deterministic progress (shipped)
 
-- When every tracked PR of an item's session reaches terminal-merged, the bot
-  checks the box (`- [x]`) via `gh` — audited under its own action constant,
-  gated on the project `GithubWrites` capability like every host-credential
-  write.
+- When every tracked PR of an item's session is **merged** (not merely
+  terminal — a closed-unmerged PR is not done), the bot checks the box
+  (`- [x]`) on the feature-issue tasklist line annotated with that session's
+  link, via `gh`. Hooked at `cleanupWhenAllPRsDone` so both the poller cycle
+  and `tryCleanupTerminalPR` share one call site; runs before worktree
+  cleanup so `prViewCwd` still has a path.
+- **Gate:** deployment-wide `FeatureGitHubWrites` only. Per-user capability is
+  not consulted — the poller has no acting user; the write is a deterministic
+  follow-on of an already-gated merge.
+- **Idempotent:** `CheckTasklistLine` no-ops when the box is already checked,
+  so a re-poll after a successful flip does not re-edit. Audited under
+  `audit.ActionIssueChecklistCheck` only when an edit is attempted (never
+  body/item text).
 - Progress strip rendering already shipped in Phase 2; this phase is only the
   box-checking automation.
 

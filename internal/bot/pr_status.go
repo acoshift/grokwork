@@ -501,6 +501,11 @@ func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 	if e.HasOpenPR() {
 		return fmt.Errorf("open PRs remain")
 	}
+
+	// Before the worktree is freed: prViewCwd may still need it. Idempotent —
+	// the poller may re-observe a fully-terminal session after the box is checked.
+	b.syncEpicChecklist(threadID, e)
+
 	if e.IsCase() && !e.IsCaseClosed() {
 		return nil
 	}
