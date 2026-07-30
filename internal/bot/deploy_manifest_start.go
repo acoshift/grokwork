@@ -78,7 +78,7 @@ func (b *Bot) StartDeployManifestDraft(opts DeployManifestOpts) (FixStartResult,
 	// Web-native: there is no Discord thread to attach this to, and with no
 	// thread name the goal is the only label the sessions list has.
 	goal := deployManifestGoal(project, opts.Existing)
-	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor,
+	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, nil,
 		func(unitID string) error {
 			if err := b.bindWebStartedSession(unitID, project, goal, opts.Actor, "", true); err != nil {
 				return err

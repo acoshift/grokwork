@@ -234,7 +234,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		if errors.Is(err, config.ErrNoDiscordChannel) {
 			// A project with no mapped channel is a normal state, not a failure:
 			// go web-native, matching StartWebTask and StartCase.
-			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
+			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, nil, func(unitID string) error {
 				return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
 			})
 		}
@@ -248,7 +248,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
 		if err != nil {
 			log.Printf("fix: create Discord thread failed project=%s: %v — web-native fallback", project, err)
-			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
+			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, nil, func(unitID string) error {
 				return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
 			})
 		}
@@ -259,7 +259,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		return b.startWebTask(threadID, project, cwd, prompt, KindTask, opts.Actor, discordURL, nil, true)
 	}
 	// No gateway/threadAPI: web-native unit (no createWorkflowThread).
-	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, func(unitID string) error {
+	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, nil, func(unitID string) error {
 		return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
 	})
 }
@@ -273,12 +273,12 @@ func (b *Bot) canCreateDiscordThread() bool {
 }
 
 // startWebNativeUnit allocates w_* + binds via bind, then StartTask (branch grok/web/ via unit id).
-func (b *Bot) startWebNativeUnit(project, cwd, prompt string, kind Kind, actor Actor, bind func(unitID string) error) (FixStartResult, error) {
+func (b *Bot) startWebNativeUnit(project, cwd, prompt string, kind Kind, actor Actor, attachmentPaths []string, bind func(unitID string) error) (FixStartResult, error) {
 	unitID, err := b.allocWebNativeUnit(project, bind)
 	if err != nil {
 		return FixStartResult{}, err
 	}
-	return b.startWebTask(unitID, project, cwd, prompt, kind, actor, "", nil, true)
+	return b.startWebTask(unitID, project, cwd, prompt, kind, actor, "", attachmentPaths, true)
 }
 
 // allocWebNativeUnit allocates a w_* unit id and binds metadata without starting

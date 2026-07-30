@@ -64,7 +64,7 @@ func (b *Bot) StartPRReview(opts PRReviewOpts) (FixStartResult, error) {
 	// / Address review dispatch on this PR would hit the reuse picker for a session
 	// that only ever posted a comment. The goal carries the PR instead.
 	goal := prReviewGoal(opts)
-	return b.startWebNativeUnit(project, cwd, BuildPRReviewPrompt(opts), KindTask, opts.Actor,
+	return b.startWebNativeUnit(project, cwd, BuildPRReviewPrompt(opts), KindTask, opts.Actor, nil,
 		func(unitID string) error {
 			if err := b.bindWebStartedSession(unitID, project, goal, opts.Actor, "", true); err != nil {
 				return err

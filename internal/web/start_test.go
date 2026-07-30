@@ -229,10 +229,12 @@ func TestStartPageShowsFormForMember(t *testing.T) {
 	for _, want := range []string{
 		`id="page-start"`,
 		`id="btn-start"`,
-		`<form class="stack" method="post" action="/projects/proj/start">`,
+		`<form class="stack" method="post" action="/projects/proj/start" enctype="multipart/form-data">`,
 		`name="prompt"`,
 		`name="title"`,
 		`name="mode"`,
+		`id="start-images"`,
+		`name="images"`,
 		`value="investigate"`,
 		`value="explain"`,
 		// proj default is fix → the empty option is the fix label and the ship copy

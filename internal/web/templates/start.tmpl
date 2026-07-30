@@ -7,7 +7,7 @@
 {{if .CanStartSession}}
 {{/* Form stays out of any live region — this page has none — so nothing wipes typed text. */}}
 <div class="section card" id="start-form">
-  <form class="stack" method="post" action="/projects/{{.Project}}/start">
+  <form class="stack" method="post" action="/projects/{{.Project}}/start" enctype="multipart/form-data">
     {{template "csrf" $}}
     <div class="field">
       <label for="start-title">Title <span class="muted">(optional)</span></label>
@@ -16,6 +16,12 @@
     <div class="field">
       <label for="start-prompt">Task</label>
       <textarea id="start-prompt" name="prompt" rows="8" required placeholder="Describe what Grok should do…"></textarea>
+    </div>
+    <div class="field">
+      <label for="start-images">Images <span class="muted">(optional)</span></label>
+      <input type="file" id="start-images" name="images" accept="image/*" multiple data-attach-chips="start-attach-chips">
+      <div class="attach-chips" id="start-attach-chips" hidden></div>
+      <p class="rail-note" style="margin-top:0.4rem">Images are handed to the run (same as Discord attachments).</p>
     </div>
     <div class="field">
       <label for="start-mode">Mode</label>

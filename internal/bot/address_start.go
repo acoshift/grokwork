@@ -335,7 +335,7 @@ func (b *Bot) startPRCreate(project, cwd string, tracked sessionstore.TrackedPR,
 	if goal == "" {
 		goal = tracked.Selector()
 	}
-	return b.startWebNativeUnit(project, cwd, prompt, KindTask, actor, func(unitID string) error {
+	return b.startWebNativeUnit(project, cwd, prompt, KindTask, actor, nil, func(unitID string) error {
 		if err := b.bindTrackedPR(unitID, project, tracked, actor, "", true); err != nil {
 			return err
 		}

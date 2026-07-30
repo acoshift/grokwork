@@ -62,7 +62,7 @@ func (b *Bot) StartCommitReview(opts CommitReviewOpts) (FixStartResult, error) {
 	// that dispatched it — a Discord thread per reviewed commit is noise the reviewer
 	// never asked for.
 	goal := commitReviewGoal(opts)
-	return b.startWebNativeUnit(project, cwd, BuildCommitReviewPrompt(opts), KindTask, opts.Actor,
+	return b.startWebNativeUnit(project, cwd, BuildCommitReviewPrompt(opts), KindTask, opts.Actor, nil,
 		func(unitID string) error {
 			if err := b.bindWebStartedSession(unitID, project, goal, opts.Actor, "", true); err != nil {
 				return err

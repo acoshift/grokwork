@@ -58,6 +58,11 @@ func (s *Server) startOpensDiscordThread(project string) bool {
 // impossible on create (a fresh unit has an empty queue).
 func (s *Server) postStart(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
+	// Multipart must be parsed before any PostFormValue (default limits).
+	uploads, upErr := s.formImageUploads(ctx)
+	if upErr != nil {
+		return s.startRedirect(ctx, project, "", upErr.Error())
+	}
 	if err := s.ensureProjectAccess(ctx, project); err != nil {
 		return forbiddenProject(ctx, err)
 	}
@@ -74,16 +79,23 @@ func (s *Server) postStart(ctx *hime.Context) error {
 		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
 	}
 
+	paths, cleanup, stageErr := s.bot.SaveWebAttachments(uploads)
+	if stageErr != nil {
+		return s.startRedirect(ctx, project, "", stageErr.Error())
+	}
 	actor := s.fixActor(ctx)
 	model := strings.TrimSpace(ctx.PostFormValue("model"))
 	res, startErr := s.bot.StartWebTask(bot.StartWebTaskOpts{
 		Project: project, Prompt: prompt, Actor: actor, Title: title, Mode: mode, Model: model,
+		AttachmentPaths: paths,
 	})
 	detail := map[string]any{
 		"project": project, "origin": "web-start", "mode": mode, "model": model,
+		"attachments": len(paths),
 		"threadId": res.ThreadID, "status": string(res.Status), "created": res.Created,
 	}
 	if startErr != nil {
+		cleanup()
 		s.auditAction(ctx, audit.ActionSessionStart, startErr, detail)
 		if errors.Is(startErr, bot.ErrQueueFull) {
 			return ctx.Status(http.StatusConflict).Error(startErr.Error())

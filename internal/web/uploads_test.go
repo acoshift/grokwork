@@ -233,6 +233,79 @@ func TestCaseNewAttachmentsOnlyInvestigatingFlash(t *testing.T) {
 	}
 }
 
+func TestStartMultipartPNG(t *testing.T) {
+	srv, _, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postMultipart(t, srv, "/projects/proj/start", sid, csrf,
+		map[string]string{"prompt": "look at this screenshot"},
+		map[string][]byte{"shot.png": testPNG},
+	)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/sessions/") {
+		t.Fatalf("Location=%q", loc)
+	}
+	if strings.Contains(loc, "err=") {
+		t.Fatalf("unexpected err: %s", loc)
+	}
+	bot.WaitIdleForTest(b, 5*time.Second)
+	stage := filepath.Join(srv.cfg.DataDir, "attachments", "web")
+	if entries, _ := os.ReadDir(stage); len(entries) != 0 {
+		t.Fatalf("staging leftovers after success: %v", entries)
+	}
+}
+
+func TestStartNonImageRejected(t *testing.T) {
+	srv, _, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postMultipart(t, srv, "/projects/proj/start", sid, csrf,
+		map[string]string{"prompt": "here is a text file"},
+		map[string][]byte{"notes.txt": []byte("not an image")},
+	)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/projects/proj/start") {
+		t.Fatalf("want start redirect, got %q", loc)
+	}
+	if !strings.Contains(loc, "err=") {
+		t.Fatalf("want err flash: %s", loc)
+	}
+}
+
+func TestStartURLEncodedStillWorks(t *testing.T) {
+	srv, _, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/start", sid, csrf, url.Values{
+		"prompt": {"plain task without files"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/sessions/") {
+		t.Fatalf("Location=%q", loc)
+	}
+	if strings.Contains(loc, "err=") {
+		t.Fatalf("urlencoded start failed: %s", loc)
+	}
+}
+
 func TestCaseNewPageRendersImageInput(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)

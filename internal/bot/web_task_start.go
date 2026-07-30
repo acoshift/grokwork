@@ -22,6 +22,8 @@ type StartWebTaskOpts struct {
 	// owns it. Empty means "whatever config says", which stays unstamped so the
 	// existing resolve-at-run-start path applies. Requires builder-class caps.
 	Model string
+	// AttachmentPaths are staged web images; ownership transfers to StartTask.
+	AttachmentPaths []string
 }
 
 // StartWebTask creates a workflow unit and enqueues a freeform Grok task.
@@ -96,7 +98,7 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 			// to a web-native unit. (A freeform start is the one web path that still
 			// prefers a Discord thread at all — the commit-review and PR dispatch cards
 			// are always web-native.)
-			return b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, func(unitID string) error {
+			return b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, opts.AttachmentPaths, func(unitID string) error {
 				return bind(unitID, "")
 			})
 		}
@@ -114,7 +116,7 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 			// session page surfaces the "discord=offline" flash. (The no-mapped-channel
 			// and gateway-down branches already showed "web-native" and do not flag.)
 			log.Printf("web-task: create Discord thread failed project=%s: %v — web-native fallback", project, err)
-			res, err := b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, func(unitID string) error {
+			res, err := b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, opts.AttachmentPaths, func(unitID string) error {
 				return bind(unitID, "")
 			})
 			if err == nil {
@@ -126,9 +128,9 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 		if err := bind(threadID, discordURL); err != nil {
 			return FixStartResult{}, err
 		}
-		return b.startWebTask(threadID, project, cwd, prompt, kind, opts.Actor, discordURL, nil, true)
+		return b.startWebTask(threadID, project, cwd, prompt, kind, opts.Actor, discordURL, opts.AttachmentPaths, true)
 	}
-	return b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, func(unitID string) error {
+	return b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, opts.AttachmentPaths, func(unitID string) error {
 		return bind(unitID, "")
 	})
 }
