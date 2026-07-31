@@ -174,7 +174,9 @@ func (b *Bot) shipDirectAfterTask(s *discordgo.Session, present bool, threadID s
 		if res.PrimaryBranch != "" {
 			e.PrimaryBranch = res.PrimaryBranch
 		}
-		e.ApplyAutoLabel(sessionstore.LabelDone)
+		// Explicit ship stamps done; PR merge no longer auto-closes.
+		e.Label = sessionstore.LabelDone
+		e.LabelManual = false
 	})
 	if patchErr != nil {
 		log.Printf("ship: session patch thread=%s: %v", threadID, patchErr)

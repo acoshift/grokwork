@@ -109,6 +109,7 @@ func (e *Entry) ClearLabelManual() {
 // Manual lock is ignored here — caller decides whether to apply.
 // K18: when Mode=case && Phase=closed, returns current effective label (no PR-driven change).
 // When Mode=case and Phase not fixing/shipping, suppress needs_review from stale/open PRs.
+// Terminal PRs never auto-suggest done/abandoned — users close via /label or /close.
 func (e Entry) SuggestAutoLabel(running bool) string {
 	// K18 close freeze: never suggest a PR-driven change for closed cases.
 	if e.IsCaseClosed() {
@@ -117,21 +118,12 @@ func (e Entry) SuggestAutoLabel(running bool) string {
 
 	e.NormalizePRs()
 	if len(e.PRs) > 0 && e.AllPRsTerminal() {
-		// Open cases (any phase): never force done/abandoned from leftover terminal
-		// PRs — reopen after a shipped fix must keep active board labels. Closed
-		// cases already returned above. Non-cases still honor PR terminal.
-		if e.IsCase() {
-			if running {
-				return LabelInProgress
-			}
-			return e.EffectiveLabel()
+		// Merged/closed PRs do not auto-close the unit: keep the active board
+		// label until a human marks done/abandoned (or /close for cases).
+		if running {
+			return LabelInProgress
 		}
-		for _, p := range e.PRs {
-			if strings.EqualFold(strings.TrimSpace(p.State), "MERGED") {
-				return LabelDone
-			}
-		}
-		return LabelAbandoned
+		return e.EffectiveLabel()
 	}
 	if e.HasOpenPR() {
 		// Case intake/investigate/answered: do not promote to needs_review from stale PR.
@@ -164,14 +156,15 @@ func (e Entry) SuggestAutoLabel(running bool) string {
 }
 
 // ApplyAutoLabel updates Label from a suggestion when allowed.
-// Manual labels are sticky except terminal auto (done / abandoned from PRs).
+// Manual labels are fully sticky (including against done/abandoned). Terminal
+// labels are set by /label, /close, or direct ship writing fields directly.
 // K18: Mode=case && Phase=closed → no-op (close freezes label without LabelManual).
 // Returns true when the stored label changed.
 func (e *Entry) ApplyAutoLabel(suggested string) bool {
 	if e == nil {
 		return false
 	}
-	// K18: closed cases never accept auto-label (including terminal PR override).
+	// K18: closed cases never accept auto-label.
 	if e.IsCaseClosed() {
 		return false
 	}
@@ -182,15 +175,7 @@ func (e *Entry) ApplyAutoLabel(suggested string) bool {
 	cur := e.EffectiveLabel()
 
 	if e.LabelManual {
-		// Merge/close still win so the board reflects shipping reality.
-		// Exception: closed cases already returned above.
-		if lab != LabelDone && lab != LabelAbandoned {
-			return false
-		}
-		// Don't abandon over a manual done.
-		if cur == LabelDone && lab == LabelAbandoned {
-			return false
-		}
+		return false
 	}
 
 	// Don't demote needs_review → in_progress when a follow-up run starts.
@@ -198,7 +183,7 @@ func (e *Entry) ApplyAutoLabel(suggested string) bool {
 		return false
 	}
 	// Don't revive terminal threads via weak signals.
-	if IsTerminalLabel(cur) && !IsTerminalLabel(lab) && !e.LabelManual {
+	if IsTerminalLabel(cur) && !IsTerminalLabel(lab) {
 		// Allow revival only when a new open PR appears (needs_review / in_progress from draft).
 		if lab != LabelNeedsReview && lab != LabelInProgress {
 			return false
@@ -214,10 +199,6 @@ func (e *Entry) ApplyAutoLabel(suggested string) bool {
 		return false
 	}
 	e.Label = lab
-	if lab == LabelDone || lab == LabelAbandoned {
-		// Terminal auto clears the manual lock so the board stays honest.
-		e.LabelManual = false
-	}
 	return true
 }
 

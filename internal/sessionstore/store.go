@@ -45,7 +45,8 @@ type Entry struct {
 	BriefMsgID string `json:"briefMsgId,omitempty"`
 
 	// Lifecycle label: open → in_progress → blocked → needs_review → done | abandoned.
-	// Empty means open. LabelManual pauses auto updates until /label auto (terminal PR states still apply).
+	// Empty means open. LabelManual pauses auto updates until /label auto.
+	// Terminal done/abandoned are user-driven (/label, /close, direct ship) — not PR merge.
 	Label       string `json:"label,omitempty"`
 	LabelManual bool   `json:"labelManual,omitempty"`
 

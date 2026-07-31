@@ -81,16 +81,19 @@ func TestSuggestAutoLabelOpenCaseTerminalPRKeepsActiveLabel(t *testing.T) {
 			t.Fatalf("phase=%s: label became %q", phase, e.Label)
 		}
 	}
-	// Non-case still honors terminal PR → done.
+	// Non-case also keeps active label when PRs are terminal (no auto-close).
 	eng := Entry{
 		Mode:  "fix",
-		Label: LabelInProgress,
+		Label: LabelNeedsReview,
 		PRs: []TrackedPR{{
 			Number: 2, State: "MERGED", URL: "https://example/pr/2",
 		}},
 	}
-	if got := eng.SuggestAutoLabel(false); got != LabelDone {
-		t.Fatalf("eng terminal PR: got %q want done", got)
+	if got := eng.SuggestAutoLabel(false); got != LabelNeedsReview {
+		t.Fatalf("eng terminal PR: got %q want needs_review", got)
+	}
+	if eng.ApplyAutoLabel(eng.SuggestAutoLabel(false)) {
+		t.Fatal("eng terminal PR must not change label via auto")
 	}
 }
 

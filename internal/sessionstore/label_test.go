@@ -58,15 +58,17 @@ func TestSuggestAutoLabelFromPRs(t *testing.T) {
 		t.Fatalf("ready PR: %q", e.SuggestAutoLabel(false))
 	}
 
+	// Merged/closed PRs do not auto-close — label stays until a human marks done/abandoned.
+	e.Label = LabelNeedsReview
 	e.UpsertPR(TrackedPR{URL: "https://github.com/o/r/pull/1", Number: 1, State: "MERGED"})
-	if e.SuggestAutoLabel(false) != LabelDone {
-		t.Fatalf("merged: %q", e.SuggestAutoLabel(false))
+	if e.SuggestAutoLabel(false) != LabelNeedsReview {
+		t.Fatalf("merged keeps active label: %q", e.SuggestAutoLabel(false))
 	}
 
-	e2 := Entry{}
+	e2 := Entry{Label: LabelInProgress}
 	e2.UpsertPR(TrackedPR{URL: "https://github.com/o/r/pull/2", Number: 2, State: "CLOSED"})
-	if e2.SuggestAutoLabel(false) != LabelAbandoned {
-		t.Fatalf("closed: %q", e2.SuggestAutoLabel(false))
+	if e2.SuggestAutoLabel(false) != LabelInProgress {
+		t.Fatalf("closed keeps active label: %q", e2.SuggestAutoLabel(false))
 	}
 
 	e3 := Entry{}
@@ -86,12 +88,12 @@ func TestApplyAutoLabelManualSticky(t *testing.T) {
 	if e.EffectiveLabel() != LabelBlocked {
 		t.Fatalf("label=%q", e.EffectiveLabel())
 	}
-	// Terminal auto still wins.
-	if !e.ApplyAutoLabel(LabelDone) {
-		t.Fatal("expected done override")
+	// Terminal labels no longer override manual — users close themselves.
+	if e.ApplyAutoLabel(LabelDone) {
+		t.Fatal("manual blocked must not auto-become done")
 	}
-	if e.EffectiveLabel() != LabelDone || e.LabelManual {
-		t.Fatalf("after done: %+v", e)
+	if e.EffectiveLabel() != LabelBlocked || !e.LabelManual {
+		t.Fatalf("after done attempt: %+v", e)
 	}
 }
 
