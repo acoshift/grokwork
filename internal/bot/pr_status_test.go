@@ -12,6 +12,57 @@ import (
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
+// applyPRInfo must not invent a turn stamp: the poller Patches every open PR
+// session on a short cycle, and thrashing UpdatedAt was the whole point of
+// turn-only stamping.
+func TestApplyPRInfoPreservesUpdatedAt(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{DataDir: dir}
+	b := New(cfg, store, nil)
+	// Web unit id → no Discord card path (nil session is fine).
+	threadID := "w_pr_poll_stamp"
+	fixed := "2026-01-15T12:00:00Z"
+	if err := store.Set(threadID, sessionstore.Entry{
+		SessionID: "s1",
+		Project:   "app",
+		UpdatedAt: fixed,
+		LastUser:  "alice",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	info := ghpr.Info{
+		Number: 7,
+		URL:    "https://github.com/acme/app/pull/7",
+		Title:  "fix",
+		State:  "OPEN",
+		Owner:  "acme",
+		Repo:   "app",
+		Checks:         "✓ 1",
+		ReviewDecision: "REVIEW_REQUIRED",
+	}
+	if err := b.applyPRInfo(nil, threadID, info); err != nil {
+		t.Fatalf("applyPRInfo: %v", err)
+	}
+	got, ok := store.Get(threadID)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if got.UpdatedAt != fixed {
+		t.Fatalf("UpdatedAt moved %q → %q (poller must not stamp)", fixed, got.UpdatedAt)
+	}
+	if got.LastUser != "alice" {
+		t.Fatalf("LastUser=%q", got.LastUser)
+	}
+	got.NormalizePRs()
+	if len(got.PRs) != 1 || got.PRs[0].Number != 7 {
+		t.Fatalf("PR not upserted: %+v", got.PRs)
+	}
+}
+
 func TestPreservePRFields(t *testing.T) {
 	prev := sessionstore.Entry{
 		PRURL:          "https://github.com/o/r/pull/3",

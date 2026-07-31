@@ -42,12 +42,22 @@ func TestCaseActionsLifecycle(t *testing.T) {
 	if _, _, err := b.SetCaseCustomerUpdate(tid, "Safe reply for customer"); err != nil {
 		t.Fatal(err)
 	}
+	// Old turn stamp: close must refresh UpdatedAt so terminal TTL starts now.
+	oldAt := "2020-01-01T00:00:00Z"
+	if _, _, err := store.Patch(tid, func(ent *sessionstore.Entry) {
+		ent.UpdatedAt = oldAt
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := b.CloseCase(tid, "u1", "answered", ""); err != nil {
 		t.Fatal(err)
 	}
 	e, _ = store.Get(tid)
 	if !e.IsCaseClosed() || e.Resolution != "answered" {
 		t.Fatalf("after close: %+v", e)
+	}
+	if e.UpdatedAt == "" || e.UpdatedAt == oldAt {
+		t.Fatalf("close must stamp UpdatedAt, got %q", e.UpdatedAt)
 	}
 	if _, err := b.EscalateCase(EscalateCaseOpts{ThreadID: tid, Actor: Actor{ID: "u-eng"}}); err != ErrCaseClosed {
 		t.Fatalf("want ErrCaseClosed, got %v", err)

@@ -346,9 +346,11 @@ func (b *Bot) claimOrEnqueue(threadID string, job *runJob, item taskItem) (claim
 // skipReady is true for recovery rehydrate (gate still closed).
 func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem, skipReady bool) (claimed bool, queuePos int, err error) {
 	// Human turn: a successful claim or queue is the submit. Stamp after unlock
-	// so we never hold st.mu across the session store lock.
+	// so we never hold st.mu across the session store lock. Recovery rehydrate
+	// (skipReady) skips the stamp — resume is not a new human turn; agent
+	// finish will StampTurn when the run completes.
 	defer func() {
-		if err == nil {
+		if err == nil && !skipReady {
 			b.touchSessionTurn(threadID, item)
 		}
 	}()
@@ -458,8 +460,8 @@ func runActorID(item taskItem) string {
 }
 
 // touchSessionTurn stamps UpdatedAt for a human submit (claim or queue).
-// Missing session rows are left alone — the first agent finish creates them
-// with StampTurn. No-ops when sessions is nil.
+// When no session row exists yet, creates a thin shell so the first human
+// turn is visible to boards/catchup before the agent finishes.
 func (b *Bot) touchSessionTurn(threadID string, item taskItem) {
 	if b == nil || b.sessions == nil || threadID == "" {
 		return
@@ -470,8 +472,31 @@ func (b *Bot) touchSessionTurn(threadID string, item taskItem) {
 	}
 	if _, ok, err := b.sessions.TouchTurn(threadID, lastUser); err != nil {
 		log.Printf("warn: touch turn thread=%s: %v", threadID, err)
-	} else if !ok {
-		// First task on a brand-new unit: no row yet. Post-run Set stamps.
+		return
+	} else if ok {
+		return
+	}
+	// First task on a brand-new unit: mint a shell so submit is the turn clock.
+	e := sessionstore.Entry{
+		Project:       item.proj.Name,
+		Origin:        item.origin,
+		CreatedBy:     item.createdBy,
+		CreatedByName: item.createdByName,
+		DiscordURL:    item.discordURL,
+	}
+	if e.Origin == "" && item.source != "" {
+		e.Origin = item.source
+	}
+	if e.CreatedBy == "" && item.actor.ID != "" {
+		e.CreatedBy = item.actor.ID
+		e.CreatedByName = item.actor.DisplayName
+	}
+	if item.actor.ID != "" {
+		ensureSessionOwner(&e, item.actor.ID, item.actor.String())
+	}
+	e.StampTurn(lastUser)
+	if err := b.sessions.Set(threadID, e); err != nil {
+		log.Printf("warn: touch turn shell thread=%s: %v", threadID, err)
 	}
 }
 
@@ -1058,6 +1083,8 @@ func (b *Bot) resetThreadCore(threadID string) (msg string, err error) {
 		// Terminal tombstone for list/UI; manual so auto-label does not revive it
 		// until a new run starts (direct mode may still revive on run start).
 		_ = ent.SetLabelManual(sessionstore.LabelAbandoned)
+		// Terminal lifecycle starts the TTL / Active recency clock.
+		ent.StampTurn(ent.LastUser)
 	})
 	if patchErr != nil {
 		log.Printf("error: session abandon patch: %v", patchErr)

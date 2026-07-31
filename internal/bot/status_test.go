@@ -51,8 +51,9 @@ func TestStatusSnapshot(t *testing.T) {
 	}
 
 	snap := b.StatusSnapshot()
-	if snap.SessionCount != 1 {
-		t.Fatalf("SessionCount=%d", snap.SessionCount)
+	// thread-a fixture + shell created by human-submit stamp on thread-run.
+	if snap.SessionCount != 2 {
+		t.Fatalf("SessionCount=%d want 2", snap.SessionCount)
 	}
 	if snap.ProjectCount != 2 {
 		t.Fatalf("ProjectCount=%d", snap.ProjectCount)

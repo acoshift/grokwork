@@ -177,6 +177,8 @@ func (b *Bot) shipDirectAfterTask(s *discordgo.Session, present bool, threadID s
 		// Explicit ship stamps done; PR merge no longer auto-closes.
 		e.Label = sessionstore.LabelDone
 		e.LabelManual = false
+		// Terminal lifecycle starts the TTL / Active recency clock.
+		e.StampTurn(e.LastUser)
 	})
 	if patchErr != nil {
 		log.Printf("ship: session patch thread=%s: %v", threadID, patchErr)

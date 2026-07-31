@@ -200,6 +200,8 @@ func (b *Bot) CloseCase(threadID, actorID, resolution, note string) error {
 		ent.ResolvedBy = strings.TrimSpace(actorID)
 		ent.Label = label
 		_ = sessionstore.ClampCaseFields(ent)
+		// Terminal lifecycle starts the TTL / Active recency clock.
+		ent.StampTurn(ent.LastUser)
 	})
 	return err
 }

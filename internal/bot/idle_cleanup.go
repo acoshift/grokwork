@@ -347,6 +347,8 @@ func (b *Bot) finalizeSessionAfterWorktreeGone(threadID, mainCwd string, preserv
 		}
 		ent.SessionID = ""
 		_ = ent.SetLabelManual(sessionstore.LabelAbandoned)
+		// Terminal lifecycle starts the TTL / Active recency clock.
+		ent.StampTurn(ent.LastUser)
 	})
 	return err
 }

@@ -260,6 +260,10 @@ func (b *Bot) handleCloseCase(s *discordgo.Session, m *discordgo.MessageCreate, 
 		label = sessionstore.LabelDone
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
+	lastUser := ""
+	if m.Author != nil {
+		lastUser = m.Author.String()
+	}
 	_, _, err := b.sessions.Patch(m.ChannelID, func(ent *sessionstore.Entry) {
 		ent.Mode = ModeCase
 		ent.Phase = sessionstore.PhaseClosed
@@ -272,6 +276,8 @@ func (b *Bot) handleCloseCase(s *discordgo.Session, m *discordgo.MessageCreate, 
 		ent.Label = label
 		// K18: do NOT set LabelManual — closed phase freezes auto-label in sessionstore.
 		_ = sessionstore.ClampCaseFields(ent)
+		// Terminal lifecycle starts the TTL / Active recency clock.
+		ent.StampTurn(lastUser)
 	})
 	// resolution/label are our own enums; the close note is the operator's prose
 	// about a customer and is not logged.

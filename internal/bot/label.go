@@ -102,6 +102,14 @@ func (b *Bot) handleLabel(s *discordgo.Session, m *discordgo.MessageCreate, pars
 			e.Project = p.Name
 		}
 	}
+	// Terminal labels start the TTL / Active recency clock.
+	if sessionstore.IsTerminalLabel(lab) {
+		lastUser := ""
+		if m.Author != nil {
+			lastUser = m.Author.String()
+		}
+		e.StampTurn(lastUser)
+	}
 	err := b.sessions.Set(threadID, e)
 	b.auditCmdMsg(audit.ActionSessionLabel, m, e.Project, err, map[string]any{
 		"label": lab,

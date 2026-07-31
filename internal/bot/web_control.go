@@ -58,6 +58,10 @@ func (b *Bot) SetSessionLabel(threadID, label string) error {
 			return
 		}
 		setErr = ent.SetLabelManual(lab)
+		if setErr == nil && sessionstore.IsTerminalLabel(lab) {
+			// Terminal labels start the TTL / Active recency clock.
+			ent.StampTurn(ent.LastUser)
+		}
 	})
 	if err != nil {
 		return err

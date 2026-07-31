@@ -19,10 +19,11 @@ type Entry struct {
 	MainCwd        string `json:"mainCwd,omitempty"`
 	WorktreeBranch string `json:"worktreeBranch,omitempty"`
 	LastUser string `json:"lastUser,omitempty"`
-	// UpdatedAt is the last human or agent turn (RFC3339 UTC). Set/Patch never
-	// invent this — only TouchTurn (or an explicit value on Set) writes it.
-	// Background writers (PR poller, labels, ownership) leave it alone so boards
-	// and the terminal-session sweeper track real work, not metadata thrash.
+	// UpdatedAt is last real activity (RFC3339 UTC): a human/agent turn, or a
+	// terminal lifecycle event (abandon / close / done). Set/Patch never invent
+	// this — only TouchTurn / StampTurn (or an explicit value on Set) write it.
+	// Background writers (PR poller, non-terminal labels, ownership) leave it
+	// alone so boards and the terminal-session sweeper track real work.
 	UpdatedAt string `json:"updatedAt"`
 
 	// Thread ownership: first @Grok author; /claim and /hand-off update these.
@@ -418,7 +419,8 @@ func StampNow() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
-// StampTurn records a human or agent turn on e (UpdatedAt + optional LastUser).
+// StampTurn records real activity on e (UpdatedAt + optional LastUser): a human
+// submit, agent finish, or terminal lifecycle (abandon / close / done).
 func (e *Entry) StampTurn(lastUser string) {
 	if e == nil {
 		return
@@ -429,7 +431,7 @@ func (e *Entry) StampTurn(lastUser string) {
 	}
 }
 
-// TouchTurn stamps UpdatedAt for a human or agent turn. No-op when missing.
+// TouchTurn stamps UpdatedAt for real activity. No-op when missing.
 // This is the only store helper that invents UpdatedAt; Set/Patch do not.
 func (s *Store) TouchTurn(threadID, lastUser string) (Entry, bool, error) {
 	return s.Patch(threadID, func(e *Entry) {
