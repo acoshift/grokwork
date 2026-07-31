@@ -47,7 +47,7 @@ func TestPruneIdleWorktrees(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Persist sessions with explicit UpdatedAt (store.Set always stamps "now").
+	// Persist sessions with explicit UpdatedAt (writeSessions bypasses Set).
 	oldAt := time.Now().Add(-40 * 24 * time.Hour).UTC().Format(time.RFC3339)
 	newAt := time.Now().UTC().Format(time.RFC3339)
 	writeSessions(t, data, map[string]sessionstore.Entry{

@@ -232,7 +232,11 @@ func TestCatchupChannelPaginates(t *testing.T) {
 
 func TestCatchupTargetsChannelsAndRecentThreads(t *testing.T) {
 	b, _ := testBotWithData(t) // channel map: ch1 → app
-	if err := b.sessions.Set("thread-1", sessionstore.Entry{Project: "app"}); err != nil {
+	// UpdatedAt is turn-stamped only; give a recent turn so the thread is in-window.
+	if err := b.sessions.Set("thread-1", sessionstore.Entry{
+		Project:   "app",
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	targets := b.catchupTargets()

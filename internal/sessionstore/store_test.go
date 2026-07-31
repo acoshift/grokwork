@@ -64,10 +64,10 @@ func TestListAndCount(t *testing.T) {
 		t.Fatalf("List=%v", list)
 	}
 
-	if err := s.Set("t2", Entry{SessionID: "s2", Project: "p", LastUser: "alice"}); err != nil {
+	if err := s.Set("t2", Entry{SessionID: "s2", Project: "p", LastUser: "alice", UpdatedAt: "2026-01-01T00:00:00Z"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Set("t1", Entry{SessionID: "s1", Project: "q", LastUser: "bob"}); err != nil {
+	if err := s.Set("t1", Entry{SessionID: "s1", Project: "q", LastUser: "bob", UpdatedAt: "2026-06-01T00:00:00Z"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,14 +78,14 @@ func TestListAndCount(t *testing.T) {
 	if len(list) != 2 {
 		t.Fatalf("List len=%d", len(list))
 	}
-	// Newest (last Set) first.
+	// Newest UpdatedAt first (turn stamp, not last Set).
 	if list[0].ThreadID != "t1" || list[0].SessionID != "s1" || list[0].Project != "q" {
 		t.Fatalf("first listed = %+v", list[0])
 	}
 	if list[1].ThreadID != "t2" {
 		t.Fatalf("second listed = %+v", list[1])
 	}
-	if list[0].UpdatedAt == "" || list[0].LastUser != "bob" {
+	if list[0].UpdatedAt != "2026-06-01T00:00:00Z" || list[0].LastUser != "bob" {
 		t.Fatalf("entry fields: %+v", list[0])
 	}
 
@@ -100,6 +100,46 @@ func TestListAndCount(t *testing.T) {
 	// sessions.json path is under data dir.
 	if _, err := filepath.Glob(filepath.Join(dir, "sessions.json")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestUpdatedAtOnlyOnTurn(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixed := "2026-01-15T12:00:00Z"
+	if err := s.Set("t1", Entry{SessionID: "s1", Project: "p", UpdatedAt: fixed}); err != nil {
+		t.Fatal(err)
+	}
+	// Metadata Patch must not invent a new turn time.
+	if _, ok, err := s.Patch("t1", func(e *Entry) { e.Goal = "ship it" }); err != nil || !ok {
+		t.Fatalf("Patch: ok=%v err=%v", ok, err)
+	}
+	got, ok := s.Get("t1")
+	if !ok || got.UpdatedAt != fixed || got.Goal != "ship it" {
+		t.Fatalf("after Patch: %+v", got)
+	}
+	// Set that rebuilds without UpdatedAt preserves the prior turn stamp.
+	if err := s.Set("t1", Entry{SessionID: "s1", Project: "p", Goal: "again"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Get("t1")
+	if got.UpdatedAt != fixed {
+		t.Fatalf("Set preserved UpdatedAt=%q want %q", got.UpdatedAt, fixed)
+	}
+	// TouchTurn is the turn clock.
+	if _, ok, err := s.TouchTurn("t1", "alice"); err != nil || !ok {
+		t.Fatalf("TouchTurn: ok=%v err=%v", ok, err)
+	}
+	got, _ = s.Get("t1")
+	if got.UpdatedAt == "" || got.UpdatedAt == fixed || got.LastUser != "alice" {
+		t.Fatalf("after TouchTurn: %+v", got)
+	}
+	// Missing unit: no-op.
+	if _, ok, err := s.TouchTurn("missing", "bob"); err != nil || ok {
+		t.Fatalf("TouchTurn missing: ok=%v err=%v", ok, err)
 	}
 }
 

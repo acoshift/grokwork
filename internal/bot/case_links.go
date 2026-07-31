@@ -148,9 +148,8 @@ func (b *Bot) LinkCase(threadID, key string) error {
 	if targetEnt.Project != self.Project {
 		return fmt.Errorf("%s belongs to another project — cases can only reference cases in %s", norm, self.Project)
 	}
-	// Decided before Patch, not inside it: Patch always stamps UpdatedAt, and a
-	// re-submit of a link that already exists would otherwise reorder the case
-	// to the top of every recently-updated list without changing anything.
+	// Decided before Patch, not inside it: a re-submit of a link that already
+	// exists should be a pure no-op (no save, no board churn).
 	existing := self.RelatedCaseKeys()
 	if slices.Contains(existing, norm) {
 		return nil

@@ -272,7 +272,7 @@ func TestShipBoardMergesUnitsOnOnePR(t *testing.T) {
 }
 
 // TestMergeShipRows pins the per-field merge rules. It works on rows directly
-// because sessionstore stamps UpdatedAt on every write, so the recency tiebreaks
+// because turn stamps still refresh UpdatedAt, so the recency tiebreaks
 // are unreachable through the store.
 func TestMergeShipRows(t *testing.T) {
 	base := func(thread, checks, updated string) ShipPRRow {

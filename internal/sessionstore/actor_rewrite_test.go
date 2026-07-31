@@ -80,12 +80,13 @@ func TestRewriteActorMovesEveryActorField(t *testing.T) {
 // hand every abandoned thread another full TTL — and reorder every board.
 func TestRewriteActorKeepsUpdatedAt(t *testing.T) {
 	s := rewriteStore(t)
-	if err := s.Set("t1", Entry{SessionID: "s1", OwnerID: "github:999"}); err != nil {
+	fixed := "2026-01-15T12:00:00Z"
+	if err := s.Set("t1", Entry{SessionID: "s1", OwnerID: "github:999", UpdatedAt: fixed}); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := s.Get("t1")
-	if before.UpdatedAt == "" {
-		t.Fatal("fixture has no UpdatedAt")
+	if before.UpdatedAt != fixed {
+		t.Fatalf("fixture UpdatedAt=%q want %q", before.UpdatedAt, fixed)
 	}
 	if _, err := s.RewriteActor(sameAs("github:999"), "42424"); err != nil {
 		t.Fatal(err)

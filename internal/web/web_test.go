@@ -617,12 +617,14 @@ func TestSessionsHub(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Closed eng session with terminal PR must keep PR link + closed state on the list.
+	// Recent turn stamp so it still matches the default Active filter.
 	if err := srv.sessions.Set("thread-closed", sessionstore.Entry{
 		SessionID: "sess-closed",
 		Project:   "proj",
 		Label:     sessionstore.LabelDone,
 		LastUser:  "carol#2",
 		Goal:      "merged ship",
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 		PRs: []sessionstore.TrackedPR{{
 			URL: "https://github.com/acme/app/pull/42", Number: 42, State: "MERGED",
 			Title: "ship feature", Owner: "acme", Repo: "app",
@@ -736,12 +738,16 @@ func TestSessionsFilter(t *testing.T) {
 	h := srv.Handler()
 
 	// thread-99 (from testServer) has no explicit label → effective open.
+	// Terminal rows need a recent turn stamp to stay on the Active view
+	// (Set no longer invents UpdatedAt).
+	recent := time.Now().UTC().Format(time.RFC3339)
 	if err := srv.sessions.Set("thread-done", sessionstore.Entry{
 		SessionID: "sess-done",
 		Project:   "proj",
 		Label:     sessionstore.LabelDone,
 		LastUser:  "carol#2",
 		Goal:      "merged ship work",
+		UpdatedAt: recent,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -752,6 +758,7 @@ func TestSessionsFilter(t *testing.T) {
 		Phase:         sessionstore.PhaseClosed,
 		Resolution:    "answered",
 		CustomerTitle: "login broken for beta users",
+		UpdatedAt:     recent,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -780,7 +787,7 @@ func TestSessionsFilter(t *testing.T) {
 	}
 
 	// Default view is Active: in-flight rows plus freshly finished ones
-	// (both seeded terminal rows carry a just-stamped UpdatedAt from Set).
+	// (terminal fixtures carry a recent turn stamp above).
 	body := get("/sessions")
 	has(body, "/sessions", `id="sessions-filters"`)
 	has(body, "/sessions", `name="project"`)

@@ -345,6 +345,13 @@ func (b *Bot) claimOrEnqueue(threadID string, job *runJob, item taskItem) (claim
 // claimOrEnqueueInternal claims or enqueues under st.mu and persists the journal (RMW).
 // skipReady is true for recovery rehydrate (gate still closed).
 func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem, skipReady bool) (claimed bool, queuePos int, err error) {
+	// Human turn: a successful claim or queue is the submit. Stamp after unlock
+	// so we never hold st.mu across the session store lock.
+	defer func() {
+		if err == nil {
+			b.touchSessionTurn(threadID, item)
+		}
+	}()
 	if b != nil && b.stopping.Load() {
 		return false, 0, ErrShuttingDown
 	}
@@ -448,6 +455,24 @@ func runActorID(item taskItem) string {
 		return item.actor.ID
 	}
 	return item.authorID
+}
+
+// touchSessionTurn stamps UpdatedAt for a human submit (claim or queue).
+// Missing session rows are left alone — the first agent finish creates them
+// with StampTurn. No-ops when sessions is nil.
+func (b *Bot) touchSessionTurn(threadID string, item taskItem) {
+	if b == nil || b.sessions == nil || threadID == "" {
+		return
+	}
+	lastUser := item.actor.String()
+	if lastUser == "" {
+		lastUser = item.authorName
+	}
+	if _, ok, err := b.sessions.TouchTurn(threadID, lastUser); err != nil {
+		log.Printf("warn: touch turn thread=%s: %v", threadID, err)
+	} else if !ok {
+		// First task on a brand-new unit: no row yet. Post-run Set stamps.
+	}
 }
 
 func (b *Bot) finishRun(threadID string) (next taskItem, ok bool) {
@@ -1971,12 +1996,13 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			Cwd:            runCwd,
 			MainCwd:        proj.Cwd,
 			WorktreeBranch: wtBranch,
-			LastUser:       lastUser,
 			Origin:         item.origin,
 			CreatedBy:      item.createdBy,
 			CreatedByName:  item.createdByName,
 			DiscordURL:     item.discordURL,
 		}
+		// Agent turn complete: this is the turn clock (not Set/Patch metadata).
+		entry.StampTurn(lastUser)
 		if entry.Origin == "" && item.source != "" {
 			entry.Origin = item.source
 		}

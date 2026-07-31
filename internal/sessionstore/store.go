@@ -18,8 +18,12 @@ type Entry struct {
 	Cwd            string `json:"cwd"` // worktree path when isolated
 	MainCwd        string `json:"mainCwd,omitempty"`
 	WorktreeBranch string `json:"worktreeBranch,omitempty"`
-	LastUser       string `json:"lastUser,omitempty"`
-	UpdatedAt      string `json:"updatedAt"`
+	LastUser string `json:"lastUser,omitempty"`
+	// UpdatedAt is the last human or agent turn (RFC3339 UTC). Set/Patch never
+	// invent this — only TouchTurn (or an explicit value on Set) writes it.
+	// Background writers (PR poller, labels, ownership) leave it alone so boards
+	// and the terminal-session sweeper track real work, not metadata thrash.
+	UpdatedAt string `json:"updatedAt"`
 
 	// Thread ownership: first @Grok author; /claim and /hand-off update these.
 	// Cancel/reset require owner, co-owner, or a project admin (a team whose
@@ -374,14 +378,20 @@ func (s *Store) Set(threadID string, e Entry) error {
 	// that keeps its copy and mutates it later would corrupt store state
 	// without going through Patch.
 	e = e.clone()
-	e.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	// Preserve prior turn time when the caller rebuilds an Entry without one.
+	// Turn stamps must be explicit (TouchTurn or Entry.StampTurn).
+	if e.UpdatedAt == "" {
+		if prev, ok := s.entries[threadID]; ok {
+			e.UpdatedAt = prev.UpdatedAt
+		}
+	}
 	ensureDiscordRef(threadID, &e)
 	s.entries[threadID] = e
 	return s.save()
 }
 
 // Patch loads the entry, applies fn, and saves. Returns false if missing.
-// UpdatedAt is always refreshed when the entry exists.
+// UpdatedAt is left as fn leaves it (cloned from the prior entry by default).
 func (s *Store) Patch(threadID string, fn func(*Entry)) (Entry, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -394,7 +404,6 @@ func (s *Store) Patch(threadID string, fn func(*Entry)) (Entry, bool, error) {
 	// array before the assignment below — invisible, and wrong if save() fails.
 	e := stored.clone()
 	fn(&e)
-	e.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	ensureDiscordRef(threadID, &e)
 	s.entries[threadID] = e
 	if err := s.save(); err != nil {
@@ -402,6 +411,30 @@ func (s *Store) Patch(threadID string, fn func(*Entry)) (Entry, bool, error) {
 	}
 	// Hand back state the caller owns outright — see Entry.clone.
 	return e.clone(), true, nil
+}
+
+// StampNow returns the UTC RFC3339 timestamp used for turn stamps.
+func StampNow() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
+// StampTurn records a human or agent turn on e (UpdatedAt + optional LastUser).
+func (e *Entry) StampTurn(lastUser string) {
+	if e == nil {
+		return
+	}
+	e.UpdatedAt = StampNow()
+	if lastUser != "" {
+		e.LastUser = lastUser
+	}
+}
+
+// TouchTurn stamps UpdatedAt for a human or agent turn. No-op when missing.
+// This is the only store helper that invents UpdatedAt; Set/Patch do not.
+func (s *Store) TouchTurn(threadID, lastUser string) (Entry, bool, error) {
+	return s.Patch(threadID, func(e *Entry) {
+		e.StampTurn(lastUser)
+	})
 }
 
 func (s *Store) Delete(threadID string) error {

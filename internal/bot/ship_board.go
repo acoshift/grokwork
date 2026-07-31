@@ -506,9 +506,8 @@ func sortShipRows(rows []ShipPRRow) {
 		}
 		return 11
 	}
-	// Stable keys only — do not sort by session UpdatedAt. The PR poller
-	// patches every open session each cycle, so UpdatedAt thrashing made
-	// the table reshuffle on every SSE reload.
+	// Stable keys only — do not sort by session UpdatedAt. Turn stamps move
+	// rows for real work; PR/check noise must not reshuffle the table on SSE.
 	slices.SortStableFunc(rows, func(a, b ShipPRRow) int {
 		if ra, rb := rank(a), rank(b); ra != rb {
 			return ra - rb

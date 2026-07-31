@@ -249,6 +249,10 @@ func TestSessionAbandonSuccessStaysOnPage(t *testing.T) {
 func TestSessionAbandonShowsOnList(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	seedOwned(t, srv, "list-abandon", "member-1", "Member One")
+	// Active view only keeps terminal rows with a recent turn stamp.
+	if _, ok, err := srv.sessions.TouchTurn("list-abandon", "Member One"); err != nil || !ok {
+		t.Fatalf("TouchTurn: ok=%v err=%v", ok, err)
+	}
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)

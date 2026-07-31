@@ -19,13 +19,11 @@ import "slices"
 // Two deliberate differences from doing this with Patch, which is otherwise the
 // only way to mutate an entry:
 //
-//   - UpdatedAt is NOT bumped. It is a record of when work last happened, and
-//     the terminal-session sweeper (internal/bot/idle_cleanup.go) deletes on it
-//     — stamping every one of a person's units on the day they link a login
-//     would reorder every board and give abandoned threads another full TTL.
 //   - One save for the whole rewrite, not one per entry. Absorbing touches an
 //     unbounded number of units at once, and each Patch is a separate atomic
 //     file replacement.
+//   - UpdatedAt is not touched (Patch no longer stamps it either). Turn time is
+//     only written by TouchTurn / Entry.StampTurn — linking a login is not a turn.
 //
 // Lists collapse rather than duplicate: a co-owner or watcher list that already
 // names the account keeps one entry, not two.
