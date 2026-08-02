@@ -110,6 +110,63 @@
   </form>
 </div>
 
+<div class="section card" id="project-actions">
+  <h2>GitHub Actions</h2>
+  <p class="sub" style="margin-top:0">
+    Branch locks for <span class="mono">workflow_dispatch</span>: when a rule matches a workflow file,
+    the Actions page only offers those branches and the server enforces the same list.
+    Workflow is the file name (e.g. <span class="mono">deploy.yml</span>); optional repo scopes a multi-repo project.
+  </p>
+  {{if .ProjectItem.ActionsRules}}
+  <div class="table-scroll" style="margin-bottom:0.85rem">
+  <table>
+    <thead><tr><th>Workflow</th><th>Branches</th><th>Repo</th><th></th></tr></thead>
+    <tbody>
+    {{range .ProjectItem.ActionsRules}}
+      <tr>
+        <td class="mono">{{.Workflow}}</td>
+        <td class="mono">{{range $i, $b := .Branches}}{{if $i}}, {{end}}{{$b}}{{end}}</td>
+        <td class="mono muted">{{if .Repo}}{{.Repo}}{{else}}any{{end}}</td>
+        <td>
+          <form method="post" action="{{route "config.removeProjectActionsRule"}}"
+                data-confirm="Remove branch lock for {{.Workflow}}?"
+                data-confirm-title="Remove Actions rule" data-confirm-ok="Remove" data-confirm-danger>
+            {{template "csrf" $}}
+            <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
+            <input type="hidden" name="workflow" value="{{.Workflow}}">
+            <input type="hidden" name="repo" value="{{.Repo}}">
+            <button type="submit" class="btn-danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty" style="margin-bottom:0.85rem">No branch locks — every dispatchable workflow may run on any branch.</div>
+  {{end}}
+  <form method="post" action="{{route "config.setProjectActionsRule"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div class="inline" style="grid-template-columns: 1fr 1fr 1fr auto; align-items:end">
+      <div>
+        <label for="actions-rule-workflow">Workflow file</label>
+        <input id="actions-rule-workflow" type="text" name="workflow" placeholder="deploy.yml" required class="mono" autocomplete="off">
+      </div>
+      <div>
+        <label for="actions-rule-branches">Branches (comma-separated)</label>
+        <input id="actions-rule-branches" type="text" name="branches" placeholder="production, release" required class="mono" autocomplete="off">
+      </div>
+      <div>
+        <label for="actions-rule-repo">Repo (optional)</label>
+        <input id="actions-rule-repo" type="text" name="repo" placeholder="owner/name or name" class="mono" autocomplete="off">
+      </div>
+      <button type="submit">Add rule</button>
+    </div>
+  </form>
+</div>
+
 <div class="section card" id="project-repo-fetch">
   <h2>Repo freshness</h2>
   <p class="sub" style="margin-top:0">

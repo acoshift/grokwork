@@ -1,0 +1,178 @@
+{{define "content"}}
+<h1 id="page-actions">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· actions</span></h1>
+<p class="sub">
+  {{if .ActiveRepo}}Repo: <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span>{{else}}GitHub Actions workflows and recent runs{{end}}
+</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if gt (len .RepoCatalog) 0}}
+<div class="toolbar" id="actions-toolbar">
+<form method="get" action="/projects/{{.Project}}/actions" id="actions-filter" style="display:contents">
+  {{if gt (len .RepoCatalog) 1}}
+  <div class="field" style="flex-basis:18rem">
+    <label for="actions-repo-pick">Repository</label>
+    <select id="actions-repo-pick" name="repo_full" data-autosubmit>
+      {{range .RepoCatalog}}
+      <option value="{{.Owner}}/{{.Repo}}" {{if and (eq .Owner $.ActiveOwner) (eq .Repo $.ActiveRepo)}}selected{{end}}>{{.Owner}}/{{.Repo}}</option>
+      {{end}}
+    </select>
+  </div>
+  {{end}}
+  <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+  <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+  <div class="field">
+    <label for="actions-workflow">Workflow</label>
+    <select id="actions-workflow" name="workflow" data-autosubmit>
+      <option value="">All workflows</option>
+      {{range .ActionsWorkflows}}
+      <option value="{{.ID}}" {{if eq (printf "%d" .ID) $.ActionsWorkflowFilter}}selected{{end}}>{{.Name}}</option>
+      {{end}}
+    </select>
+  </div>
+  <div class="field">
+    <label for="actions-branch">Branch</label>
+    <input id="actions-branch" type="text" name="branch" value="{{.ActionsBranchFilter}}" placeholder="any" class="mono" autocomplete="off">
+  </div>
+  <button type="submit" class="btn-secondary">Apply</button>
+</form>
+</div>
+{{end}}
+
+{{if .ActiveRepo}}
+<div class="section">
+  <h2>Workflows</h2>
+  {{if .ActionsWorkflows}}
+  <div class="m-rows">
+    {{range .ActionsWorkflows}}
+    <div class="m-row" style="cursor:default">
+      <span class="m-row-main">
+        <span class="m-row-t">{{.Name}}
+          {{if eq .State "active"}}<span class="badge status-done">active</span>
+          {{else if .State}}<span class="badge">{{.State}}</span>{{end}}
+          {{if .Locked}}<span class="flag warn" title="Dispatch limited to configured branches">locked</span>{{end}}
+          {{if .Dispatchable}}<span class="badge">dispatch</span>{{end}}
+        </span>
+        <span class="m-row-s mono">{{.Path}}</span>
+      </span>
+    </div>
+    {{if and .Dispatchable $.CanGitHubWrite}}
+    <details class="section" style="margin:0.35rem 0 0.85rem;padding:0.65rem 0.85rem;border:1px solid var(--border);border-radius:var(--radius)">
+      <summary style="cursor:pointer;font-weight:500">Run workflow</summary>
+      <form method="post" action="/projects/{{$.Project}}/actions/dispatch" style="margin-top:0.75rem"
+            data-confirm="Dispatch {{.Name}} on the selected branch?"
+            data-confirm-title="Run workflow" data-confirm-ok="Dispatch">
+        {{template "csrf" $}}
+        <input type="hidden" name="owner" value="{{$.ActiveOwner}}">
+        <input type="hidden" name="repo" value="{{$.ActiveRepo}}">
+        <input type="hidden" name="workflow" value="{{.Path}}">
+        <div class="field" style="margin-bottom:0.65rem">
+          <label for="ref-{{.ID}}">Branch</label>
+          {{if .Branches}}
+          <select id="ref-{{.ID}}" name="ref" required class="mono">
+            {{range .Branches}}
+            <option value="{{.}}">{{.}}</option>
+            {{end}}
+          </select>
+          {{else}}
+          <input id="ref-{{.ID}}" type="text" name="ref" required class="mono" placeholder="main" autocomplete="off">
+          {{end}}
+          {{if .Locked}}
+          <p class="sub" style="margin:0.35rem 0 0">
+            <span class="flag warn">locked to: {{range $i, $b := .Branches}}{{if $i}}, {{end}}{{$b}}{{end}}</span>
+          </p>
+          {{end}}
+        </div>
+        {{$wfid := .ID}}
+        {{range .Inputs}}
+        <div class="field" style="margin-bottom:0.55rem">
+          {{if eq .Type "boolean"}}
+          <label class="check">
+            <input type="checkbox" name="input.{{.Name}}" value="true" {{if or (eq .Default "true") (eq .Default "True")}}checked{{end}}>
+            {{.Name}}{{if .Required}} *{{end}}
+            {{if .Description}}<span class="muted"> — {{.Description}}</span>{{end}}
+          </label>
+          {{else if eq .Type "choice"}}
+          <label for="input-{{$wfid}}-{{.Name}}">{{.Name}}{{if .Required}} *{{end}}</label>
+          {{if .Description}}<p class="sub" style="margin:0 0 0.25rem">{{.Description}}</p>{{end}}
+          <select id="input-{{$wfid}}-{{.Name}}" name="input.{{.Name}}" class="mono" {{if .Required}}required{{end}}>
+            {{$def := .Default}}
+            {{range .Options}}
+            <option value="{{.}}" {{if eq . $def}}selected{{end}}>{{.}}</option>
+            {{end}}
+          </select>
+          {{else}}
+          <label for="input-{{$wfid}}-{{.Name}}">{{.Name}}{{if .Required}} *{{end}}</label>
+          {{if .Description}}<p class="sub" style="margin:0 0 0.25rem">{{.Description}}</p>{{end}}
+          <input id="input-{{$wfid}}-{{.Name}}" type="text" name="input.{{.Name}}"
+                 value="{{.Default}}" class="mono" {{if .Required}}required{{end}} autocomplete="off">
+          {{end}}
+        </div>
+        {{end}}
+        <div class="form-actions"><button type="submit">Run workflow</button></div>
+      </form>
+    </details>
+    {{else if and .Dispatchable (not $.CanGitHubWrite)}}
+    <p class="sub muted" style="margin:0.25rem 0 0.75rem">Dispatching needs GitHub write permission for this project.</p>
+    {{end}}
+    {{end}}
+  </div>
+  {{else if not .Error}}
+  <div class="empty">No workflows found.</div>
+  {{end}}
+</div>
+
+<div class="section">
+  <h2>Recent runs</h2>
+  <div class="live-region" id="live-actions-runs"
+       hx-get="/partials/projects/{{.Project}}/actions/runs?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;workflow={{urlquery .ActionsWorkflowFilter}}&amp;branch={{urlquery .ActionsBranchFilter}}"
+       hx-trigger="every 15s"
+       hx-target="this" hx-select="unset" hx-swap="innerHTML"
+       hx-sync="this:queue last">
+    {{template "actions_runs" .}}
+  </div>
+</div>
+{{else if not .Error}}
+<div class="empty">No repository selected. Configure GitHub repos on project settings, or ensure git remotes exist.</div>
+{{end}}
+{{end}}
+
+{{define "actions_runs"}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+{{if .ActionsRuns}}
+<div class="table-scroll">
+<table>
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Title</th>
+      <th>Workflow</th>
+      <th>Branch</th>
+      <th>Event</th>
+      <th>Age</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .ActionsRuns}}
+    <tr>
+      <td>
+        <span class="badge {{runBucketBadge .Bucket}}">{{if .Conclusion}}{{.Conclusion}}{{else}}{{.Status}}{{end}}</span>
+      </td>
+      <td>
+        <a class="pr-title" href="/projects/{{$.Project}}/actions/runs/{{.ID}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{if .Title}}{{.Title}}{{else}}#{{.Number}}{{end}}</a>
+      </td>
+      <td class="mono">{{.WorkflowName}}</td>
+      <td class="mono">{{.Branch}}{{if .ShortSHA}} <span class="muted">@ {{.ShortSHA}}</span>{{end}}</td>
+      <td class="muted">{{.Event}}</td>
+      <td class="mono muted">{{if not .CreatedAt.IsZero}}{{shortTime .CreatedAt}}{{end}}</td>
+      <td>{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener" hx-boost="false">GitHub</a>{{end}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else if not .Error}}
+<div class="empty">No recent runs.</div>
+{{end}}
+{{end}}

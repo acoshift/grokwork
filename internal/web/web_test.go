@@ -176,6 +176,8 @@ func TestPagesRender(t *testing.T) {
 		// Deploys renders its own chrome even when the project path is not a git
 		// checkout (this fixture is not): the page reports that inline.
 		{"/projects/proj/deploys", `id="page-deploys"`},
+		// Actions same contract: page chrome even when gh/catalog is unavailable.
+		{"/projects/proj/actions", `id="page-actions"`},
 		// Config hub: grouped drill-in rows; sections live on focused pages.
 		{"/cases", `id="page-cases"`},
 		{"/cases", `id="case-pipeline"`},
@@ -1047,6 +1049,7 @@ func TestNavBrandChrome(t *testing.T) {
 		">Issues<",
 		">Commits<",
 		">Deploys<",
+		">Actions<",
 		">Sessions<",
 		">Worktrees<",
 		">Settings<",
@@ -1056,6 +1059,7 @@ func TestNavBrandChrome(t *testing.T) {
 		`href="/projects/proj/issues"`,
 		`href="/projects/proj/commits"`,
 		`href="/projects/proj/deploys"`,
+		`href="/projects/proj/actions"`,
 		`href="/projects/proj/sessions"`,
 		`href="/projects/proj/worktrees"`,
 		`href="/config/projects/proj"`,
@@ -1151,6 +1155,7 @@ func TestNavScopeRules(t *testing.T) {
 		{"/cases", ""},
 		{"/deploys", ""},                   // cross-project lead view, not a workspace
 		{"/projects/proj/deploys", "proj"}, // its per-project sibling still scopes
+		{"/projects/proj/actions", "proj"},
 		{"/projects/proj", "proj"},
 		{"/projects/proj/ship", "proj"},
 		{"/projects/proj/cases", "proj"},

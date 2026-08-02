@@ -1,0 +1,88 @@
+{{define "content"}}
+{{$run := .ActionsRun}}
+<h1 id="page-actions-run">
+  {{if $run.Title}}{{$run.Title}}{{else}}Run {{$run.ID}}{{end}}
+</h1>
+<p class="sub">
+  <a href="/projects/{{.Project}}/actions?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}">actions</a>
+  <span class="crumb-sep">/</span>
+  {{if $run.WorkflowName}}<span class="mono">{{$run.WorkflowName}}</span> · {{end}}
+  {{if $run.Branch}}<span class="mono">{{$run.Branch}}</span>{{end}}
+  {{if .ActionsRunShortSHA}} <span class="mono muted">@ {{.ActionsRunShortSHA}}</span>{{end}}
+  {{if $run.Event}} · {{$run.Event}}{{end}}
+  {{if $run.Attempt}} · attempt {{$run.Attempt}}{{end}}
+  · <span class="badge {{runBucketBadge .ActionsRunBucket}}">{{if $run.Conclusion}}{{$run.Conclusion}}{{else}}{{$run.Status}}{{end}}</span>
+  {{if $run.URL}} · <a href="{{$run.URL}}" target="_blank" rel="noopener" hx-boost="false">Open on GitHub</a>{{end}}
+</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if $run.ID}}
+<div class="section">
+  <h2>Jobs</h2>
+  {{if .ActionsRunLive}}
+  <div class="live-region" id="live-actions-jobs"
+       hx-get="/projects/{{.Project}}/actions/runs/{{$run.ID}}?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;fragment=jobs"
+       hx-trigger="every 10s"
+       hx-target="this" hx-select="unset" hx-swap="innerHTML"
+       hx-sync="this:queue last">
+    {{template "actions_jobs" .}}
+  </div>
+  {{else}}
+  {{template "actions_jobs" .}}
+  {{end}}
+</div>
+{{end}}
+{{end}}
+
+{{define "actions_jobs"}}
+{{if .ActionsJobs}}
+{{range .ActionsJobs}}
+<div class="section card" style="margin-bottom:0.85rem" id="job-{{.ID}}">
+  <h3 style="margin:0 0 0.35rem;font-size:1rem">
+    <span class="badge {{runBucketBadge .Bucket}}">{{if .Conclusion}}{{.Conclusion}}{{else}}{{.Status}}{{end}}</span>
+    {{.Name}}
+    {{if .URL}} · <a href="{{.URL}}" target="_blank" rel="noopener" hx-boost="false" class="muted">GitHub</a>{{end}}
+  </h3>
+  {{if .Steps}}
+  <ol class="deploy-steps" style="margin:0.5rem 0">
+    {{range .Steps}}
+    <li>
+      <span class="badge {{if eq .Conclusion "success"}}status-done{{else if or (eq .Conclusion "failure") (eq .Conclusion "timed_out")}}status-error{{else if eq .Status "in_progress"}}live{{else if or (eq .Conclusion "skipped") (eq .Conclusion "cancelled") (eq .Conclusion "canceled")}}status-cancelled{{end}}">{{if .Conclusion}}{{.Conclusion}}{{else}}{{.Status}}{{end}}</span>
+      <span class="mono">{{.Name}}</span>
+    </li>
+    {{end}}
+  </ol>
+  {{end}}
+  {{if .Completed}}
+  <div class="live-region" id="job-log-{{.ID}}"
+       hx-get="/projects/{{$.Project}}/actions/runs/{{$.ActionsRun.ID}}/job?job={{.ID}}&amp;owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}"
+       hx-trigger="intersect once"
+       hx-target="this" hx-select="unset" hx-swap="innerHTML"
+       hx-sync="this:queue last">
+    <p class="sub muted">Loading log…</p>
+  </div>
+  {{else}}
+  <p class="sub muted">
+    Live logs are not available while the job is running
+    {{if .URL}} — <a href="{{.URL}}" target="_blank" rel="noopener" hx-boost="false">open on GitHub</a>{{end}}.
+  </p>
+  {{end}}
+</div>
+{{end}}
+{{else if not .Error}}
+<div class="empty">No jobs yet.</div>
+{{end}}
+{{end}}
+
+{{define "actions_job_log"}}
+{{if .Error}}
+<div class="flash err">{{.Error}}</div>
+{{else}}
+{{if .ActionsJobLogClipped}}
+<p class="sub">Showing the tail only
+  {{if .ActionsJobURL}} — <a href="{{.ActionsJobURL}}" target="_blank" rel="noopener" hx-boost="false">open full on GitHub</a>{{end}}.</p>
+{{end}}
+<pre class="mono" id="job-log-body-{{.ActionsJobID}}">{{.ActionsJobLog}}</pre>
+{{end}}
+{{end}}

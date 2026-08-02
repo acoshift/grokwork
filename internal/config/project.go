@@ -60,6 +60,24 @@ type ProjectConfig struct {
 	// Deploy is per-project deploy policy and credentials. The pipeline itself
 	// lives in the repo at .grokwork/deploy.yaml (see internal/deploy).
 	Deploy *ProjectDeployConfig `json:"deploy,omitempty"`
+	// Actions is per-project GitHub Actions policy (branch locks for dispatch).
+	// nil means unset — no locks.
+	Actions *ProjectActionsConfig `json:"actions,omitempty"`
+}
+
+// ProjectActionsConfig is per-project GitHub Actions settings.
+type ProjectActionsConfig struct {
+	DispatchRules []ActionsDispatchRule `json:"dispatchRules,omitempty"`
+}
+
+// ActionsDispatchRule restricts which refs a workflow may be dispatched on.
+// Workflow is a file name (e.g. "deploy.yml"), matched against filepath.Base
+// of the workflow path, case-insensitively. Repo is optional ("name" or
+// "owner/name"); empty means any repo in the project.
+type ActionsDispatchRule struct {
+	Repo     string   `json:"repo,omitempty"`
+	Workflow string   `json:"workflow"`
+	Branches []string `json:"branches"`
 }
 
 // VerifyCommand is one named verify harness entry.
@@ -137,6 +155,7 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 			}
 		}
 		pc.Deploy = normalizeProjectDeploy(pc.Deploy)
+		pc.Actions = normalizeProjectActions(pc.Actions)
 		out[name] = pc
 	}
 	*m = out
@@ -168,6 +187,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		GitHub                   *ProjectGitHubConfig    `json:"github,omitempty"`
 		Linear                   *ProjectLinearConfig    `json:"linear,omitempty"`
 		Deploy                   *ProjectDeployConfig    `json:"deploy,omitempty"`
+		Actions                  *ProjectActionsConfig   `json:"actions,omitempty"`
 	}
 	out := make(map[string]outObj, len(m))
 	for name, pc := range m {
@@ -191,6 +211,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			GitHub:                   cloneProjectGitHub(pc.GitHub),
 			Linear:                   cloneProjectLinear(pc.Linear),
 			Deploy:                   cloneProjectDeploy(pc.Deploy),
+			Actions:                  cloneProjectActions(pc.Actions),
 		}
 	}
 	return json.Marshal(out)
@@ -237,6 +258,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			GitHub:                   cloneProjectGitHub(v.GitHub),
 			Linear:                   cloneProjectLinear(v.Linear),
 			Deploy:                   cloneProjectDeploy(v.Deploy),
+			Actions:                  cloneProjectActions(v.Actions),
 		}
 	}
 	return out

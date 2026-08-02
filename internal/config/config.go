@@ -239,6 +239,8 @@ type ProjectItem struct {
 	DeployEnabled      bool
 	DeployManifestPath string
 	DeployEnvs         []DeployEnvItem
+	// ActionsRules are the branch-lock rules for workflow_dispatch (Integrations).
+	ActionsRules []ActionsDispatchRule
 }
 
 // ChannelItem is a channel→project mapping row for the config UI.
@@ -1274,6 +1276,9 @@ func (c *Config) Snapshot() Snapshot {
 			VerifyCommandsText:       FormatVerifyCommandsText(pc.VerifyCommands),
 		}
 		item.DeployEnabled, item.DeployManifestPath, item.DeployEnvs = deployItems(pc.Deploy)
+		if pc.Actions != nil && len(pc.Actions.DispatchRules) > 0 {
+			item.ActionsRules = cloneProjectActions(pc.Actions).DispatchRules
+		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled
 			item.LinearTeamKey = strings.TrimSpace(pc.Linear.TeamKey)

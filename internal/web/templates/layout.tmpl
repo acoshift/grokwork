@@ -595,6 +595,8 @@
          plane): they sit two apart in the same list and shipping code to a
          branch is not the same act as deploying it to an environment. */}}
     #side-nav a[data-icon="deploys"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpolyline points='17 8 12 3 7 8'/%3E%3Cline x1='12' y1='3' x2='12' y2='15'/%3E%3C/svg%3E"); }
+    {{/* Actions is a play-in-circle: distinct from Deploys (upload) and Ship. */}}
+    #side-nav a[data-icon="actions"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolygon points='10 8 16 12 10 16 10 8'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="sessions"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="worktrees"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='6' y1='3' x2='6' y2='15'/%3E%3Ccircle cx='18' cy='6' r='3'/%3E%3Ccircle cx='6' cy='18' r='3'/%3E%3Cpath d='M18 9a9 9 0 0 1-9 9'/%3E%3C/svg%3E"); }
     {{/* Spend is a receipt, not a coin: a currency glyph next to Worktrees and
@@ -4439,6 +4441,7 @@
         {{if .NavLinearEnabled}}<a href="/projects/{{.NavProject}}/linear" data-icon="linear" class="{{if .IsLinear}}active{{end}}">Linear</a>{{end}}
         <a href="/projects/{{.NavProject}}/commits" data-icon="commits" class="{{if .IsCommits}}active{{end}}">Commits</a>
         <a href="/projects/{{.NavProject}}/deploys" data-icon="deploys" class="{{if .IsDeploys}}active{{end}}">Deploys</a>
+        <a href="/projects/{{.NavProject}}/actions" data-icon="actions" class="{{if .IsActions}}active{{end}}">Actions</a>
         <a href="/projects/{{.NavProject}}/sessions" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">Sessions</a>
         <a href="/projects/{{.NavProject}}/worktrees" data-icon="worktrees" class="{{if .IsWorktrees}}active{{end}}">Worktrees</a>
         <a href="/projects/{{.NavProject}}/spend" data-icon="spend" class="{{if .IsSpend}}active{{end}}">Spend</a>

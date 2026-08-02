@@ -69,6 +69,11 @@ type Server struct {
 	// Short-TTL GitHub issue list cache (page shell + partial share one gh call).
 	issueListMu sync.Mutex
 	issueLists  map[string]issueListCacheEntry
+	// Short-TTL GitHub Actions caches (run list + workflows list).
+	actionsRunsMu      sync.Mutex
+	actionsRuns        map[string]actionsRunsCacheEntry
+	actionsWorkflowsMu sync.Mutex
+	actionsWorkflows   map[string]actionsWorkflowsCacheEntry
 	// One-shot Grok drafts for project verify commands (filled into the
 	// workflow textarea after "Suggest with Grok"; not persisted until Save).
 	verifyDraftMu sync.Mutex
@@ -163,6 +168,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.removeProjectDeployEnv":      "/config/projects/deploy/environment/remove",
 		"config.setProjectDeployEnvVar":      "/config/projects/deploy/var",
 		"config.removeProjectDeployEnvVar":   "/config/projects/deploy/var/remove",
+		"config.setProjectActionsRule":       "/config/projects/actions-rule",
+		"config.removeProjectActionsRule":    "/config/projects/actions-rule/remove",
 		"config.generateProjectVerify":       "/config/projects/verify/generate",
 		"config.setProjectMode":              "/config/projects/mode",
 		"config.setProjectCaseKey":           "/config/projects/case-key",
@@ -226,6 +233,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// shortTime formats a time.Time or RFC3339 string as "2006-01-02 15:04"
 	// (same layout as the commits list Date column).
 	app.TemplateFunc("shortTime", shortTime)
+	// runBucketBadge maps ghpr.RunBucket → layout badge CSS class.
+	app.TemplateFunc("runBucketBadge", runBucketBadge)
 	// Spend report formatting. cost/models take a whole row rather than a number
 	// because an unpriced row must render "—" and not "$0.00" — the decision needs
 	// the row's Priced/Unpriced counts, so it cannot live in the template.
@@ -287,6 +296,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("deploys", "layout.tmpl", "deploys.tmpl")
 	tp.ParseFiles("deploys_board", "layout.tmpl", "deploys_board.tmpl")
 	tp.ParseFiles("deploy_run", "layout.tmpl", "deploy_run.tmpl")
+	tp.ParseFiles("actions", "layout.tmpl", "actions.tmpl")
+	tp.ParseFiles("actions_run", "layout.tmpl", "actions_run.tmpl")
 	tp.ParseFiles("commit_detail", "layout.tmpl", "commit_detail.tmpl", "diff_review.tmpl")
 
 	static, err := fs.Sub(staticFS, "static")
@@ -348,6 +359,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/deploy/environment/remove", s.requireAdmin(hime.Handler(s.removeProjectDeployEnv)))
 	mux.Handle("POST /config/projects/deploy/var", s.requireAdmin(hime.Handler(s.setProjectDeployEnvVar)))
 	mux.Handle("POST /config/projects/deploy/var/remove", s.requireAdmin(hime.Handler(s.removeProjectDeployEnvVar)))
+	mux.Handle("POST /config/projects/actions-rule", s.requireAdmin(hime.Handler(s.setProjectActionsRule)))
+	mux.Handle("POST /config/projects/actions-rule/remove", s.requireAdmin(hime.Handler(s.removeProjectActionsRule)))
 	// Project workspace (project-first UX): overview + scoped list pages.
 	mux.Handle("GET /projects/{project}", s.requireAuth(hime.Handler(s.projectOverview)))
 	mux.Handle("GET /projects/{project}/start", s.requireAuth(hime.Handler(s.startComposer)))
@@ -388,6 +401,13 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeployCancel))))
 	mux.Handle("POST /projects/{project}/deploys/{runID}/redeploy",
 		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeployRedeploy))))
+	// GitHub Actions: list/dispatch workflows + run history (polling, not SSE).
+	mux.Handle("GET /projects/{project}/actions", s.requireAuth(hime.Handler(s.actionsPage)))
+	mux.Handle("GET /projects/{project}/actions/runs/{runID}", s.requireAuth(hime.Handler(s.actionsRunPage)))
+	mux.Handle("GET /projects/{project}/actions/runs/{runID}/job", s.requireAuth(hime.Handler(s.actionsJobLog)))
+	mux.Handle("GET /partials/projects/{project}/actions/runs", s.requireAuth(hime.Handler(s.actionsRunsPartial)))
+	mux.Handle("POST /projects/{project}/actions/dispatch",
+		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postActionsDispatch))))
 	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))
 	mux.Handle("POST /projects/{project}/commits/fetch", s.requireMember(hime.Handler(s.postCommitsFetch)))
 	mux.Handle("GET /projects/{project}/commits/{sha}", s.requireAuth(hime.Handler(s.commitDetail)))
@@ -596,6 +616,7 @@ type pageData struct {
 	IsReviews   bool
 	IsStart     bool
 	IsDeploys   bool
+	IsActions   bool
 	IsSpend     bool
 	IsAccount   bool
 	Flash       string
@@ -715,8 +736,22 @@ type pageData struct {
 	DeployLogChunk   string
 	DeployLogClipped bool
 	CanDeploy        bool
-	PR               ghpr.PRDetail
-	PRNumber         int
+	// GitHub Actions page (/projects/{p}/actions).
+	ActionsWorkflows      []actionsWorkflowRow
+	ActionsRuns           []actionsRunRow
+	ActionsWorkflowFilter string
+	ActionsBranchFilter   string
+	ActionsRun            ghpr.RunDetail
+	ActionsRunBucket      string
+	ActionsRunShortSHA    string
+	ActionsRunLive        bool
+	ActionsJobs           []actionsJobRow
+	ActionsJobID          int64
+	ActionsJobLog         string
+	ActionsJobLogClipped  bool
+	ActionsJobURL         string
+	PR                    ghpr.PRDetail
+	PRNumber              int
 	// PR detail shippability strip (nil when the PR snapshot failed to load).
 	PRGates     []prGate
 	PRShipReady bool // every gate green → merge affordance opens expanded
@@ -1322,6 +1357,51 @@ func (s *Server) setProjectLinear(ctx *hime.Context) error {
 	err := s.cfg.SetProjectLinear(name, enabled, teamKey, apiKey, clearKey)
 	s.auditAction(ctx, audit.ActionConfigSetLinear, err, map[string]any{"name": name, "enabled": enabled})
 	return s.projectConfigTabRedirect(ctx, name, "integrations", fmt.Sprintf("Updated Linear for project %q", name), err)
+}
+
+func (s *Server) setProjectActionsRule(ctx *hime.Context) error {
+	name := strings.TrimSpace(ctx.PostFormValue("name"))
+	rule := config.ActionsDispatchRule{
+		Repo:     strings.TrimSpace(ctx.PostFormValue("repo")),
+		Workflow: strings.TrimSpace(ctx.PostFormValue("workflow")),
+		Branches: splitCommaList(ctx.PostFormValue("branches")),
+	}
+	err := s.cfg.SetProjectActionsRule(name, rule)
+	s.auditAction(ctx, "config.set_project_actions_rule", err, map[string]any{
+		"name": name, "workflow": rule.Workflow, "repo": rule.Repo, "branches": len(rule.Branches),
+	})
+	if err != nil {
+		return s.projectConfigTabRedirect(ctx, name, "integrations", "", err)
+	}
+	return s.projectConfigTabRedirect(ctx, name, "integrations",
+		fmt.Sprintf("Saved Actions branch lock for %q", rule.Workflow), nil)
+}
+
+func (s *Server) removeProjectActionsRule(ctx *hime.Context) error {
+	name := strings.TrimSpace(ctx.PostFormValue("name"))
+	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
+	workflow := strings.TrimSpace(ctx.PostFormValue("workflow"))
+	err := s.cfg.RemoveProjectActionsRule(name, repo, workflow)
+	s.auditAction(ctx, "config.remove_project_actions_rule", err, map[string]any{
+		"name": name, "workflow": workflow, "repo": repo,
+	})
+	if err != nil {
+		return s.projectConfigTabRedirect(ctx, name, "integrations", "", err)
+	}
+	return s.projectConfigTabRedirect(ctx, name, "integrations",
+		fmt.Sprintf("Removed Actions branch lock for %q", workflow), nil)
+}
+
+// splitCommaList splits a comma-separated form field into trimmed non-empty parts.
+func splitCommaList(raw string) []string {
+	var out []string
+	for part := range strings.SplitSeq(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func (s *Server) setProjectGitHub(ctx *hime.Context) error {

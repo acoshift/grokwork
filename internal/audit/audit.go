@@ -77,6 +77,8 @@ const (
 	ActionCaseCustomerUpdate = "case.customer_update"
 	ActionCaseLink           = "case.link"
 	ActionCaseUnlink         = "case.unlink"
+	// GitHub Actions (workflow_dispatch from the web Actions page).
+	ActionActionsDispatch = "actions.dispatch"
 )
 
 // ActorAnonymous is used when web auth is off or no session is present.
