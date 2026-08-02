@@ -33,7 +33,71 @@ func TestPRAgentReviewCreatesWebNativeSession(t *testing.T) {
 	if !strings.Contains(e.Goal, "acme/app#9") {
 		t.Fatalf("goal=%q", e.Goal)
 	}
+	// Binds the PR for the detail Sessions list; SessionKind keeps it out of Address reuse.
+	if !e.IsPRReview() {
+		t.Fatalf("want SessionKindPRReview, got kind=%q", e.SessionKind)
+	}
+	e.NormalizePRs()
+	if len(e.PRs) != 1 || e.PRs[0].Number != 9 {
+		t.Fatalf("want PR bind, got %+v", e.PRs)
+	}
 	assertAuditAction(t, srv, audit.ActionPRReviewStart, true)
+}
+
+// After Review in new session, the PR detail page lists the review unit under Sessions.
+func TestPRDetailShowsReviewSessions(t *testing.T) {
+	srv, b := addressEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/prs/acme/app/9/agent-review", sid, csrf, url.Values{"project": {"proj"}})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	tid := webUnitFromLocation(t, w.Header().Get("Location"))
+
+	// A work session on the same PR must also appear, without a review badge.
+	work := sessionstore.Entry{Project: "proj", Goal: "CI acme/app#9", OwnerName: "bob"}
+	work.UpsertPR(sessionstore.TrackedPR{Owner: "acme", Repo: "app", Number: 9, State: "OPEN"})
+	if err := srv.sessions.Set("work-pr-9", work); err != nil {
+		t.Fatal(err)
+	}
+
+	body := getPageBody(t, srv, sid, "/prs/acme/app/9?project=proj")
+	if !strings.Contains(body, `id="pr-sessions"`) {
+		t.Fatal("missing pr-sessions section")
+	}
+	if !strings.Contains(body, "Sessions (2)") {
+		t.Fatalf("want Sessions (2); snippet: %s", bodySnippet(body, "pr-sessions", 400))
+	}
+	for _, want := range []string{
+		"Review acme/app#9",
+		"CI acme/app#9",
+		`class="badge">review</span>`,
+		`href="/sessions/` + tid + `?project=proj&amp;back=`,
+		`back=` + url.QueryEscape("/prs/acme/app/9?project=proj"),
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+	// Address dropdown must offer only the work unit, not the review.
+	if i := strings.Index(body, `id="dispatch-thread"`); i >= 0 {
+		chunk := body[i:]
+		if j := strings.Index(chunk, "</select>"); j >= 0 {
+			chunk = chunk[:j]
+		}
+		if strings.Contains(chunk, tid) {
+			t.Fatalf("review unit must not be in Address session dropdown: %s", chunk)
+		}
+		if !strings.Contains(chunk, "work-pr-9") {
+			t.Fatalf("work unit must be in Address session dropdown: %s", chunk)
+		}
+	} else {
+		t.Fatal("expected Address session dropdown when a work unit binds the PR")
+	}
 }
 
 // A review is a fresh read of the current head, so it never joins the session that
@@ -59,12 +123,15 @@ func TestPRAgentReviewNeverReusesBoundSession(t *testing.T) {
 	if tid == "owns-pr-9" {
 		t.Fatal("review must not reuse the session bound to the PR")
 	}
-	// And it must not bind the PR itself, or the next Address CI dispatch would be
-	// forced through the reuse picker.
+	// Binds the PR for the Sessions list, but SessionKind keeps it out of Address reuse.
 	e, _ := srv.sessions.Get(tid)
 	e.NormalizePRs()
-	if len(e.PRs) != 0 {
-		t.Fatalf("review unit must not bind the PR, got %+v", e.PRs)
+	if !e.IsPRReview() || len(e.PRs) != 1 {
+		t.Fatalf("want PR-review bind, got kind=%q prs=%+v", e.SessionKind, e.PRs)
+	}
+	hits := b.FindByPR("proj", "acme", "app", 9, true)
+	if len(hits) != 1 || hits[0].ThreadID != "owns-pr-9" {
+		t.Fatalf("Address reuse must only see the work unit, got %+v", hits)
 	}
 }
 

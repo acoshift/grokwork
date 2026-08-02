@@ -128,10 +128,9 @@ func TestStartPRReviewAlwaysCreatesNew(t *testing.T) {
 	}
 }
 
-// The review unit must stay out of FindByPR: binding it would make every later
-// Address CI / Address review dispatch on this PR hit the reuse picker for a
-// session that only ever posted a comment.
-func TestStartPRReviewDoesNotBindPR(t *testing.T) {
+// The review unit binds the PR for the detail Sessions list, but is stamped
+// SessionKindPRReview so FindByPR (Address reuse) never offers it.
+func TestStartPRReviewBindsPRExcludedFromReuse(t *testing.T) {
 	b, _ := testFixBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
 	res, err := b.StartPRReview(prReviewOpts())
@@ -140,11 +139,22 @@ func TestStartPRReviewDoesNotBindPR(t *testing.T) {
 	}
 	e, _ := b.sessions.Get(res.ThreadID)
 	e.NormalizePRs()
-	if len(e.PRs) != 0 {
-		t.Fatalf("review unit must not bind the PR, got %+v", e.PRs)
+	if !e.IsPRReview() {
+		t.Fatalf("want SessionKindPRReview, got kind=%q", e.SessionKind)
+	}
+	if len(e.PRs) != 1 || e.PRs[0].Number != 9 {
+		t.Fatalf("review unit must bind the PR, got %+v", e.PRs)
 	}
 	if hits := b.FindByPR("app", "acme", "app", 9, true); len(hits) != 0 {
-		t.Fatalf("review unit must not appear in the reuse picker, got %+v", hits)
+		t.Fatalf("review unit must not appear in the Address reuse picker, got %+v", hits)
+	}
+	// Detail Sessions list includes the review unit.
+	listed := b.FindPRSessions("app", "acme", "app", 9)
+	if len(listed) != 1 || listed[0].ThreadID != res.ThreadID {
+		t.Fatalf("FindPRSessions: %+v", listed)
+	}
+	if listed[0].SessionKind != sessionstore.SessionKindPRReview {
+		t.Fatalf("hit SessionKind=%q", listed[0].SessionKind)
 	}
 }
 

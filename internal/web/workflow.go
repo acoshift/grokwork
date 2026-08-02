@@ -535,18 +535,28 @@ func (s *Server) prDetailPageData(ctx *hime.Context, full bool) (pageData, error
 		}
 		d.ShowFixPicker = ctx.FormValue("picker") == "1"
 		if s.bot != nil && project != "" {
+			// Address reuse: work units only (agent reviews are SessionKindPRReview).
 			d.FixHits = s.bot.FindByPR(project, owner, repo, n, false)
 			if d.ShowFixPicker || len(d.FixHits) > 1 {
 				d.ShowFixPicker = true
 			}
-			// The "Session" head link counts terminal units too, unlike the
-			// dispatch picker above: a merged PR must still lead back to the
-			// work that produced it — that jump used to be the ship board's
-			// Thread column. Same ordering, so the link is the freshest unit.
-			if bound := s.bot.FindByPR(project, owner, repo, n, true); len(bound) > 0 {
-				d.PRSessionThreadID = bound[0].ThreadID
+			// Sessions list + head link: every bind, including agent reviews and
+			// terminal units (a merged PR must still lead back to the work that
+			// produced it). Prefer a non-review unit for the head jump so "Go to
+			// session" opens the Address target when both kinds are present.
+			if bound := s.bot.FindPRSessions(project, owner, repo, n); len(bound) > 0 {
+				d.PRSessions = bound
 				d.PRSessionCount = len(bound)
+				d.PRSessionThreadID = bound[0].ThreadID
+				for _, h := range bound {
+					if h.SessionKind != sessionstore.SessionKindPRReview {
+						d.PRSessionThreadID = h.ThreadID
+						break
+					}
+				}
 			}
+			d.PRBackURL = "/prs/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/" + nStr +
+				"?project=" + url.QueryEscape(project)
 		}
 		s.attachModelPicker(&d, project, s.cfg.EffectiveReviewModel())
 		// Mirrors postPRGitHubReview's gate: feature + web role (CanGitHubWrite)

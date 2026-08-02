@@ -775,6 +775,13 @@ type pageData struct {
 	// stamped onto session row links as ?back= so the session crumb returns
 	// here instead of to the sessions list (see backlink.go).
 	IssueBackURL string
+	// PRSessions is every unit that binds the viewed PR (bot.FindPRSessions),
+	// including agent-review units and terminal labels. Distinct from FixHits,
+	// which is the Address reuse picker and excludes review-only units.
+	PRSessions []bot.IssueSessionHit
+	// PRBackURL is this PR detail page (?project= included), stamped onto
+	// session row links as ?back= so the session crumb returns here.
+	PRBackURL string
 	// IssueTasklist is the parsed GitHub tasklist from the issue body (Phase 2
 	// breakdown). Empty when the body has no checkbox items.
 	IssueTasklist []bot.TasklistItem

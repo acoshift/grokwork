@@ -3,6 +3,8 @@ package bot
 import (
 	"fmt"
 	"strings"
+
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // PRReviewOpts starts a new work unit from the web PR Review action.
@@ -59,18 +61,74 @@ func (b *Bot) StartPRReview(opts PRReviewOpts) (FixStartResult, error) {
 		return FixStartResult{}, err
 	}
 
-	// Always a web-native unit, and deliberately *not* bound to the PR: binding
-	// would put a read-only review session into FindByPR, so every later Address CI
-	// / Address review dispatch on this PR would hit the reuse picker for a session
-	// that only ever posted a comment. The goal carries the PR instead.
+	// Always a web-native unit. Binds the PR so the detail page Sessions list can
+	// show it, but stamps SessionKindPRReview so FindByPR (Address reuse) skips it
+	// — a read-only review must not become the "continue" target for CI/review fixes.
 	goal := prReviewGoal(opts)
+	tracked := prReviewTrackedPR(opts)
 	return b.startWebNativeUnit(project, cwd, BuildPRReviewPrompt(opts), KindTask, opts.Actor, nil,
 		func(unitID string) error {
 			if err := b.bindWebStartedSession(unitID, project, goal, opts.Actor, "", true); err != nil {
 				return err
 			}
+			if err := b.bindPRReviewUnit(unitID, project, tracked, opts.Actor); err != nil {
+				return err
+			}
 			return b.stampNewSessionCLI(unitID, cli)
 		})
+}
+
+// bindPRReviewUnit binds the PR and stamps SessionKindPRReview on a unit that
+// already has project/owner/goal from bindWebStartedSession.
+func (b *Bot) bindPRReviewUnit(unitID, project string, tracked sessionstore.TrackedPR, actor Actor) error {
+	if b.sessions == nil {
+		return fmt.Errorf("sessions store nil")
+	}
+	_, ok, err := b.sessions.Patch(unitID, func(ent *sessionstore.Entry) {
+		if ent.Project == "" {
+			ent.Project = project
+		}
+		ent.SessionKind = sessionstore.SessionKindPRReview
+		if actor.ID != "" {
+			ensureSessionOwner(ent, actor.ID, actor.String())
+		}
+		ent.UpsertPR(tracked)
+	})
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+	// bindWebStartedSession should have created the entry; if not, seed one.
+	e := sessionstore.Entry{
+		Project:     project,
+		Origin:      SourceWeb,
+		SessionKind: sessionstore.SessionKindPRReview,
+	}
+	if actor.ID != "" {
+		ensureSessionOwner(&e, actor.ID, actor.String())
+	}
+	e.UpsertPR(tracked)
+	return b.sessions.Set(unitID, e)
+}
+
+func prReviewTrackedPR(opts PRReviewOpts) sessionstore.TrackedPR {
+	pr := sessionstore.TrackedPR{
+		Owner:   strings.TrimSpace(opts.Owner),
+		Repo:    strings.TrimSpace(opts.Repo),
+		Number:  opts.Number,
+		Title:   strings.TrimSpace(opts.Title),
+		URL:     strings.TrimSpace(opts.URL),
+		State:   strings.TrimSpace(opts.State),
+		HeadSHA: strings.TrimSpace(opts.HeadSHA),
+		HeadRef: strings.TrimSpace(opts.HeadRef),
+	}
+	if pr.State == "" {
+		pr.State = "OPEN"
+	}
+	pr.FillOwnerRepoFromURL()
+	return pr
 }
 
 func prReviewGoal(opts PRReviewOpts) string {

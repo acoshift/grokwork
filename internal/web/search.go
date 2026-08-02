@@ -239,9 +239,10 @@ func (s *Server) runSearch(ctx *hime.Context, q, project string, allowed map[str
 	for _, g := range []searchGroup{
 		newSearchGroup(searchKindCase, "Cases", cases),
 		newSearchGroup(searchKindSession, "Sessions", sessions),
-		// One PR or issue is legitimately tracked by several units — the Address
-		// pair reuses a session bound to the PR, an agent review deliberately does
-		// not — but every copy points at the same page, so the rows are folded.
+		// One PR or issue is legitimately tracked by several units — Address
+		// reuses a work session bound to the PR; agent reviews also bind (for
+		// the detail Sessions list) but stay out of Address reuse — every copy
+		// points at the same page, so the rows are folded.
 		// Folding also keeps the cap honest: twenty rows naming ten PRs is not
 		// twenty answers.
 		newSearchGroup(searchKindPR, "Pull requests", dedupeSearchHits(prs)),

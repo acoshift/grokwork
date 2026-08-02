@@ -8,7 +8,20 @@ import (
 
 // FindByPR returns candidate units for project + GitHub PR (bound PRs[] only).
 // Terminal labels excluded unless includeTerminal. Order matches FindByIssue.
+// Agentic PR-review units (SessionKindPRReview) are always excluded — they bind
+// the PR for the detail Sessions list only, never for Address reuse.
 func (b *Bot) FindByPR(project, owner, repo string, number int, includeTerminal bool) []IssueSessionHit {
+	return b.findPRHits(project, owner, repo, number, includeTerminal, false)
+}
+
+// FindPRSessions returns every unit that binds the PR, including agent-review
+// units and terminal labels. Used by the PR detail Sessions section and the
+// "Go to session" head link.
+func (b *Bot) FindPRSessions(project, owner, repo string, number int) []IssueSessionHit {
+	return b.findPRHits(project, owner, repo, number, true, true)
+}
+
+func (b *Bot) findPRHits(project, owner, repo string, number int, includeTerminal, includeReview bool) []IssueSessionHit {
 	if b == nil || b.sessions == nil || number <= 0 {
 		return nil
 	}
@@ -29,6 +42,9 @@ func (b *Bot) FindByPR(project, owner, repo string, number int, includeTerminal 
 			continue
 		}
 		if !entryBindsPR(listed.Entry, target) {
+			continue
+		}
+		if !includeReview && listed.IsPRReview() {
 			continue
 		}
 		if !includeTerminal && sessionstore.IsTerminalLabel(listed.EffectiveLabel()) {
@@ -53,6 +69,7 @@ func (b *Bot) FindByPR(project, owner, repo string, number int, includeTerminal 
 			QueueLen:    qlen,
 			HasWorktree: strings.TrimSpace(listed.WorktreeBranch) != "" || strings.TrimSpace(listed.Cwd) != "",
 			DiscordURL:  listed.DiscordURL,
+			SessionKind: listed.SessionKind,
 		})
 	}
 	sortIssueHits(hits)

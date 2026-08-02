@@ -9,7 +9,7 @@ import (
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
-// IssueSessionHit is one work unit that already binds a given issue.
+// IssueSessionHit is one work unit that already binds a given issue or PR.
 type IssueSessionHit struct {
 	ThreadID    string
 	Project     string
@@ -22,6 +22,8 @@ type IssueSessionHit struct {
 	QueueLen    int
 	HasWorktree bool
 	DiscordURL  string
+	// SessionKind is Entry.SessionKind (e.g. SessionKindPRReview); empty for ordinary work.
+	SessionKind string
 }
 
 // IssueWorkStateFixing is a grokwork-derived issue state: a non-terminal

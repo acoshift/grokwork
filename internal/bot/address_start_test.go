@@ -67,12 +67,24 @@ func TestFindByPR(t *testing.T) {
 	if err := store.Set("pr-done", done); err != nil {
 		t.Fatal(err)
 	}
+	// Agent review binds the PR but is never an Address continue target.
+	review := sessionstore.Entry{
+		Project: "app", SessionKind: sessionstore.SessionKindPRReview, Goal: "Review acme/app#9",
+	}
+	review.UpsertPR(sessionstore.TrackedPR{Owner: "acme", Repo: "app", Number: 9, State: "OPEN"})
+	if err := store.Set("pr-review", review); err != nil {
+		t.Fatal(err)
+	}
 	hits := b.FindByPR("app", "acme", "app", 9, false)
 	if len(hits) != 1 || hits[0].ThreadID != "pr-th" {
 		t.Fatalf("%+v", hits)
 	}
 	if len(b.FindByPR("app", "acme", "app", 9, true)) != 2 {
-		t.Fatal("include terminal")
+		t.Fatal("include terminal (still excludes review)")
+	}
+	all := b.FindPRSessions("app", "acme", "app", 9)
+	if len(all) != 3 {
+		t.Fatalf("FindPRSessions want 3 (work+done+review), got %+v", all)
 	}
 }
 

@@ -110,6 +110,10 @@ func backLinkLabel(path string) (string, bool) {
 		return label, ok
 	case len(parts) == 5 && parts[1] == "projects" && parts[3] == "issues" && allDigits(parts[4]):
 		return "Issue", true
+	// PR detail: /prs/{owner}/{repo}/{n} — session crumbs opened from the PR
+	// Sessions list return here rather than to the sessions board.
+	case len(parts) == 5 && parts[1] == "prs" && allDigits(parts[4]):
+		return "PR", true
 	}
 	return "", false
 }

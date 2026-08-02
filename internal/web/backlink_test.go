@@ -19,6 +19,8 @@ func TestResolveBackLinkRejectsAnythingButAKnownBoard(t *testing.T) {
 		"/projects/webapp/ship":               {"/projects/webapp/ship", "Ship"},
 		// Issue detail is a board for crumb purposes (feature hub provenance).
 		"/projects/p/issues/42?owner=o&repo=r": {"/projects/p/issues/42?owner=o&repo=r", "Issue"},
+		// PR detail Sessions list provenance.
+		"/prs/acme/app/9?project=proj": {"/prs/acme/app/9?project=proj", "PR"},
 	}
 	for in, want := range good {
 		href, label, ok := resolveBackLink(in)

@@ -90,6 +90,11 @@ type Entry struct {
 	// Orthogonal to ShipMode (K27). Empty = eng fix default for capable actors.
 	Mode string `json:"mode,omitempty"`
 
+	// SessionKind marks specialized units that bind a PR/issue for display but
+	// must not join the Address/Fix reuse pickers. Empty is ordinary work.
+	// See SessionKindPRReview.
+	SessionKind string `json:"sessionKind,omitempty"`
+
 	// Agent and Model are pinned when the session is created and never change.
 	// SessionID is issued by one CLI and is meaningless to the other, so the
 	// agent cannot move; the model is pinned with it so a thread's turns stay
