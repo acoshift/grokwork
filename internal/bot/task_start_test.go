@@ -239,8 +239,21 @@ func writeFakeGrok(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fake-grok")
-	// streaming-json consumer expects line events ending with end
+	// Streaming runs use streaming-json line events; tools-off helpers like
+	// SummarizeTitle use --output-format json and need a single object.
 	script := `#!/bin/sh
+fmt=streaming-json
+prev=
+for a in "$@"; do
+  if [ "$prev" = "--output-format" ]; then
+    fmt=$a
+  fi
+  prev=$a
+done
+if [ "$fmt" = "json" ]; then
+  printf '%s\n' '{"text":"hello from fake","sessionId":"sess-fake","num_turns":1,"usage":{"total_tokens":10}}'
+  exit 0
+fi
 printf '%s\n' '{"type":"text","data":"hello from fake"}'
 printf '%s\n' '{"type":"end","sessionId":"sess-fake","stopReason":"EndTurn","num_turns":1,"usage":{"total_tokens":10}}'
 exit 0
