@@ -5425,8 +5425,7 @@
       }
       // Selects, radios, and checkboxes (config hub switches) marked
       // data-autosubmit apply on change (boosted POST/GET keeps the SPA
-      // feel); a visible or noscript submit button stays as the no-JS
-      // fallback where present.
+      // feel).
       var el = e.target;
       if (el && el.matches &&
           el.matches("select[data-autosubmit], input[type=radio][data-autosubmit], input[type=checkbox][data-autosubmit]") && el.form) {
