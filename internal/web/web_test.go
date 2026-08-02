@@ -195,6 +195,8 @@ func TestPagesRender(t *testing.T) {
 		{"/config", `href="/config/projects/proj"`},
 		{"/config/skills", `id="page-config-skills"`},
 		{"/config/skills", "Coding-agent skill packages"},
+		{"/config/skills", `class="table-scroll m-hide"`},
+		{"/config/skills", `class="m-rows"`},
 		{"/config/bot", `id="page-config-bot"`},
 		{"/config/bot", `id="bot-invite"`},
 		{"/config/bot", "discord.com/oauth2/authorize"},

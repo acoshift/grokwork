@@ -1090,6 +1090,30 @@
        card and behind a horizontal scroll on an ordinary desktop. A price per
        million tokens is a handful of characters. */
     #page-config-rates td input { max-width: 6.5rem; }
+    /* Skills inventory: long absolute paths must wrap, not force the page wider
+       than the viewport. Name stays nowrap; path/desc reflow inside the cell. */
+    #page-config-skills td.skill-name {
+      max-width: 12rem;
+      white-space: nowrap;
+    }
+    #page-config-skills td.skill-desc {
+      max-width: 28rem;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    #page-config-skills td.skill-path {
+      max-width: 22rem;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-all;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    #page-config-skills .m-row-s.skill-path {
+      overflow-wrap: anywhere;
+      word-break: break-all;
+      font-size: 0.72rem;
+    }
     th, td {
       text-align: left;
       padding: 0.68rem 0.9rem;

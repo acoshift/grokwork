@@ -10,7 +10,8 @@
 </p>
 
 {{if .Skills}}
-<div class="section card">
+{{/* Desktop: scrollable table. Phone: stacked m-rows (same pattern as sessions/ship). */}}
+<div class="table-scroll m-hide" id="skills-table">
   <table>
     <thead>
       <tr>
@@ -23,14 +24,26 @@
     <tbody>
       {{range .Skills}}
       <tr>
-        <td class="mono">{{.Name}}</td>
+        <td class="mono skill-name">{{.Name}}</td>
         <td><span class="badge">{{.Source}}</span></td>
-        <td>{{if .Description}}{{.Description}}{{else}}<span class="muted">—</span>{{end}}</td>
-        <td class="mono clamp" title="{{.Path}}">{{.Path}}</td>
+        <td class="skill-desc">{{if .Description}}{{.Description}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="mono skill-path" title="{{.Path}}">{{.Path}}</td>
       </tr>
       {{end}}
     </tbody>
   </table>
+</div>
+<div class="m-rows" id="skills-m-rows">
+  {{range .Skills}}
+  <div class="m-row">
+    <div class="m-row-main">
+      <div class="m-row-t mono">{{.Name}}</div>
+      <div class="m-row-s">{{if .Description}}{{.Description}}{{else}}—{{end}}</div>
+      <div class="m-row-s mono skill-path">{{.Path}}</div>
+    </div>
+    <span class="badge">{{.Source}}</span>
+  </div>
+  {{end}}
 </div>
 <p class="sub">{{len .Skills}} skill{{if ne (len .Skills) 1}}s{{end}} · refresh the page after installing new ones</p>
 {{else}}
