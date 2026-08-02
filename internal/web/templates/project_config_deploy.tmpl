@@ -139,7 +139,7 @@
     <div class="form-actions"><button type="submit">Save variable</button></div>
   </form>
 
-  <details class="action danger">
+  <details class="action danger" style="margin-top:1.1rem; border-top:1px solid var(--border)">
     <summary><span class="action-title">Remove environment</span></summary>
     <div class="action-body">
       <form method="post" action="{{route "config.removeProjectDeployEnv"}}"
@@ -148,7 +148,9 @@
         {{template "csrf" $}}
         <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
         <input type="hidden" name="env" value="{{.Name}}">
-        <button type="submit" class="btn-danger">Remove {{.Name}}</button>
+        <div class="form-actions">
+          <button type="submit" class="btn-danger">Remove {{.Name}}</button>
+        </div>
       </form>
     </div>
   </details>
