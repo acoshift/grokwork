@@ -26,6 +26,7 @@ import (
 	"github.com/acoshift/grokwork/internal/markdown"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
+	"github.com/acoshift/grokwork/internal/skills"
 	"github.com/acoshift/grokwork/internal/spend"
 )
 
@@ -189,6 +190,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.ci":                          "/config/ci",
 		"config.prlinks":                     "/config/pr-links",
 		"config.risky":                       "/config/risky",
+		"config.skills":                      "/config/skills",
 		"config.rates":                       "/config/model-rates",
 		"config.resume":                      "/config/resume",
 		"issues":                             "/issues",
@@ -262,6 +264,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("config_ci", "layout.tmpl", "config_ci.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_prlinks", "layout.tmpl", "config_prlinks.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_risky", "layout.tmpl", "config_risky.tmpl", "config_shared.tmpl")
+	tp.ParseFiles("config_skills", "layout.tmpl", "config_skills.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_rates", "layout.tmpl", "config_rates.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("project_config", "layout.tmpl", "project_config.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("project_config_workflow", "layout.tmpl", "project_config_workflow.tmpl", "project_config_shared.tmpl")
@@ -541,6 +544,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/ci", s.requireAdmin(hime.Handler(s.configSubPage("config_ci", "CI triage"))))
 	mux.Handle("GET /config/pr-links", s.requireAdmin(hime.Handler(s.configSubPage("config_prlinks", "Discord PR links"))))
 	mux.Handle("GET /config/risky", s.requireAdmin(hime.Handler(s.configSubPage("config_risky", "Completion risk paths"))))
+	mux.Handle("GET /config/skills", s.requireAdmin(hime.Handler(s.configSkillsPage)))
 	mux.Handle("GET /config/model-rates", s.requireAdmin(hime.Handler(s.configSubPage("config_rates", "Model rates"))))
 	mux.Handle("POST /config/model-rates", s.requireAdmin(hime.Handler(s.updateModelRates)))
 	mux.Handle("POST /config/run", s.requireAdmin(hime.Handler(s.updateRunSettings)))
@@ -623,6 +627,9 @@ type pageData struct {
 	// Search results (/search). Already ACL-filtered and capped — see search.go.
 	Search searchResults
 	Config config.Snapshot
+	// Skills is the host-discovered coding-agent skill list for /config/skills
+	// (and the hub count). Read-only filesystem inventory — see internal/skills.
+	Skills []skills.Info
 	// Per-project settings tabs (/config/projects/{name}[/tab]).
 	ProjectItem      config.ProjectItem
 	DiscordUserNames map[string]string // Discord user id → display name (best-effort)
@@ -1007,9 +1014,37 @@ func (s *Server) configPage(ctx *hime.Context) error {
 	d.Title = "Config"
 	d.IsConfig = true
 	d.Config = s.cfg.Snapshot()
+	d.Skills = s.listInstalledSkills()
 	d.Flash = ctx.FormValue("ok")
 	d.Error = ctx.FormValue("err")
 	return s.viewPage(ctx, "config", d)
+}
+
+// configSkillsPage lists coding-agent skills discovered on the host.
+func (s *Server) configSkillsPage(ctx *hime.Context) error {
+	d := s.basePage(ctx)
+	d.Title = "Skills · Config"
+	d.IsConfig = true
+	d.Config = s.cfg.Snapshot()
+	d.Skills = s.listInstalledSkills()
+	d.Flash = ctx.FormValue("ok")
+	d.Error = ctx.FormValue("err")
+	return s.viewPage(ctx, "config_skills", d)
+}
+
+// listInstalledSkills inventories user/bundled/project skill packages the
+// coding CLIs typically load. Pure filesystem read — no agent exec.
+func (s *Server) listInstalledSkills() []skills.Info {
+	projects := map[string]string{}
+	if s.cfg != nil {
+		for _, p := range s.cfg.Snapshot().Projects {
+			if p.Name == "" || p.Path == "" {
+				continue
+			}
+			projects[p.Name] = p.Path
+		}
+	}
+	return skills.List(skills.ListOpts{Projects: projects})
 }
 
 // resolveDiscordUserNames maps Discord user snowflakes to display names.

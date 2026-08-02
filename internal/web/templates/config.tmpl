@@ -39,6 +39,13 @@
         </span>
         <span class="drill-v">{{if eq .Config.Agent "claude"}}Claude{{else}}Grok{{end}}{{if and (eq .Config.Agent "claude") .Config.ClaudeModel}} · {{.Config.ClaudeModel}}{{end}}</span>
       </a>
+      <a class="drill" href="{{route "config.skills"}}">
+        <span class="drill-main">
+          <span class="drill-t">Skills</span>
+          <span class="drill-s">installed agent skills on this host</span>
+        </span>
+        {{if .Skills}}<span class="drill-v">{{len .Skills}} installed</span>{{else}}<span class="badge status-warn">none found</span>{{end}}
+      </a>
       <a class="drill" href="{{route "config.run"}}">
         <span class="drill-main">
           <span class="drill-t">Run limits</span>
