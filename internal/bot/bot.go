@@ -1178,11 +1178,12 @@ func remoteWorkPromptPrefixMode(branch string, direct bool) string {
 			lines = append(lines,
 				"Ship mode: direct-to-primary (no pull request for this project's repository).",
 				"When you make code changes you MUST:",
-				"1. Commit on this branch only (never commit to main/master yourself).",
-				"2. Leave the working tree clean for tracked files (commit or discard staged/unstaged changes).",
-				"3. Do NOT open a pull request for this project's repository (`gh pr create` for this repo is forbidden).",
-				"4. Do NOT push to main/master and do NOT run `git push origin HEAD:main` (or similar).",
-				"5. Do NOT merge anything.",
+				"1. "+scrutinizeBeforeShipStep,
+				"2. Commit on this branch only (never commit to main/master yourself).",
+				"3. Leave the working tree clean for tracked files (commit or discard staged/unstaged changes).",
+				"4. Do NOT open a pull request for this project's repository (`gh pr create` for this repo is forbidden).",
+				"5. Do NOT push to main/master and do NOT run `git push origin HEAD:main` (or similar).",
+				"6. Do NOT merge anything.",
 				"After a successful run the bot will fast-forward integrate this branch onto the project primary and push.",
 				"Summarize your commits in the final reply (no PR URL required for this ship).",
 				"If the task legitimately touches another repository, you may open a PR there; still do not open a PR for this project repo.",
@@ -1190,9 +1191,10 @@ func remoteWorkPromptPrefixMode(branch string, direct bool) string {
 		} else {
 			lines = append(lines,
 				"When you make code changes you MUST:",
-				"1. Commit on this branch only (never commit to main/master).",
-				"2. Push the branch to the remote (`git push -u origin HEAD`).",
-				"3. Open a pull request with `gh pr create` (or push to update an existing PR for this branch).",
+				"1. "+scrutinizeBeforeShipStep,
+				"2. Commit on this branch only (never commit to main/master).",
+				"3. Push the branch to the remote (`git push -u origin HEAD`).",
+				"4. Open a pull request with `gh pr create` (or push to update an existing PR for this branch).",
 			)
 		}
 		lines = append(lines,
@@ -1207,15 +1209,18 @@ func remoteWorkPromptPrefixMode(branch string, direct bool) string {
 	} else {
 		lines = append(lines,
 			"When you make code changes in a git repository you MUST:",
-			"1. Create or use a feature branch (never commit directly to main/master).",
-			"2. Commit on that branch.",
-			"3. Push the branch and open a pull request with `gh pr create` (or update an existing PR).",
+			"1. "+scrutinizeBeforeShipStep,
+			"2. Create or use a feature branch (never commit directly to main/master).",
+			"3. Commit on that branch.",
+			"4. Push the branch and open a pull request with `gh pr create` (or update an existing PR).",
 			"If this is not a git repository, skip PR steps and say so.",
 			"",
 			"File upload to Discord is only available for threads with an isolated git worktree.",
 			"Do not promise Discord attachments when there is no worktree.",
 		)
 	}
+	// Full pre-ship review contract (skill load + procedure + required reply marker).
+	lines = append(lines, scrutinizeBeforeShipContract()...)
 	if useDirect {
 		lines = append(lines,
 			"Do not leave work as uncommitted tracked changes.",
@@ -1237,6 +1242,30 @@ func remoteWorkPromptPrefixMode(branch string, direct bool) string {
 		"",
 	)
 	return strings.Join(lines, "\n")
+}
+
+// scrutinizeBeforeShipStep is the one-line MUST step injected into the numbered
+// ship checklist. Kept short so the numbered list stays scannable; the full
+// procedure lives in scrutinizeBeforeShipContract.
+const scrutinizeBeforeShipStep = "Run a full pre-ship scrutinize pass (load the `scrutinize` skill when available) on your complete change; fix blockers/majors before commit/push/PR. Never skip this."
+
+// scrutinizeBeforeShipContract is the hard pre-ship review block for every
+// shipping remote-work run (PR mode and direct-to-primary). Soft prose in
+// project CLAUDE.md is not enough — agents skip optional "when done" steps.
+// The `scrutinize` skill is expected as a user skill (~/.grok/skills and/or
+// ~/.claude/skills) so it is available in every project worktree cwd.
+func scrutinizeBeforeShipContract() []string {
+	return []string{
+		"",
+		"Pre-ship review (MANDATORY when you changed code — do not skip to save turns):",
+		"- Load and follow the `scrutinize` skill (`/scrutinize`). If the skill is listed, read its SKILL.md and run its full workflow.",
+		"- If the skill is unavailable, still perform the same procedure: (1) intent — state the goal and whether a simpler approach exists; (2) trace — walk end-to-end code paths for each claimed behavior, not only the diff; (3) verify — claims, edge cases, tests; (4) report findings with evidence.",
+		"- Review the complete change vs the project primary tip (all commits / working tree for this unit), not a one-line summary.",
+		"- Fix any blocker or major findings before commit, push, or opening/updating a PR.",
+		"- Only treat the task as ready to ship when the verdict is ship (or after you fixed to reach ship).",
+		"- In your final reply include exactly one line: SCRUTINIZE_VERDICT: ship|fix-then-ship|rework|reject — plus 2–5 lines of evidence (what you traced / top findings). A bare LGTM does not count.",
+		"",
+	}
 }
 
 // checkMessageAccess resolves the channel's project and checks membership.

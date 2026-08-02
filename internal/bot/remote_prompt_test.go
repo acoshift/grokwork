@@ -17,6 +17,9 @@ func TestRemoteWorkPromptPrefixWorktree(t *testing.T) {
 		"Do not leave work as local-only commits",
 		"~/Documents",
 		"Do NOT scan or search the user's home directory",
+		"Pre-ship review (MANDATORY",
+		"scrutinize",
+		"SCRUTINIZE_VERDICT:",
 	} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("missing %q in:\n%s", want, p)
@@ -25,6 +28,10 @@ func TestRemoteWorkPromptPrefixWorktree(t *testing.T) {
 	// Must not be Discord-exclusive wording only.
 	if !strings.Contains(p, "shared machine") && !strings.Contains(p, "remote machine") {
 		t.Fatalf("expected remote/shared machine wording: %s", p)
+	}
+	// Scrutinize is step 1 of the ship checklist (before commit/push/PR).
+	if !strings.Contains(p, "1. "+scrutinizeBeforeShipStep) {
+		t.Fatalf("scrutinize must be step 1 of ship checklist:\n%s", p)
 	}
 }
 
@@ -37,6 +44,8 @@ func TestRemoteWorkPromptPrefixNoWorktree(t *testing.T) {
 		"PR URL",
 		"~/Documents",
 		"Do NOT scan or search the user's home directory",
+		"Pre-ship review (MANDATORY",
+		"SCRUTINIZE_VERDICT:",
 	} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("missing %q in:\n%s", want, p)
@@ -77,6 +86,9 @@ func TestRemoteWorkPromptPrefixDirect(t *testing.T) {
 		"Do NOT open a pull request",
 		"Do NOT push to main/master",
 		"fast-forward integrate",
+		"Pre-ship review (MANDATORY",
+		"SCRUTINIZE_VERDICT:",
+		"1. " + scrutinizeBeforeShipStep,
 	} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("missing %q in:\n%s", want, p)
@@ -86,12 +98,23 @@ func TestRemoteWorkPromptPrefixDirect(t *testing.T) {
 		t.Fatalf("direct mode must not require PR URL:\n%s", p)
 	}
 	// Mentions gh pr create only as forbidden for this repo, not as an instruction to run it.
-	if strings.Contains(p, "3. Open a pull request with `gh pr create`") {
+	if strings.Contains(p, "4. Open a pull request with `gh pr create`") {
 		t.Fatalf("direct mode must not instruct opening a PR:\n%s", p)
 	}
 	// No branch → falls back to PR-style wording even if direct flag set.
 	p2 := remoteWorkPromptPrefixMode("", true)
 	if !strings.Contains(p2, "gh pr create") {
 		t.Fatalf("no-branch direct should fall back to PR wording:\n%s", p2)
+	}
+	if !strings.Contains(p2, "SCRUTINIZE_VERDICT:") {
+		t.Fatalf("no-branch direct must still require scrutinize:\n%s", p2)
+	}
+}
+
+func TestInvestigatePromptDoesNotRequireScrutinizeShip(t *testing.T) {
+	// Investigate never ships — do not load the pre-ship scrutinize contract there.
+	p := investigatePromptPrefix("grok/discord/1", false)
+	if strings.Contains(p, "SCRUTINIZE_VERDICT:") || strings.Contains(p, "Pre-ship review") {
+		t.Fatalf("investigate mode must not inject pre-ship scrutinize:\n%s", p)
 	}
 }

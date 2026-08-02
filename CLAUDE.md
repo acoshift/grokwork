@@ -35,8 +35,19 @@ When writing or changing Go code, use **`/use-modern-go`**: load that skill and 
 Multiple agents often work on this repo **in parallel**. Avoid editing the shared main checkout in place.
 
 1. **Start in a git worktree** — create an isolated worktree from current `origin/main` (or local `main` after fetch) and do all file edits, builds, and tests there. Do not leave uncommitted WIP on the primary checkout where another agent may race you.
-2. **Ship straight to `main`** — when done: `/scrutinize`, then **commit and push directly to `main`** (fast-forward or rebase onto latest `main` first if needed). Prefer no long-lived feature branches / open PRs for routine agent work — parallel agents stacking branches causes merge conflicts and stolen worktrees. Small, finished commits on `main` keep everyone unblocked.
+2. **Scrutinize (mandatory), then ship** — after the change is green and **before** any commit you intend to land on `main`, load and run the **`scrutinize`** skill (`/scrutinize`) on the **full change** (worktree vs primary tip — not only a diff summary). Follow its full workflow (intent → trace → verify → report). Fix blockers/majors first. Ship only when the verdict is `ship` (or after you fixed to reach `ship`). A one-line LGTM without tracing real code paths does **not** count. Then commit and push to `main` (fast-forward or rebase onto latest `main` first if needed). Prefer no long-lived feature branches / open PRs for routine agent work — parallel agents stacking branches causes merge conflicts and stolen worktrees. Small, finished commits on `main` keep everyone unblocked.
 3. After push, remove the temporary worktree (and its local branch if any) so the next agent does not inherit stale state.
+
+**Never skip scrutinize before ship.** Skipping is a process failure, not a shortcut.
+
+**Skills for agents this bot launches:** shipping runs inject a pre-ship scrutinize contract into the remote-work prompt for **every** mapped project (not only this repo). The `scrutinize` skill itself must be discoverable by the coding CLI on the host:
+
+| CLI | Install skill at |
+|-----|------------------|
+| `grok` | `~/.grok/skills/scrutinize/` (user skill — available in every project worktree cwd) |
+| `claude` | `~/.claude/skills/scrutinize/` |
+
+Optional extra skill dirs: `~/.grok/config.toml` → `[skills] paths = ["~/…"]`. Project-local skills under a mapped repo’s `.grok/skills/` only apply when that repo is the agent cwd. This repo also ships `.grok/skills/scrutinize-before-ship/` as a hard gate for work *on* grokwork itself.
 
 **Caution:** `config.json` in the repo root is a real, gitignored config containing a live Discord token and private paths — never commit it or print its contents.
 
