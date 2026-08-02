@@ -25,20 +25,16 @@ func testFixBot(t *testing.T) (*Bot, string) {
 		GrokBin: writeFakeGrok(t),
 		// Never leave ClaudeBin unset: it normalizes to "claude" and execs the real
 		// CLI — see writeFakeClaude.
-		ClaudeBin: writeFakeClaude(t),
-		// Title summarize is async and shares the fake CLI with the task run;
-		// leave it off so StartWebTask goal assertions are not racing a rename.
-		// Tests that cover improveWebTaskGoal opt in explicitly.
-		SummarizeThreadTitle: new(false),
-		Projects:             config.PathProjects(map[string]string{"app": proj}),
-		Channels:             map[string]string{"ch-app": "app"},
-		DiscordGuildID:       "guild-1",
-		DataDir:              filepath.Join(dir, "data"),
-		ConfigPath:           filepath.Join(dir, "config.json"),
-		WorktreeIsolation:    new(false),
-		MaxTurns:             5,
-		TimeoutMs:            5000,
-		Yolo:                 new(true),
+		ClaudeBin:         writeFakeClaude(t),
+		Projects:          config.PathProjects(map[string]string{"app": proj}),
+		Channels:          map[string]string{"ch-app": "app"},
+		DiscordGuildID:    "guild-1",
+		DataDir:           filepath.Join(dir, "data"),
+		ConfigPath:        filepath.Join(dir, "config.json"),
+		WorktreeIsolation: new(false),
+		MaxTurns:          5,
+		TimeoutMs:         5000,
+		Yolo:              new(true),
 	}
 	// preferred channel = mapped
 	pc := cfg.Projects["app"]

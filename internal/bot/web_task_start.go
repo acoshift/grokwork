@@ -1,18 +1,12 @@
 package bot
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
-	"time"
-
-	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grokwork/internal/config"
-	"github.com/acoshift/grokwork/internal/gitworktree"
-	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -22,8 +16,11 @@ type StartWebTaskOpts struct {
 	Project string
 	Prompt  string
 	Actor   Actor
-	Title   string // optional short title/goal; when empty, SummarizeTitle fills Goal
-	Mode    string // "" | "fix" | "investigate" | "explain"
+	// Title is an optional short sticky goal. When empty, Goal is derived with
+	// threadNameFromPrompt (same local short name Discord uses for a new thread
+	// before any async rename) — no model call.
+	Title string
+	Mode  string // "" | "fix" | "investigate" | "explain"
 	// Model names the model this session should run on, stamping the agent that
 	// owns it. Empty means "whatever config says", which stays unstamped so the
 	// existing resolve-at-run-start path applies. Requires builder-class caps.
@@ -41,9 +38,9 @@ type StartWebTaskOpts struct {
 // and the remote-work contract are all applied at execute time (executeTask), so
 // there are no ship/worktree/contract parameters here.
 //
-// When Title is empty, Goal is provisionally the prompt (clamped) and, when
-// summarize is enabled, improved asynchronously via SummarizeTitle — the same
-// off-critical-path call Discord uses to name a new thread.
+// Sticky Goal: explicit Title wins; otherwise Goal is the same short local name
+// used for a Discord thread title (threadNameFromPrompt), not the full prompt
+// and not a SummarizeTitle model call.
 func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 	if b == nil {
 		return FixStartResult{}, fmt.Errorf("bot is nil")
@@ -65,13 +62,11 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 	if titleSrc == "" {
 		titleSrc = prompt
 	}
-	// Prefer the optional Title for the session goal too (not just the Discord
-	// thread name) so it surfaces on the session page/list on both destinations.
-	// When Title is blank, Goal starts as the prompt and may be replaced by the
-	// async summarize path below (Discord's improveThreadTitle equivalent).
-	goal := clampGoal(prompt)
-	if userTitle != "" {
-		goal = clampGoal(userTitle)
+	// Explicit Title is the Goal as typed. Blank Title → short local name, the
+	// same derivation Discord uses for the first thread title paint.
+	goal := clampGoal(userTitle)
+	if goal == "" {
+		goal = clampGoal(threadNameFromPrompt(prompt, opts.Actor.DisplayName))
 	}
 	kind := webTaskKind(opts.Mode)
 	// Hard-block Fix & ship without builder-class caps (no silent coerce).
@@ -104,18 +99,6 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 		return b.stampNewSessionCLI(threadID, cli)
 	}
 
-	// finish wraps every successful start so a blank Title still gets a short
-	// Goal (and Discord thread name) without blocking the redirect.
-	finish := func(res FixStartResult, err error) (FixStartResult, error) {
-		if err != nil {
-			return res, err
-		}
-		if userTitle == "" {
-			b.scheduleImproveWebTaskGoal(res.ThreadID, prompt, opts.Actor.DisplayName, cwd, goal)
-		}
-		return res, nil
-	}
-
 	if b.canCreateDiscordThread() {
 		channelID, err := b.cfg.PreferDiscordChannel(project)
 		if errors.Is(err, config.ErrNoDiscordChannel) {
@@ -123,9 +106,9 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 			// to a web-native unit. (A freeform start is the one web path that still
 			// prefers a Discord thread at all — the commit-review and PR dispatch cards
 			// are always web-native.)
-			return finish(b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, opts.AttachmentPaths, func(unitID string) error {
+			return b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, opts.AttachmentPaths, func(unitID string) error {
 				return bind(unitID, "")
-			}))
+			})
 		}
 		if err != nil {
 			// Broken channel config, not an absent one: surface it instead of
@@ -147,93 +130,17 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 			if err == nil {
 				res.DiscordOffline = true
 			}
-			return finish(res, err)
+			return res, err
 		}
 		discordURL := DiscordThreadURL(b.cfg.ProjectDiscordGuildID(project), threadID)
 		if err := bind(threadID, discordURL); err != nil {
 			return FixStartResult{}, err
 		}
-		return finish(b.startWebTask(threadID, project, cwd, prompt, kind, opts.Actor, discordURL, opts.AttachmentPaths, true))
+		return b.startWebTask(threadID, project, cwd, prompt, kind, opts.Actor, discordURL, opts.AttachmentPaths, true)
 	}
-	return finish(b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, opts.AttachmentPaths, func(unitID string) error {
+	return b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, opts.AttachmentPaths, func(unitID string) error {
 		return bind(unitID, "")
-	}))
-}
-
-// scheduleImproveWebTaskGoal kicks off SummarizeTitle when the start form left
-// Title blank. No-op when summarize is disabled or the unit id is empty.
-func (b *Bot) scheduleImproveWebTaskGoal(threadID, prompt, username, cwd, provisionalGoal string) {
-	if b == nil || b.cfg == nil || !b.cfg.SummarizeTitleEnabled() {
-		return
-	}
-	if strings.TrimSpace(threadID) == "" || strings.TrimSpace(prompt) == "" {
-		return
-	}
-	go b.improveWebTaskGoal(threadID, prompt, username, cwd, provisionalGoal)
-}
-
-// improveWebTaskGoal is StartWebTask's counterpart of improveThreadTitle: one
-// tools-off summarize turn produces a short sticky Goal. When the unit is a
-// Discord thread it is also renamed. The provisional Goal (the prompt) stays
-// until this succeeds, and a Goal the user already edited is left alone.
-func (b *Bot) improveWebTaskGoal(threadID, prompt, username, cwd, provisionalGoal string) {
-	if b == nil || b.cfg == nil || threadID == "" {
-		return
-	}
-	if b.stopping.Load() {
-		return
-	}
-	timeout := time.Duration(b.cfg.SummarizeTimeoutMs) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 45 * time.Second
-	}
-	log.Printf("web-task: summarizing goal async unit=%s…", threadID)
-	sumCtx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	cli := b.threadSummarizeCLI(threadID).CLI()
-	log.Printf("web-task: summarize agent=%s model=%q unit=%s", cli.Agent, cli.Model, threadID)
-	t, ok := grokrun.SummarizeTitle(sumCtx, cli, prompt, cwd, timeout)
-	if !ok {
-		log.Printf("web-task: async summarize failed unit=%s (keeping provisional goal)", threadID)
-		return
-	}
-	if b.stopping.Load() {
-		return
-	}
-	issues := sessionstore.ParseIssueRefs(prompt)
-	name := prefixThreadTitleWithIssues(threadNameFromPrompt(t, username), issues)
-	goal := clampGoal(name)
-	if goal == "" {
-		return
-	}
-	provisional := strings.TrimSpace(provisionalGoal)
-	if b.sessions != nil {
-		if _, _, err := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
-			cur := strings.TrimSpace(ent.Goal)
-			// Only replace the auto provisional (or empty). A hand-set Title or a
-			// later /goal edit must not be clobbered by a late summarize.
-			if cur == "" || cur == provisional {
-				ent.Goal = goal
-			}
-		}); err != nil {
-			log.Printf("warn: async set goal unit=%s: %v", threadID, err)
-		} else {
-			log.Printf("web-task: async goal unit=%s → %q", threadID, goal)
-		}
-	}
-	// Web-native units have no Discord channel to rename.
-	if gitworktree.IsWebUnitID(threadID) {
-		return
-	}
-	s := b.Discord()
-	if s == nil {
-		return
-	}
-	if _, err := s.ChannelEdit(threadID, &discordgo.ChannelEdit{Name: name}); err != nil {
-		log.Printf("warn: async retitle web-started thread=%s: %v", threadID, err)
-		return
-	}
-	log.Printf("web-task: async retitle thread=%s → %q", threadID, name)
+	})
 }
 
 // webTaskKind maps the start-form mode select onto a task Kind, mirroring Discord
