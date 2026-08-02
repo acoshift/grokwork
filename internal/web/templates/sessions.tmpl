@@ -20,6 +20,7 @@
     <label for="state">State</label>
     <select id="state" name="state" data-autosubmit>
       <option value="active" {{if eq .SessionFilters.State "active"}}selected{{end}}>Active</option>
+      <option value="running" {{if eq .SessionFilters.State "running"}}selected{{end}}>Running</option>
       <option value="all" {{if eq .SessionFilters.State "all"}}selected{{end}}>All states</option>
       <option value="open" {{if eq .SessionFilters.State "open"}}selected{{end}}>Open</option>
       <option value="in_progress" {{if eq .SessionFilters.State "in_progress"}}selected{{end}}>In progress</option>
@@ -49,6 +50,7 @@
       {{end}}
       <span class="m-row-s">{{if .Goal}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{if .Label}}{{.Label}} · {{end}}{{if .PRNumber}}PR #{{.PRNumber}}{{if .PRState}} {{.PRState}}{{end}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{.UpdatedAt}}{{end}}</span>
     </span>
+    {{if .Running}}<span class="badge live">running</span>{{end}}
   </a>
   {{end}}
 </div>
@@ -82,7 +84,7 @@
         {{else if eq .Label "needs_review"}}
         <span class="badge status-warn">needs review</span>
         {{else if eq .Label "in_progress"}}
-        <span class="badge live">in progress</span>
+        <span class="badge">in progress</span>
         {{else if eq .Label "blocked"}}
         <span class="badge status-warn">blocked</span>
         {{else if .Label}}
@@ -93,6 +95,7 @@
         <span class="muted">—</span>
         {{end}}
         {{if and (eq .Mode "case") (ne .Phase "closed") .Phase}}<span class="badge">{{.Phase}}</span>{{end}}
+        {{if .Running}}<span class="badge live">running</span>{{end}}
       </td>
       <td>
         {{if .PRNumber}}

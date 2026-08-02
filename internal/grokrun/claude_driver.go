@@ -153,6 +153,10 @@ func (claudeDriver) sessionMissing(res Result) bool {
 type claudeEvent struct {
 	Type    string `json:"type"`
 	Subtype string `json:"subtype"`
+	// Status is set on type=system subtype=status (e.g. "requesting" while
+	// waiting on the API). Surfaced as activity so the web/Discord "running"
+	// chrome is not blank during long model waits.
+	Status string `json:"status"`
 	// SessionID rides on nearly every event.
 	SessionID string `json:"session_id"`
 	// ParentToolUseID is non-empty for subagent output, which is not this run's reply.
@@ -277,6 +281,10 @@ func (claudeDriver) decodeLine(line []byte, acc *streamAccum) {
 	acc.session(ev.SessionID)
 
 	switch ev.Type {
+	case "system":
+		if ev.Subtype == "status" {
+			acc.activity(claudeStatusActivity(ev.Status))
+		}
 	case "stream_event":
 		// Subagent deltas are not this run's answer.
 		if ev.ParentToolUseID != "" || ev.Event == nil {
@@ -346,6 +354,22 @@ func claudeContextWindow(m map[string]claudeModel) int {
 		}
 	}
 	return window
+}
+
+// claudeStatusActivity turns a CLI system/status value into a short activity line.
+func claudeStatusActivity(status string) string {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return ""
+	}
+	// Known values: requesting (waiting on the model). Keep the raw token for
+	// anything else so a new CLI status still surfaces rather than being dropped.
+	switch status {
+	case "requesting":
+		return "waiting on model"
+	default:
+		return status
+	}
 }
 
 func claudeToolActivity(blk claudeContentBlock, cwd string) string {

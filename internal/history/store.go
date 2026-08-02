@@ -141,6 +141,9 @@ type Summary struct {
 	PRURL    string
 	PRTitle  string
 	HasPRs   bool
+	// Running is true when the bot has an active agent job on this thread
+	// (web overlay from StatusSnapshot; not stored in history JSON).
+	Running bool
 }
 
 type Store struct {

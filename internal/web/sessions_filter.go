@@ -17,7 +17,7 @@ const activeRecency = 24 * time.Hour
 
 // sessionFilters is the sessions list filter state, parsed from query params.
 type sessionFilters struct {
-	State    string   // "active" (default), "all", "closed" (case closed), or a canonical label
+	State    string   // "active" (default), "all", "closed", "running" (live agent job), or a canonical label
 	Query    string   // free-text over thread id / goal / last prompt / user / project
 	Project  string   // global hub only ("" = all projects; workspace fixes it via path)
 	Projects []string // dropdown options on the global hub
@@ -42,8 +42,9 @@ func parseSessionFilters(ctx *hime.Context, withProject bool) sessionFilters {
 	}
 	state := strings.TrimSpace(ctx.FormValue("state"))
 	switch state {
-	case "all", "active", "closed":
+	case "all", "active", "closed", "running":
 		// Meta states; "closed" must not reach ParseLabel (alias of abandoned).
+		// "running" is the live agent job overlay, not a lifecycle label.
 	default:
 		if lab, ok := sessionstore.ParseLabel(state); ok {
 			state = lab
@@ -99,6 +100,11 @@ func sessionStateMatches(t history.Summary, state string, now time.Time) bool {
 	if state == "active" {
 		terminal := closedCase || label == sessionstore.LabelDone || label == sessionstore.LabelAbandoned
 		return !terminal || updatedWithin(t.UpdatedAt, now, activeRecency)
+	}
+	if state == "running" {
+		// Live agent job only — not the lifecycle label "in_progress", which
+		// stays after a run ends until a human closes the unit.
+		return t.Running
 	}
 	if closedCase {
 		return false

@@ -211,7 +211,10 @@ func TestClaudeDecodeStream(t *testing.T) {
 	if len(thoughts) != 1 || thoughts[0] != "weighing options" {
 		t.Fatalf("thoughts=%v", thoughts)
 	}
-	if len(acts) != 1 || !strings.Contains(acts[0], "Bash") || !strings.Contains(acts[0], "git status") {
+	// system/status=requesting surfaces as activity so the live UI is not
+	// blank while waiting on the model; tool_use still follows.
+	if len(acts) != 2 || acts[0] != "waiting on model" ||
+		!strings.Contains(acts[1], "Bash") || !strings.Contains(acts[1], "git status") {
 		t.Fatalf("activity=%v", acts)
 	}
 	if out.SessionID != "11111111-2222-4333-8444-555555555555" {
@@ -593,5 +596,33 @@ func TestClaudeDecodeMalformedLineIsReported(t *testing.T) {
 	}
 	if out.Text != "ok" {
 		t.Fatalf("text=%q — a bad line must not abort decoding", out.Text)
+	}
+}
+
+func TestClaudeStatusActivity(t *testing.T) {
+	if got := claudeStatusActivity("requesting"); got != "waiting on model" {
+		t.Fatalf("requesting: %q", got)
+	}
+	if got := claudeStatusActivity("  "); got != "" {
+		t.Fatalf("blank: %q", got)
+	}
+	if got := claudeStatusActivity("thinking"); got != "thinking" {
+		t.Fatalf("passthrough: %q", got)
+	}
+}
+
+func TestClaudeDecodeSystemStatusAsActivity(t *testing.T) {
+	raw := `{"type":"system","subtype":"status","status":"requesting","session_id":"s1"}
+{"type":"result","subtype":"success","session_id":"s1","result":"hi","num_turns":1,"usage":{"input_tokens":1,"output_tokens":1}}
+`
+	var acts []string
+	out := decodeClaude(t, raw, streamCallbacks{
+		onActivity: func(line string) { acts = append(acts, line) },
+	})
+	if out.SessionID != "s1" {
+		t.Fatalf("session=%q", out.SessionID)
+	}
+	if len(acts) != 1 || acts[0] != "waiting on model" {
+		t.Fatalf("activity=%v", acts)
 	}
 }

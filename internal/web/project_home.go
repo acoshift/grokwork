@@ -331,6 +331,7 @@ func (s *Server) sessionsScoped(ctx *hime.Context) error {
 	}
 	f := parseSessionFilters(ctx, false)
 	threads := s.projectThreads(project)
+	annotateSessionRunning(threads, s.bot)
 	f.Total = len(threads)
 	d := s.basePage(ctx)
 	d.Title = project + " · Sessions"

@@ -899,6 +899,47 @@ func TestSessionsActiveRecency(t *testing.T) {
 	}
 }
 
+func TestSessionsListShowsRunningForActiveJob(t *testing.T) {
+	srv, _, _ := testServer(t)
+	h := srv.Handler()
+
+	// Lifecycle label alone is "in progress" after a turn; the list must also
+	// show a distinct live "running" badge while an agent job is active —
+	// Claude PR reviews (and long Grok turns) look idle without it.
+	if err := srv.sessions.Set("thread-99", sessionstore.Entry{
+		Project: "proj", Label: sessionstore.LabelInProgress, Goal: "review PR",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := bot.SeedActiveRunForTest(srv.bot, "thread-99", "proj", "prompt", "live…"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { bot.FinishRunForTest(srv.bot, "thread-99") })
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `badge live">running`) {
+		t.Fatalf("sessions list missing live running badge:\n%s", body)
+	}
+	if !strings.Contains(body, `value="running"`) {
+		t.Fatal("sessions list missing Running state filter option")
+	}
+
+	// Filter state=running keeps only busy rows.
+	req = httptest.NewRequest(http.MethodGet, "/sessions?state=running", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	body = w.Body.String()
+	if !strings.Contains(body, "/sessions/thread-99") {
+		t.Fatalf("state=running dropped the busy session:\n%s", body)
+	}
+}
+
 func TestSessionDetailStreamsLiveTurn(t *testing.T) {
 	srv, _, _ := testServer(t)
 	h := srv.Handler()
@@ -919,6 +960,7 @@ func TestSessionDetailStreamsLiveTurn(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		`id="turn-live"`,
+		`badge live">running`,
 		`badge live">streaming`,
 		"please stream this turn",
 		"Here is the live reply so far…",

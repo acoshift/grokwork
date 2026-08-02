@@ -934,6 +934,7 @@ func (s *Server) sessionsList(ctx *hime.Context) error {
 	}
 	threads = mergeSessionRows(threads, s.sessions.List())
 	threads = s.filterThreadsVisible(ctx, threads)
+	annotateSessionRunning(threads, s.bot)
 	f := parseSessionFilters(ctx, true)
 	f.Projects = s.filterProjectNames(ctx)
 	f.Total = len(threads)
@@ -2064,6 +2065,31 @@ func (s *Server) auditActor(ctx *hime.Context) (actor, role string) {
 		actor = audit.ActorAnonymous
 	}
 	return actor, string(sess.Role)
+}
+
+// annotateSessionRunning marks rows whose thread has an in-memory active run.
+// Lifecycle Label "in_progress" is sticky after a turn ends; Running is the
+// live agent job (StatusSnapshot), so a Claude (or Grok) session that is
+// actually working shows a distinct "running" badge on the list.
+func annotateSessionRunning(threads []history.Summary, b *bot.Bot) {
+	if b == nil || len(threads) == 0 {
+		return
+	}
+	snap := b.StatusSnapshot()
+	if snap.ActiveCount == 0 {
+		return
+	}
+	busy := make(map[string]struct{}, snap.ActiveCount)
+	for _, r := range snap.ActiveRuns {
+		if r.ThreadID != "" {
+			busy[r.ThreadID] = struct{}{}
+		}
+	}
+	for i := range threads {
+		if _, ok := busy[threads[i].ThreadID]; ok {
+			threads[i].Running = true
+		}
+	}
 }
 
 // mergeSessionRows adds session-store threads that have no history turns yet,
