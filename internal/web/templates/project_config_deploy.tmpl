@@ -21,14 +21,14 @@
     needs a signed-in identity for the audit trail and the capability check.
   </p>
   {{end}}
-  <form class="inline" method="post" action="{{route "config.setProjectDeployEnabled"}}" style="grid-template-columns: auto auto;">
+  <form method="post" action="{{route "config.setProjectDeployEnabled"}}">
     {{template "csrf" $}}
     <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
     <label class="check">
       <input type="checkbox" name="enabled" value="1" {{if .ProjectItem.DeployEnabled}}checked{{end}} data-autosubmit>
       Enabled for this project
     </label>
-    <button type="submit" class="btn-secondary">Save</button>
+    <noscript><div class="form-actions"><button type="submit" class="btn-secondary">Save</button></div></noscript>
   </form>
 </div>
 
@@ -39,7 +39,7 @@
     <span class="mono">environments</span> list. Saving policy never touches
     stored credentials.
   </p>
-  <form method="post" action="{{route "config.setProjectDeployEnv"}}">
+  <form class="stack" method="post" action="{{route "config.setProjectDeployEnv"}}">
     {{template "csrf" $}}
     <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
     <div class="inline" style="grid-template-columns: 1fr 1fr 1fr;">
@@ -62,7 +62,7 @@
     <div>
       <label for="deploy-env-refs">Allowed refs</label>
       <textarea id="deploy-env-refs" name="allowedRefs" rows="3" class="mono" placeholder="main"></textarea>
-      <p class="sub">
+      <p class="sub" style="margin:0.4rem 0 0; font-size:0.8rem">
         One ref per line. Empty means the project primary branch only — this is
         what stops someone pushing a branch that rewrites the pipeline and
         deploying it here. Use <span class="mono">*</span> to allow any ref
