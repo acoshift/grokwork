@@ -112,28 +112,30 @@
   <div class="empty">No variables yet.</div>
   {{end}}
 
-  <form method="post" action="{{route "config.setProjectDeployEnvVar"}}">
+  <form class="stack" method="post" action="{{route "config.setProjectDeployEnvVar"}}" style="margin-top:0.85rem">
     {{template "csrf" $}}
     <input type="hidden" name="name" value="{{$.ProjectItem.Name}}">
     <input type="hidden" name="env" value="{{.Name}}">
-    <div class="inline" style="grid-template-columns: 1fr 1fr auto;">
-      <div>
-        <label for="deploy-var-key-{{.Name}}">Variable</label>
-        <input id="deploy-var-key-{{.Name}}" type="text" name="key" placeholder="KUBECONFIG" class="mono" autocomplete="off" required>
+    <div>
+      <div class="inline" style="grid-template-columns: 1fr 1fr auto;">
+        <div>
+          <label for="deploy-var-key-{{.Name}}">Variable</label>
+          <input id="deploy-var-key-{{.Name}}" type="text" name="key" placeholder="KUBECONFIG" class="mono" autocomplete="off" required>
+        </div>
+        <div>
+          <label for="deploy-var-val-{{.Name}}">Value</label>
+          <input id="deploy-var-val-{{.Name}}" type="password" name="value" placeholder="leave blank to keep" autocomplete="off">
+        </div>
+        <label class="check">
+          <input type="checkbox" name="secret" value="1" checked> Redact
+        </label>
       </div>
-      <div>
-        <label for="deploy-var-val-{{.Name}}">Value</label>
-        <input id="deploy-var-val-{{.Name}}" type="password" name="value" placeholder="leave blank to keep" autocomplete="off">
-      </div>
-      <label class="check">
-        <input type="checkbox" name="secret" value="1" checked> Redact
-      </label>
+      <p class="sub" style="margin:0.4rem 0 0; font-size:0.8rem">
+        Stored values are never rendered back. Leave “Redact” on for credentials;
+        turn it off for plain configuration like a namespace, so a failed deploy's
+        log stays readable.
+      </p>
     </div>
-    <p class="sub">
-      Stored values are never rendered back. Leave “Redact” on for credentials;
-      turn it off for plain configuration like a namespace, so a failed deploy's
-      log stays readable.
-    </p>
     <div class="form-actions"><button type="submit">Save variable</button></div>
   </form>
 
