@@ -17,11 +17,7 @@ Discord  @Grok fix payment timeout
 - `grok` installed and signed in (`grok login` or `XAI_API_KEY`)
 - A Discord server you can add bots to
 - This process running while the team uses it
-- **Pre-ship review skill (recommended):** install a user-scoped `scrutinize` skill so shipping agents can load it from any project worktree:
-  - Grok: `~/.grok/skills/scrutinize/SKILL.md` (see [Grok skills](https://x.ai) / `~/.grok/docs/user-guide/08-skills.md`)
-  - Claude agent: `~/.claude/skills/scrutinize/SKILL.md`
-  - Extra skill directories: `~/.grok/config.toml` → `[skills] paths = ["~/team-skills"]`
-  - Shipping runs always inject a pre-ship scrutinize contract into the agent prompt; the skill file supplies the full procedure. Without the skill, the agent still gets the inline checklist.
+- **Pre-ship review skill:** this repo vendors `.grok/skills/scrutinize/` (full procedure) and `.grok/skills/scrutinize-before-ship/` (gate). Shipping runs also inject a pre-ship scrutinize contract into the agent prompt for **every** mapped project. For non-grokwork projects, either install a host user skill (`~/.grok/skills/scrutinize/`, Claude: `~/.claude/skills/scrutinize/`) or copy the vendored skill into that project’s `.grok/skills/`. Extra skill dirs: `~/.grok/config.toml` → `[skills] paths = ["~/team-skills"]`.
 
 ## 1. Create the Discord bot
 

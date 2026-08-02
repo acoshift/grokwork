@@ -47,7 +47,7 @@ Multiple agents often work on this repo **in parallel**. Avoid editing the share
 | `grok` | `~/.grok/skills/scrutinize/` (user skill — available in every project worktree cwd) |
 | `claude` | `~/.claude/skills/scrutinize/` |
 
-Optional extra skill dirs: `~/.grok/config.toml` → `[skills] paths = ["~/…"]`. Project-local skills under a mapped repo’s `.grok/skills/` only apply when that repo is the agent cwd. This repo also ships `.grok/skills/scrutinize-before-ship/` as a hard gate for work *on* grokwork itself.
+This repository **vendors** the full skill at `.grok/skills/scrutinize/` (plus the gate skill `.grok/skills/scrutinize-before-ship/`). Repo skills load when the agent cwd is this repo (or a worktree of it). For agents on *other* mapped projects, install a host user skill (table above) or put the skill under that project’s `.grok/skills/` — optional extra dirs: `~/.grok/config.toml` → `[skills] paths = ["~/…"]`.
 
 **Caution:** `config.json` in the repo root is a real, gitignored config containing a live Discord token and private paths — never commit it or print its contents.
 

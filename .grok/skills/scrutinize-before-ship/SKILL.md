@@ -14,7 +14,7 @@ Any time you have code changes you intend to commit/push to `main` (or hand to a
 ## Steps
 
 1. Ensure tests/build for the change are green (or document why they cannot run).
-2. **Load the `scrutinize` skill** (`/scrutinize`) and run its full workflow on the **complete** change vs the primary tip — not only a diff summary:
+2. **Load the in-repo `scrutinize` skill** (`.grok/skills/scrutinize/SKILL.md`, slash `/scrutinize`) and run its full workflow on the **complete** change vs the primary tip — not only a diff summary:
    - Intent (including simpler alternatives)
    - End-to-end path trace
    - Verify claims, edges, tests
@@ -37,4 +37,4 @@ plus 2–5 lines of evidence (paths traced or top findings). A bare LGTM is not 
 
 - Never skip this to save turns.
 - Self-review still must follow the scrutinize skill procedure; do not invent a lighter checklist.
-- If `scrutinize` is missing from the skill list, still run the procedure from memory of that skill (intent → trace → verify → report) and say the skill file was unavailable.
+- The full procedure is vendored at `.grok/skills/scrutinize/SKILL.md` in this repository. If the skill is not in the skill list, **read that file** and follow it.
