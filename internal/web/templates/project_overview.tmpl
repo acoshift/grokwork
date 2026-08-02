@@ -23,7 +23,7 @@
 </div>
 
 {{/* Phone-only: workspace sections without a bottom tab (the scoped footer
-     keeps Overview/Ship/Cases/Sessions/Settings; the rest drill in here). */}}
+     keeps Overview/Ship/Cases/Sessions/Reviews; the rest drill in here). */}}
 <div class="section m-only" id="m-workspace-browse">
   <h2>Browse</h2>
   <div class="m-rows">
@@ -37,6 +37,9 @@
     {{end}}
     <a class="m-row" href="/projects/{{.Project}}/commits">
       <span class="m-row-main"><span class="m-row-t">Commits</span><span class="m-row-s">history browser · request commit review</span></span>
+    </a>
+    <a class="m-row" href="/projects/{{.Project}}/deploys">
+      <span class="m-row-main"><span class="m-row-t">Deploys</span><span class="m-row-s">environments · trigger · run history</span></span>
     </a>
     <a class="m-row" href="/projects/{{.Project}}/worktrees">
       <span class="m-row-main"><span class="m-row-t">Worktrees</span><span class="m-row-s">per-session checkouts · prune</span></span>
