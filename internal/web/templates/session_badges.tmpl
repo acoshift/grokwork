@@ -1,0 +1,25 @@
+{{/* Shared session-row state badges — used by sessions list and project overview. */}}
+{{define "session_row_state"}}
+{{if and (eq .Mode "case") (eq .Phase "closed")}}
+<span class="badge status-cancelled">closed</span>
+{{if .Resolution}}{{if or (eq .Resolution "answered") (eq .Resolution "fixed")}}<span class="badge status-done">{{.Resolution}}</span>{{else}}<span class="badge status-cancelled">{{.Resolution}}</span>{{end}}{{end}}
+{{else if eq .Label "done"}}
+<span class="badge status-done">done</span>
+{{else if eq .Label "abandoned"}}
+<span class="badge status-cancelled">abandoned</span>
+{{else if eq .Label "needs_review"}}
+<span class="badge status-warn">needs review</span>
+{{else if eq .Label "in_progress"}}
+<span class="badge">in progress</span>
+{{else if eq .Label "blocked"}}
+<span class="badge status-warn">blocked</span>
+{{else if .Label}}
+<span class="badge">{{.Label}}</span>
+{{else if .Phase}}
+<span class="badge">{{.Phase}}</span>
+{{else}}
+<span class="muted">—</span>
+{{end}}
+{{if and (eq .Mode "case") (ne .Phase "closed") .Phase}}<span class="badge">{{.Phase}}</span>{{end}}
+{{if .Running}}<span class="badge live">running</span>{{end}}
+{{end}}

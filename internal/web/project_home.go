@@ -296,6 +296,7 @@ func (s *Server) projectOverview(ctx *hime.Context) error {
 	if len(threads) > 8 {
 		threads = threads[:8]
 	}
+	annotateSessionRunning(threads, s.bot)
 	d.Threads = threads
 	return s.viewPage(ctx, "project_overview", d)
 }
