@@ -250,7 +250,7 @@ func (s *Server) handleAddressResult(ctx *hime.Context, startErr error, res bot.
 		s.auditAction(ctx, audit.ActionSessionStart, startErr, detail)
 		status := http.StatusBadRequest
 		switch {
-		case errors.Is(startErr, bot.ErrDiscordNotReady):
+		case errors.Is(startErr, bot.ErrDiscordNotReady), errors.Is(startErr, bot.ErrNotReady):
 			status = http.StatusServiceUnavailable
 		case errors.Is(startErr, bot.ErrQueueFull):
 			status = http.StatusConflict

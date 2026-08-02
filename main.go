@@ -49,6 +49,8 @@ func main() {
 
 	b := bot.New(cfg, sessions, hist)
 	b.SetIdentity(links)
+	// Gate claims until RecoverActiveRuns finishes so a crash re-drive cannot
+	// race a user (or web) task on the same thread. Browse/read paths stay open.
 	b.EnableReadyGate()
 
 	// Single-instance lock under data/runs/.lock (when journal store is available).
@@ -63,12 +65,31 @@ func main() {
 	if err != nil {
 		log.Fatalf("discord session: %v", err)
 	}
-
 	b.Register(dg)
 	dg.LogLevel = discordgo.LogWarning
 
-	// Open gateway before Recover so resume UX can post/heal messages.
-	if err := dg.Open(); err != nil {
+	// Open the gateway in parallel with web setup. Discord Open is usually the
+	// multi-second stall after restart; the HTTP UI must not wait on it.
+	// Recover still runs after Open succeeds so resume can post/heal messages.
+	openErr := make(chan error, 1)
+	go func() {
+		openErr <- dg.Open()
+	}()
+
+	addr := cfg.ListenAddr()
+	webSrv := web.New(cfg, sessions, hist, b)
+	// Reconcile deploy records before the server accepts triggers, so a lane
+	// left behind by a crash cannot race a fresh deploy. Nothing is auto-resumed:
+	// shell steps are not idempotent, so recovery is an explicit human redeploy.
+	webSrv.Deploys().RecoverAtStartup()
+	go func() {
+		log.Printf("bg: web UI listening on http://%s (dashboard, ship, sessions, worktrees, config)", addr)
+		if err := webSrv.ListenAndServe(); err != nil {
+			log.Printf("bg: web server stopped: %v", err)
+		}
+	}()
+
+	if err := <-openErr; err != nil {
 		if strings.Contains(err.Error(), "4014") {
 			log.Fatalf("open gateway: %v\n\n"+
 				"Discord rejected privileged intents.\n"+
@@ -86,19 +107,7 @@ func main() {
 		log.Printf("warn: recover active runs: %v", err)
 	}
 	b.SetReady(true)
-
-	addr := cfg.ListenAddr()
-	webSrv := web.New(cfg, sessions, hist, b)
-	// Reconcile deploy records before the server accepts triggers, so a lane
-	// left behind by a crash cannot race a fresh deploy. Nothing is auto-resumed:
-	// shell steps are not idempotent, so recovery is an explicit human redeploy.
-	webSrv.Deploys().RecoverAtStartup()
-	go func() {
-		log.Printf("bg: web UI listening on http://%s (dashboard, ship, sessions, worktrees, config)", addr)
-		if err := webSrv.ListenAndServe(); err != nil {
-			log.Printf("bg: web server stopped: %v", err)
-		}
-	}()
+	log.Printf("startup: ready (discord open, active-run recovery done)")
 
 	fmt.Println("Grok Work bridge running. Ctrl+C to stop.")
 

@@ -459,7 +459,7 @@ func (s *Server) handleFixResult(ctx *hime.Context, startErr error, res bot.FixS
 func (s *Server) mapFixError(ctx *hime.Context, err error, rc fixRedirectContext) error {
 	msg := err.Error()
 	switch {
-	case errors.Is(err, bot.ErrDiscordNotReady):
+	case errors.Is(err, bot.ErrDiscordNotReady), errors.Is(err, bot.ErrNotReady):
 		return s.fixSourceRedirect(ctx, rc, "", msg, http.StatusServiceUnavailable)
 	case errors.Is(err, bot.ErrQueueFull):
 		return s.fixSourceRedirect(ctx, rc, "", msg, http.StatusConflict)
