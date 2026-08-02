@@ -3320,15 +3320,31 @@
       padding: 1.4rem 0 0.9rem;
       background: linear-gradient(to bottom, transparent, var(--bg) 38%);
     }
-    /* Desktop: the conversation column always reaches the viewport bottom —
-       stretch to the grid row (a tall rail) and floor at viewport height, so
-       sticky pins the composer to the fold even for a short chat. */
+    /* Desktop: fill the viewport so the dock sits flush at the bottom.
+       main's normal 4rem bottom padding left a floating gap under the
+       sticky dock; zero it here and flex main → #live-root → .pr-cols →
+       .pr-main so the column absorbs remaining height (variable crumb/
+       title/meta chrome no longer needs a magic min-height). Sticky
+       still pins the dock when the conversation scrolls past the fold. */
     @media (min-width: 921px) {
-      .pr-main:has(.composer-dock) {
-        align-self: stretch;
+      body:has(#session-continue-form) main.main {
+        padding-bottom: 0;
+        min-height: 100dvh;
         display: flex;
         flex-direction: column;
-        min-height: calc(100dvh - 10.5rem);
+      }
+      body:has(#session-continue-form) #live-root {
+        flex: 1 0 auto;
+        display: flex;
+        flex-direction: column;
+      }
+      body:has(#session-continue-form) .pr-cols {
+        flex: 1 0 auto;
+        align-items: stretch;
+      }
+      .pr-main:has(.composer-dock) {
+        display: flex;
+        flex-direction: column;
       }
     }
     .composer {
