@@ -55,7 +55,7 @@
         <td>{{if .Request.Project}}{{.Request.Project}}{{else}}—{{end}}</td>
         <td>{{if .Request.RequesterName}}{{.Request.RequesterName}}{{else}}{{.Request.RequesterID}}{{end}}</td>
         <td class="mono">{{.Request.CreatedAt.UTC.Format "2006-01-02 15:04"}}</td>
-        <td>{{if .Stale}}<span class="badge">head moved</span>{{else}}<span class="badge live">ok</span>{{end}}</td>
+        <td>{{if .Stale}}<span class="badge">head moved</span>{{else}}<span class="badge status-done">ok</span>{{end}}</td>
         <td><span class="badge">{{.Request.Status}}</span>{{if .State}} · <span class="mono">{{.State}}</span>{{end}}</td>
         <td class="row-actions">
           <a class="btn-secondary" style="display:inline-block;height:2rem;line-height:2rem;padding:0 0.75rem;font-size:0.82rem;text-decoration:none" href="/prs/{{.Request.Owner}}/{{.Request.Repo}}/{{.Request.Number}}{{if .Request.Project}}?project={{urlquery .Request.Project}}{{end}}">Open</a>

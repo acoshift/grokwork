@@ -680,7 +680,7 @@ func (s *Server) invalidateActionsRunsCache(project, owner, repo string) {
 }
 
 // runBucketBadge maps ghpr.RunBucket values onto layout badge CSS classes.
-// pending → status-running (blue), not live: live shares green with status-done.
+// pending → status-running (same blue as .live); pass → status-done (green).
 func runBucketBadge(bucket string) string {
 	switch bucket {
 	case "pass":

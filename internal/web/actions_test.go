@@ -431,8 +431,7 @@ func TestActionsPageAuthOffStillRendersChrome(t *testing.T) {
 }
 
 func TestRunBucketBadgeColors(t *testing.T) {
-	// pending (in_progress) and pass (success) must not share a badge class —
-	// live and status-done both paint green.
+	// pending (in_progress) and pass (success) must not share a badge class.
 	cases := map[string]string{
 		"pass":     "status-done",
 		"fail":     "status-error",

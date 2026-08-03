@@ -987,7 +987,7 @@
       to { opacity: 1; }
     }
     @keyframes pulse {
-      0% { box-shadow: 0 0 0 0 hsl(136 70% 40% / 35%); }
+      0% { box-shadow: 0 0 0 0 hsl(var(--blue-500) / 35%); }
       70% { box-shadow: 0 0 0 0.32rem transparent; }
       100% { box-shadow: 0 0 0 0 transparent; }
     }
@@ -2439,18 +2439,23 @@
       border-radius: 50%;
       background: var(--muted-soft);
     }
-    .badge.live {
-      background: var(--ok-bg);
-      color: var(--ok);
-      border-color: hsl(var(--green-600) / 20%);
-    }
-    .badge.live::before { background: var(--ok); animation: pulse 2.4s ease-out infinite; }
-    .badge.status-fixing {
+    /* Status chip palette — distinct hues per meaning:
+         live / status-running  blue + pulse  (in flight)
+         status-done            green         (success)
+         status-merged          purple        (PR merged)
+         status-warn            yellow        (attention)
+         status-cancelled       muted         (closed / abandoned / skipped)
+         status-error           red           (failure)
+       live used to share green with status-done, so "running" and "done"
+       were indistinguishable on ship, sessions, deploys, and actions. */
+    .badge.live,
+    .badge.status-running {
       background: var(--accent-soft);
       color: var(--accent);
       border-color: hsl(var(--blue-500) / 22%);
     }
-    .badge.status-fixing::before {
+    .badge.live::before,
+    .badge.status-running::before {
       background: var(--accent);
       animation: pulse 2.4s ease-out infinite;
     }
@@ -2466,14 +2471,18 @@
       border-color: hsl(var(--purple-600) / 20%);
     }
     .badge.status-merged::before { background: var(--merged); }
-    .badge.status-cancelled,
     .badge.status-warn {
       background: var(--warn-bg);
       color: var(--warn);
       border-color: hsl(var(--yellow-700) / 20%);
     }
-    .badge.status-cancelled::before,
     .badge.status-warn::before { background: var(--warn); }
+    .badge.status-cancelled {
+      background: var(--surface-l2);
+      color: var(--muted);
+      border-color: var(--border);
+    }
+    .badge.status-cancelled::before { background: var(--muted-soft); }
     .badge.status-error {
       background: var(--danger-bg);
       color: var(--danger);
