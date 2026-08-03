@@ -406,6 +406,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /projects/{project}/actions/runs/{runID}", s.requireAuth(hime.Handler(s.actionsRunPage)))
 	mux.Handle("GET /projects/{project}/actions/runs/{runID}/job", s.requireAuth(hime.Handler(s.actionsJobLog)))
 	mux.Handle("GET /partials/projects/{project}/actions/runs", s.requireAuth(hime.Handler(s.actionsRunsPartial)))
+	mux.Handle("GET /partials/projects/{project}/actions/workflows", s.requireAuth(hime.Handler(s.actionsWorkflowsPartial)))
 	mux.Handle("POST /projects/{project}/actions/dispatch",
 		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postActionsDispatch))))
 	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))

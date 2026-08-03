@@ -101,9 +101,37 @@ func WorkflowFileAtPrimaryWith(ctx context.Context, run Runner, repoDir, workflo
 	if err != nil {
 		return nil, err
 	}
-	raw, err := run(ctx, repoDir, "git", "cat-file", "blob", ref+":"+workflowPath)
+	return WorkflowFileAtRefWith(ctx, run, repoDir, ref, workflowPath)
+}
+
+// ResolveOriginPrimaryRef resolves the origin primary commit (origin/HEAD,
+// falling back to origin/main then origin/master). Callers reading several
+// workflow files should resolve once and use WorkflowFileAtRefWith per file.
+func ResolveOriginPrimaryRef(ctx context.Context, run Runner, repoDir string) (string, error) {
+	if run == nil {
+		run = defaultRunner
+	}
+	return resolveOriginPrimaryRef(ctx, run, repoDir)
+}
+
+// WorkflowFileAtRefWith reads a workflow file from the committed tree at ref.
+// The path guard matches WorkflowFileAtPrimaryWith.
+func WorkflowFileAtRefWith(ctx context.Context, run Runner, repoDir, ref, workflowPath string) ([]byte, error) {
+	if run == nil {
+		run = defaultRunner
+	}
+	workflowPath = strings.TrimSpace(workflowPath)
+	normalized := strings.ReplaceAll(workflowPath, "\\", "/")
+	if workflowPath == "" || path.IsAbs(normalized) || strings.Contains(normalized, "..") {
+		return nil, fmt.Errorf("invalid workflow path %q", workflowPath)
+	}
+	clean := path.Clean(normalized)
+	if clean == "" || clean == "." {
+		return nil, fmt.Errorf("invalid workflow path %q", workflowPath)
+	}
+	raw, err := run(ctx, repoDir, "git", "cat-file", "blob", ref+":"+clean)
 	if err != nil {
-		return nil, fmt.Errorf("read workflow %s at %s: %w", workflowPath, shortRef(ref), err)
+		return nil, fmt.Errorf("read workflow %s at %s: %w", clean, shortRef(ref), err)
 	}
 	return raw, nil
 }

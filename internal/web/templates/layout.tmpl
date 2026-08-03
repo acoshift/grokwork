@@ -1025,6 +1025,141 @@
       *, *::before, *::after { animation: none !important; transition: none !important; }
     }
 
+    /* ── Actions page: workflow register + launch panel ──────────────────
+       A stacked "register" of workflow rows; dispatchable rows are a
+       <details> whose summary is the row itself and whose body is a recessed
+       launch panel (dashed seam, field grid). Skeleton bars cover the async
+       fragment loads (workflows + runs both arrive via hx-trigger="load"). */
+    .wf-register {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-1);
+      overflow: hidden;
+    }
+    .wf-row + .wf-row { border-top: 1px solid var(--border); }
+    .wf-line {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      min-height: 3.2rem;
+      padding: 0.66rem 1rem;
+    }
+    details.wf-openable > summary.wf-line {
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+    details.wf-openable > summary.wf-line::-webkit-details-marker { display: none; }
+    details.wf-openable > summary.wf-line:hover,
+    details.wf-openable[open] > summary.wf-line { background: var(--surface-l1); }
+    /* Disclosure chevron: points right closed, rotates down open. */
+    details.wf-openable > summary.wf-line::after {
+      content: "";
+      flex-shrink: 0;
+      width: 0.5rem;
+      height: 0.5rem;
+      border-right: 2px solid var(--muted-soft);
+      border-bottom: 2px solid var(--muted-soft);
+      transform: rotate(-45deg);
+      transition: transform 0.15s ease;
+      margin-left: 0.1rem;
+    }
+    details.wf-openable[open] > summary.wf-line::after { transform: rotate(45deg); }
+    .wf-dot {
+      flex-shrink: 0;
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background: var(--ok);
+    }
+    .wf-dot.off { background: transparent; border: 1.5px solid var(--muted-soft); }
+    .wf-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.14rem;
+    }
+    .wf-name {
+      font-size: 0.92rem;
+      font-weight: 550;
+      letter-spacing: -0.01em;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+    .wf-path { font-size: 0.72rem; color: var(--muted); overflow-wrap: anywhere; }
+    .wf-meta {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      /* Must stay shrinkable: an unshrinkable nowrap chip row propagates its
+         min-content width up through flex ancestors and overflows the phone
+         viewport sideways. */
+      min-width: 0;
+      max-width: 45%;
+    }
+    .wf-tag {
+      font-size: 0.66rem;
+      font-weight: 550;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.16rem 0.55rem;
+      white-space: nowrap;
+    }
+    .wf-tag.lock {
+      color: var(--text);
+      border-color: var(--muted-soft);
+      text-transform: none;
+      letter-spacing: 0.01em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .wf-tag.run { border-style: dashed; }
+    .wf-launch {
+      border-top: 1px dashed var(--border);
+      background: var(--surface-l1);
+      padding: 0.9rem 1rem 1rem;
+    }
+    .wf-fields {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+      gap: 0.7rem 0.9rem;
+      margin-bottom: 0.85rem;
+    }
+    .wf-fields .field { margin: 0; }
+    .wf-launch-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.7rem;
+    }
+    .wf-locknote { font-size: 0.75rem; color: var(--muted); margin-right: auto; }
+    /* Async-fragment skeleton (shimmer honors the global reduced-motion rule). */
+    .skel-rows {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .skel-row { padding: 1.2rem 1rem; }
+    .skel-row + .skel-row { border-top: 1px solid var(--border); }
+    .skel-bar {
+      height: 0.7rem;
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--surface-l1) 25%, var(--border) 50%, var(--surface-l1) 75%);
+      background-size: 200% 100%;
+      animation: skel-shimmer 1.4s ease-in-out infinite;
+    }
+    @keyframes skel-shimmer { to { background-position: -200% 0; } }
+
     /* ── Cards & stats ───────────────────────────────────────────────── */
     .grid {
       display: grid;

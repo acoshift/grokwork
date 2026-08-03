@@ -69,8 +69,7 @@ func (s *Server) actionsPage(ctx *hime.Context) error {
 	if err := s.ensureProjectAccess(ctx, project); err != nil {
 		return forbiddenProject(ctx, err)
 	}
-	root, err := s.projectPath(project)
-	if err != nil {
+	if _, err := s.projectPath(project); err != nil {
 		return ctx.Status(http.StatusNotFound).Error(err.Error())
 	}
 	catalog, err := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
@@ -114,25 +113,52 @@ func (s *Server) actionsPage(ctx *hime.Context) error {
 	d.ActiveOwner = active.Owner
 	d.ActiveRepo = active.Repo
 
-	wfFilter := strings.TrimSpace(ctx.FormValue("workflow"))
-	branchFilter := strings.TrimSpace(ctx.FormValue("branch"))
-	d.ActionsWorkflowFilter = wfFilter
-	d.ActionsBranchFilter = branchFilter
+	d.ActionsWorkflowFilter = strings.TrimSpace(ctx.FormValue("workflow"))
+	d.ActionsBranchFilter = strings.TrimSpace(ctx.FormValue("branch"))
+
+	// The shell renders immediately with skeletons; workflows and runs arrive
+	// via the partial endpoints (hx-trigger="load") so the slow gh calls never
+	// block first paint.
+	return s.viewPage(ctx, "actions", d)
+}
+
+// actionsWorkflowsPartial renders the workflow register fragment: gh workflow
+// list annotated with dispatchability (primary-tree YAML), branch options and
+// per-project locks.
+func (s *Server) actionsWorkflowsPartial(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	root, err := s.projectPath(project)
+	if err != nil {
+		return ctx.Status(http.StatusNotFound).Error(err.Error())
+	}
+	catalog, _ := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
+	active, pickErr := config.ResolveRepoPicker(catalog, strings.TrimSpace(ctx.FormValue("owner")), strings.TrimSpace(ctx.FormValue("repo")))
+	d := s.basePage(ctx)
+	d.IsActions = true
+	d.Project = project
+	if pickErr != nil {
+		d.Error = pickErr.Error()
+		return s.viewFragment(ctx, "actions", "actions_workflows", d)
+	}
+	d.ActiveOwner = active.Owner
+	d.ActiveRepo = active.Repo
 
 	repoPath, pathErr := gitworktree.ResolveLocalRepo(ctx.Context(), root, active.Owner, active.Repo)
 	if pathErr != nil {
-		if d.Error == "" {
-			d.Error = pathErr.Error()
-		}
-		return s.viewPage(ctx, "actions", d)
+		d.Error = pathErr.Error()
+		return s.viewFragment(ctx, "actions", "actions_workflows", d)
 	}
-
 	workflows, wfErr := s.cachedListWorkflows(ctx.Context(), project, active.Owner, active.Repo, repoPath)
-	if wfErr != nil && d.Error == "" {
+	if wfErr != nil {
 		d.Error = wfErr.Error()
+		return s.viewFragment(ctx, "actions", "actions_workflows", d)
 	}
-
 	remoteBranches, _ := ghpr.ListRemoteBranchesWith(ctx.Context(), s.ghRun(), repoPath)
+	// One ref resolution for the whole register; per-file reads are one exec each.
+	primaryRef, refErr := ghpr.ResolveOriginPrimaryRef(ctx.Context(), s.ghRun(), repoPath)
 
 	rows := make([]actionsWorkflowRow, 0, len(workflows))
 	for _, wf := range workflows {
@@ -142,10 +168,12 @@ func (s *Server) actionsPage(ctx *hime.Context) error {
 			Path:  wf.Path,
 			State: wf.State,
 		}
-		if raw, err := ghpr.WorkflowFileAtPrimaryWith(ctx.Context(), s.ghRun(), repoPath, wf.Path); err == nil {
-			if spec, err := ghpr.ParseWorkflowDispatch(raw); err == nil && spec.Dispatchable {
-				row.Dispatchable = true
-				row.Inputs = spec.Inputs
+		if refErr == nil {
+			if raw, err := ghpr.WorkflowFileAtRefWith(ctx.Context(), s.ghRun(), repoPath, primaryRef, wf.Path); err == nil {
+				if spec, err := ghpr.ParseWorkflowDispatch(raw); err == nil && spec.Dispatchable {
+					row.Dispatchable = true
+					row.Inputs = spec.Inputs
+				}
 			}
 		}
 		if branches, locked := s.cfg.ActionsDispatchBranches(project, active.Owner, active.Repo, wf.Path); locked {
@@ -157,22 +185,7 @@ func (s *Server) actionsPage(ctx *hime.Context) error {
 		rows = append(rows, row)
 	}
 	d.ActionsWorkflows = rows
-
-	var workflowID int64
-	if wfFilter != "" {
-		if id, err := strconv.ParseInt(wfFilter, 10, 64); err == nil && id > 0 {
-			workflowID = id
-		}
-	}
-	runs, runErr := s.cachedListRuns(ctx.Context(), project, active.Owner, active.Repo, repoPath, ghpr.RunListOpts{
-		WorkflowID: workflowID,
-		Branch:     branchFilter,
-	})
-	if runErr != nil && d.Error == "" {
-		d.Error = runErr.Error()
-	}
-	d.ActionsRuns = decorateActionsRuns(runs)
-	return s.viewPage(ctx, "actions", d)
+	return s.viewFragment(ctx, "actions", "actions_workflows", d)
 }
 
 func decorateActionsRuns(runs []ghpr.RunInfo) []actionsRunRow {

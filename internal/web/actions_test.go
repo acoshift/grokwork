@@ -149,11 +149,70 @@ func TestActionsPageRenders(t *testing.T) {
 		t.Fatal("missing page-actions marker")
 	}
 	assertNavActive(t, body, "Actions")
-	// rows-all keeps the workflows card visible on desktop — plain .m-rows is
-	// phone-only (base CSS hides it), which is exactly the bug this pins.
-	for _, want := range []string{"Deploy", "Recent runs", "Deploy run", "Run workflow", `class="m-rows rows-all"`} {
+	// The shell paints instantly: both sections are async fragments loading on
+	// hx-trigger="load" over skeletons — no gh call may block the page render.
+	for _, want := range []string{
+		"Workflows", "Recent runs",
+		`hx-get="/partials/projects/proj/actions/workflows?`,
+		`hx-get="/partials/projects/proj/actions/runs?`,
+		`hx-trigger="load"`,
+		`hx-trigger="load, every 15s"`,
+		`class="skel-rows"`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("actions page missing %q", want)
+		}
+	}
+	for _, banned := range []string{"Run workflow", "Deploy run"} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("actions page shell must not render fragment content %q inline", banned)
+		}
+	}
+}
+
+// getActionsFragment fetches a partial with the fixture session.
+func getActionsFragment(t *testing.T, srv *Server, sid, path string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	return w.Body.String()
+}
+
+func TestActionsWorkflowsPartial(t *testing.T) {
+	srv, _, _ := actionsServer(t)
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getActionsFragment(t, srv, sid, "/partials/projects/proj/actions/workflows?owner=acme&repo=app")
+	for _, want := range []string{`class="wf-register"`, "Deploy", "Run workflow", `class="wf-tag run"`, ".github/workflows/deploy.yml"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("workflows partial missing %q:\n%s", want, body)
+		}
+	}
+	// Partials must not carry layout chrome.
+	for _, banned := range []string{"<nav", "sse-status", "htmx.org"} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("workflows partial contains layout chrome %q", banned)
+		}
+	}
+}
+
+func TestActionsRunsPartial(t *testing.T) {
+	srv, _, _ := actionsServer(t)
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getActionsFragment(t, srv, sid, "/partials/projects/proj/actions/runs?owner=acme&repo=app")
+	for _, want := range []string{"Deploy run", "workflow_dispatch", "GitHub"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("runs partial missing %q:\n%s", want, body)
 		}
 	}
 }
@@ -170,13 +229,9 @@ func TestActionsPageLockedBranchSelect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/projects/proj/actions", nil)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-	body := w.Body.String()
+	body := getActionsFragment(t, srv, sid, "/partials/projects/proj/actions/workflows?owner=acme&repo=app")
 	// Locked form: only production in the deploy workflow's branch select.
-	if !strings.Contains(body, "locked to: production") {
+	if !strings.Contains(body, "locked · production") {
 		t.Fatalf("missing lock chip:\n%s", body)
 	}
 	// Find the deploy dispatch form's select and ensure main is not an option there.

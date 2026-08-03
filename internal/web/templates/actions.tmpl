@@ -22,15 +22,6 @@
   <input type="hidden" name="owner" value="{{.ActiveOwner}}">
   <input type="hidden" name="repo" value="{{.ActiveRepo}}">
   <div class="field">
-    <label for="actions-workflow">Workflow</label>
-    <select id="actions-workflow" name="workflow" data-autosubmit>
-      <option value="">All workflows</option>
-      {{range .ActionsWorkflows}}
-      <option value="{{.ID}}" {{if eq (printf "%d" .ID) $.ActionsWorkflowFilter}}selected{{end}}>{{.Name}}</option>
-      {{end}}
-    </select>
-  </div>
-  <div class="field">
     <label for="actions-branch">Branch</label>
     <input id="actions-branch" type="text" name="branch" value="{{.ActionsBranchFilter}}" placeholder="any" class="mono" autocomplete="off">
   </div>
@@ -42,94 +33,23 @@
 {{if .ActiveRepo}}
 <div class="section">
   <h2>Workflows</h2>
-  {{if .ActionsWorkflows}}
-  <div class="m-rows rows-all">
-    {{range .ActionsWorkflows}}
-    <div class="m-row" style="cursor:default">
-      <span class="m-row-main">
-        <span class="m-row-t">{{.Name}}
-          {{if eq .State "active"}}<span class="badge status-done">active</span>
-          {{else if .State}}<span class="badge">{{.State}}</span>{{end}}
-          {{if .Locked}}<span class="flag warn" title="Dispatch limited to configured branches">locked</span>{{end}}
-          {{if .Dispatchable}}<span class="badge">dispatch</span>{{end}}
-        </span>
-        <span class="m-row-s mono">{{.Path}}</span>
-      </span>
-    </div>
-    {{if and .Dispatchable $.CanGitHubWrite}}
-    <details class="section" style="margin:0.35rem 0 0.85rem;padding:0.65rem 0.85rem;border:1px solid var(--border);border-radius:var(--radius)">
-      <summary style="cursor:pointer;font-weight:500">Run workflow</summary>
-      <form method="post" action="/projects/{{$.Project}}/actions/dispatch" style="margin-top:0.75rem"
-            data-confirm="Dispatch {{.Name}} on the selected branch?"
-            data-confirm-title="Run workflow" data-confirm-ok="Dispatch">
-        {{template "csrf" $}}
-        <input type="hidden" name="owner" value="{{$.ActiveOwner}}">
-        <input type="hidden" name="repo" value="{{$.ActiveRepo}}">
-        <input type="hidden" name="workflow" value="{{.Path}}">
-        <div class="field" style="margin-bottom:0.65rem">
-          <label for="ref-{{.ID}}">Branch</label>
-          {{if .Branches}}
-          <select id="ref-{{.ID}}" name="ref" required class="mono">
-            {{range .Branches}}
-            <option value="{{.}}">{{.}}</option>
-            {{end}}
-          </select>
-          {{else}}
-          <input id="ref-{{.ID}}" type="text" name="ref" required class="mono" placeholder="main" autocomplete="off">
-          {{end}}
-          {{if .Locked}}
-          <p class="sub" style="margin:0.35rem 0 0">
-            <span class="flag warn">locked to: {{range $i, $b := .Branches}}{{if $i}}, {{end}}{{$b}}{{end}}</span>
-          </p>
-          {{end}}
-        </div>
-        {{$wfid := .ID}}
-        {{range .Inputs}}
-        <div class="field" style="margin-bottom:0.55rem">
-          {{if eq .Type "boolean"}}
-          <label class="check">
-            <input type="checkbox" name="input.{{.Name}}" value="true" {{if or (eq .Default "true") (eq .Default "True")}}checked{{end}}>
-            {{.Name}}{{if .Required}} *{{end}}
-            {{if .Description}}<span class="muted"> — {{.Description}}</span>{{end}}
-          </label>
-          {{else if eq .Type "choice"}}
-          <label for="input-{{$wfid}}-{{.Name}}">{{.Name}}{{if .Required}} *{{end}}</label>
-          {{if .Description}}<p class="sub" style="margin:0 0 0.25rem">{{.Description}}</p>{{end}}
-          <select id="input-{{$wfid}}-{{.Name}}" name="input.{{.Name}}" class="mono" {{if .Required}}required{{end}}>
-            {{$def := .Default}}
-            {{range .Options}}
-            <option value="{{.}}" {{if eq . $def}}selected{{end}}>{{.}}</option>
-            {{end}}
-          </select>
-          {{else}}
-          <label for="input-{{$wfid}}-{{.Name}}">{{.Name}}{{if .Required}} *{{end}}</label>
-          {{if .Description}}<p class="sub" style="margin:0 0 0.25rem">{{.Description}}</p>{{end}}
-          <input id="input-{{$wfid}}-{{.Name}}" type="text" name="input.{{.Name}}"
-                 value="{{.Default}}" class="mono" {{if .Required}}required{{end}} autocomplete="off">
-          {{end}}
-        </div>
-        {{end}}
-        <div class="form-actions"><button type="submit">Run workflow</button></div>
-      </form>
-    </details>
-    {{else if and .Dispatchable (not $.CanGitHubWrite)}}
-    <p class="sub muted" style="margin:0.25rem 0 0.75rem">Dispatching needs GitHub write permission for this project.</p>
-    {{end}}
-    {{end}}
+  <div class="live-region" id="live-actions-workflows"
+       hx-get="/partials/projects/{{.Project}}/actions/workflows?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}"
+       hx-trigger="load"
+       hx-target="this" hx-select="unset" hx-swap="innerHTML"
+       hx-sync="this:queue last">
+    {{template "actions_skeleton" .}}
   </div>
-  {{else if not .Error}}
-  <div class="empty">No workflows found.</div>
-  {{end}}
 </div>
 
 <div class="section">
   <h2>Recent runs</h2>
   <div class="live-region" id="live-actions-runs"
        hx-get="/partials/projects/{{.Project}}/actions/runs?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;workflow={{urlquery .ActionsWorkflowFilter}}&amp;branch={{urlquery .ActionsBranchFilter}}"
-       hx-trigger="every 15s"
+       hx-trigger="load, every 15s"
        hx-target="this" hx-select="unset" hx-swap="innerHTML"
        hx-sync="this:queue last">
-    {{template "actions_runs" .}}
+    {{template "actions_skeleton" .}}
   </div>
 </div>
 {{else if not .Error}}
@@ -137,8 +57,117 @@
 {{end}}
 {{end}}
 
+{{define "actions_skeleton"}}
+<div class="skel-rows" aria-hidden="true">
+  <div class="skel-row"><div class="skel-bar" style="width:38%"></div></div>
+  <div class="skel-row"><div class="skel-bar" style="width:54%"></div></div>
+  <div class="skel-row"><div class="skel-bar" style="width:46%"></div></div>
+</div>
+{{end}}
+
+{{define "actions_workflows"}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+{{if .ActionsWorkflows}}
+<div class="wf-register">
+  {{range .ActionsWorkflows}}
+  {{if and .Dispatchable $.CanGitHubWrite}}
+  <details class="wf-row wf-openable">
+    <summary class="wf-line">
+      <span class="wf-dot{{if ne .State "active"}} off{{end}}" title="{{.State}}"></span>
+      <span class="wf-main">
+        <span class="wf-name">{{.Name}}</span>
+        <span class="wf-path mono">{{.Path}}</span>
+      </span>
+      <span class="wf-meta">
+        {{if ne .State "active"}}<span class="wf-tag">{{.State}}</span>{{end}}
+        {{if .Locked}}<span class="wf-tag lock" title="Dispatch limited to configured branches">locked · {{range $i, $b := .Branches}}{{if $i}}, {{end}}{{$b}}{{end}}</span>{{end}}
+        <span class="wf-tag run">manual</span>
+      </span>
+    </summary>
+    <div class="wf-launch">
+      {{$wfid := .ID}}
+      <form method="post" action="/projects/{{$.Project}}/actions/dispatch"
+            data-confirm="Dispatch {{.Name}} on the selected branch?"
+            data-confirm-title="Run workflow" data-confirm-ok="Dispatch">
+        {{template "csrf" $}}
+        <input type="hidden" name="owner" value="{{$.ActiveOwner}}">
+        <input type="hidden" name="repo" value="{{$.ActiveRepo}}">
+        <input type="hidden" name="workflow" value="{{.Path}}">
+        <div class="wf-fields">
+          <div class="field">
+            <label for="ref-{{.ID}}">Branch</label>
+            {{if .Branches}}
+            <select id="ref-{{.ID}}" name="ref" required class="mono">
+              {{range .Branches}}
+              <option value="{{.}}">{{.}}</option>
+              {{end}}
+            </select>
+            {{else}}
+            <input id="ref-{{.ID}}" type="text" name="ref" required class="mono" placeholder="main" autocomplete="off">
+            {{end}}
+          </div>
+          {{range .Inputs}}
+          <div class="field">
+            {{if eq .Type "boolean"}}
+            <label class="check" style="margin-top:1.35rem">
+              <input type="checkbox" name="input.{{.Name}}" value="true" {{if or (eq .Default "true") (eq .Default "True")}}checked{{end}}>
+              {{.Name}}{{if .Required}} *{{end}}
+            </label>
+            {{else if eq .Type "choice"}}
+            <label for="input-{{$wfid}}-{{.Name}}" {{if .Description}}title="{{.Description}}"{{end}}>{{.Name}}{{if .Required}} *{{end}}</label>
+            <select id="input-{{$wfid}}-{{.Name}}" name="input.{{.Name}}" class="mono" {{if .Required}}required{{end}}>
+              {{$def := .Default}}
+              {{range .Options}}
+              <option value="{{.}}" {{if eq . $def}}selected{{end}}>{{.}}</option>
+              {{end}}
+            </select>
+            {{else}}
+            <label for="input-{{$wfid}}-{{.Name}}" {{if .Description}}title="{{.Description}}"{{end}}>{{.Name}}{{if .Required}} *{{end}}</label>
+            <input id="input-{{$wfid}}-{{.Name}}" type="text" name="input.{{.Name}}"
+                   value="{{.Default}}" class="mono" {{if .Required}}required{{end}} autocomplete="off">
+            {{end}}
+          </div>
+          {{end}}
+        </div>
+        <div class="wf-launch-actions">
+          {{if .Locked}}<span class="wf-locknote">Locked to: {{range $i, $b := .Branches}}{{if $i}}, {{end}}{{$b}}{{end}}</span>{{end}}
+          <button type="submit">Run workflow</button>
+        </div>
+      </form>
+    </div>
+  </details>
+  {{else}}
+  <div class="wf-row">
+    <div class="wf-line">
+      <span class="wf-dot{{if ne .State "active"}} off{{end}}" title="{{.State}}"></span>
+      <span class="wf-main">
+        <span class="wf-name">{{.Name}}</span>
+        <span class="wf-path mono">{{.Path}}</span>
+      </span>
+      <span class="wf-meta">
+        {{if ne .State "active"}}<span class="wf-tag">{{.State}}</span>{{end}}
+        {{if .Locked}}<span class="wf-tag lock" title="Dispatch limited to configured branches">locked · {{range $i, $b := .Branches}}{{if $i}}, {{end}}{{$b}}{{end}}</span>{{end}}
+        {{if .Dispatchable}}<span class="wf-tag run" title="Dispatching needs GitHub write permission for this project">manual</span>{{end}}
+      </span>
+    </div>
+  </div>
+  {{end}}
+  {{end}}
+</div>
+{{if not $.CanGitHubWrite}}
+<p class="sub muted" style="margin:0.5rem 0 0">Dispatching needs GitHub write permission for this project.</p>
+{{end}}
+{{else if not .Error}}
+<div class="empty">No workflows found.</div>
+{{end}}
+{{end}}
+
 {{define "actions_runs"}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+{{if .ActionsWorkflowFilter}}
+<p class="sub" style="margin:0 0 0.5rem">Filtered to one workflow ·
+  <a href="/projects/{{.Project}}/actions?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}{{if .ActionsBranchFilter}}&amp;branch={{urlquery .ActionsBranchFilter}}{{end}}">clear</a></p>
+{{end}}
 {{if .ActionsRuns}}
 <div class="table-scroll">
 <table>
@@ -162,7 +191,7 @@
       <td>
         <a class="pr-title" href="/projects/{{$.Project}}/actions/runs/{{.ID}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{if .Title}}{{.Title}}{{else}}#{{.Number}}{{end}}</a>
       </td>
-      <td class="mono">{{.WorkflowName}}</td>
+      <td class="mono">{{if .WorkflowID}}<a href="/projects/{{$.Project}}/actions?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}&amp;workflow={{.WorkflowID}}" title="Filter runs to this workflow">{{.WorkflowName}}</a>{{else}}{{.WorkflowName}}{{end}}</td>
       <td class="mono">{{.Branch}}{{if .ShortSHA}} <span class="muted">@ {{.ShortSHA}}</span>{{end}}</td>
       <td class="muted">{{.Event}}</td>
       <td class="mono muted">{{if not .CreatedAt.IsZero}}{{shortTime .CreatedAt}}{{end}}</td>
