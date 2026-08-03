@@ -930,6 +930,27 @@
     }
     .section[id], .card[id] { scroll-margin-top: 1.25rem; }
     code, .mono { font-family: var(--mono); font-size: 0.86em; }
+    /* Raw CI / command dumps (Actions job logs, etc.). Long unwrapped lines
+       must scroll inside the block, not expand the card past the viewport. */
+    .log-block {
+      display: block;
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      margin: 0.5rem 0 0;
+      padding: 0.7rem 0.85rem;
+      background: var(--surface-l1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.78rem;
+      line-height: 1.45;
+      overflow: auto;
+      max-height: min(70vh, 36rem);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      tab-size: 2;
+    }
     .muted { color: var(--muted); }
     a.muted[aria-disabled="true"] {
       cursor: not-allowed;
@@ -1173,6 +1194,13 @@
       border-radius: var(--radius-lg);
       padding: 1rem 1.1rem;
       box-shadow: var(--shadow-1);
+    }
+    /* Job cards host a .log-block; min-width:0 keeps long log lines from
+       pushing the card wider than the content column on phones. */
+    .job-card {
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
     }
     .card .label {
       color: var(--muted-soft);

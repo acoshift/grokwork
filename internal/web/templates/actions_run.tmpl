@@ -38,7 +38,7 @@
 {{define "actions_jobs"}}
 {{if .ActionsJobs}}
 {{range .ActionsJobs}}
-<div class="section card" style="margin-bottom:0.85rem" id="job-{{.ID}}">
+<div class="section card job-card" style="margin-bottom:0.85rem" id="job-{{.ID}}">
   <h3 style="margin:0 0 0.35rem;font-size:1rem">
     <span class="badge {{runBucketBadge .Bucket}}">{{if .Conclusion}}{{.Conclusion}}{{else}}{{.Status}}{{end}}</span>
     {{.Name}}
@@ -83,6 +83,6 @@
 <p class="sub">Showing the tail only
   {{if .ActionsJobURL}} — <a href="{{.ActionsJobURL}}" target="_blank" rel="noopener" hx-boost="false">open full on GitHub</a>{{end}}.</p>
 {{end}}
-<pre class="mono" id="job-log-body-{{.ActionsJobID}}">{{.ActionsJobLog}}</pre>
+<pre class="mono log-block" id="job-log-body-{{.ActionsJobID}}">{{.ActionsJobLog}}</pre>
 {{end}}
 {{end}}

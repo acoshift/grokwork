@@ -87,6 +87,9 @@ func actionsServer(t *testing.T) (*Server, *config.Config, *[]actionsGHCall) {
 			return nil, fmt.Errorf("unknown blob: %s", joined)
 		case name == "git" && strings.Contains(joined, "for-each-ref"):
 			return []byte("main\nfeature\nHEAD\nproduction\n"), nil
+		case name == "gh" && strings.Contains(joined, "run view") && strings.Contains(joined, "--log"):
+			// Long unwrapped line exercises the log-block overflow constraint.
+			return []byte("build\tCheckout\t" + strings.Repeat("x", 400) + "\nbuild\tCheckout\tok\n"), nil
 		case name == "gh" && strings.Contains(joined, "run view"):
 			return []byte(`{
 				"attempt":1,"displayTitle":"Deploy run","workflowName":"Deploy",
@@ -445,5 +448,39 @@ func TestRunBucketBadgeColors(t *testing.T) {
 	}
 	if runBucketBadge("pass") == runBucketBadge("pending") {
 		t.Fatal("pass and pending must use different badge classes")
+	}
+}
+
+func TestActionsRunPageJobLogResponsive(t *testing.T) {
+	srv, _, _ := actionsServer(t)
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Shell: job card + lazy log region.
+	body := getActionsFragment(t, srv, sid, "/projects/proj/actions/runs/99?owner=acme&repo=app")
+	for _, want := range []string{
+		`id="page-actions-run"`,
+		`class="section card job-card"`,
+		`id="job-log-1"`,
+		`/actions/runs/99/job?job=1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("run page missing %q:\n%s", want, body)
+		}
+	}
+	// Fragment: log body uses log-block so long lines stay inside the card.
+	logBody := getActionsFragment(t, srv, sid, "/projects/proj/actions/runs/99/job?job=1&owner=acme&repo=app")
+	for _, want := range []string{
+		`class="mono log-block"`,
+		`id="job-log-body-1"`,
+		"ok",
+	} {
+		if !strings.Contains(logBody, want) {
+			t.Fatalf("job log missing %q:\n%s", want, logBody)
+		}
+	}
+	if !strings.Contains(logBody, strings.Repeat("x", 400)) {
+		t.Fatal("job log body missing long line content")
 	}
 }
