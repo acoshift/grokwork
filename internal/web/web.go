@@ -750,6 +750,7 @@ type pageData struct {
 	ActionsJobID          int64
 	ActionsJobLog         string
 	ActionsJobLogClipped  bool
+	ActionsJobLogSummary  ghpr.JobLogSummary
 	ActionsJobURL         string
 	PR                    ghpr.PRDetail
 	PRNumber              int

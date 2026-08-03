@@ -88,8 +88,13 @@ func actionsServer(t *testing.T) (*Server, *config.Config, *[]actionsGHCall) {
 		case name == "git" && strings.Contains(joined, "for-each-ref"):
 			return []byte("main\nfeature\nHEAD\nproduction\n"), nil
 		case name == "gh" && strings.Contains(joined, "run view") && strings.Contains(joined, "--log"):
-			// Long unwrapped line exercises the log-block overflow constraint.
-			return []byte("build\tCheckout\t" + strings.Repeat("x", 400) + "\nbuild\tCheckout\tok\n"), nil
+			// Long unwrapped line exercises the log-block overflow constraint;
+			// buildx push lines feed the Build summary section.
+			return []byte(strings.Join([]string{
+				"build\tCheckout\t" + strings.Repeat("x", 400),
+				"build\tBuild and push\t#18 pushing manifest for ghcr.io/acme/app:main@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"build\tCheckout\tok",
+			}, "\n")), nil
 		case name == "gh" && strings.Contains(joined, "run view"):
 			return []byte(`{
 				"attempt":1,"displayTitle":"Deploy run","workflowName":"Deploy",
@@ -468,11 +473,16 @@ func TestActionsRunPageJobLogResponsive(t *testing.T) {
 			t.Fatalf("run page missing %q:\n%s", want, body)
 		}
 	}
-	// Fragment: log body uses log-block so long lines stay inside the card.
+	// Fragment: log body uses log-block so long lines stay inside the card;
+	// Build summary surfaces docker image refs above the raw log.
 	logBody := getActionsFragment(t, srv, sid, "/projects/proj/actions/runs/99/job?job=1&owner=acme&repo=app")
 	for _, want := range []string{
 		`class="mono log-block"`,
 		`id="job-log-body-1"`,
+		`id="job-log-summary-1"`,
+		"Build summary",
+		"Docker images",
+		"ghcr.io/acme/app:main",
 		"ok",
 	} {
 		if !strings.Contains(logBody, want) {

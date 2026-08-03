@@ -389,6 +389,7 @@ func (s *Server) actionsJobLog(ctx *hime.Context) error {
 	// re-fetching is expensive — show the open-on-GitHub link when we hit the cap.
 	d.ActionsJobLog = logText
 	d.ActionsJobLogClipped = len([]rune(logText)) >= actionsJobLogMaxRunes
+	d.ActionsJobLogSummary = ghpr.ExtractJobLogSummary(logText)
 	return s.viewFragment(ctx, "actions_run", "actions_job_log", d)
 }
 

@@ -79,6 +79,24 @@
 {{if .Error}}
 <div class="flash err">{{.Error}}</div>
 {{else}}
+{{if not .ActionsJobLogSummary.Empty}}
+<div class="log-summary" id="job-log-summary-{{.ActionsJobID}}">
+  <div class="log-summary-title">Build summary</div>
+  {{with .ActionsJobLogSummary.Images}}
+  <div class="log-summary-group">
+    <div class="log-summary-label">Docker images</div>
+    <ul class="log-summary-list">
+      {{range .}}
+      <li>
+        <span class="mono log-summary-ref">{{.Ref}}</span>
+        {{if .Digest}}<span class="mono muted log-summary-digest" title="{{.Digest}}">@ {{.ShortDigest}}</span>{{end}}
+      </li>
+      {{end}}
+    </ul>
+  </div>
+  {{end}}
+</div>
+{{end}}
 {{if .ActionsJobLogClipped}}
 <p class="sub">Showing the tail only
   {{if .ActionsJobURL}} — <a href="{{.ActionsJobURL}}" target="_blank" rel="noopener" hx-boost="false">open full on GitHub</a>{{end}}.</p>
