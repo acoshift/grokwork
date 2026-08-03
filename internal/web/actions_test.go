@@ -426,3 +426,24 @@ func TestActionsPageAuthOffStillRendersChrome(t *testing.T) {
 	}
 	assertNavActive(t, body, "Actions")
 }
+
+func TestRunBucketBadgeColors(t *testing.T) {
+	// pending (in_progress) and pass (success) must not share a badge class —
+	// live and status-done both paint green.
+	cases := map[string]string{
+		"pass":     "status-done",
+		"fail":     "status-error",
+		"pending":  "status-running",
+		"skipping": "status-cancelled",
+		"cancel":   "status-cancelled",
+		"other":    "",
+	}
+	for bucket, want := range cases {
+		if got := runBucketBadge(bucket); got != want {
+			t.Errorf("runBucketBadge(%q)=%q want %q", bucket, got, want)
+		}
+	}
+	if runBucketBadge("pass") == runBucketBadge("pending") {
+		t.Fatal("pass and pending must use different badge classes")
+	}
+}

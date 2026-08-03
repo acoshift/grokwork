@@ -48,7 +48,7 @@
   <ol class="deploy-steps" style="margin:0.5rem 0">
     {{range .Steps}}
     <li>
-      <span class="badge {{if eq .Conclusion "success"}}status-done{{else if or (eq .Conclusion "failure") (eq .Conclusion "timed_out")}}status-error{{else if eq .Status "in_progress"}}live{{else if or (eq .Conclusion "skipped") (eq .Conclusion "cancelled") (eq .Conclusion "canceled")}}status-cancelled{{end}}">{{if .Conclusion}}{{.Conclusion}}{{else}}{{.Status}}{{end}}</span>
+      <span class="badge {{if eq .Conclusion "success"}}status-done{{else if or (eq .Conclusion "failure") (eq .Conclusion "timed_out")}}status-error{{else if or (eq .Status "in_progress") (eq .Status "queued") (eq .Status "pending") (eq .Status "waiting")}}status-running{{else if or (eq .Conclusion "skipped") (eq .Conclusion "cancelled") (eq .Conclusion "canceled")}}status-cancelled{{end}}">{{if .Conclusion}}{{.Conclusion}}{{else}}{{.Status}}{{end}}</span>
       <span class="mono">{{.Name}}</span>
     </li>
     {{end}}
