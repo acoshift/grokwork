@@ -781,13 +781,13 @@ func TestProgressLoopPublishesWithoutDiscord(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 	stop := make(chan struct{})
-	var thoughts thoughtTracker
+	thoughts := newThoughtTracker(phaseLaneFor("remote", false))
 	thoughts.OnActivity("reading main.go")
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		// nil session + empty msgID → publish only (no Discord edit panic)
-		b.progressLoop(nil, threadID, "", "app", job, &thoughts, stop)
+		b.progressLoop(nil, threadID, "", "app", job, thoughts, stop)
 	}()
 	// progressInterval is 4s; wait for first tick + slack
 	deadline := time.Now().Add(progressInterval + 2*time.Second)

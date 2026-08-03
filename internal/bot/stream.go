@@ -551,24 +551,73 @@ func (p *streamPoster) finalize() bool {
 	return p.unpostedLocked() == ""
 }
 
-// Live progress phases (read → edit → test → PR).
+// Live progress phase lanes. Ship work keeps the classic
+// read → edit → test → PR/ship path; non-dev modes use shorter pipelines
+// so the status line does not imply a PR is coming.
+type phaseLaneKind string
+
+const (
+	laneShip        phaseLaneKind = "ship"
+	laneInvestigate phaseLaneKind = "investigate"
+	laneExplain     phaseLaneKind = "explain"
+	laneNone        phaseLaneKind = "none"
+)
+
+// Ship-lane indices (classifyShipPhase).
 const (
 	phaseRead = iota
 	phaseEdit
 	phaseTest
-	phasePR
-	phaseCount
+	phasePR // terminal deliverable: "PR" or "ship" label
 )
 
-var phaseLabels = [phaseCount]string{"read", "edit", "test", "PR"}
+// Investigate-lane indices (classifyInvestigatePhase).
+const (
+	phaseInvRead = iota
+	phaseInvDig
+	phaseInvReport
+)
+
+type phaseLane struct {
+	kind   phaseLaneKind
+	labels []string
+}
+
+// phaseLaneFor picks chips from the run's prompt contract (PrefixKind).
+// direct renames the terminal ship chip PR → ship.
+func phaseLaneFor(prefixKind string, direct bool) phaseLane {
+	switch strings.TrimSpace(strings.ToLower(prefixKind)) {
+	case "investigate":
+		return phaseLane{kind: laneInvestigate, labels: []string{"read", "dig", "report"}}
+	case "explain":
+		return phaseLane{kind: laneExplain, labels: []string{"draft"}}
+	case "none":
+		return phaseLane{kind: laneNone, labels: nil}
+	default:
+		last := "PR"
+		if direct {
+			last = "ship"
+		}
+		return phaseLane{kind: laneShip, labels: []string{"read", "edit", "test", last}}
+	}
+}
 
 type thoughtTracker struct {
 	mu       sync.Mutex
 	buf      strings.Builder
 	last     string
 	activity string
-	seen     [phaseCount]bool
+	lane     phaseLane
+	seen     []bool
 	current  int // only meaningful when seen[current]
+}
+
+func newThoughtTracker(lane phaseLane) *thoughtTracker {
+	t := &thoughtTracker{lane: lane}
+	if n := len(lane.labels); n > 0 {
+		t.seen = make([]bool, n)
+	}
+	return t
 }
 
 func (t *thoughtTracker) OnDelta(delta string) {
@@ -587,6 +636,11 @@ func (t *thoughtTracker) OnDelta(delta string) {
 		s = "…" + string(r[len(r)-79:])
 	}
 	t.last = s
+	// Explain is tools-off: light the draft chip on first assistant text.
+	if t.lane.kind == laneExplain && len(t.seen) > 0 {
+		t.seen[0] = true
+		t.current = 0
+	}
 }
 
 func (t *thoughtTracker) OnActivity(line string) {
@@ -596,7 +650,7 @@ func (t *thoughtTracker) OnActivity(line string) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if p := classifyPhase(line); p >= 0 {
+	if p := t.classify(line); p >= 0 && p < len(t.seen) {
 		t.seen[p] = true
 		t.current = p
 	}
@@ -633,16 +687,20 @@ func (t *thoughtTracker) Progress() (activity, phases string) {
 	} else {
 		activity = t.last
 	}
-	return activity, formatPhaseChips(t.seen, t.current)
+	return activity, formatPhaseChips(t.lane.labels, t.seen, t.current)
 }
 
-func formatPhaseChips(seen [phaseCount]bool, current int) string {
-	parts := make([]string, 0, phaseCount)
-	for i, lab := range phaseLabels {
+func formatPhaseChips(labels []string, seen []bool, current int) string {
+	if len(labels) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(labels))
+	for i, lab := range labels {
+		hit := i < len(seen) && seen[i]
 		switch {
-		case seen[i] && i == current:
+		case hit && i == current:
 			parts = append(parts, "**"+lab+"**")
-		case seen[i]:
+		case hit:
 			parts = append(parts, "✓"+lab)
 		default:
 			parts = append(parts, lab)
@@ -651,22 +709,32 @@ func formatPhaseChips(seen [phaseCount]bool, current int) string {
 	return strings.Join(parts, " → ")
 }
 
-// classifyPhase maps a tool activity line to a progress phase.
-// Returns -1 when the tool does not clearly match a chip.
-func classifyPhase(line string) int {
-	line = strings.TrimSpace(line)
-	if line == "" {
+func (t *thoughtTracker) classify(line string) int {
+	if t == nil {
 		return -1
 	}
-	name, detail := line, ""
-	if i := strings.Index(line, ":"); i >= 0 {
-		name = strings.TrimSpace(line[:i])
-		detail = strings.TrimSpace(line[i+1:])
+	switch t.lane.kind {
+	case laneShip:
+		return classifyShipPhase(line)
+	case laneInvestigate:
+		return classifyInvestigatePhase(line)
+	default:
+		return -1
 	}
-	name = strings.TrimPrefix(strings.ToLower(name), "tool ")
-	detailL := strings.ToLower(detail)
-	combined := name + " " + detailL
+}
 
+// classifyPhase is the ship-lane classifier (tests + callers that only mean ship).
+func classifyPhase(line string) int {
+	return classifyShipPhase(line)
+}
+
+// classifyShipPhase maps a tool activity line to a ship-lane index.
+// Returns -1 when the tool does not clearly match a chip.
+func classifyShipPhase(line string) int {
+	name, detailL, combined := parseActivityLine(line)
+	if name == "" && detailL == "" {
+		return -1
+	}
 	if isPRActivity(combined, detailL) {
 		return phasePR
 	}
@@ -680,6 +748,51 @@ func classifyPhase(line string) int {
 		return phaseRead
 	}
 	return -1
+}
+
+// classifyInvestigatePhase: read (files/grep) → dig (shell diagnostics) → report
+// (terminal; not lit by tools — the reply is the report).
+func classifyInvestigatePhase(line string) int {
+	name, detailL, _ := parseActivityLine(line)
+	if name == "" && detailL == "" {
+		return -1
+	}
+	// Edit tools are not part of investigate; isReadActivity also matches names
+	// containing "search" (e.g. search_replace), so reject edits first.
+	if isEditActivity(name, detailL) {
+		return -1
+	}
+	if isReadActivity(name, detailL) {
+		return phaseInvRead
+	}
+	if isShellActivity(name) {
+		return phaseInvDig
+	}
+	return -1
+}
+
+func parseActivityLine(line string) (name, detailL, combined string) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", "", ""
+	}
+	name, detail := line, ""
+	if i := strings.Index(line, ":"); i >= 0 {
+		name = strings.TrimSpace(line[:i])
+		detail = strings.TrimSpace(line[i+1:])
+	}
+	name = strings.TrimPrefix(strings.ToLower(name), "tool ")
+	detailL = strings.ToLower(detail)
+	combined = name + " " + detailL
+	return name, detailL, combined
+}
+
+func isShellActivity(name string) bool {
+	switch name {
+	case "run_terminal_command", "run_terminal_cmd", "bash", "shell":
+		return true
+	}
+	return false
 }
 
 func isPRActivity(combined, detail string) bool {

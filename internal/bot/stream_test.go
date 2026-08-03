@@ -394,7 +394,7 @@ func TestStreamPosterLiveShowsTail(t *testing.T) {
 }
 
 func TestThoughtTrackerActivity(t *testing.T) {
-	var tr thoughtTracker
+	tr := newThoughtTracker(phaseLaneFor("remote", false))
 	tr.OnDelta("Analyzing the codebase")
 	tr.OnActivity("tool bash")
 	got := tr.Latest()
@@ -404,7 +404,7 @@ func TestThoughtTrackerActivity(t *testing.T) {
 }
 
 func TestThoughtTrackerPhases(t *testing.T) {
-	var tr thoughtTracker
+	tr := newThoughtTracker(phaseLaneFor("remote", false))
 	_, phases := tr.Progress()
 	if phases != "read → edit → test → PR" {
 		t.Fatalf("idle chips: %q", phases)
@@ -438,6 +438,91 @@ func TestThoughtTrackerPhases(t *testing.T) {
 	}
 }
 
+func TestThoughtTrackerPhasesDirectShip(t *testing.T) {
+	tr := newThoughtTracker(phaseLaneFor("remote", true))
+	_, phases := tr.Progress()
+	if phases != "read → edit → test → ship" {
+		t.Fatalf("idle direct chips: %q", phases)
+	}
+	tr.OnActivity("run_terminal_command: git push -u origin HEAD")
+	_, phases = tr.Progress()
+	if phases != "read → edit → test → **ship**" {
+		t.Fatalf("after push: %q", phases)
+	}
+}
+
+func TestThoughtTrackerPhasesInvestigate(t *testing.T) {
+	tr := newThoughtTracker(phaseLaneFor("investigate", false))
+	_, phases := tr.Progress()
+	if phases != "read → dig → report" {
+		t.Fatalf("idle investigate chips: %q", phases)
+	}
+
+	tr.OnActivity("read_file: internal/bot/stream.go")
+	_, phases = tr.Progress()
+	if phases != "**read** → dig → report" {
+		t.Fatalf("after read: %q", phases)
+	}
+
+	// Pure inspection stays on read; diagnostic shell lights dig.
+	tr.OnActivity("run_terminal_command: ls -la")
+	_, phases = tr.Progress()
+	if phases != "**read** → dig → report" {
+		t.Fatalf("ls should stay read: %q", phases)
+	}
+
+	tr.OnActivity("run_terminal_command: psql -c 'select 1'")
+	_, phases = tr.Progress()
+	if phases != "✓read → **dig** → report" {
+		t.Fatalf("after dig: %q", phases)
+	}
+
+	// Shipping tools must not light a PR chip on investigate.
+	tr.OnActivity("run_terminal_command: gh pr create --title no")
+	_, phases = tr.Progress()
+	if strings.Contains(phases, "PR") || strings.Contains(phases, "edit") {
+		t.Fatalf("investigate must not show ship chips: %q", phases)
+	}
+	if phases != "✓read → **dig** → report" {
+		t.Fatalf("gh pr on investigate: %q", phases)
+	}
+}
+
+func TestThoughtTrackerPhasesExplain(t *testing.T) {
+	tr := newThoughtTracker(phaseLaneFor("explain", false))
+	_, phases := tr.Progress()
+	if phases != "draft" {
+		t.Fatalf("idle explain chips: %q", phases)
+	}
+	tr.OnDelta("Here is a customer-safe draft…")
+	_, phases = tr.Progress()
+	if phases != "**draft**" {
+		t.Fatalf("after text: %q", phases)
+	}
+}
+
+func TestPhaseLaneFor(t *testing.T) {
+	cases := []struct {
+		prefix string
+		direct bool
+		want   string
+	}{
+		{"remote", false, "read → edit → test → PR"},
+		{"remote", true, "read → edit → test → ship"},
+		{"", false, "read → edit → test → PR"},
+		{"investigate", false, "read → dig → report"},
+		{"explain", false, "draft"},
+		{"none", false, ""},
+	}
+	for _, tc := range cases {
+		lane := phaseLaneFor(tc.prefix, tc.direct)
+		got := formatPhaseChips(lane.labels, nil, -1)
+		if got != tc.want {
+			t.Errorf("phaseLaneFor(%q, %v)=%q want %q", tc.prefix, tc.direct, got, tc.want)
+		}
+	}
+}
+
 func TestClassifyPhase(t *testing.T) {
 	cases := []struct {
 		line string
@@ -459,6 +544,27 @@ func TestClassifyPhase(t *testing.T) {
 	for _, tc := range cases {
 		if got := classifyPhase(tc.line); got != tc.want {
 			t.Errorf("classifyPhase(%q)=%d want %d", tc.line, got, tc.want)
+		}
+	}
+}
+
+func TestClassifyInvestigatePhase(t *testing.T) {
+	cases := []struct {
+		line string
+		want int
+	}{
+		{"read_file: bot.go", phaseInvRead},
+		{"grep: TODO", phaseInvRead},
+		{"run_terminal_command: ls -la", phaseInvRead},
+		{"run_terminal_command: psql -c select", phaseInvDig},
+		{"run_terminal_command: kubectl logs pod", phaseInvDig},
+		{"bash: journalctl -u api", phaseInvDig},
+		{"search_replace: a.go", -1},
+		{"", -1},
+	}
+	for _, tc := range cases {
+		if got := classifyInvestigatePhase(tc.line); got != tc.want {
+			t.Errorf("classifyInvestigatePhase(%q)=%d want %d", tc.line, got, tc.want)
 		}
 	}
 }

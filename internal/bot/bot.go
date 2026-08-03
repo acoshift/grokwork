@@ -1709,10 +1709,11 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	// Direct-mode sessions also revive done/abandoned after a prior ship.
 	b.applyAutoLabelOnRunStart(threadID, proj.Name, actor)
 
-	var thoughts thoughtTracker
+	lane := phaseLaneFor(pol.PrefixKind, pol.AllowDirectShip)
+	thoughts := newThoughtTracker(lane)
 	var statusID string
 	if present {
-		workHeader := workingStatus(proj.Name, 0, "", formatPhaseChips([phaseCount]bool{}, -1))
+		workHeader := workingStatus(proj.Name, 0, "", formatPhaseChips(lane.labels, nil, -1))
 		// Prefer upgrading the early-ack message so the thread stays one status card.
 		if item.statusMsgID != "" {
 			if err := discordEditComponents(s, threadID, item.statusMsgID, workHeader, actionBarRunning(threadID, b.sessionWebURL(threadID)), true); err != nil {
@@ -1756,7 +1757,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	progressWG.Add(1)
 	go func() {
 		defer progressWG.Done()
-		b.progressLoop(s, threadID, statusID, proj.Name, job, &thoughts, stopProgress)
+		b.progressLoop(s, threadID, statusID, proj.Name, job, thoughts, stopProgress)
 	}()
 	defer b.clearRunActivity(threadID)
 
@@ -2618,7 +2619,7 @@ func (b *Bot) progressLoop(s *discordgo.Session, threadID, msgID, project string
 		case <-stop:
 			return
 		case <-ticker.C:
-			activity, phases := "", formatPhaseChips([phaseCount]bool{}, -1)
+			activity, phases := "", ""
 			if thoughts != nil {
 				activity, phases = thoughts.Progress()
 			}
