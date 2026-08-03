@@ -149,7 +149,9 @@ func TestActionsPageRenders(t *testing.T) {
 		t.Fatal("missing page-actions marker")
 	}
 	assertNavActive(t, body, "Actions")
-	for _, want := range []string{"Deploy", "Recent runs", "Deploy run", "Run workflow"} {
+	// rows-all keeps the workflows card visible on desktop — plain .m-rows is
+	// phone-only (base CSS hides it), which is exactly the bug this pins.
+	for _, want := range []string{"Deploy", "Recent runs", "Deploy run", "Run workflow", `class="m-rows rows-all"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("actions page missing %q", want)
 		}

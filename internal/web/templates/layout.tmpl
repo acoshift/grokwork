@@ -581,6 +581,71 @@
     .ws-start { display: none; }
     .m-rows { display: none; }
     .m-only { display: none; }
+    /* Structural styles for .m-rows live at top level (inert while hidden) so
+       .rows-all can opt a list into desktop rendering too — used where a
+       stacked row list is the only presentation (no desktop table twin, e.g.
+       the Actions workflows card). The phone block below only flips display. */
+    .m-rows.rows-all { display: block; }
+    .m-rows {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-1);
+      overflow: hidden;
+    }
+    .m-row {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      min-height: 3.3rem;
+      padding: 0.62rem 0.9rem;
+      position: relative;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .m-row + .m-row { border-top: 1px solid var(--border); }
+    a.m-row:hover { background: var(--surface-l1); text-decoration: none; }
+    .m-row-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.16rem;
+    }
+    .m-row-t {
+      font-size: 0.93rem;
+      font-weight: 550;
+      line-height: 1.35;
+      letter-spacing: -0.01em;
+      overflow-wrap: anywhere;
+      /* Long prompts/subjects: two lines, then ellipsis. */
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .m-row-t.mono { font-size: 0.84rem; }
+    .m-row-s {
+      font-size: 0.77rem;
+      color: var(--muted);
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+    .m-row-s .mono { font-size: 0.73rem; }
+    .m-row > .badge { flex-shrink: 0; }
+    .m-row-act { flex-shrink: 0; position: relative; z-index: 1; }
+    .m-row-act .btn-danger { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+    /* Trailing disclosure chevron on tappable rows. */
+    a.m-row::after {
+      content: "";
+      flex-shrink: 0;
+      width: 0.55rem;
+      height: 0.55rem;
+      border-right: 2px solid var(--muted-soft);
+      border-top: 2px solid var(--muted-soft);
+      transform: rotate(45deg);
+      margin-left: -0.1rem;
+    }
     /* Icons keyed by data-icon (not href): workspace URLs embed the project
        name, so href selectors cannot be static. */
     #side-nav a[data-icon="projects"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='7' height='7' rx='1.5'/%3E%3Crect x='14' y='3' width='7' height='7' rx='1.5'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1.5'/%3E%3Crect x='14' y='14' width='7' height='7' rx='1.5'/%3E%3C/svg%3E"); }
@@ -3834,70 +3899,13 @@
       /* ── Mobile list rows (.m-rows replaces wide tables on phones) ──
          Desktop hides .m-rows (base rule); phones hide the table instead
          and show the grouped list. Both render from the same template data
-         inside the same live region, so SSE refreshes update either. */
+         inside the same live region, so SSE refreshes update either.
+         Structural styles live at top level next to the base rule (so the
+         .rows-all variant renders on desktop too); this block only flips
+         visibility. */
       .m-hide { display: none !important; }
       .m-only { display: block; }
-      .m-rows {
-        display: block;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-        box-shadow: var(--shadow-1);
-        overflow: hidden;
-      }
-      .m-row {
-        display: flex;
-        align-items: center;
-        gap: 0.7rem;
-        min-height: 3.3rem;
-        padding: 0.62rem 0.9rem;
-        position: relative;
-        color: var(--text);
-        text-decoration: none;
-      }
-      .m-row + .m-row { border-top: 1px solid var(--border); }
-      a.m-row:hover { background: var(--surface-l1); text-decoration: none; }
-      .m-row-main {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 0.16rem;
-      }
-      .m-row-t {
-        font-size: 0.93rem;
-        font-weight: 550;
-        line-height: 1.35;
-        letter-spacing: -0.01em;
-        overflow-wrap: anywhere;
-        /* Long prompts/subjects: two lines, then ellipsis. */
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-      .m-row-t.mono { font-size: 0.84rem; }
-      .m-row-s {
-        font-size: 0.77rem;
-        color: var(--muted);
-        line-height: 1.4;
-        overflow-wrap: anywhere;
-      }
-      .m-row-s .mono { font-size: 0.73rem; }
-      .m-row > .badge { flex-shrink: 0; }
-      .m-row-act { flex-shrink: 0; position: relative; z-index: 1; }
-      .m-row-act .btn-danger { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
-      /* Trailing disclosure chevron on tappable rows. */
-      a.m-row::after {
-        content: "";
-        flex-shrink: 0;
-        width: 0.55rem;
-        height: 0.55rem;
-        border-right: 2px solid var(--muted-soft);
-        border-top: 2px solid var(--muted-soft);
-        transform: rotate(45deg);
-        margin-left: -0.1rem;
-      }
+      .m-rows { display: block; }
       /* ── Session detail: Messages-style composer replaces the tab bar
          (native detail screens push the tab bar away; back-nav stays via
          the pill strip / crumb). Keyed off the composer itself — read-only
