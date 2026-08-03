@@ -79,6 +79,7 @@
 {{if .Error}}
 <div class="flash err">{{.Error}}</div>
 {{else}}
+<div class="job-log">
 {{if not .ActionsJobLogSummary.Empty}}
 <div class="log-summary" id="job-log-summary-{{.ActionsJobID}}">
   <div class="log-summary-title">Build summary</div>
@@ -98,9 +99,10 @@
 </div>
 {{end}}
 {{if .ActionsJobLogClipped}}
-<p class="sub">Showing the tail only
+<p class="sub job-log-note">Showing the tail only
   {{if .ActionsJobURL}} — <a href="{{.ActionsJobURL}}" target="_blank" rel="noopener" hx-boost="false">open full on GitHub</a>{{end}}.</p>
 {{end}}
 <pre class="mono log-block" id="job-log-body-{{.ActionsJobID}}">{{.ActionsJobLog}}</pre>
+</div>
 {{end}}
 {{end}}

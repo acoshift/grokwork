@@ -477,6 +477,7 @@ func TestActionsRunPageJobLogResponsive(t *testing.T) {
 	// Build summary surfaces docker image refs above the raw log.
 	logBody := getActionsFragment(t, srv, sid, "/projects/proj/actions/runs/99/job?job=1&owner=acme&repo=app")
 	for _, want := range []string{
+		`class="job-log"`,
 		`class="mono log-block"`,
 		`id="job-log-body-1"`,
 		`id="job-log-summary-1"`,
