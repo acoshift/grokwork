@@ -347,7 +347,7 @@ func TestSessionAbandonHiddenWhenDone(t *testing.T) {
 	}
 }
 
-// TestSessionAbandonShownWhenActive: non-terminal live session shows Abandon.
+// TestSessionAbandonShownWhenActive: non-terminal live session shows Mark as done + Abandon.
 func TestSessionAbandonShownWhenActive(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	seedOwned(t, srv, "active-th", "member-1", "Member One")
@@ -363,6 +363,9 @@ func TestSessionAbandonShownWhenActive(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
+	if !strings.Contains(body, `id="btn-mark-done"`) {
+		t.Fatal("active session should show Mark as done")
+	}
 	if !strings.Contains(body, `id="btn-abandon"`) {
 		t.Fatal("active session should show Abandon")
 	}
@@ -371,6 +374,66 @@ func TestSessionAbandonShownWhenActive(t *testing.T) {
 	}
 	if strings.Contains(body, "Reset session") {
 		t.Fatal("web must not show Reset session label")
+	}
+}
+
+// TestSessionMarkDoneSuccess: close-out Mark as done stamps the label, keeps
+// the session entry (unlike Abandon), and hides the close-out zone.
+func TestSessionMarkDoneSuccess(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	seedOwned(t, srv, "mark-done-ok", "member-1", "Member One")
+	if _, _, err := srv.sessions.Patch("mark-done-ok", func(e *sessionstore.Entry) {
+		e.SessionID = "sess-keep"
+		e.WorktreeBranch = "grokwork/mark-done-ok"
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/sessions/mark-done-ok/label", sid, csrf, url.Values{"label": {"done"}})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/sessions/mark-done-ok") {
+		t.Fatalf("Location=%q want /sessions/mark-done-ok", loc)
+	}
+	if !strings.Contains(loc, "ok=") || !strings.Contains(loc, "done") {
+		t.Fatalf("Location=%q want Session marked as done flash", loc)
+	}
+	e, ok := srv.sessions.Get("mark-done-ok")
+	if !ok {
+		t.Fatal("mark done must keep the session")
+	}
+	if e.EffectiveLabel() != sessionstore.LabelDone {
+		t.Fatalf("label=%q want done", e.EffectiveLabel())
+	}
+	if !e.LabelManual {
+		t.Fatal("mark done should set LabelManual")
+	}
+	if e.SessionID != "sess-keep" {
+		t.Fatalf("SessionID cleared: %q (mark done must not wipe session id)", e.SessionID)
+	}
+	if e.WorktreeBranch != "grokwork/mark-done-ok" {
+		t.Fatalf("WorktreeBranch cleared: %q", e.WorktreeBranch)
+	}
+	assertAuditAction(t, srv, audit.ActionSessionLabel, true)
+
+	req := httptest.NewRequest(http.MethodGet, loc, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	rw := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rw, req)
+	if rw.Code != http.StatusOK {
+		t.Fatalf("session page status=%d body=%s", rw.Code, rw.Body.String())
+	}
+	body := rw.Body.String()
+	if !strings.Contains(body, "Session marked as done") {
+		t.Fatal("missing mark-done flash on session page")
+	}
+	if strings.Contains(body, `id="session-danger"`) || strings.Contains(body, `id="btn-mark-done"`) || strings.Contains(body, `id="btn-abandon"`) {
+		t.Fatal("close-out zone must be hidden after mark done")
 	}
 }
 
@@ -595,6 +658,8 @@ func TestSessionRailControlsForMember(t *testing.T) {
 		`id="btn-label"`,
 		`action="/sessions/rail-th/goal"`,
 		`id="btn-goal"`,
+		`id="btn-mark-done"`,
+		`name="label" value="done"`,
 		`action="/sessions/rail-th/reset"`,
 		`id="btn-abandon"`,
 	} {

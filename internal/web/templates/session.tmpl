@@ -298,19 +298,25 @@
 </div>
 {{end}}
 
-{{/* Web-only: terminal units (done/abandoned) need no danger zone — worktree
-     cleanup is automatic after ship/PR close. Active units get Abandon, which
-     still hits the same /reset backend as Discord /reset. */}}
+{{/* Web-only: terminal units (done/abandoned) need no close-out zone — worktree
+     cleanup is automatic after ship/PR close. Active units get Mark as done
+     (label only, via /label) and Abandon (same /reset backend as Discord /reset). */}}
 {{if and .CanControlSession .HasSession}}
 {{$lab := .SessionEntry.EffectiveLabel}}
 {{if and (ne $lab "done") (ne $lab "abandoned")}}
 <div class="rail-group" id="session-danger">
-  <div class="rail-group-title">Danger zone</div>
+  <div class="rail-group-title">Close out</div>
+  <form method="post" action="/sessions/{{.ThreadID}}/label" data-confirm="Mark this session as done? PR links and history stay; worktree cleanup still follows terminal PRs / idle TTL." data-confirm-title="Mark as done" data-confirm-ok="Mark as done">
+    {{template "csrf" $}}
+    <input type="hidden" name="label" value="done">
+    <div class="form-actions"><button type="submit" id="btn-mark-done" class="btn-secondary">Mark as done</button></div>
+  </form>
+  <p class="rail-note">Ships the lifecycle label only — does not wipe the worktree.</p>
   <form method="post" action="/sessions/{{.ThreadID}}/reset" data-confirm="Abandon this session? Removes the worktree and managed branch, and clears the session. This cannot be undone." data-confirm-title="Abandon session" data-confirm-ok="Abandon" data-confirm-danger>
     {{template "csrf" $}}
     <div class="form-actions"><button type="submit" id="btn-abandon" class="btn-danger"{{if .RunBusy}} disabled title="Cancel the active run before abandoning"{{end}}>Abandon</button></div>
   </form>
-  <p class="rail-note">History stays.</p>
+  <p class="rail-note">Removes worktree and branch. History stays.</p>
 </div>
 {{end}}
 {{end}}

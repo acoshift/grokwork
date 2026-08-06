@@ -145,7 +145,11 @@ func (s *Server) postSessionLabel(ctx *hime.Context) error {
 	if setErr != nil {
 		return s.sessionRedirect(ctx, threadID, "", setErr.Error())
 	}
-	return s.sessionRedirect(ctx, threadID, "Label updated.", "")
+	ok := "Label updated."
+	if lab, parsed := sessionstore.ParseLabel(label); parsed && lab == sessionstore.LabelDone {
+		ok = "Session marked as done."
+	}
+	return s.sessionRedirect(ctx, threadID, ok, "")
 }
 
 // postSessionGoal sets the sticky goal.
