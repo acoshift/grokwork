@@ -79,6 +79,16 @@ func (c Capabilities) CanInvestigateShell() bool {
 	return c.FileEscalation || c.SafeOps || c.CanShip()
 }
 
+// CanStorageWrite is true when the user may upload to / delete from a project's
+// linked GCS bucket (the Files page). Same composition as CanInvestigateShell —
+// no builtin template grants SafeOps, so gating on SafeOps alone would refuse
+// every default deployment including admins — but kept as its own predicate:
+// shell access and shared-storage writes are separate grants that happen to
+// share a floor today. Builtin operator stays read-only on purpose.
+func (c Capabilities) CanStorageWrite() bool {
+	return c.FileEscalation || c.SafeOps || c.CanShip()
+}
+
 // TemplateName lookup: project overlay then builtin. Unknown → zero + false.
 func (c *Config) ResolveTemplate(project, name string) (Capabilities, bool) {
 	name = strings.TrimSpace(strings.ToLower(name))

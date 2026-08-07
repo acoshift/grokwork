@@ -18,6 +18,7 @@ import (
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/deploy"
+	"github.com/acoshift/grokwork/internal/gcs"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
@@ -54,8 +55,9 @@ type Server struct {
 	// second one over the same file — see bot.SetIdentity.
 	identity *identity.Store
 	// Test injectables (nil → production defaults).
-	ghRunner ghpr.Runner
-	deploys  *deploy.Engine
+	ghRunner  ghpr.Runner
+	gcsRunner gcs.Runner
+	deploys   *deploy.Engine
 	// deployScanLimit bounds the /deploys board's fold over the run store
 	// (0 → deploy.DefaultLaneScanLimit); tests shrink it to reach the clipped
 	// path without writing hundreds of records.
@@ -158,6 +160,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.removeProject":               "/config/projects/remove",
 		"config.setProjectLinear":            "/config/projects/linear",
 		"config.setProjectGitHub":            "/config/projects/github",
+		"config.setProjectStorage":           "/config/projects/storage",
 		"config.setProjectChannel":           "/config/projects/channel",
 		"config.setProjectFetch":             "/config/projects/fetch",
 		"config.setProjectShip":              "/config/projects/ship",
@@ -296,6 +299,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("deploys", "layout.tmpl", "deploys.tmpl")
 	tp.ParseFiles("deploys_board", "layout.tmpl", "deploys_board.tmpl")
 	tp.ParseFiles("deploy_run", "layout.tmpl", "deploy_run.tmpl")
+	tp.ParseFiles("files", "layout.tmpl", "files.tmpl")
 	tp.ParseFiles("actions", "layout.tmpl", "actions.tmpl")
 	tp.ParseFiles("actions_run", "layout.tmpl", "actions_run.tmpl")
 	tp.ParseFiles("commit_detail", "layout.tmpl", "commit_detail.tmpl", "diff_review.tmpl")
@@ -401,6 +405,14 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeployCancel))))
 	mux.Handle("POST /projects/{project}/deploys/{runID}/redeploy",
 		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeployRedeploy))))
+	// Project file storage (GCS). Page + download are membership-only reads;
+	// upload/delete need the storage feature flag and SafeOps in the handler.
+	mux.Handle("GET /projects/{project}/files", s.requireAuth(hime.Handler(s.filesPage)))
+	mux.Handle("GET /projects/{project}/files/download", s.requireAuth(hime.Handler(s.fileDownload)))
+	mux.Handle("POST /projects/{project}/files/upload",
+		s.requireFeature("storage", s.requireMember(hime.Handler(s.postFileUpload))))
+	mux.Handle("POST /projects/{project}/files/delete",
+		s.requireFeature("storage", s.requireMember(hime.Handler(s.postFileDelete))))
 	// GitHub Actions: list/dispatch workflows + run history (polling, not SSE).
 	mux.Handle("GET /projects/{project}/actions", s.requireAuth(hime.Handler(s.actionsPage)))
 	mux.Handle("GET /projects/{project}/actions/runs/{runID}", s.requireAuth(hime.Handler(s.actionsRunPage)))
@@ -530,6 +542,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/remove", s.requireAdmin(hime.Handler(s.removeProject)))
 	mux.Handle("POST /config/projects/linear", s.requireAdmin(hime.Handler(s.setProjectLinear)))
 	mux.Handle("POST /config/projects/github", s.requireAdmin(hime.Handler(s.setProjectGitHub)))
+	mux.Handle("POST /config/projects/storage", s.requireAdmin(hime.Handler(s.setProjectStorage)))
 	mux.Handle("POST /config/projects/channel", s.requireAdmin(hime.Handler(s.setProjectChannel)))
 	mux.Handle("POST /config/projects/fetch", s.requireAdmin(hime.Handler(s.setProjectFetch)))
 	mux.Handle("POST /config/projects/ship", s.requireAdmin(hime.Handler(s.setProjectShip)))
@@ -617,6 +630,7 @@ type pageData struct {
 	IsReviews   bool
 	IsStart     bool
 	IsDeploys   bool
+	IsFiles     bool
 	IsActions   bool
 	IsSpend     bool
 	IsAccount   bool
@@ -728,6 +742,20 @@ type pageData struct {
 	DeployBoard deployBoard
 	// CanGenerateManifest gates the "write this with an agent" form.
 	CanGenerateManifest bool
+	// Project Files page (GCS). StorageNotConfigured is the normal empty state
+	// when no bucket is linked — same contract as DeployNotConfigured.
+	StorageNotConfigured bool
+	StorageBucket        string
+	StoragePrefix        string
+	FilesPath            string
+	FilesCrumbs          []fileCrumb
+	FilesRows            []fileRow
+	FilesTotal           int
+	FilesClipped         bool
+	// CanStorageWrite is feature on + SafeOps. StorageFeatureOn is the flag alone
+	// so the page can explain why write controls are missing.
+	CanStorageWrite  bool
+	StorageFeatureOn bool
 	// Deploy settings tab.
 	DeployCapabilityNames []string
 	DeployFeatureOn       bool

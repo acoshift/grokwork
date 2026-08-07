@@ -167,6 +167,34 @@
   </form>
 </div>
 
+<div class="section card" id="project-storage">
+  <h2>File storage (GCS)</h2>
+  <p class="sub" style="margin-top:0">
+    Link one Google Cloud Storage bucket for the project’s <a href="/projects/{{.ProjectItem.Name}}/files">Files</a> page
+    (browse, upload, download, delete). The bucket is provisioned out of band —
+    grokwork only reads and writes objects under an optional prefix.
+    The host needs an authenticated <span class="mono">gcloud</span> CLI (ADC) with access to the bucket.
+    Clear the bucket name to unlink.
+  </p>
+  <form method="post" action="{{route "config.setProjectStorage"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div class="inline" style="grid-template-columns: 1fr 1fr auto; align-items:end">
+      <div>
+        <label for="project-storage-bucket">GCS bucket</label>
+        <input id="project-storage-bucket" type="text" name="gcsBucket" value="{{.ProjectItem.StorageBucket}}"
+          placeholder="acme-app-files" class="mono" autocomplete="off">
+      </div>
+      <div>
+        <label for="project-storage-prefix">Prefix (optional)</label>
+        <input id="project-storage-prefix" type="text" name="prefix" value="{{.ProjectItem.StoragePrefix}}"
+          placeholder="grokwork" class="mono" autocomplete="off">
+      </div>
+      <button type="submit">Save storage</button>
+    </div>
+  </form>
+</div>
+
 <div class="section card" id="project-repo-fetch">
   <h2>Repo freshness</h2>
   <p class="sub" style="margin-top:0">

@@ -657,6 +657,8 @@
     #side-nav a[data-icon="reviews"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cpath d='m9 15 2 2 4-4'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="linear"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2 2 7l10 5 10-5-10-5z'/%3E%3Cpath d='M2 17l10 5 10-5'/%3E%3Cpath d='M2 12l10 5 10-5'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="commits"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cline x1='1.5' y1='12' x2='8' y2='12'/%3E%3Cline x1='16' y1='12' x2='22.5' y2='12'/%3E%3C/svg%3E"); }
+    {{/* Files is a folder-with-document: distinct from Commits (node) and Deploys (upload). */}}
+    #side-nav a[data-icon="files"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z'/%3E%3Cpath d='M12 11v6'/%3E%3Cpath d='M9 14h6'/%3E%3C/svg%3E"); }
     {{/* Deploys is a distinct glyph from Ship (upload-to-a-box, not a paper
          plane): they sit two apart in the same list and shipping code to a
          branch is not the same act as deploying it to an environment. */}}
@@ -4691,6 +4693,7 @@
         <a href="/projects/{{.NavProject}}/issues" data-icon="issues" class="{{if .IsIssues}}active{{end}}">Issues</a>
         {{if .NavLinearEnabled}}<a href="/projects/{{.NavProject}}/linear" data-icon="linear" class="{{if .IsLinear}}active{{end}}">Linear</a>{{end}}
         <a href="/projects/{{.NavProject}}/commits" data-icon="commits" class="{{if .IsCommits}}active{{end}}">Commits</a>
+        <a href="/projects/{{.NavProject}}/files" data-icon="files" class="{{if .IsFiles}}active{{end}}">Files</a>
         <a href="/projects/{{.NavProject}}/deploys" data-icon="deploys" class="{{if .IsDeploys}}active{{end}}">Deploys</a>
         <a href="/projects/{{.NavProject}}/actions" data-icon="actions" class="{{if .IsActions}}active{{end}}">Actions</a>
         <a href="/projects/{{.NavProject}}/sessions" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">Sessions</a>

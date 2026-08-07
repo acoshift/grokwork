@@ -176,6 +176,8 @@ func TestPagesRender(t *testing.T) {
 		// Deploys renders its own chrome even when the project path is not a git
 		// checkout (this fixture is not): the page reports that inline.
 		{"/projects/proj/deploys", `id="page-deploys"`},
+		// Files same contract: page chrome with no bucket configured.
+		{"/projects/proj/files", `id="page-project-files"`},
 		// Actions same contract: page chrome even when gh/catalog is unavailable.
 		{"/projects/proj/actions", `id="page-actions"`},
 		// Config hub: grouped drill-in rows; sections live on focused pages.
@@ -1048,6 +1050,7 @@ func TestNavBrandChrome(t *testing.T) {
 		">Cases<",
 		">Issues<",
 		">Commits<",
+		">Files<",
 		">Deploys<",
 		">Actions<",
 		">Sessions<",
@@ -1058,6 +1061,7 @@ func TestNavBrandChrome(t *testing.T) {
 		`href="/projects/proj/cases"`,
 		`href="/projects/proj/issues"`,
 		`href="/projects/proj/commits"`,
+		`href="/projects/proj/files"`,
 		`href="/projects/proj/deploys"`,
 		`href="/projects/proj/actions"`,
 		`href="/projects/proj/sessions"`,

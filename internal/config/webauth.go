@@ -25,6 +25,7 @@ type WebAuthFeatures struct {
 	StartSessions bool `json:"startSessions,omitempty"`
 	PRReviews     bool `json:"prReviews,omitempty"` // team PR review (local SOT + optional GH comment)
 	Deploy        bool `json:"deploy,omitempty"`    // trigger deploys from the web UI
+	Storage       bool `json:"storage,omitempty"`   // upload/delete on the project Files page
 }
 
 // WebAuthConfig is optional private-web authentication (Discord OAuth).
@@ -142,6 +143,13 @@ func (c *Config) FeaturePRReviews() bool {
 // audit trail and for the per-environment capability check.
 func (c *Config) FeatureDeploy() bool {
 	return c.featureFlag(func(f WebAuthFeatures) bool { return f.Deploy })
+}
+
+// FeatureStorage gates upload/delete on the project Files page. Read/list/
+// download stay open to project members; writes need an identity for the audit
+// trail, so the flag is false whenever webAuth is disabled.
+func (c *Config) FeatureStorage() bool {
+	return c.featureFlag(func(f WebAuthFeatures) bool { return f.Storage })
 }
 
 func (c *Config) featureFlag(fn func(WebAuthFeatures) bool) bool {

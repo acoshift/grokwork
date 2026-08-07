@@ -241,6 +241,10 @@ type ProjectItem struct {
 	DeployEnvs         []DeployEnvItem
 	// ActionsRules are the branch-lock rules for workflow_dispatch (Integrations).
 	ActionsRules []ActionsDispatchRule
+	// StorageBucket / StoragePrefix are the linked GCS target (empty = unlinked).
+	// The bucket name is not a secret and may be shown verbatim.
+	StorageBucket string
+	StoragePrefix string
 }
 
 // ChannelItem is a channel→project mapping row for the config UI.
@@ -1278,6 +1282,10 @@ func (c *Config) Snapshot() Snapshot {
 		item.DeployEnabled, item.DeployManifestPath, item.DeployEnvs = deployItems(pc.Deploy)
 		if pc.Actions != nil && len(pc.Actions.DispatchRules) > 0 {
 			item.ActionsRules = cloneProjectActions(pc.Actions).DispatchRules
+		}
+		if pc.Storage != nil {
+			item.StorageBucket = pc.Storage.GCSBucket
+			item.StoragePrefix = pc.Storage.Prefix
 		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled

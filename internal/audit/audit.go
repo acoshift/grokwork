@@ -79,6 +79,10 @@ const (
 	ActionCaseUnlink         = "case.unlink"
 	// GitHub Actions (workflow_dispatch from the web Actions page).
 	ActionActionsDispatch = "actions.dispatch"
+	// Project file storage (GCS). Local staging paths never enter details.
+	ActionStorageUpload           = "storage.upload"
+	ActionStorageDelete           = "storage.delete"
+	ActionConfigSetProjectStorage = "config.set_project_storage"
 )
 
 // ActorAnonymous is used when web auth is off or no session is present.

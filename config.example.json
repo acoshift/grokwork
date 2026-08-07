@@ -54,6 +54,10 @@
             "secretKeys": ["DB_URL"]
           }
         }
+      },
+      "storage": {
+        "gcsBucket": "acme-app-files",
+        "prefix": "grokwork"
       }
     },
     "api": {
@@ -110,7 +114,8 @@
       "githubWrites": false,
       "merge": false,
       "startSessions": false,
-      "prReviews": false
+      "prReviews": false,
+      "storage": false
     }
   },
   "autoFixCI": false,

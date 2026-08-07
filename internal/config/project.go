@@ -63,6 +63,9 @@ type ProjectConfig struct {
 	// Actions is per-project GitHub Actions policy (branch locks for dispatch).
 	// nil means unset — no locks.
 	Actions *ProjectActionsConfig `json:"actions,omitempty"`
+	// Storage links one GCS bucket (+ optional prefix) for the Files page.
+	// nil means unlinked. Auth is the host's gcloud ADC — no credentials here.
+	Storage *ProjectStorageConfig `json:"storage,omitempty"`
 }
 
 // ProjectActionsConfig is per-project GitHub Actions settings.
@@ -156,6 +159,11 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 		}
 		pc.Deploy = normalizeProjectDeploy(pc.Deploy)
 		pc.Actions = normalizeProjectActions(pc.Actions)
+		st, err := normalizeProjectStorage(pc.Storage)
+		if err != nil {
+			return fmt.Errorf("projects[%q]: storage: %w", name, err)
+		}
+		pc.Storage = st
 		out[name] = pc
 	}
 	*m = out
@@ -188,6 +196,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		Linear                   *ProjectLinearConfig    `json:"linear,omitempty"`
 		Deploy                   *ProjectDeployConfig    `json:"deploy,omitempty"`
 		Actions                  *ProjectActionsConfig   `json:"actions,omitempty"`
+		Storage                  *ProjectStorageConfig   `json:"storage,omitempty"`
 	}
 	out := make(map[string]outObj, len(m))
 	for name, pc := range m {
@@ -212,6 +221,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			Linear:                   cloneProjectLinear(pc.Linear),
 			Deploy:                   cloneProjectDeploy(pc.Deploy),
 			Actions:                  cloneProjectActions(pc.Actions),
+			Storage:                  cloneProjectStorage(pc.Storage),
 		}
 	}
 	return json.Marshal(out)
@@ -259,6 +269,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			Linear:                   cloneProjectLinear(v.Linear),
 			Deploy:                   cloneProjectDeploy(v.Deploy),
 			Actions:                  cloneProjectActions(v.Actions),
+			Storage:                  cloneProjectStorage(v.Storage),
 		}
 	}
 	return out

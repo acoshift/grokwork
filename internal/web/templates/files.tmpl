@@ -1,0 +1,123 @@
+{{define "content"}}
+<div id="page-project-files">
+<h1>{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· files</span></h1>
+{{if .StorageBucket}}
+<p class="sub">
+  Bucket <span class="mono">{{.StorageBucket}}</span>
+  {{if .StoragePrefix}}· prefix <span class="mono">{{.StoragePrefix}}</span>{{end}}
+</p>
+{{end}}
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if .StorageNotConfigured}}
+<div class="section card">
+  <h2>No file storage linked</h2>
+  <p class="sub" style="margin-top:0">
+    Link a Google Cloud Storage bucket on the project’s Integrations settings to
+    park customer files, artifacts and hand-off material that does not belong in git.
+  </p>
+  {{if .IsAdmin}}
+  <p class="sub">
+    <a href="/config/projects/{{.Project}}/integrations">Open Integrations settings →</a>
+  </p>
+  {{else}}
+  <p class="sub">Ask an admin to configure storage under project Integrations.</p>
+  {{end}}
+</div>
+{{else}}
+
+{{if .FilesCrumbs}}
+<nav class="sub" aria-label="Breadcrumb" style="margin-bottom:0.85rem">
+  {{range $i, $c := .FilesCrumbs}}
+    {{if $i}}<span class="muted"> / </span>{{end}}
+    {{if $c.Last}}
+      <span class="mono">{{$c.Label}}</span>
+    {{else if eq $c.Path ""}}
+      <a href="/projects/{{$.Project}}/files" class="mono">{{$c.Label}}</a>
+    {{else}}
+      <a href="/projects/{{$.Project}}/files?path={{$c.Path}}" class="mono">{{$c.Label}}</a>
+    {{end}}
+  {{end}}
+</nav>
+{{end}}
+
+{{if .CanStorageWrite}}
+<div class="section card" id="files-upload">
+  <h2>Upload</h2>
+  <form method="post" action="/projects/{{.Project}}/files/upload" enctype="multipart/form-data">
+    {{template "csrf" $}}
+    <input type="hidden" name="path" value="{{.FilesPath}}">
+    <div class="inline" style="grid-template-columns: 1fr auto; align-items:end">
+      <div>
+        <label for="files-file">File</label>
+        <input id="files-file" type="file" name="file" required>
+      </div>
+      <button type="submit">Upload</button>
+    </div>
+    <label class="check" style="margin-top:0.65rem">
+      <input type="checkbox" name="overwrite" value="1"> Overwrite if exists
+    </label>
+    <p class="sub" style="margin:0.5rem 0 0">Max 50 MiB. Filename is sanitized before upload.</p>
+  </form>
+</div>
+{{else if .StorageFeatureOn}}
+<p class="sub">You can browse and download files. Upload and delete need an investigator-or-above capability template (or an explicit <span class="mono">safeOps</span> grant).</p>
+{{end}}
+
+<div class="section">
+  <h2>Contents{{if .FilesPath}} <span class="muted mono" style="font-weight:500;font-size:0.9rem">/ {{.FilesPath}}</span>{{end}}</h2>
+  {{if .FilesClipped}}
+  <p class="sub">Showing {{len .FilesRows}} of {{.FilesTotal}} entries (capped at 200).</p>
+  {{end}}
+  {{if .FilesRows}}
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Size</th>
+        <th>Updated</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .FilesRows}}
+      <tr>
+        <td class="mono">
+          {{if .IsDir}}
+            <a href="/projects/{{$.Project}}/files?path={{.Path}}">{{.Name}}/</a>
+          {{else}}
+            {{.Name}}
+          {{end}}
+        </td>
+        <td class="muted">{{if .IsDir}}—{{else}}{{.SizeHuman}}{{end}}</td>
+        <td class="muted">{{if .UpdatedText}}{{.UpdatedText}}{{else}}—{{end}}</td>
+        <td style="white-space:nowrap;text-align:right">
+          {{if not .IsDir}}
+            <a class="btn-secondary" href="/projects/{{$.Project}}/files/download?object={{.Object}}">Download</a>
+            {{if $.CanStorageWrite}}
+            <form method="post" action="/projects/{{$.Project}}/files/delete" style="display:inline"
+                  data-confirm="Delete {{.Name}}? This cannot be undone."
+                  data-confirm-title="Delete file" data-confirm-ok="Delete" data-confirm-danger>
+              {{template "csrf" $}}
+              <input type="hidden" name="object" value="{{.Object}}">
+              <input type="hidden" name="path" value="{{$.FilesPath}}">
+              <button type="submit" class="btn-danger">Delete</button>
+            </form>
+            {{end}}
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else if not .Error}}
+  <div class="empty">No files at this path.</div>
+  {{end}}
+</div>
+
+{{end}}
+</div>
+{{end}}
