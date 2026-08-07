@@ -15,6 +15,7 @@ import (
 	"github.com/moonrhythm/hime"
 
 	"github.com/acoshift/grokwork/internal/audit"
+	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/gcs"
 )
 
@@ -49,12 +50,24 @@ type fileCrumb struct {
 	Last  bool
 }
 
-// gcsRun returns the injected runner, or nil so gcs *With uses the default.
+// gcsRun returns the injected runner, or nil so gcs ops use the default.
 func (s *Server) gcsRun() gcs.Runner {
 	if s != nil && s.gcsRunner != nil {
 		return s.gcsRunner
 	}
 	return nil
+}
+
+// storageTarget maps the stored project config onto the gcs boundary type.
+func storageTarget(st *config.ProjectStorageConfig) gcs.Target {
+	if st == nil {
+		return gcs.Target{}
+	}
+	return gcs.Target{
+		Bucket:          st.GCSBucket,
+		Prefix:          st.Prefix,
+		CredentialsFile: st.CredentialsFile,
+	}
 }
 
 // filesPage is GET /projects/{project}/files[?path=].
@@ -100,7 +113,7 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 	d.FilesPath = subPath
 	d.FilesCrumbs = fileBreadcrumbs(subPath)
 
-	entries, err := gcs.ListWith(ctx.Context(), s.gcsRun(), st.GCSBucket, st.Prefix, subPath)
+	entries, err := gcs.List(ctx.Context(), s.gcsRun(), storageTarget(st), subPath)
 	if err != nil {
 		if d.Error == "" {
 			d.Error = err.Error()
@@ -177,7 +190,7 @@ func (s *Server) postFileUpload(ctx *hime.Context) error {
 	}()
 
 	if !overwrite {
-		_, exists, err := gcs.DescribeWith(ctx.Context(), s.gcsRun(), st.GCSBucket, st.Prefix, object)
+		_, exists, err := gcs.Describe(ctx.Context(), s.gcsRun(), storageTarget(st), object)
 		if err != nil {
 			upErr = err
 			return s.filesRedirect(ctx, project, subPath, "", err)
@@ -224,7 +237,7 @@ func (s *Server) postFileUpload(ctx *hime.Context) error {
 		return s.filesRedirect(ctx, project, subPath, "", upErr)
 	}
 
-	upErr = gcs.UploadWith(ctx.Context(), s.gcsRun(), localPath, st.GCSBucket, st.Prefix, object)
+	upErr = gcs.Upload(ctx.Context(), s.gcsRun(), localPath, storageTarget(st), object)
 	if upErr != nil {
 		return s.filesRedirect(ctx, project, subPath, "", upErr)
 	}
@@ -324,7 +337,7 @@ func (s *Server) postFileDelete(ctx *hime.Context) error {
 		return s.filesRedirect(ctx, project, subPath, "", err)
 	}
 
-	delErr := gcs.DeleteWith(ctx.Context(), s.gcsRun(), st.GCSBucket, st.Prefix, object)
+	delErr := gcs.Delete(ctx.Context(), s.gcsRun(), storageTarget(st), object)
 	s.auditAction(ctx, audit.ActionStorageDelete, delErr, map[string]any{
 		"project": project, "bucket": st.GCSBucket, "object": object,
 	})
@@ -349,7 +362,7 @@ func (s *Server) fileDownload(ctx *hime.Context) error {
 		return ctx.Status(http.StatusNotFound).Error("file storage is not configured")
 	}
 
-	meta, exists, err := gcs.DescribeWith(ctx.Context(), s.gcsRun(), st.GCSBucket, st.Prefix, object)
+	meta, exists, err := gcs.Describe(ctx.Context(), s.gcsRun(), storageTarget(st), object)
 	if err != nil {
 		return ctx.Status(http.StatusBadGateway).Error(err.Error())
 	}
@@ -369,7 +382,7 @@ func (s *Server) fileDownload(ctx *hime.Context) error {
 
 	leaf := gcs.SanitizeFilename(path.Base(object))
 	dest := filepath.Join(tmpDir, leaf)
-	if err := gcs.DownloadWith(ctx.Context(), s.gcsRun(), st.GCSBucket, st.Prefix, object, dest); err != nil {
+	if err := gcs.Download(ctx.Context(), s.gcsRun(), storageTarget(st), object, dest); err != nil {
 		return ctx.Status(http.StatusBadGateway).Error(err.Error())
 	}
 	f, err := os.Open(dest)
@@ -394,9 +407,13 @@ func (s *Server) setProjectStorage(ctx *hime.Context) error {
 	name := strings.TrimSpace(ctx.PostFormValue("name"))
 	bucket := strings.TrimSpace(ctx.PostFormValue("gcsBucket"))
 	prefix := strings.TrimSpace(ctx.PostFormValue("prefix"))
-	err := s.cfg.SetProjectStorageGCS(name, bucket, prefix)
+	credentialsFile := strings.TrimSpace(ctx.PostFormValue("credentialsFile"))
+	err := s.cfg.SetProjectStorageGCS(name, bucket, prefix, credentialsFile)
+	// The detail carries whether a key file is set, never its path (no local
+	// paths in audit) and never its contents.
 	s.auditAction(ctx, audit.ActionConfigSetProjectStorage, err, map[string]any{
 		"name": name, "bucket": bucket, "prefix": prefix,
+		"credentialsFileSet": credentialsFile != "",
 	})
 	msg := fmt.Sprintf("Updated file storage for project %q", name)
 	if bucket == "" {

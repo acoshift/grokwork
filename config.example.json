@@ -57,7 +57,8 @@
       },
       "storage": {
         "gcsBucket": "acme-app-files",
-        "prefix": "grokwork"
+        "prefix": "grokwork",
+        "credentialsFile": "/etc/grokwork/gcs-key.json"
       }
     },
     "api": {

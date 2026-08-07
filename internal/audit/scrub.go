@@ -19,7 +19,7 @@ const pathChar = "[^\\s\"'`)]"
 // covered by the static list alone — RedactRoots exists for that.
 var pathRE = regexp.MustCompile(`(?i)(?:` +
 	`[A-Za-z]:\\` + pathChar + `+` + // C:\Users\…
-	`|/(?:Users|home|var|tmp|private|opt|usr|srv|mnt|data|workspace|root|Volumes|Applications|Library)/` + pathChar + `*` +
+	`|/(?:Users|home|var|tmp|private|opt|usr|srv|mnt|data|workspace|root|Volumes|Applications|Library|etc)/` + pathChar + `*` +
 	`|data/worktrees/` + pathChar + `*)`)
 
 // ScrubPaths removes filesystem paths from text bound for the audit log.

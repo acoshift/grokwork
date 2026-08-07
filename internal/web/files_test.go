@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,19 +17,24 @@ import (
 )
 
 // storageServer is the auth-on fixture with the storage feature enabled and a
-// bucket linked, plus a scripted gcs runner. Calls are recorded so tests can
-// assert exactly what reached the gcloud boundary.
+// bucket linked (service-account key set, so env assertions exercise the
+// credentials path), plus a scripted gcs runner. Calls are recorded so tests
+// can assert exactly what reached the gcloud boundary.
 func storageServer(t *testing.T) (*Server, *config.Config, *[][]string) {
 	t.Helper()
 	srv, cfg, _ := authOnServer(t)
 	cfg.WebAuth.Features.Storage = true
-	if err := cfg.SetProjectStorageGCS("proj", "test-bucket", "pre"); err != nil {
+	if err := cfg.SetProjectStorageGCS("proj", "test-bucket", "pre", "/etc/keys/svc.json"); err != nil {
 		t.Fatal(err)
 	}
 	var calls [][]string
-	srv.gcsRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	srv.gcsRunner = func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		if name != "gcloud" {
 			t.Errorf("runner name = %q, want gcloud", name)
+		}
+		// The configured key must reach every gcloud invocation as env.
+		if !slices.Contains(env, "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/etc/keys/svc.json") {
+			t.Errorf("env = %v, missing credential override", env)
 		}
 		calls = append(calls, args)
 		joined := strings.Join(args, " ")
@@ -103,7 +109,7 @@ func TestFilesPageListsBucket(t *testing.T) {
 
 func TestFilesPageRendersInlineErrorOnRunnerFailure(t *testing.T) {
 	srv, _, _ := storageServer(t)
-	srv.gcsRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	srv.gcsRunner = func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("gcloud storage ls: You do not currently have an active account selected")
 	}
 	sid, _ := adminLogin(t, srv)
@@ -229,7 +235,7 @@ func writeTestFile(path string, data []byte) error {
 
 func TestFilesDownloadStreamsObject(t *testing.T) {
 	srv, _, _ := storageServer(t)
-	srv.gcsRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	srv.gcsRunner = func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
 		switch {
 		case strings.HasPrefix(joined, "storage objects describe"):
@@ -281,7 +287,7 @@ func TestFilesDownloadRefusals(t *testing.T) {
 		}
 	}
 	// Oversize object → 413.
-	srv.gcsRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	srv.gcsRunner = func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		return []byte(`{"name":"pre/huge.bin","size":"999999999999"}`), nil
 	}
 	if w := get("/projects/proj/files/download?object=huge.bin"); w.Code != http.StatusRequestEntityTooLarge {
@@ -291,7 +297,7 @@ func TestFilesDownloadRefusals(t *testing.T) {
 
 func TestFilesPageNoBucketExplainer(t *testing.T) {
 	srv, cfg, _ := storageServer(t)
-	if err := cfg.SetProjectStorageGCS("proj", "", ""); err != nil {
+	if err := cfg.SetProjectStorageGCS("proj", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	sid, _ := adminLogin(t, srv)
@@ -309,13 +315,14 @@ func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 	sid, csrf := adminLogin(t, srv)
 	w := postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
 		"name": {"proj"}, "gcsBucket": {"other-bucket"}, "prefix": {"files/"},
+		"credentialsFile": {"/etc/keys/other.json"},
 	})
 	loc := w.Header().Get("Location")
 	if !strings.HasPrefix(loc, "/config/projects/proj/integrations?") || !strings.Contains(loc, "ok=") {
 		t.Fatalf("Location = %q", loc)
 	}
 	st := cfg.ProjectStorage("proj")
-	if st == nil || st.GCSBucket != "other-bucket" || st.Prefix != "files" {
+	if st == nil || st.GCSBucket != "other-bucket" || st.Prefix != "files" || st.CredentialsFile != "/etc/keys/other.json" {
 		t.Fatalf("stored = %+v", st)
 	}
 	// Invalid bucket → err= redirect, config unchanged.
@@ -327,6 +334,16 @@ func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 	}
 	if st := cfg.ProjectStorage("proj"); st == nil || st.GCSBucket != "other-bucket" {
 		t.Fatalf("config changed on invalid input: %+v", st)
+	}
+	// Relative credentials path → err= redirect, config unchanged.
+	w = postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
+		"name": {"proj"}, "gcsBucket": {"other-bucket"}, "credentialsFile": {"keys/svc.json"},
+	})
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
+		t.Fatalf("relative credentials Location = %q", loc)
+	}
+	if st := cfg.ProjectStorage("proj"); st == nil || st.CredentialsFile != "/etc/keys/other.json" {
+		t.Fatalf("config changed on invalid credentials path: %+v", st)
 	}
 	// Clearing unlinks.
 	_ = postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{

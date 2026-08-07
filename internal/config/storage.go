@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
@@ -10,11 +11,17 @@ import (
 // ProjectStorageConfig is per-project file storage on Google Cloud Storage.
 //
 // The bucket is provisioned out of band; grokwork only reads and writes objects
-// under an optional prefix. Auth is the host's gcloud ADC — no credentials here.
+// under an optional prefix. Auth is the host's gcloud login/ADC by default;
+// CredentialsFile overrides it per project.
 type ProjectStorageConfig struct {
 	GCSBucket string `json:"gcsBucket"`
 	// Prefix is an optional object-name prefix (no leading/trailing slash).
 	Prefix string `json:"prefix,omitempty"`
+	// CredentialsFile is an optional absolute path to a service-account JSON
+	// key on the host, passed to gcloud per invocation
+	// (CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE) so it never rewrites the host's
+	// global gcloud auth. The path — never the key material — lives in config.
+	CredentialsFile string `json:"credentialsFile,omitempty"`
 }
 
 // gcsBucketRe is a conservative subset of GCS bucket-name rules. The name is
@@ -40,6 +47,7 @@ func normalizeProjectStorage(s *ProjectStorageConfig) (*ProjectStorageConfig, er
 	}
 	s.GCSBucket = strings.TrimSpace(s.GCSBucket)
 	s.Prefix = strings.TrimSpace(s.Prefix)
+	s.CredentialsFile = strings.TrimSpace(s.CredentialsFile)
 	if s.GCSBucket == "" {
 		return nil, nil
 	}
@@ -51,7 +59,30 @@ func normalizeProjectStorage(s *ProjectStorageConfig) (*ProjectStorageConfig, er
 		return nil, err
 	}
 	s.Prefix = prefix
+	if err := validateStorageCredentialsFile(s.CredentialsFile); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// validateStorageCredentialsFile requires an absolute path (matching the
+// project-path rule): a relative path silently resolves against whatever cwd
+// the bot happened to start in. Existence is deliberately not checked — the
+// key may be provisioned after the config, and gcloud reports a missing file
+// legibly at use.
+func validateStorageCredentialsFile(p string) error {
+	if p == "" {
+		return nil
+	}
+	if !filepath.IsAbs(p) {
+		return fmt.Errorf("storage credentialsFile must be an absolute path")
+	}
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f || unicode.IsControl(r) {
+			return fmt.Errorf("storage credentialsFile must not contain control characters")
+		}
+	}
+	return nil
 }
 
 func validateGCSBucket(bucket string) error {
@@ -110,14 +141,17 @@ func (c *Config) ProjectStorage(name string) *ProjectStorageConfig {
 }
 
 // SetProjectStorageGCS links (or unlinks) a project's GCS bucket. An empty
-// bucket clears the link and nils the sub-config.
-func (c *Config) SetProjectStorageGCS(project, bucket, prefix string) error {
+// bucket clears the link and nils the sub-config (credentialsFile included —
+// an orphaned key path must not survive an unlink and silently re-apply on the
+// next link).
+func (c *Config) SetProjectStorageGCS(project, bucket, prefix, credentialsFile string) error {
 	project = strings.TrimSpace(project)
 	if project == "" {
 		return fmt.Errorf("project name is required")
 	}
 	bucket = strings.TrimSpace(bucket)
 	prefix = strings.TrimSpace(prefix)
+	credentialsFile = strings.TrimSpace(credentialsFile)
 	// Validate before locking so a bad form never holds the write lock.
 	var next *ProjectStorageConfig
 	if bucket != "" {
@@ -128,7 +162,10 @@ func (c *Config) SetProjectStorageGCS(project, bucket, prefix string) error {
 		if err != nil {
 			return err
 		}
-		next = &ProjectStorageConfig{GCSBucket: bucket, Prefix: cleanPrefix}
+		if err := validateStorageCredentialsFile(credentialsFile); err != nil {
+			return err
+		}
+		next = &ProjectStorageConfig{GCSBucket: bucket, Prefix: cleanPrefix, CredentialsFile: credentialsFile}
 	}
 	return c.mutateProjectStorage(project, func(_ *ProjectStorageConfig) (*ProjectStorageConfig, error) {
 		return next, nil

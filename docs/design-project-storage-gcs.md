@@ -27,10 +27,14 @@ into Discord messages, and the web UI is the private-network admin surface.
 A new package `internal/gcs` wraps the `gcloud` binary exactly the way
 `internal/ghpr` wraps `gh`:
 
-- Auth comes from the host's gcloud config (`~/.config/gcloud`, ADC or a
-  logged-in account). No credentials in `config.json` — consistent with `gh`,
-  and the deploy env allowlist already documents that HOME is inherited for
-  exactly this reason.
+- Auth defaults to the host's gcloud config (`~/.config/gcloud`, ADC or a
+  logged-in account) — the deploy env allowlist already documents that HOME is
+  inherited for exactly this reason. A project may instead name a
+  service-account key (`storage.credentialsFile`, an absolute path), applied
+  **per invocation** via `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE` (+
+  `GOOGLE_APPLICATION_CREDENTIALS` for any ADC-reading path) so the host's
+  global gcloud auth is never rewritten. Config stores the key's *path*, never
+  its contents.
 - No new Go dependency. `cloud.google.com/go/storage` would pull a large
   module tree into a repo whose entire dependency policy is "stdlib + a
   handful"; the CLI is already the house pattern for external systems.
@@ -47,7 +51,11 @@ object):
 ```json
 "projects": {
   "app": {
-    "storage": { "gcsBucket": "acme-app-files", "prefix": "grokwork" }
+    "storage": {
+      "gcsBucket": "acme-app-files",
+      "prefix": "grokwork",
+      "credentialsFile": "/etc/grokwork/gcs-key.json"
+    }
   }
 }
 ```
@@ -57,6 +65,10 @@ object):
 type ProjectStorageConfig struct {
     GCSBucket string `json:"gcsBucket"`
     Prefix    string `json:"prefix,omitempty"` // optional object-name prefix, no trailing slash
+    // CredentialsFile is an optional absolute path to a service-account JSON
+    // key; empty = host gcloud auth. Relative paths are a load error (they
+    // would resolve against whatever cwd the bot started in).
+    CredentialsFile string `json:"credentialsFile,omitempty"`
 }
 ```
 
@@ -65,7 +77,7 @@ type ProjectStorageConfig struct {
   `ProjectStorage(name)` returning a clone, and a `mutateProjectStorage`
   helper (validate before locking, mutate under the write lock, persist inside
   it, nil an empty sub-config).
-- Setter `SetProjectStorageGCS(project, bucket, prefix string) error`:
+- Setter `SetProjectStorageGCS(project, bucket, prefix, credentialsFile string) error`:
   - Bucket: empty clears the link. Otherwise validate against GCS bucket-name
     rules, conservatively: lowercase letters, digits, `-`, `_`, `.`; 3–222
     chars; must start and end with a letter or digit. Reject anything else —

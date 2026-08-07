@@ -173,13 +173,14 @@
     Link one Google Cloud Storage bucket for the project’s <a href="/projects/{{.ProjectItem.Name}}/files">Files</a> page
     (browse, upload, download, delete). The bucket is provisioned out of band —
     grokwork only reads and writes objects under an optional prefix.
-    The host needs an authenticated <span class="mono">gcloud</span> CLI (ADC) with access to the bucket.
+    The host needs the <span class="mono">gcloud</span> CLI; auth is its login/ADC,
+    or name a service-account key file below to authenticate this project’s calls only.
     Clear the bucket name to unlink.
   </p>
   <form method="post" action="{{route "config.setProjectStorage"}}">
     {{template "csrf" $}}
     <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
-    <div class="inline" style="grid-template-columns: 1fr 1fr auto; align-items:end">
+    <div class="inline" style="grid-template-columns: 1fr 1fr; align-items:end">
       <div>
         <label for="project-storage-bucket">GCS bucket</label>
         <input id="project-storage-bucket" type="text" name="gcsBucket" value="{{.ProjectItem.StorageBucket}}"
@@ -190,8 +191,15 @@
         <input id="project-storage-prefix" type="text" name="prefix" value="{{.ProjectItem.StoragePrefix}}"
           placeholder="grokwork" class="mono" autocomplete="off">
       </div>
-      <button type="submit">Save storage</button>
     </div>
+    <div style="margin-top:0.65rem">
+      <label for="project-storage-credentials">Credentials file (optional)</label>
+      <input id="project-storage-credentials" type="text" name="credentialsFile" value="{{.ProjectItem.StorageCredentialsFile}}"
+        placeholder="/etc/grokwork/gcs-key.json" class="mono" autocomplete="off">
+      <p class="sub" style="margin:0.35rem 0 0">Absolute path on the host to a service-account JSON key.
+        Applied per invocation — the host’s global <span class="mono">gcloud</span> login is untouched. Empty uses that login/ADC.</p>
+    </div>
+    <button type="submit" style="margin-top:0.65rem">Save storage</button>
   </form>
 </div>
 

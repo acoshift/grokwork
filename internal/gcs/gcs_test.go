@@ -3,6 +3,7 @@ package gcs
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -59,9 +60,12 @@ func TestSanitizeFilename(t *testing.T) {
 
 func TestListArgvAndParse(t *testing.T) {
 	var gotArgs []string
-	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		if name != Binary {
 			t.Fatalf("binary=%q", name)
+		}
+		if env != nil {
+			t.Fatalf("env=%v want nil without a credentials file", env)
 		}
 		gotArgs = append([]string{}, args...)
 		return []byte(`[
@@ -71,7 +75,7 @@ func TestListArgvAndParse(t *testing.T) {
 			{"url":"gs://b/pfx/bare"}
 		]`), nil
 	}
-	entries, err := ListWith(t.Context(), run, "b", "pfx", "")
+	entries, err := List(t.Context(), run, Target{Bucket: "b", Prefix: "pfx"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,11 +104,11 @@ func TestListArgvAndParse(t *testing.T) {
 
 func TestListSubPath(t *testing.T) {
 	var gotArgs []string
-	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		gotArgs = args
 		return []byte(`[]`), nil
 	}
-	if _, err := ListWith(t.Context(), run, "b", "pfx", "sub"); err != nil {
+	if _, err := List(t.Context(), run, Target{Bucket: "b", Prefix: "pfx"}, "sub"); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(gotArgs, " ") != "storage ls --json gs://b/pfx/sub/" {
@@ -112,15 +116,49 @@ func TestListSubPath(t *testing.T) {
 	}
 }
 
+// TestCredentialsEnvReachesRunner pins the whole point of Target.CredentialsFile:
+// the key is applied per invocation via env, never via global gcloud state.
+func TestCredentialsEnvReachesRunner(t *testing.T) {
+	var gotEnv []string
+	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
+		gotEnv = env
+		return []byte(`[]`), nil
+	}
+	tgt := Target{Bucket: "b", CredentialsFile: "/etc/keys/svc.json"}
+	if _, err := List(t.Context(), run, tgt, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(gotEnv, "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/etc/keys/svc.json") {
+		t.Fatalf("env=%v missing gcloud credential override", gotEnv)
+	}
+	if !slices.Contains(gotEnv, "GOOGLE_APPLICATION_CREDENTIALS=/etc/keys/svc.json") {
+		t.Fatalf("env=%v missing ADC var", gotEnv)
+	}
+
+	// Every operation carries it, not just List.
+	gotEnv = nil
+	if err := Delete(t.Context(), run, tgt, "a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if len(gotEnv) != 2 {
+		t.Fatalf("delete env=%v", gotEnv)
+	}
+
+	// No credentials file → nil env (host auth untouched).
+	if got := (Target{Bucket: "b"}).env(); got != nil {
+		t.Fatalf("env without key = %v want nil", got)
+	}
+}
+
 func TestDescribeArgvAndNotFound(t *testing.T) {
-	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		want := "storage objects describe gs://b/pfx/a.txt --format=json"
 		if strings.Join(args, " ") != want {
 			t.Fatalf("args=%v want %s", args, want)
 		}
 		return []byte(`{"name":"pfx/a.txt","size":"10","contentType":"text/plain"}`), nil
 	}
-	e, ok, err := DescribeWith(t.Context(), run, "b", "pfx", "a.txt")
+	e, ok, err := Describe(t.Context(), run, Target{Bucket: "b", Prefix: "pfx"}, "a.txt")
 	if err != nil || !ok {
 		t.Fatalf("err=%v ok=%v", err, ok)
 	}
@@ -128,10 +166,10 @@ func TestDescribeArgvAndNotFound(t *testing.T) {
 		t.Fatalf("entry=%+v", e)
 	}
 
-	missing := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	missing := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("gcloud %s: ERROR: 404 Not Found: No such object", strings.Join(args, " "))
 	}
-	_, ok, err = DescribeWith(t.Context(), missing, "b", "pfx", "gone.txt")
+	_, ok, err = Describe(t.Context(), missing, Target{Bucket: "b", Prefix: "pfx"}, "gone.txt")
 	if err != nil || ok {
 		t.Fatalf("missing: err=%v ok=%v", err, ok)
 	}
@@ -139,23 +177,24 @@ func TestDescribeArgvAndNotFound(t *testing.T) {
 
 func TestUploadDownloadDeleteArgv(t *testing.T) {
 	var last []string
-	capture := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	capture := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		last = append([]string{}, args...)
 		return nil, nil
 	}
-	if err := UploadWith(t.Context(), capture, "/tmp/f", "b", "pfx", "a.txt"); err != nil {
+	tgt := Target{Bucket: "b", Prefix: "pfx"}
+	if err := Upload(t.Context(), capture, "/tmp/f", tgt, "a.txt"); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(last, " ") != "storage cp /tmp/f gs://b/pfx/a.txt" {
 		t.Fatalf("upload args=%v", last)
 	}
-	if err := DownloadWith(t.Context(), capture, "b", "pfx", "a.txt", "/tmp/out"); err != nil {
+	if err := Download(t.Context(), capture, tgt, "a.txt", "/tmp/out"); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(last, " ") != "storage cp gs://b/pfx/a.txt /tmp/out" {
 		t.Fatalf("download args=%v", last)
 	}
-	if err := DeleteWith(t.Context(), capture, "b", "pfx", "a.txt"); err != nil {
+	if err := Delete(t.Context(), capture, tgt, "a.txt"); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(last, " ") != "storage rm gs://b/pfx/a.txt" {
@@ -164,16 +203,16 @@ func TestUploadDownloadDeleteArgv(t *testing.T) {
 }
 
 func TestDeleteRefusals(t *testing.T) {
-	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	run := func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		t.Fatal("runner must not be called")
 		return nil, nil
 	}
 	// Wildcard in object name is caught by ValidateObjectPath first.
-	if err := DeleteWith(t.Context(), run, "b", "", "a*"); err == nil {
+	if err := Delete(t.Context(), run, Target{Bucket: "b"}, "a*"); err == nil {
 		t.Fatal("want wildcard refusal")
 	}
 	// Empty object.
-	if err := DeleteWith(t.Context(), run, "b", "pfx", ""); err == nil {
+	if err := Delete(t.Context(), run, Target{Bucket: "b", Prefix: "pfx"}, ""); err == nil {
 		t.Fatal("want empty object refusal")
 	}
 	// objectURL never emits a trailing-slash object URL (folders are list-only).

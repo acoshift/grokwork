@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -22,14 +23,19 @@ const Binary = "gcloud"
 // maxObjectPathBytes is the GCS object-name limit and our validation ceiling.
 const maxObjectPathBytes = 1024
 
-// Runner runs a command in dir and returns stdout. Tests inject fakes.
-type Runner func(ctx context.Context, dir, name string, args ...string) ([]byte, error)
+// Runner runs a command in dir with extra env vars appended to the host
+// environment, and returns stdout. Tests inject fakes. env is how per-project
+// credentials reach gcloud — it is part of the seam so tests can assert it.
+type Runner func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error)
 
 var defaultRunner Runner = execRunner
 
-func execRunner(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+func execRunner(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -50,6 +56,47 @@ func runOrDefault(run Runner) Runner {
 		return run
 	}
 	return defaultRunner
+}
+
+// Target names the bucket every operation acts on, the optional object-name
+// prefix under it, and the optional service-account key that authenticates the
+// call. One struct rather than three positional strings: bucket, prefix and a
+// key path are all strings, and a swapped pair compiles.
+type Target struct {
+	Bucket string
+	// Prefix is an optional object-name prefix (validated at config write;
+	// re-validated at this boundary).
+	Prefix string
+	// CredentialsFile is an optional absolute path to a service-account JSON
+	// key. Empty means the host's gcloud login/ADC.
+	CredentialsFile string
+}
+
+// validate is the shared precondition for every operation.
+func (t Target) validate() error {
+	if strings.TrimSpace(t.Bucket) == "" {
+		return fmt.Errorf("bucket is required")
+	}
+	if err := ValidateObjectPath(t.Prefix); err != nil {
+		return fmt.Errorf("prefix: %w", err)
+	}
+	return nil
+}
+
+// env returns the per-invocation environment for the target.
+// CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE is what makes gcloud use the key for
+// this call only — activate-service-account would rewrite the host's global
+// gcloud auth for every other process on the box.
+// GOOGLE_APPLICATION_CREDENTIALS rides along for any ADC-reading code path.
+func (t Target) env() []string {
+	f := strings.TrimSpace(t.CredentialsFile)
+	if f == "" {
+		return nil
+	}
+	return []string{
+		"CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=" + f,
+		"GOOGLE_APPLICATION_CREDENTIALS=" + f,
+	}
 }
 
 // Entry is one object or folder pseudo-entry from a listing or describe.
@@ -178,28 +225,19 @@ func listURL(bucket, object string) string {
 	return u
 }
 
-// List returns one level of entries under prefix/subPath.
-func List(ctx context.Context, run Runner, bucket, prefix, subPath string) ([]Entry, error) {
-	return ListWith(ctx, run, bucket, prefix, subPath)
-}
-
-// ListWith is List with an explicit Runner.
-func ListWith(ctx context.Context, run Runner, bucket, prefix, subPath string) ([]Entry, error) {
-	bucket = strings.TrimSpace(bucket)
-	if bucket == "" {
-		return nil, fmt.Errorf("bucket is required")
+// List returns one level of entries under the target's prefix + subPath.
+// run may be nil (production default).
+func List(ctx context.Context, run Runner, t Target, subPath string) ([]Entry, error) {
+	if err := t.validate(); err != nil {
+		return nil, err
 	}
 	if err := ValidateObjectPath(subPath); err != nil {
 		return nil, err
 	}
-	// Prefix was validated at config write; still refuse wildcards at the boundary.
-	if err := ValidateObjectPath(prefix); err != nil {
-		return nil, fmt.Errorf("prefix: %w", err)
-	}
-	under := joinObject(prefix, subPath)
-	url := listURL(bucket, under)
+	under := joinObject(t.Prefix, subPath)
+	url := listURL(t.Bucket, under)
 	args := []string{"storage", "ls", "--json", url}
-	out, err := runOrDefault(run)(ctx, "", Binary, args...)
+	out, err := runOrDefault(run)(ctx, "", t.env(), Binary, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -207,19 +245,10 @@ func ListWith(ctx context.Context, run Runner, bucket, prefix, subPath string) (
 }
 
 // Describe returns metadata for one object. exists is false when the object is
-// missing (not an error).
-func Describe(ctx context.Context, run Runner, bucket, prefix, object string) (Entry, bool, error) {
-	return DescribeWith(ctx, run, bucket, prefix, object)
-}
-
-// DescribeWith is Describe with an explicit Runner.
-func DescribeWith(ctx context.Context, run Runner, bucket, prefix, object string) (Entry, bool, error) {
-	bucket = strings.TrimSpace(bucket)
-	if bucket == "" {
-		return Entry{}, false, fmt.Errorf("bucket is required")
-	}
-	if err := ValidateObjectPath(prefix); err != nil {
-		return Entry{}, false, fmt.Errorf("prefix: %w", err)
+// missing (not an error). run may be nil (production default).
+func Describe(ctx context.Context, run Runner, t Target, object string) (Entry, bool, error) {
+	if err := t.validate(); err != nil {
+		return Entry{}, false, err
 	}
 	if err := ValidateObjectPath(object); err != nil {
 		return Entry{}, false, err
@@ -227,10 +256,10 @@ func DescribeWith(ctx context.Context, run Runner, bucket, prefix, object string
 	if err := requireObject(object); err != nil {
 		return Entry{}, false, err
 	}
-	full := joinObject(prefix, object)
-	url := objectURL(bucket, full)
+	full := joinObject(t.Prefix, object)
+	url := objectURL(t.Bucket, full)
 	args := []string{"storage", "objects", "describe", url, "--format=json"}
-	out, err := runOrDefault(run)(ctx, "", Binary, args...)
+	out, err := runOrDefault(run)(ctx, "", t.env(), Binary, args...)
 	if err != nil {
 		if isNotFound(err) {
 			return Entry{}, false, nil
@@ -244,22 +273,14 @@ func DescribeWith(ctx context.Context, run Runner, bucket, prefix, object string
 	return e, true, nil
 }
 
-// Upload copies localPath to gs://bucket/prefix/object.
-func Upload(ctx context.Context, run Runner, localPath, bucket, prefix, object string) error {
-	return UploadWith(ctx, run, localPath, bucket, prefix, object)
-}
-
-// UploadWith is Upload with an explicit Runner.
-func UploadWith(ctx context.Context, run Runner, localPath, bucket, prefix, object string) error {
+// Upload copies localPath to gs://bucket/prefix/object. run may be nil
+// (production default).
+func Upload(ctx context.Context, run Runner, localPath string, t Target, object string) error {
 	if strings.TrimSpace(localPath) == "" {
 		return fmt.Errorf("local path is required")
 	}
-	bucket = strings.TrimSpace(bucket)
-	if bucket == "" {
-		return fmt.Errorf("bucket is required")
-	}
-	if err := ValidateObjectPath(prefix); err != nil {
-		return fmt.Errorf("prefix: %w", err)
+	if err := t.validate(); err != nil {
+		return err
 	}
 	if err := ValidateObjectPath(object); err != nil {
 		return err
@@ -267,29 +288,21 @@ func UploadWith(ctx context.Context, run Runner, localPath, bucket, prefix, obje
 	if err := requireObject(object); err != nil {
 		return err
 	}
-	full := joinObject(prefix, object)
-	url := objectURL(bucket, full)
+	full := joinObject(t.Prefix, object)
+	url := objectURL(t.Bucket, full)
 	args := []string{"storage", "cp", localPath, url}
-	_, err := runOrDefault(run)(ctx, "", Binary, args...)
+	_, err := runOrDefault(run)(ctx, "", t.env(), Binary, args...)
 	return err
 }
 
-// Download copies gs://bucket/prefix/object to destPath.
-func Download(ctx context.Context, run Runner, bucket, prefix, object, destPath string) error {
-	return DownloadWith(ctx, run, bucket, prefix, object, destPath)
-}
-
-// DownloadWith is Download with an explicit Runner.
-func DownloadWith(ctx context.Context, run Runner, bucket, prefix, object, destPath string) error {
+// Download copies gs://bucket/prefix/object to destPath. run may be nil
+// (production default).
+func Download(ctx context.Context, run Runner, t Target, object, destPath string) error {
 	if strings.TrimSpace(destPath) == "" {
 		return fmt.Errorf("destination path is required")
 	}
-	bucket = strings.TrimSpace(bucket)
-	if bucket == "" {
-		return fmt.Errorf("bucket is required")
-	}
-	if err := ValidateObjectPath(prefix); err != nil {
-		return fmt.Errorf("prefix: %w", err)
+	if err := t.validate(); err != nil {
+		return err
 	}
 	if err := ValidateObjectPath(object); err != nil {
 		return err
@@ -297,27 +310,18 @@ func DownloadWith(ctx context.Context, run Runner, bucket, prefix, object, destP
 	if err := requireObject(object); err != nil {
 		return err
 	}
-	full := joinObject(prefix, object)
-	url := objectURL(bucket, full)
+	full := joinObject(t.Prefix, object)
+	url := objectURL(t.Bucket, full)
 	args := []string{"storage", "cp", url, destPath}
-	_, err := runOrDefault(run)(ctx, "", Binary, args...)
+	_, err := runOrDefault(run)(ctx, "", t.env(), Binary, args...)
 	return err
 }
 
 // Delete removes one object. Refuses wildcards, trailing slashes, and never
-// passes -r.
-func Delete(ctx context.Context, run Runner, bucket, prefix, object string) error {
-	return DeleteWith(ctx, run, bucket, prefix, object)
-}
-
-// DeleteWith is Delete with an explicit Runner.
-func DeleteWith(ctx context.Context, run Runner, bucket, prefix, object string) error {
-	bucket = strings.TrimSpace(bucket)
-	if bucket == "" {
-		return fmt.Errorf("bucket is required")
-	}
-	if err := ValidateObjectPath(prefix); err != nil {
-		return fmt.Errorf("prefix: %w", err)
+// passes -r. run may be nil (production default).
+func Delete(ctx context.Context, run Runner, t Target, object string) error {
+	if err := t.validate(); err != nil {
+		return err
 	}
 	if err := ValidateObjectPath(object); err != nil {
 		return err
@@ -325,8 +329,8 @@ func DeleteWith(ctx context.Context, run Runner, bucket, prefix, object string) 
 	if err := requireObject(object); err != nil {
 		return err
 	}
-	full := joinObject(prefix, object)
-	url := objectURL(bucket, full)
+	full := joinObject(t.Prefix, object)
+	url := objectURL(t.Bucket, full)
 	// Belt-and-braces: never delete a "folder" or a wildcard URL even if a
 	// future caller bypasses ValidateObjectPath.
 	if strings.ContainsAny(url, "*?[]") {
@@ -336,7 +340,7 @@ func DeleteWith(ctx context.Context, run Runner, bucket, prefix, object string) 
 		return fmt.Errorf("refusing delete: URL ends with / (not a single object)")
 	}
 	args := []string{"storage", "rm", url}
-	_, err := runOrDefault(run)(ctx, "", Binary, args...)
+	_, err := runOrDefault(run)(ctx, "", t.env(), Binary, args...)
 	return err
 }
 

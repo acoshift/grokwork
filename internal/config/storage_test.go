@@ -37,7 +37,7 @@ func storageTestConfig(t *testing.T) (*Config, string) {
 
 func TestProjectStorageRoundTrip(t *testing.T) {
 	cfg, path := storageTestConfig(t)
-	if err := cfg.SetProjectStorageGCS("app", "acme-app-files", "grokwork"); err != nil {
+	if err := cfg.SetProjectStorageGCS("app", "acme-app-files", "grokwork", "/etc/keys/svc.json"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -51,7 +51,7 @@ func TestProjectStorageRoundTrip(t *testing.T) {
 	if st == nil {
 		t.Fatal("storage lost after reload")
 	}
-	if st.GCSBucket != "acme-app-files" || st.Prefix != "grokwork" {
+	if st.GCSBucket != "acme-app-files" || st.Prefix != "grokwork" || st.CredentialsFile != "/etc/keys/svc.json" {
 		t.Fatalf("storage = %+v", st)
 	}
 
@@ -66,8 +66,8 @@ func TestProjectStorageRoundTrip(t *testing.T) {
 	if item == nil {
 		t.Fatal("project missing from snapshot")
 	}
-	if item.StorageBucket != "acme-app-files" || item.StoragePrefix != "grokwork" {
-		t.Fatalf("snapshot storage = %q / %q", item.StorageBucket, item.StoragePrefix)
+	if item.StorageBucket != "acme-app-files" || item.StoragePrefix != "grokwork" || item.StorageCredentialsFile != "/etc/keys/svc.json" {
+		t.Fatalf("snapshot storage = %q / %q / %q", item.StorageBucket, item.StoragePrefix, item.StorageCredentialsFile)
 	}
 
 	// cloneProjectsMap detaches the pointer.
@@ -88,19 +88,23 @@ func TestSetProjectStorageGCSValidation(t *testing.T) {
 		name   string
 		bucket string
 		prefix string
+		creds  string
 		ok     bool
 	}{
-		{"good", "acme-files", "prefix", true},
-		{"good-dots", "acme.files-1", "", true},
-		{"clear", "", "ignored", true},
-		{"too-short", "ab", "", false},
-		{"upper", "Acme-Files", "", false},
-		{"leading-slash-prefix", "acme-files", "/bad", false},
-		{"dotdot-prefix", "acme-files", "a/../b", false},
-		{"wildcard-prefix", "acme-files", "foo*", false},
-		{"wildcard-bucket", "acme*", "", false},
-		{"control-prefix", "acme-files", "a\nb", false},
-		{"unknown-project", "acme-files", "", false}, // wrong project name below
+		{"good", "acme-files", "prefix", "", true},
+		{"good-dots", "acme.files-1", "", "", true},
+		{"good-creds", "acme-files", "", "/etc/keys/svc.json", true},
+		{"clear", "", "ignored", "", true},
+		{"too-short", "ab", "", "", false},
+		{"upper", "Acme-Files", "", "", false},
+		{"leading-slash-prefix", "acme-files", "/bad", "", false},
+		{"dotdot-prefix", "acme-files", "a/../b", "", false},
+		{"wildcard-prefix", "acme-files", "foo*", "", false},
+		{"wildcard-bucket", "acme*", "", "", false},
+		{"control-prefix", "acme-files", "a\nb", "", false},
+		{"relative-creds", "acme-files", "", "keys/svc.json", false},
+		{"control-creds", "acme-files", "", "/etc/keys/a\nb.json", false},
+		{"unknown-project", "acme-files", "", "", false}, // wrong project name below
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -108,7 +112,7 @@ func TestSetProjectStorageGCSValidation(t *testing.T) {
 			if tc.name == "unknown-project" {
 				proj = "nope"
 			}
-			err := cfg.SetProjectStorageGCS(proj, tc.bucket, tc.prefix)
+			err := cfg.SetProjectStorageGCS(proj, tc.bucket, tc.prefix, tc.creds)
 			if tc.ok && err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -118,11 +122,12 @@ func TestSetProjectStorageGCSValidation(t *testing.T) {
 		})
 	}
 
-	// Clear unlinks.
-	if err := cfg.SetProjectStorageGCS("app", "acme-files", "p"); err != nil {
+	// Clear unlinks — including a stored credentials path, which must not
+	// survive to silently re-apply on the next link.
+	if err := cfg.SetProjectStorageGCS("app", "acme-files", "p", "/etc/keys/svc.json"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetProjectStorageGCS("app", "", ""); err != nil {
+	if err := cfg.SetProjectStorageGCS("app", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if st := cfg.ProjectStorage("app"); st != nil {
@@ -162,9 +167,43 @@ func TestLoadRejectsInvalidStoredBucket(t *testing.T) {
 	}
 }
 
+// A relative stored credentials path is a load error for the same reason a bad
+// bucket is: it would silently resolve against whatever cwd the bot started in.
+func TestLoadRejectsRelativeStoredCredentialsFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	body := `{
+  "discordToken": "tok",
+  "projects": {
+    "app": {
+      "path": "` + dir + `",
+      "storage": {"gcsBucket": "acme-files", "credentialsFile": "keys/svc.json"}
+    }
+  },
+  "channels": {"c1": "app"},
+  "grokBin": "grok"
+}
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	err = json.Unmarshal(raw, &cfg)
+	if err == nil {
+		t.Fatal("want load error for relative stored credentialsFile")
+	}
+	if !strings.Contains(err.Error(), "credentialsFile") {
+		t.Fatalf("error should name the field: %v", err)
+	}
+}
+
 func TestNormalizeStripsTrailingPrefixSlash(t *testing.T) {
 	cfg, _ := storageTestConfig(t)
-	if err := cfg.SetProjectStorageGCS("app", "acme-files", "grokwork/"); err != nil {
+	if err := cfg.SetProjectStorageGCS("app", "acme-files", "grokwork/", ""); err != nil {
 		t.Fatal(err)
 	}
 	st := cfg.ProjectStorage("app")

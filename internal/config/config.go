@@ -245,6 +245,10 @@ type ProjectItem struct {
 	// The bucket name is not a secret and may be shown verbatim.
 	StorageBucket string
 	StoragePrefix string
+	// StorageCredentialsFile is the service-account key path (empty = host
+	// gcloud auth). A local path — fine for the private web UI, never for
+	// Discord or audit details; the key contents never enter config at all.
+	StorageCredentialsFile string
 }
 
 // ChannelItem is a channel→project mapping row for the config UI.
@@ -1286,6 +1290,7 @@ func (c *Config) Snapshot() Snapshot {
 		if pc.Storage != nil {
 			item.StorageBucket = pc.Storage.GCSBucket
 			item.StoragePrefix = pc.Storage.Prefix
+			item.StorageCredentialsFile = pc.Storage.CredentialsFile
 		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled

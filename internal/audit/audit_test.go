@@ -119,9 +119,11 @@ func TestAppendScrubsPathsFromEveryWriter(t *testing.T) {
 		Error: "failed to run gh: open /Users/someone/Projects/secret-client/body.md: no such file",
 		Detail: map[string]any{
 			"repoDir": "/srv/checkouts/secret-client",
-			"notes":   []string{"wrote /tmp/gh-body-123", "ok"},
-			"number":  7,
-			"url":     "https://github.com/o/r/pull/7",
+			// gcloud quoting a storage credentials key path — /etc is in the
+			// scrub allowlist because that is where key files typically live.
+			"notes":  []string{"wrote /tmp/gh-body-123", "could not read /etc/grokwork/gcs-key.json", "ok"},
+			"number": 7,
+			"url":    "https://github.com/o/r/pull/7",
 		},
 	})
 	if err != nil {
@@ -137,7 +139,7 @@ func TestAppendScrubsPathsFromEveryWriter(t *testing.T) {
 	}
 	ev := events[0]
 
-	for _, leak := range []string{"/Users/someone", "/srv/checkouts", "/tmp/gh-body-123", "secret-client"} {
+	for _, leak := range []string{"/Users/someone", "/srv/checkouts", "/tmp/gh-body-123", "secret-client", "/etc/grokwork", "gcs-key.json"} {
 		if strings.Contains(ev.Error, leak) {
 			t.Errorf("Error leaked %q: %s", leak, ev.Error)
 		}
