@@ -654,6 +654,7 @@
     #side-nav a[data-icon="ship"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 2 11 13'/%3E%3Cpath d='M22 2 15 22l-4-9-9-4z'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="cases"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cline x1='4.93' y1='4.93' x2='9.17' y2='9.17'/%3E%3Cline x1='14.83' y1='14.83' x2='19.07' y2='19.07'/%3E%3Cline x1='14.83' y1='9.17' x2='19.07' y2='4.93'/%3E%3Cline x1='4.93' y1='19.07' x2='9.17' y2='14.83'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="issues"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Ccircle cx='12' cy='12' r='3' fill='black' stroke='none'/%3E%3C/svg%3E"); }
+    #side-nav a[data-icon="reviews"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cpath d='m9 15 2 2 4-4'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="linear"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2 2 7l10 5 10-5-10-5z'/%3E%3Cpath d='M2 17l10 5 10-5'/%3E%3Cpath d='M2 12l10 5 10-5'/%3E%3C/svg%3E"); }
     #side-nav a[data-icon="commits"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cline x1='1.5' y1='12' x2='8' y2='12'/%3E%3Cline x1='16' y1='12' x2='22.5' y2='12'/%3E%3C/svg%3E"); }
     {{/* Deploys is a distinct glyph from Ship (upload-to-a-box, not a paper
@@ -4686,7 +4687,7 @@
         <a href="/projects/{{.NavProject}}/start" data-icon="start" class="{{if .IsStart}}active{{end}}">Start task</a>
         <a href="/projects/{{.NavProject}}/ship" data-icon="ship" class="{{if .IsShip}}active{{end}}">Ship</a>
         <a href="/projects/{{.NavProject}}/cases" data-icon="cases" class="{{if .IsCases}}active{{end}}">Cases</a>
-        <a href="/projects/{{.NavProject}}/reviews" data-icon="issues" class="{{if .IsReviews}}active{{end}}">Reviews</a>
+        <a href="/projects/{{.NavProject}}/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">Reviews</a>
         <a href="/projects/{{.NavProject}}/issues" data-icon="issues" class="{{if .IsIssues}}active{{end}}">Issues</a>
         {{if .NavLinearEnabled}}<a href="/projects/{{.NavProject}}/linear" data-icon="linear" class="{{if .IsLinear}}active{{end}}">Linear</a>{{end}}
         <a href="/projects/{{.NavProject}}/commits" data-icon="commits" class="{{if .IsCommits}}active{{end}}">Commits</a>
@@ -4701,7 +4702,7 @@
         <span class="nav-label">Across projects</span>
         <a href="{{route "ship"}}" data-icon="ship" class="{{if .IsShip}}active{{end}}">Ship</a>
         <a href="{{route "cases"}}" data-icon="cases" class="{{if .IsCases}}active{{end}}">Cases</a>
-        <a href="/reviews" data-icon="issues" class="{{if .IsReviews}}active{{end}}">Reviews</a>
+        <a href="/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">Reviews</a>
         {{/* Mirrors the workspace order (Deploys immediately before Sessions).
              /deploys carries no project segment, so navScopeFromURL and its JS
              mirror both leave the shell global with no rule of their own. */}}
@@ -4727,13 +4728,13 @@
           <a href="/projects/{{.NavProject}}/ship" data-icon="ship" class="{{if .IsShip}}active{{end}}">Ship</a>
           <a href="/projects/{{.NavProject}}/cases" data-icon="cases" class="{{if .IsCases}}active{{end}}">Cases</a>
           <a href="/projects/{{.NavProject}}/sessions" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">Sessions</a>
-          <a href="/projects/{{.NavProject}}/reviews" data-icon="issues" class="{{if .IsReviews}}active{{end}}">Reviews</a>
+          <a href="/projects/{{.NavProject}}/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">Reviews</a>
           {{else}}
           <a href="{{route "home"}}" data-icon="projects" class="{{if .IsDashboard}}active{{end}}">Projects</a>
           <a href="{{route "ship"}}" data-icon="ship" class="{{if .IsShip}}active{{end}}">Ship</a>
           <a href="{{route "cases"}}" data-icon="cases" class="{{if .IsCases}}active{{end}}">Cases</a>
           <a href="{{route "sessions"}}" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">Sessions</a>
-          <a href="/reviews" data-icon="issues" class="{{if .IsReviews}}active{{end}}">Reviews</a>
+          <a href="/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">Reviews</a>
           {{end}}
         </div>
         {{if .NavProject}}

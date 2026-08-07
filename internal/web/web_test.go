@@ -1090,7 +1090,7 @@ func TestNavBrandChrome(t *testing.T) {
 		`href="/projects/proj/ship" data-icon="ship" class="">Ship</a>`,
 		`href="/projects/proj/cases" data-icon="cases" class="">Cases</a>`,
 		`href="/projects/proj/sessions" data-icon="sessions" class="">Sessions</a>`,
-		`href="/projects/proj/reviews" data-icon="issues" class="">Reviews</a>`,
+		`href="/projects/proj/reviews" data-icon="reviews" class="">Reviews</a>`,
 		`class="ws-back" href="/"`,
 		`class="ws-start" href="/projects/proj/start"`,
 	} {
