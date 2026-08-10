@@ -896,3 +896,52 @@ func TestStartRateMaxCoversFullBulkBatch(t *testing.T) {
 			startRateMax, fixBulkMax)
 	}
 }
+
+func TestFixClickUpDisabled400(t *testing.T) {
+	srv, cfg, _ := fixEnabledServer(t)
+	_ = cfg.SetProjectClickUp("proj", false, "", "", "", "", false)
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/clickup/DEV-1/fix", sid, csrf, nil)
+	if w.Code != http.StatusBadRequest && w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestFixClickUpCreate(t *testing.T) {
+	srv, cfg, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	if err := cfg.SetProjectClickUp("proj", true, "ws", "list1", "DEV", "cu-key", false); err != nil {
+		t.Fatal(err)
+	}
+	bot.SetThreadAPIForTest(b, &bot.FakeThreadAPI{NextTh: "cu-web-1"})
+
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/clickup/DEV-88/fix", sid, csrf, nil)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/sessions/cu-web-1") {
+		t.Fatalf("Location=%q", loc)
+	}
+	bot.WaitIdleForTest(b, 5*time.Second)
+	e, ok := srv.sessions.Get("cu-web-1")
+	if !ok {
+		t.Fatal("missing session")
+	}
+	found := false
+	for _, iss := range e.Issues {
+		if iss.IsClickUp() && iss.CustomID == "DEV-88" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("issues=%+v", e.Issues)
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -34,6 +35,14 @@ func (s *Server) linearClient(project string) *linear.Client {
 		return s.linearNew(key)
 	}
 	return linear.New(key)
+}
+
+func (s *Server) clickupClient(project string) *clickup.Client {
+	key := s.cfg.ProjectClickUpAPIKey(project)
+	if s.clickupNew != nil {
+		return s.clickupNew(key)
+	}
+	return clickup.New(key)
 }
 
 func (s *Server) projectPath(name string) (string, error) {
@@ -151,6 +160,7 @@ func (s *Server) issuesPageShell(ctx *hime.Context) (pageData, error) {
 	d.Project = project
 	d.RepoCatalog = catalog
 	d.LinearEnabled = s.cfg.ProjectLinearEnabled(project)
+	d.ClickUpEnabled = s.cfg.ProjectClickUpEnabled(project)
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	d.CanCreateIssue = s.canCreateIssue(d, project)
 	if err != nil {
@@ -330,6 +340,7 @@ func (s *Server) issueDetail(ctx *hime.Context) error {
 	d.ActiveRepo = active.Repo
 	d.Issue = info
 	d.LinearEnabled = s.cfg.ProjectLinearEnabled(project)
+	d.ClickUpEnabled = s.cfg.ProjectClickUpEnabled(project)
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e
@@ -864,4 +875,123 @@ func (s *Server) resolveSessionDiffCwd(ent sessionstore.Entry, threadID string) 
 		return c, project
 	}
 	return "", project
+}
+
+
+// annotateClickUpTaskWorkState marks ClickUp tasks FIXING for active Fixes sessions.
+func (s *Server) annotateClickUpTaskWorkState(project string, tasks []clickup.Task) []clickup.Task {
+	if s == nil || s.bot == nil || len(tasks) == 0 {
+		return tasks
+	}
+	active := s.bot.ActiveFixClickUpIssues(project)
+	if len(active) == 0 {
+		return tasks
+	}
+	for i := range tasks {
+		keys := []string{}
+		if cid := sessionstore.NormalizeClickUpCustomID(tasks[i].CustomID); cid != "" {
+			keys = append(keys, strings.ToLower(cid))
+		}
+		if id := strings.TrimSpace(tasks[i].ID); id != "" {
+			keys = append(keys, strings.ToLower(id))
+		}
+		for _, k := range keys {
+			if _, ok := active[k]; ok {
+				tasks[i].WorkState = bot.IssueWorkStateFixing
+				break
+			}
+		}
+	}
+	return tasks
+}
+
+func (s *Server) clickupList(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	if !s.cfg.ProjectClickUpEnabled(project) {
+		return ctx.Status(http.StatusNotFound).Error("ClickUp is not enabled for this project")
+	}
+	if !s.cfg.ProjectClickUpCanResolve(project) {
+		d := s.basePage(ctx)
+		d.Title = "ClickUp · " + project
+		d.IsClickUp = true
+		d.Project = project
+		d.Error = "ClickUp enabled but no API key (config or CLICKUP_API_KEY_<PROJECT>)"
+		return s.viewPage(ctx, "clickup_issues", d)
+	}
+	listID := s.cfg.ProjectClickUpListID(project)
+	client := s.clickupClient(project)
+	tasks, listErr := client.ListTasks(ctx.Context(), listID, 40)
+	if listErr == nil {
+		tasks = s.annotateClickUpTaskWorkState(project, tasks)
+	}
+	d := s.basePage(ctx)
+	d.Title = "ClickUp · " + project
+	d.IsClickUp = true
+	d.Project = project
+	d.ClickUpListID = listID
+	d.ClickUpTasks = tasks
+	d.ClickUpEnabled = true
+	if listErr != nil {
+		d.Error = listErr.Error()
+	}
+	return s.viewPage(ctx, "clickup_issues", d)
+}
+
+func (s *Server) clickupDetail(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	id := strings.TrimSpace(ctx.PathValue("id"))
+	if !s.cfg.ProjectClickUpEnabled(project) {
+		return ctx.Status(http.StatusNotFound).Error("ClickUp is not enabled for this project")
+	}
+	client := s.clickupClient(project)
+	opts := clickup.GetOpts{Markdown: true}
+	// Prefer custom id when PREFIX-N shape.
+	if sessionstore.NormalizeClickUpCustomID(id) != "" && strings.Contains(id, "-") {
+		ws := s.cfg.ProjectClickUpWorkspaceID(project)
+		if ws != "" {
+			opts.CustomTaskIDs = true
+			opts.WorkspaceID = ws
+		}
+	}
+	task, err := client.GetTask(ctx.Context(), id, opts)
+	if err == nil {
+		annotated := s.annotateClickUpTaskWorkState(project, []clickup.Task{task})
+		if len(annotated) > 0 {
+			task = annotated[0]
+		}
+	} else {
+		// Still show the id shell for fix when resolve fails.
+		if task.ID == "" && task.CustomID == "" {
+			if strings.Contains(id, "-") {
+				task.CustomID = sessionstore.NormalizeClickUpCustomID(id)
+			} else {
+				task.ID = id
+			}
+		}
+	}
+	d := s.basePage(ctx)
+	d.Title = id + " · " + project
+	d.IsClickUp = true
+	d.Project = project
+	d.ClickUpListID = s.cfg.ProjectClickUpListID(project)
+	d.ClickUpTask = task
+	d.ClickUpEnabled = true
+	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
+	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
+		d.Error = e
+	} else if err != nil {
+		d.Error = err.Error()
+	}
+	d.ShowFixPicker = ctx.FormValue("picker") == "1"
+	s.attachFixPickerClickUp(&d, project, task)
+	if d.ShowFixPicker || len(d.FixHits) > 1 {
+		d.ShowFixPicker = true
+	}
+	return s.viewPage(ctx, "clickup_detail", d)
 }

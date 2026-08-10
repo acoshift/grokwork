@@ -1895,19 +1895,23 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		owner, repo := defaultIssueRepo(e)
 		b.bindIssuesFromText(threadID, parsed.Prompt, owner, repo)
 		b.bindLinearIssuesFromText(threadID, projName, parsed.Prompt)
+		b.bindClickUpIssuesFromText(threadID, projName, parsed.Prompt)
 		if related != nil {
 			if refText := messagePromptText(related); refText != "" {
 				b.bindIssuesFromText(threadID, refText, owner, repo)
 				b.bindLinearIssuesFromText(threadID, projName, refText)
+				b.bindClickUpIssuesFromText(threadID, projName, refText)
 			}
 		}
 		if item.referencedPrompt != "" {
 			b.bindIssuesFromText(threadID, item.referencedPrompt, owner, repo)
 			b.bindLinearIssuesFromText(threadID, projName, item.referencedPrompt)
+			b.bindClickUpIssuesFromText(threadID, projName, item.referencedPrompt)
 		}
 	} else {
 		b.bindIssuesFromText(threadID, parsed.Prompt, "", "")
 		b.bindLinearIssuesFromText(threadID, projName, parsed.Prompt)
+		b.bindClickUpIssuesFromText(threadID, projName, parsed.Prompt)
 	}
 	if e, ok := b.sessions.Get(threadID); ok {
 		issueLines = e.Issues

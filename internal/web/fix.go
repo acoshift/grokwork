@@ -14,6 +14,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/bot"
+	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/grokrun"
@@ -363,6 +364,78 @@ func (s *Server) postIssueFix(ctx *hime.Context) error {
 	})
 }
 
+func (s *Server) postClickUpFix(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	id := strings.TrimSpace(ctx.PathValue("id"))
+	if !s.cfg.ProjectClickUpEnabled(project) {
+		return ctx.Status(http.StatusBadRequest).Error(bot.ErrClickUpDisabled.Error())
+	}
+	forceNew := formBool(ctx.PostFormValue("force_new"))
+	pickThread := strings.TrimSpace(ctx.PostFormValue("thread_id"))
+
+	if err := s.checkStartRate(ctx); err != nil {
+		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
+			"project": project, "kind": "clickup", "id": id,
+		})
+		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
+	}
+
+	title, body, issueURL, state, nativeID, customID := "", "", "", "", "", ""
+	if s.cfg.ProjectClickUpCanResolve(project) {
+		opts := clickup.GetOpts{Markdown: true}
+		if strings.Contains(id, "-") {
+			ws := s.cfg.ProjectClickUpWorkspaceID(project)
+			if ws != "" {
+				opts.CustomTaskIDs = true
+				opts.WorkspaceID = ws
+			}
+		}
+		if task, err := s.clickupClient(project).GetTask(ctx.Context(), id, opts); err == nil {
+			title = task.Name
+			body = task.Description
+			issueURL = task.URL
+			state = task.Status
+			nativeID = task.ID
+			customID = task.CustomID
+		}
+	}
+	if customID == "" && strings.Contains(id, "-") {
+		customID = sessionstore.NormalizeClickUpCustomID(id)
+	}
+	if nativeID == "" && customID == "" {
+		nativeID = id
+	}
+
+	actor := s.fixActor(ctx)
+	res, startErr := s.bot.StartFix(bot.FixStartOpts{
+		Kind:     bot.FixKindClickUp,
+		Project:  project,
+		Actor:    actor,
+		ForceNew: forceNew,
+		ThreadID: pickThread,
+		ClickUpID: nativeID,
+		CustomID:  customID,
+		Identifier: customID,
+		Title:    title,
+		URL:      issueURL,
+		Body:     body,
+		State:    state,
+	})
+	display := customID
+	if display == "" {
+		display = nativeID
+	}
+	if display == "" {
+		display = id
+	}
+	return s.handleFixResult(ctx, startErr, res, fixRedirectContext{
+		Kind: "clickup", Project: project, Identifier: display,
+	})
+}
+
 func (s *Server) postLinearFix(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
 	if err := s.ensureProjectAccess(ctx, project); err != nil {
@@ -513,6 +586,8 @@ func (s *Server) fixSourceRedirectValues(ctx *hime.Context, rc fixRedirectContex
 	switch rc.Kind {
 	case "linear":
 		loc = fmt.Sprintf("/projects/%s/linear/%s", url.PathEscape(rc.Project), url.PathEscape(rc.Identifier))
+	case "clickup":
+		loc = fmt.Sprintf("/projects/%s/clickup/%s", url.PathEscape(rc.Project), url.PathEscape(rc.Identifier))
 	default:
 		loc = fmt.Sprintf("/projects/%s/issues/%d", url.PathEscape(rc.Project), rc.Number)
 		if q == nil {
@@ -824,6 +899,14 @@ func (s *Server) attachFixPicker(d *pageData, project, owner, repo string, numbe
 	if number > 0 {
 		d.FixHits = s.bot.FindByIssue(project, owner, repo, number, false)
 	}
+}
+
+func (s *Server) attachFixPickerClickUp(d *pageData, project string, task clickup.Task) {
+	if d == nil || s.bot == nil {
+		return
+	}
+	d.CanStartSession = s.canStartSession(*d)
+	d.FixHits = s.bot.FindByClickUpIssue(project, task.ID, task.CustomID, "", false)
 }
 
 func (s *Server) canStartSession(d pageData) bool {

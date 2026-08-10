@@ -206,6 +206,12 @@ type ProjectItem struct {
 	LinearTeamKey    string
 	LinearAPIKeySet  bool   // true when config or env has a key (never expose the secret)
 	LinearEnvHint    string // e.g. LINEAR_API_KEY_HOMECONNECT
+	ClickUpEnabled        bool
+	ClickUpWorkspaceID    string
+	ClickUpListID         string
+	ClickUpCustomIdPrefix string
+	ClickUpAPIKeySet      bool
+	ClickUpEnvHint        string // e.g. CLICKUP_API_KEY_APP
 	DiscordChannelID string
 	DiscordGuildID   string
 	GitHubReposText  string   // "owner/repo" lines for config form
@@ -667,6 +673,19 @@ func Load() (*Config, error) {
 		}
 		if _, err := os.Stat(cwd); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] project %q path does not exist: %s\n", name, cwd)
+		}
+		// ClickUp customIdPrefix colliding with Linear teamKey: bare PREFIX-N stays
+		// Linear-only; free-text ClickUp prefix parse is off. Warn so the silence
+		// is not mistaken for a broken key.
+		if pc.ClickUp != nil && pc.ClickUp.Enabled && pc.Linear != nil && pc.Linear.Enabled {
+			prefix := strings.ToUpper(strings.TrimSpace(pc.ClickUp.CustomIdPrefix))
+			team := strings.ToUpper(strings.TrimSpace(pc.Linear.TeamKey))
+			if prefix != "" && prefix == team {
+				fmt.Fprintf(os.Stderr,
+					"[warn] project %q: clickup.customIdPrefix %q equals linear.teamKey — bare %s-N free-text binds as Linear only; "+
+						"ClickUp prefix-parse is disabled. Use ClickUp URLs or change the prefix.\n",
+					name, prefix, prefix)
+			}
 		}
 		// A capability template that resolves to nothing is not a soft problem:
 		// whoever it applies to gets zero capabilities (ResolveCapabilities fails
@@ -1298,6 +1317,16 @@ func (c *Config) Snapshot() Snapshot {
 			item.LinearAPIKeySet = strings.TrimSpace(pc.Linear.APIKey) != "" || linearAPIKeyFromEnv(n) != ""
 		} else if linearAPIKeyFromEnv(n) != "" {
 			item.LinearAPIKeySet = true
+		}
+		item.ClickUpEnvHint = "CLICKUP_API_KEY_" + ProjectEnvKeySuffix(n)
+		if pc.ClickUp != nil {
+			item.ClickUpEnabled = pc.ClickUp.Enabled
+			item.ClickUpWorkspaceID = strings.TrimSpace(pc.ClickUp.WorkspaceID)
+			item.ClickUpListID = strings.TrimSpace(pc.ClickUp.ListID)
+			item.ClickUpCustomIdPrefix = strings.ToUpper(strings.TrimSpace(pc.ClickUp.CustomIdPrefix))
+			item.ClickUpAPIKeySet = strings.TrimSpace(pc.ClickUp.APIKey) != "" || clickupAPIKeyFromEnv(n) != ""
+		} else if clickupAPIKeyFromEnv(n) != "" {
+			item.ClickUpAPIKeySet = true
 		}
 		if repos := pc.GitHub.NormalizedRepos(); len(repos) > 0 {
 			lines := make([]string, 0, len(repos))

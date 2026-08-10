@@ -15,9 +15,9 @@ const (
 
 const maxTrackedIssues = 5
 
-// TrackedIssue is a GitHub or Linear ticket bound to a Discord thread.
+// TrackedIssue is a GitHub, Linear, or ClickUp ticket bound to a Discord thread.
 type TrackedIssue struct {
-	// Provider is "github" (default/empty) or "linear".
+	// Provider is "github" (default/empty), "linear", or "clickup".
 	Provider string `json:"provider,omitempty"`
 
 	// GitHub fields
@@ -34,6 +34,12 @@ type TrackedIssue struct {
 	Title      string `json:"title,omitempty"`
 	State      string `json:"state,omitempty"`
 	TeamKey    string `json:"teamKey,omitempty"`
+
+	// ClickUp fields (Provider == "clickup")
+	ClickUpID   string `json:"clickupId,omitempty"`   // native id (9hx)
+	CustomID    string `json:"customId,omitempty"`    // DEV-42
+	ListID      string `json:"listId,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
 }
 
 var (
@@ -49,6 +55,9 @@ var (
 
 // IssueKey returns a stable identity for matching tracked issues.
 func (iss TrackedIssue) IssueKey() string {
+	if iss.IsClickUp() {
+		return clickupIssueKey(iss)
+	}
 	if iss.IsLinear() {
 		if k := linearIssueKey(iss.Identifier); k != "" {
 			return k
@@ -80,6 +89,9 @@ func (iss TrackedIssue) RepoSlug() string {
 
 // DisplayRef is a short human form: ENG-123, owner/repo#N, or #N.
 func (iss TrackedIssue) DisplayRef() string {
+	if iss.IsClickUp() {
+		return formatClickUpDisplay(iss)
+	}
 	if iss.IsLinear() {
 		return formatLinearDisplay(iss)
 	}
@@ -104,6 +116,9 @@ func (iss TrackedIssue) EffectiveKeyword() string {
 
 // PRBodyLine is the PR body convention line, e.g. "Fixes #42" or "Fixes ENG-123".
 func (iss TrackedIssue) PRBodyLine() string {
+	if iss.IsClickUp() {
+		return clickupPRBodyLine(iss)
+	}
 	if iss.IsLinear() {
 		return linearPRBodyLine(iss)
 	}
@@ -176,6 +191,12 @@ func SameIssue(a, b TrackedIssue) bool { return sameIssue(a, b) }
 // sameIssue reports whether two tracked issues refer to the same ticket.
 func sameIssue(a, b TrackedIssue) bool {
 	// Never match across providers.
+	if a.IsClickUp() != b.IsClickUp() {
+		return false
+	}
+	if a.IsClickUp() {
+		return sameClickUpIssue(a, b)
+	}
 	if a.IsLinear() != b.IsLinear() {
 		return false
 	}
@@ -219,7 +240,14 @@ func (e *Entry) upsertIssue(iss TrackedIssue, forceKeyword bool) {
 	if e == nil {
 		return
 	}
-	if iss.IsLinear() {
+	if iss.IsClickUp() {
+		iss.Provider = ProviderClickUp
+		iss.CustomID = NormalizeClickUpCustomID(iss.CustomID)
+		iss.ClickUpID = strings.TrimSpace(iss.ClickUpID)
+		if iss.CustomID == "" && iss.ClickUpID == "" && strings.TrimSpace(iss.URL) == "" {
+			return
+		}
+	} else if iss.IsLinear() {
 		iss.Provider = ProviderLinear
 		iss.Identifier = NormalizeLinearIdentifier(iss.Identifier)
 		if iss.Identifier == "" && strings.TrimSpace(iss.URL) == "" {
@@ -243,7 +271,29 @@ func (e *Entry) upsertIssue(iss TrackedIssue, forceKeyword bool) {
 	for i := range e.Issues {
 		if sameIssue(e.Issues[i], iss) {
 			prev := e.Issues[i]
-			if iss.IsLinear() {
+			if iss.IsClickUp() {
+				if iss.ClickUpID == "" {
+					iss.ClickUpID = prev.ClickUpID
+				}
+				if iss.CustomID == "" {
+					iss.CustomID = prev.CustomID
+				}
+				if iss.URL == "" {
+					iss.URL = prev.URL
+				}
+				if iss.Title == "" {
+					iss.Title = prev.Title
+				}
+				if iss.State == "" {
+					iss.State = prev.State
+				}
+				if iss.ListID == "" {
+					iss.ListID = prev.ListID
+				}
+				if iss.WorkspaceID == "" {
+					iss.WorkspaceID = prev.WorkspaceID
+				}
+			} else if iss.IsLinear() {
 				if iss.Identifier == "" {
 					iss.Identifier = prev.Identifier
 				}
@@ -293,7 +343,7 @@ func (e *Entry) upsertIssue(iss TrackedIssue, forceKeyword bool) {
 	e.Issues = append(e.Issues, iss)
 }
 
-// RemoveIssue drops a tracked issue by query (URL, #n, owner/repo#n, ENG-123).
+// RemoveIssue drops a tracked issue by query (URL, #n, owner/repo#n, ENG-123, DEV-42, ClickUp URL).
 func (e *Entry) RemoveIssue(query string) bool {
 	if e == nil {
 		return false
@@ -302,23 +352,14 @@ func (e *Entry) RemoveIssue(query string) bool {
 	if query == "" {
 		return false
 	}
-	var target TrackedIssue
-	if lin, ok := parseLinearQuery(query); ok {
-		target = lin
-	} else {
-		parsed := ParseIssueRefs(query)
-		if len(parsed) > 0 {
-			target = parsed[0]
-		} else if n, err := strconv.Atoi(strings.TrimPrefix(query, "#")); err == nil {
-			target = TrackedIssue{Number: n}
-		} else {
-			return false
-		}
+	targets := issueQueryTargets(query)
+	if len(targets) == 0 {
+		return false
 	}
 	out := e.Issues[:0]
 	removed := false
 	for _, iss := range e.Issues {
-		if sameIssue(iss, target) {
+		if matchesAnyIssueTarget(iss, targets) {
 			removed = true
 			continue
 		}
@@ -341,27 +382,18 @@ func (e Entry) HasIssues() bool {
 	return len(e.Issues) > 0
 }
 
-// FindIssue looks up a tracked issue by URL, #n, owner/repo#n, or ENG-123.
+// FindIssue looks up a tracked issue by URL, #n, owner/repo#n, ENG-123, DEV-42, or ClickUp URL.
 func (e Entry) FindIssue(query string) (TrackedIssue, bool) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return TrackedIssue{}, false
 	}
-	var target TrackedIssue
-	if lin, ok := parseLinearQuery(query); ok {
-		target = lin
-	} else {
-		parsed := ParseIssueRefs(query)
-		if len(parsed) > 0 {
-			target = parsed[0]
-		} else if n, err := strconv.Atoi(strings.TrimPrefix(query, "#")); err == nil {
-			target = TrackedIssue{Number: n}
-		} else {
-			return TrackedIssue{}, false
-		}
+	targets := issueQueryTargets(query)
+	if len(targets) == 0 {
+		return TrackedIssue{}, false
 	}
 	for _, iss := range e.Issues {
-		if sameIssue(iss, target) {
+		if matchesAnyIssueTarget(iss, targets) {
 			return iss, true
 		}
 	}
@@ -376,7 +408,7 @@ func FormatIssueStatusLines(issues []TrackedIssue) []string {
 	lines := make([]string, 0, len(issues)+1)
 	formatOne := func(iss TrackedIssue) string {
 		line := fmt.Sprintf("%s (%s)", iss.DisplayRef(), iss.EffectiveKeyword())
-		if iss.IsLinear() {
+		if iss.IsLinear() || iss.IsClickUp() {
 			if st := strings.TrimSpace(iss.State); st != "" {
 				line += " · " + st
 			}
@@ -404,9 +436,21 @@ func IssueTitlePrefix(issues []TrackedIssue) string {
 	}
 	seenGH := map[int]struct{}{}
 	seenLin := map[string]struct{}{}
+	seenCU := map[string]struct{}{}
 	var parts []string
 	for _, iss := range issues {
-		if iss.IsLinear() {
+		if iss.IsClickUp() {
+			id := formatClickUpDisplay(iss)
+			if id == "" || strings.HasPrefix(strings.ToLower(id), "http") {
+				continue
+			}
+			key := strings.ToLower(id)
+			if _, ok := seenCU[key]; ok {
+				continue
+			}
+			seenCU[key] = struct{}{}
+			parts = append(parts, id)
+		} else if iss.IsLinear() {
 			id := NormalizeLinearIdentifier(iss.Identifier)
 			if id == "" {
 				continue
@@ -435,6 +479,55 @@ func IssueTitlePrefix(issues []TrackedIssue) string {
 		return ""
 	}
 	return strings.Join(parts, " ") + " "
+}
+
+
+// issueQueryTargets builds candidate TrackedIssue values for a human query.
+// PREFIX-N yields both Linear and ClickUp candidates so unlink/find match whatever is bound.
+func issueQueryTargets(query string) []TrackedIssue {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil
+	}
+	var out []TrackedIssue
+	seen := map[string]struct{}{}
+	add := func(iss TrackedIssue) {
+		k := iss.Provider + "|" + iss.IssueKey()
+		if k == "|" || k == "github|" {
+			// still allow bare number keys
+			k = iss.IssueKey()
+		}
+		if k == "" {
+			return
+		}
+		if _, ok := seen[k]; ok {
+			return
+		}
+		seen[k] = struct{}{}
+		out = append(out, iss)
+	}
+	if lin, ok := parseLinearQuery(query); ok {
+		add(lin)
+	}
+	if cu, ok := parseClickUpQuery(query, ""); ok {
+		add(cu)
+	}
+	parsed := ParseIssueRefs(query)
+	if len(parsed) > 0 {
+		add(parsed[0])
+	} else if n, err := strconv.Atoi(strings.TrimPrefix(query, "#")); err == nil {
+		add(TrackedIssue{Number: n})
+	}
+	return out
+}
+
+func matchesAnyIssueTarget(iss TrackedIssue, targets []TrackedIssue) bool {
+	for _, t := range targets {
+		if sameIssue(iss, t) {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseIssueRefs extracts GitHub issue references from free text.

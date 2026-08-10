@@ -19,6 +19,15 @@ type ProjectLinearConfig struct {
 	TeamKey string `json:"teamKey,omitempty"` // e.g. "ENG"
 }
 
+// ProjectClickUpConfig is per-project ClickUp integration settings (opt-in).
+type ProjectClickUpConfig struct {
+	Enabled        bool   `json:"enabled,omitempty"`
+	APIKey         string `json:"apiKey,omitempty"`         // secret; never log or send to Discord
+	WorkspaceID    string `json:"workspaceId,omitempty"`    // ClickUp workspace (API team_id)
+	ListID         string `json:"listId,omitempty"`         // home list for web list page
+	CustomIdPrefix string `json:"customIdPrefix,omitempty"` // e.g. "DEV" for bare PREFIX-N bind
+}
+
 // ProjectConfig is one named project entry (path + optional integrations).
 type ProjectConfig struct {
 	Path             string `json:"path"`
@@ -56,7 +65,8 @@ type ProjectConfig struct {
 	// VerifyCommands are project shell checks run by @Grok /verify (no Grok).
 	VerifyCommands []VerifyCommand      `json:"verifyCommands,omitempty"`
 	GitHub         *ProjectGitHubConfig `json:"github,omitempty"`
-	Linear         *ProjectLinearConfig `json:"linear,omitempty"`
+	Linear         *ProjectLinearConfig  `json:"linear,omitempty"`
+	ClickUp        *ProjectClickUpConfig `json:"clickup,omitempty"`
 	// Deploy is per-project deploy policy and credentials. The pipeline itself
 	// lives in the repo at .grokwork/deploy.yaml (see internal/deploy).
 	Deploy *ProjectDeployConfig `json:"deploy,omitempty"`
@@ -146,6 +156,12 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 			pc.Linear.TeamKey = strings.TrimSpace(pc.Linear.TeamKey)
 			pc.Linear.APIKey = strings.TrimSpace(pc.Linear.APIKey)
 		}
+		if pc.ClickUp != nil {
+			pc.ClickUp.APIKey = strings.TrimSpace(pc.ClickUp.APIKey)
+			pc.ClickUp.WorkspaceID = strings.TrimSpace(pc.ClickUp.WorkspaceID)
+			pc.ClickUp.ListID = strings.TrimSpace(pc.ClickUp.ListID)
+			pc.ClickUp.CustomIdPrefix = strings.ToUpper(strings.TrimSpace(pc.ClickUp.CustomIdPrefix))
+		}
 		if pc.GitHub != nil {
 			for i := range pc.GitHub.Repos {
 				pc.GitHub.Repos[i].Owner = strings.TrimSpace(pc.GitHub.Repos[i].Owner)
@@ -194,6 +210,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		VerifyCommands           []VerifyCommand         `json:"verifyCommands,omitempty"`
 		GitHub                   *ProjectGitHubConfig    `json:"github,omitempty"`
 		Linear                   *ProjectLinearConfig    `json:"linear,omitempty"`
+		ClickUp                  *ProjectClickUpConfig   `json:"clickup,omitempty"`
 		Deploy                   *ProjectDeployConfig    `json:"deploy,omitempty"`
 		Actions                  *ProjectActionsConfig   `json:"actions,omitempty"`
 		Storage                  *ProjectStorageConfig   `json:"storage,omitempty"`
@@ -219,6 +236,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			VerifyCommands:           cloneVerifyCommands(pc.VerifyCommands),
 			GitHub:                   cloneProjectGitHub(pc.GitHub),
 			Linear:                   cloneProjectLinear(pc.Linear),
+			ClickUp:                  cloneProjectClickUp(pc.ClickUp),
 			Deploy:                   cloneProjectDeploy(pc.Deploy),
 			Actions:                  cloneProjectActions(pc.Actions),
 			Storage:                  cloneProjectStorage(pc.Storage),
@@ -239,6 +257,14 @@ func cloneProjectLinear(l *ProjectLinearConfig) *ProjectLinearConfig {
 		return nil
 	}
 	cp := *l
+	return &cp
+}
+
+func cloneProjectClickUp(c *ProjectClickUpConfig) *ProjectClickUpConfig {
+	if c == nil {
+		return nil
+	}
+	cp := *c
 	return &cp
 }
 
@@ -267,6 +293,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			VerifyCommands:           cloneVerifyCommands(v.VerifyCommands),
 			GitHub:                   cloneProjectGitHub(v.GitHub),
 			Linear:                   cloneProjectLinear(v.Linear),
+			ClickUp:                  cloneProjectClickUp(v.ClickUp),
 			Deploy:                   cloneProjectDeploy(v.Deploy),
 			Actions:                  cloneProjectActions(v.Actions),
 			Storage:                  cloneProjectStorage(v.Storage),
@@ -866,6 +893,166 @@ func (c *Config) AnyProjectLinearEnabled() bool {
 	defer c.mu.RUnlock()
 	for _, pc := range c.Projects {
 		if pc.Linear != nil && pc.Linear.Enabled {
+			return true
+		}
+	}
+	return false
+}
+
+func clickupAPIKeyFromEnv(project string) string {
+	suf := ProjectEnvKeySuffix(project)
+	if suf == "" {
+		return ""
+	}
+	return strings.TrimSpace(os.Getenv("CLICKUP_API_KEY_" + suf))
+}
+
+// ProjectClickUpEnabled reports whether ClickUp is opted in for the project.
+func (c *Config) ProjectClickUpEnabled(name string) bool {
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	return ok && pc.ClickUp != nil && pc.ClickUp.Enabled
+}
+
+// ProjectClickUpAPIKey returns config key or CLICKUP_API_KEY_<PROJECT> env.
+func (c *Config) ProjectClickUpAPIKey(name string) string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	var fromConfig string
+	if pc, ok := c.Projects[name]; ok && pc.ClickUp != nil {
+		fromConfig = strings.TrimSpace(pc.ClickUp.APIKey)
+	}
+	c.mu.RUnlock()
+	if fromConfig != "" {
+		return fromConfig
+	}
+	return clickupAPIKeyFromEnv(name)
+}
+
+// ProjectClickUpWorkspaceID returns the configured workspace id.
+func (c *Config) ProjectClickUpWorkspaceID(name string) string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	if !ok || pc.ClickUp == nil {
+		return ""
+	}
+	return strings.TrimSpace(pc.ClickUp.WorkspaceID)
+}
+
+// ProjectClickUpListID returns the configured list id.
+func (c *Config) ProjectClickUpListID(name string) string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	if !ok || pc.ClickUp == nil {
+		return ""
+	}
+	return strings.TrimSpace(pc.ClickUp.ListID)
+}
+
+// ProjectClickUpCustomIdPrefix returns the configured custom task id prefix (uppercased).
+func (c *Config) ProjectClickUpCustomIdPrefix(name string) string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	if !ok || pc.ClickUp == nil {
+		return ""
+	}
+	return strings.ToUpper(strings.TrimSpace(pc.ClickUp.CustomIdPrefix))
+}
+
+// ProjectClickUpCanResolve is true when ClickUp is enabled and an API key is available.
+func (c *Config) ProjectClickUpCanResolve(name string) bool {
+	return c.ProjectClickUpEnabled(name) && c.ProjectClickUpAPIKey(name) != ""
+}
+
+// ProjectClickUpPrefixParseEnabled is true when free-text PREFIX-N should bind as ClickUp.
+// Disabled when prefix collides with Linear teamKey on the same project (Linear wins).
+func (c *Config) ProjectClickUpPrefixParseEnabled(name string) bool {
+	if !c.ProjectClickUpEnabled(name) {
+		return false
+	}
+	prefix := c.ProjectClickUpCustomIdPrefix(name)
+	if prefix == "" {
+		return false
+	}
+	if c.ProjectLinearEnabled(name) {
+		team := strings.ToUpper(strings.TrimSpace(c.ProjectLinearTeamKey(name)))
+		if team != "" && team == prefix {
+			return false
+		}
+	}
+	return true
+}
+
+// SetProjectClickUp updates ClickUp settings for an existing project and persists.
+// apiKey empty means leave the stored key unchanged; clearAPIKey true clears it.
+func (c *Config) SetProjectClickUp(name string, enabled bool, workspaceID, listID, customIdPrefix, apiKey string, clearAPIKey bool) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	listID = strings.TrimSpace(listID)
+	customIdPrefix = strings.ToUpper(strings.TrimSpace(customIdPrefix))
+	apiKey = strings.TrimSpace(apiKey)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	cu := pc.ClickUp
+	if cu == nil {
+		cu = &ProjectClickUpConfig{}
+	} else {
+		cp := *cu
+		cu = &cp
+	}
+	cu.Enabled = enabled
+	cu.WorkspaceID = workspaceID
+	cu.ListID = listID
+	cu.CustomIdPrefix = customIdPrefix
+	if clearAPIKey {
+		cu.APIKey = ""
+	} else if apiKey != "" {
+		cu.APIKey = apiKey
+	}
+	if !cu.Enabled && cu.APIKey == "" && cu.WorkspaceID == "" && cu.ListID == "" && cu.CustomIdPrefix == "" {
+		pc.ClickUp = nil
+	} else {
+		pc.ClickUp = cu
+	}
+	c.Projects[name] = pc
+	return c.saveLocked()
+}
+
+// AnyProjectClickUpEnabled reports whether any project has ClickUp opted in.
+func (c *Config) AnyProjectClickUpEnabled() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, pc := range c.Projects {
+		if pc.ClickUp != nil && pc.ClickUp.Enabled {
 			return true
 		}
 	}

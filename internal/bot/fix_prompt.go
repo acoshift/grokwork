@@ -75,3 +75,36 @@ func BuildLinearFixPrompt(actorDisplay, identifier, title, url, state, descripti
 	b.WriteString("GitHub integration can move state. Do not call Linear issueUpdate. Do not merge.\n")
 	return b.String()
 }
+
+// BuildClickUpFixPrompt is the Fix-with-Grok task body for a ClickUp task (web).
+func BuildClickUpFixPrompt(actorDisplay, display, title, url, state, description string) string {
+	actorDisplay = strings.TrimSpace(actorDisplay)
+	if actorDisplay == "" {
+		actorDisplay = "web user"
+	}
+	display = strings.TrimSpace(display)
+	title = strings.TrimSpace(title)
+	url = strings.TrimSpace(url)
+	state = strings.TrimSpace(state)
+	description = truncateRunes(strings.TrimSpace(description), fixPromptBodyMaxRunes)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "## Task (started from web by %s)\n", actorDisplay)
+	fmt.Fprintf(&b, "Fix ClickUp task %s: %s\n", display, title)
+	if url != "" {
+		fmt.Fprintf(&b, "URL: %s\n", url)
+	}
+	if state != "" {
+		fmt.Fprintf(&b, "Status: %s\n", state)
+	}
+	b.WriteString("\n### Description\n")
+	if description != "" {
+		b.WriteString(description)
+		b.WriteString("\n")
+	} else {
+		b.WriteString("(no description)\n")
+	}
+	b.WriteString("\nImplement the fix in this worktree, commit, push, and open/update a PR.\n")
+	fmt.Fprintf(&b, "Put %s in the PR title and body (Fixes %s). Do not call ClickUp APIs. Do not merge.\n", display, display)
+	return b.String()
+}

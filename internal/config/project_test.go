@@ -483,3 +483,64 @@ func TestLoadStringProjectsStillWorks(t *testing.T) {
 		t.Fatalf("%q %v", path, ok)
 	}
 }
+
+func TestProjectClickUpAccessorsAndEnv(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{
+		Projects: ProjectsMap{
+			"app": {
+				Path: filepath.Join(dir, "app"),
+				ClickUp: &ProjectClickUpConfig{
+					Enabled:        true,
+					WorkspaceID:    "ws1",
+					ListID:         "list1",
+					CustomIdPrefix: "DEV",
+				},
+			},
+			"plain": {Path: filepath.Join(dir, "p")},
+		},
+		ConfigPath: filepath.Join(dir, "config.json"),
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "app"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "p"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if !cfg.ProjectClickUpEnabled("app") {
+		t.Fatal("expected enabled")
+	}
+	if cfg.ProjectClickUpEnabled("plain") {
+		t.Fatal("plain should be off")
+	}
+	if cfg.ProjectClickUpCustomIdPrefix("app") != "DEV" {
+		t.Fatal(cfg.ProjectClickUpCustomIdPrefix("app"))
+	}
+	if !cfg.ProjectClickUpPrefixParseEnabled("app") {
+		t.Fatal("prefix parse should be on")
+	}
+	t.Setenv("CLICKUP_API_KEY_APP", "from-env")
+	if got := cfg.ProjectClickUpAPIKey("app"); got != "from-env" {
+		t.Fatalf("env key=%q", got)
+	}
+	if err := cfg.SetProjectClickUp("app", true, "ws2", "list2", "dev", "from-config", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.ProjectClickUpAPIKey("app"); got != "from-config" {
+		t.Fatalf("config wins: %q", got)
+	}
+	if cfg.ProjectClickUpWorkspaceID("app") != "ws2" || cfg.ProjectClickUpListID("app") != "list2" {
+		t.Fatal("ids")
+	}
+	if cfg.ProjectClickUpCustomIdPrefix("app") != "DEV" {
+		t.Fatal("prefix upper")
+	}
+	// Collision with Linear team key disables prefix parse.
+	if err := cfg.SetProjectLinear("app", true, "DEV", "lk", false); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProjectClickUpPrefixParseEnabled("app") {
+		t.Fatal("prefix parse should disable when == linear teamKey")
+	}
+}

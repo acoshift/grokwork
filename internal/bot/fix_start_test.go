@@ -420,3 +420,64 @@ func waitHistory(t *testing.T, b *Bot, threadID string, n int) {
 	th, _ := b.history.Get(threadID)
 	t.Fatalf("timeout history thread=%s turns=%+v", threadID, th)
 }
+
+func TestBuildClickUpFixPromptContract(t *testing.T) {
+	p := BuildClickUpFixPrompt("Bob", "DEV-9", "Title", "https://app.clickup.com/t/999/DEV-9", "open", "desc")
+	if !strings.Contains(p, "Fixes DEV-9") {
+		t.Fatalf("%s", p)
+	}
+	if !strings.Contains(p, "Do not call ClickUp") {
+		t.Fatalf("%s", p)
+	}
+	if !strings.Contains(p, "desc") {
+		t.Fatalf("%s", p)
+	}
+}
+
+func TestStartFixClickUpDisabled(t *testing.T) {
+	b, _ := testFixBot(t)
+	// ClickUp not enabled on test bot by default
+	_, err := b.StartFix(FixStartOpts{
+		Kind: FixKindClickUp, Project: "app", CustomID: "DEV-1",
+		Actor: Actor{ID: "u1", DisplayName: "U"},
+	})
+	if !errors.Is(err, ErrClickUpDisabled) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestStartFixClickUpCreate(t *testing.T) {
+	b, _ := testFixBot(t)
+	pc := b.cfg.Projects["app"]
+	pc.ClickUp = &config.ProjectClickUpConfig{
+		Enabled: true, WorkspaceID: "ws", ListID: "list", CustomIdPrefix: "DEV", APIKey: "key",
+	}
+	b.cfg.Projects["app"] = pc
+	// Force web-native path (no discord gateway / thread API).
+	b.threadAPI = nil
+	res, err := b.StartFix(FixStartOpts{
+		Kind: FixKindClickUp, Project: "app", CustomID: "DEV-55",
+		Title: "T", URL: "https://app.clickup.com/t/ws/DEV-55",
+		Actor:    Actor{ID: "builder1", DisplayName: "B"},
+		ForceNew: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ThreadID == "" {
+		t.Fatal("empty thread")
+	}
+	e, ok := b.sessions.Get(res.ThreadID)
+	if !ok {
+		t.Fatal("no entry")
+	}
+	found := false
+	for _, iss := range e.Issues {
+		if iss.IsClickUp() && iss.CustomID == "DEV-55" && iss.EffectiveKeyword() == sessionstore.IssueKeywordFixes {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("issues=%+v", e.Issues)
+	}
+}

@@ -23,6 +23,7 @@ import (
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/identity"
+	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/markdown"
 	"github.com/acoshift/grokwork/internal/reviewstore"
@@ -63,6 +64,7 @@ type Server struct {
 	// path without writing hundreds of records.
 	deployScanLimit int
 	linearNew       func(apiKey string) *linear.Client
+	clickupNew      func(apiKey string) *clickup.Client
 	// Fix-with-Grok rate limit (lazy init).
 	startLimit *startRateLimiter
 	// PR raw-patch cache (page + per-file fragments share one gh pr diff).
@@ -159,6 +161,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.addProject":                  "/config/projects",
 		"config.removeProject":               "/config/projects/remove",
 		"config.setProjectLinear":            "/config/projects/linear",
+		"config.setProjectClickUp":           "/config/projects/clickup",
 		"config.setProjectGitHub":            "/config/projects/github",
 		"config.setProjectStorage":           "/config/projects/storage",
 		"config.setProjectChannel":           "/config/projects/channel",
@@ -290,6 +293,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("issue_detail", "layout.tmpl", "issue_detail.tmpl")
 	tp.ParseFiles("linear_issues", "layout.tmpl", "linear_issues.tmpl")
 	tp.ParseFiles("linear_detail", "layout.tmpl", "linear_detail.tmpl")
+	tp.ParseFiles("clickup_issues", "layout.tmpl", "clickup_issues.tmpl")
+	tp.ParseFiles("clickup_detail", "layout.tmpl", "clickup_detail.tmpl")
 	tp.ParseFiles("pr_detail", "layout.tmpl", "pr_detail.tmpl")
 	tp.ParseFiles("reviews", "layout.tmpl", "reviews.tmpl")
 	tp.ParseFiles("diff", "layout.tmpl", "diff.tmpl", "diff_review.tmpl")
@@ -389,6 +394,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /projects/{project}/issues/{n}", s.requireAuth(hime.Handler(s.issueDetail)))
 	mux.Handle("GET /projects/{project}/linear", s.requireAuth(hime.Handler(s.linearList)))
 	mux.Handle("GET /projects/{project}/linear/{identifier}", s.requireAuth(hime.Handler(s.linearDetail)))
+	mux.Handle("GET /projects/{project}/clickup", s.requireAuth(hime.Handler(s.clickupList)))
+	mux.Handle("GET /projects/{project}/clickup/{id}", s.requireAuth(hime.Handler(s.clickupDetail)))
 	mux.Handle("GET /commits", s.requireAuth(hime.Handler(s.redirectHome)))
 	mux.Handle("GET /projects/{project}/deploys", s.requireAuth(hime.Handler(s.deploysPage)))
 	mux.Handle("GET /projects/{project}/deploys/{runID}", s.requireAuth(hime.Handler(s.deployRunPage)))
@@ -472,6 +479,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssuePlan))))
 	mux.Handle("POST /projects/{project}/issues/{n}/items/start",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssueItemStart))))
+	mux.Handle("POST /projects/{project}/clickup/{id}/fix",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postClickUpFix))))
 	mux.Handle("POST /projects/{project}/linear/{identifier}/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postLinearFix))))
 	// Address CI / Continue / Address review (PR11b–11c)
@@ -541,6 +550,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects", s.requireAdmin(hime.Handler(s.addProject)))
 	mux.Handle("POST /config/projects/remove", s.requireAdmin(hime.Handler(s.removeProject)))
 	mux.Handle("POST /config/projects/linear", s.requireAdmin(hime.Handler(s.setProjectLinear)))
+	mux.Handle("POST /config/projects/clickup", s.requireAdmin(hime.Handler(s.setProjectClickUp)))
 	mux.Handle("POST /config/projects/github", s.requireAdmin(hime.Handler(s.setProjectGitHub)))
 	mux.Handle("POST /config/projects/storage", s.requireAdmin(hime.Handler(s.setProjectStorage)))
 	mux.Handle("POST /config/projects/channel", s.requireAdmin(hime.Handler(s.setProjectChannel)))
@@ -626,6 +636,7 @@ type pageData struct {
 	IsLogin     bool
 	IsIssues    bool
 	IsLinear    bool
+	IsClickUp   bool
 	IsCommits   bool
 	IsReviews   bool
 	IsStart     bool
@@ -683,7 +694,8 @@ type pageData struct {
 	// restores can recompute it client-side.
 	NavProject       string
 	NavProjects      []string // visible projects for the sidebar switcher
-	NavLinearEnabled bool     // workspace nav: show the Linear item
+	NavLinearEnabled  bool // workspace nav: show the Linear item
+	NavClickUpEnabled bool // workspace nav: show the ClickUp item
 	// Home launcher cards.
 	ProjectCards []projectCard
 	// Auth chrome
@@ -723,6 +735,10 @@ type pageData struct {
 	LinearTeam    string
 	LinearIssues  []linear.Issue
 	LinearIssue   linear.Issue
+	ClickUpEnabled bool
+	ClickUpListID  string
+	ClickUpTasks   []clickup.Task
+	ClickUpTask    clickup.Task
 	// Deploy pipeline (read surface). DeployNotConfigured distinguishes "this
 	// project has no .grokwork/deploy.yaml yet" from "the manifest is broken":
 	// the first is the normal state and gets instructions, not an error.
@@ -939,6 +955,7 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 	if d.NavProject != "" {
 		d.NavProjects = s.filterProjectNames(ctx)
 		d.NavLinearEnabled = s.cfg.ProjectLinearEnabled(d.NavProject)
+		d.NavClickUpEnabled = s.cfg.ProjectClickUpEnabled(d.NavProject)
 	}
 	// Write affordances: feature on + (auth off never enables Feature*; auth on needs role).
 	d.CanGitHubWrite = s.cfg.FeatureGitHubWrites()
@@ -1387,6 +1404,19 @@ func (s *Server) setProjectLinear(ctx *hime.Context) error {
 	err := s.cfg.SetProjectLinear(name, enabled, teamKey, apiKey, clearKey)
 	s.auditAction(ctx, audit.ActionConfigSetLinear, err, map[string]any{"name": name, "enabled": enabled})
 	return s.projectConfigTabRedirect(ctx, name, "integrations", fmt.Sprintf("Updated Linear for project %q", name), err)
+}
+
+func (s *Server) setProjectClickUp(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	enabled := ctx.PostFormValue("enabled") == "1" || strings.EqualFold(ctx.PostFormValue("enabled"), "on")
+	clearKey := ctx.PostFormValue("clearApiKey") == "1" || strings.EqualFold(ctx.PostFormValue("clearApiKey"), "on")
+	workspaceID := ctx.PostFormValue("workspaceId")
+	listID := ctx.PostFormValue("listId")
+	prefix := ctx.PostFormValue("customIdPrefix")
+	apiKey := ctx.PostFormValue("apiKey")
+	err := s.cfg.SetProjectClickUp(name, enabled, workspaceID, listID, prefix, apiKey, clearKey)
+	s.auditAction(ctx, audit.ActionConfigSetClickUp, err, map[string]any{"name": name, "enabled": enabled})
+	return s.projectConfigTabRedirect(ctx, name, "integrations", fmt.Sprintf("Updated ClickUp for project %q", name), err)
 }
 
 func (s *Server) setProjectActionsRule(ctx *hime.Context) error {

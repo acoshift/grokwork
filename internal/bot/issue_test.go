@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -151,5 +152,168 @@ func TestBindLinearIssuesRespectsOptIn(t *testing.T) {
 	e, _ := b.sessions.Get("t2")
 	if !e.Issues[0].IsLinear() || e.Issues[0].Identifier != "ENG-99" {
 		t.Fatalf("%+v", e.Issues)
+	}
+}
+
+func TestBindClickUpAndLinearCoexistence(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(filepath.Join(dir, "sessions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Projects: config.ProjectsMap{
+			"app": {
+				Path: dir,
+				Linear: &config.ProjectLinearConfig{
+					Enabled: true,
+					TeamKey: "ENG",
+				},
+				ClickUp: &config.ProjectClickUpConfig{
+					Enabled:        true,
+					CustomIdPrefix: "DEV",
+				},
+			},
+		},
+	}
+	b := &Bot{cfg: cfg, sessions: store}
+	// DEV claimed by ClickUp; ENG stays Linear.
+	bound := b.bindLinearIssuesFromText("t1", "app", "fix DEV-12 and ENG-9")
+	for _, iss := range bound {
+		if iss.IsLinear() && strings.HasPrefix(iss.Identifier, "DEV") {
+			t.Fatalf("DEV should not bind as Linear: %+v", iss)
+		}
+	}
+	if len(bound) != 1 || bound[0].Identifier != "ENG-9" {
+		t.Fatalf("linear should only bind ENG-9: %+v", bound)
+	}
+	b.bindClickUpIssuesFromText("t1", "app", "fix DEV-12 and ENG-9")
+	e, ok := store.Get("t1")
+	if !ok {
+		t.Fatal("missing session")
+	}
+	var hasCU, hasENG bool
+	for _, iss := range e.Issues {
+		if iss.IsClickUp() && iss.CustomID == "DEV-12" {
+			hasCU = true
+		}
+		if iss.IsLinear() && iss.Identifier == "ENG-9" {
+			hasENG = true
+		}
+		if iss.IsLinear() && strings.HasPrefix(iss.Identifier, "DEV") {
+			t.Fatalf("linear DEV leak: %+v", iss)
+		}
+	}
+	if !hasCU || !hasENG {
+		t.Fatalf("want both DEV-12 clickup and ENG-9 linear; got %+v", e.Issues)
+	}
+	// Unlink ClickUp custom id via provider-agnostic query
+	if !e.RemoveIssue("DEV-12") {
+		t.Fatal("unlink DEV-12")
+	}
+	if _, ok := e.FindIssue("DEV-12"); ok {
+		t.Fatal("DEV-12 still present")
+	}
+}
+
+func TestIssueBindingPromptClickUp(t *testing.T) {
+	p := issueBindingPrompt([]sessionstore.TrackedIssue{
+		{Provider: sessionstore.ProviderClickUp, CustomID: "DEV-3", Keyword: sessionstore.IssueKeywordFixes, Title: "Auth", State: "open", URL: "https://app.clickup.com/t/x"},
+	})
+	if !strings.Contains(p, "Fixes DEV-3") {
+		t.Fatalf("missing Fixes line: %s", p)
+	}
+	if !strings.Contains(p, "Do not call ClickUp") {
+		t.Fatalf("missing no-call: %s", p)
+	}
+	if strings.Contains(p, "Linear's") || strings.Contains(p, "Linear state") {
+		t.Fatalf("must not claim Linear integration for ClickUp-only: %s", p)
+	}
+}
+
+func TestBindClickUpURLDoesNotDualBindLinear(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(filepath.Join(dir, "sessions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Projects: config.ProjectsMap{
+			"app": {
+				Path: dir,
+				Linear: &config.ProjectLinearConfig{
+					Enabled: true,
+					TeamKey: "ENG",
+				},
+				// URL-only ClickUp (no prefix) — pasting custom-id URL must not also bind Linear.
+				ClickUp: &config.ProjectClickUpConfig{
+					Enabled: true,
+				},
+			},
+		},
+	}
+	b := &Bot{cfg: cfg, sessions: store}
+	text := "fix https://app.clickup.com/t/1234567/DEV-9 please"
+	b.bindLinearIssuesFromText("t1", "app", text)
+	b.bindClickUpIssuesFromText("t1", "app", text)
+	e, _ := store.Get("t1")
+	var linDEV, cuDEV bool
+	for _, iss := range e.Issues {
+		if iss.IsLinear() && strings.HasPrefix(iss.Identifier, "DEV") {
+			linDEV = true
+		}
+		if iss.IsClickUp() && iss.CustomID == "DEV-9" {
+			cuDEV = true
+		}
+	}
+	if !cuDEV {
+		t.Fatalf("want ClickUp DEV-9; got %+v", e.Issues)
+	}
+	if linDEV {
+		t.Fatalf("Linear must not claim DEV from ClickUp URL: %+v", e.Issues)
+	}
+}
+
+func TestBindLinearURLNotStolenByClickUpPrefix(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(filepath.Join(dir, "sessions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		Projects: config.ProjectsMap{
+			"app": {
+				Path: dir,
+				Linear: &config.ProjectLinearConfig{
+					Enabled: true,
+					TeamKey: "DEV",
+				},
+				ClickUp: &config.ProjectClickUpConfig{
+					Enabled:        true,
+					CustomIdPrefix: "DEV", // collision: prefix-parse off, Linear wins bare
+				},
+			},
+		},
+	}
+	b := &Bot{cfg: cfg, sessions: store}
+	// Explicit Linear URL must remain Linear even when ClickUp is enabled.
+	text := "see https://linear.app/acme/issue/DEV-7/fix-auth"
+	b.bindClickUpIssuesFromText("t1", "app", text)
+	b.bindLinearIssuesFromText("t1", "app", text)
+	e, _ := store.Get("t1")
+	var hasLin, hasCU bool
+	for _, iss := range e.Issues {
+		if iss.IsLinear() && iss.Identifier == "DEV-7" {
+			hasLin = true
+		}
+		if iss.IsClickUp() {
+			hasCU = true
+		}
+	}
+	if !hasLin {
+		t.Fatalf("want Linear DEV-7 from URL; got %+v", e.Issues)
+	}
+	if hasCU {
+		t.Fatalf("ClickUp must not claim ids inside Linear URL: %+v", e.Issues)
 	}
 }

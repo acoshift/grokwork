@@ -520,9 +520,8 @@ func prSearchHits(e sessionstore.Entry, needle string) []searchHit {
 	return out
 }
 
-// issueSearchHits matches tracked GitHub issues and Linear tickets. Linear
-// identifiers (ENG-123) are quotable the way case keys are, so they match on
-// equality first.
+// issueSearchHits matches tracked GitHub issues, Linear tickets, and ClickUp
+// tasks. Linear/ClickUp display ids are quotable the way case keys are.
 func issueSearchHits(e sessionstore.Entry, needle string) []searchHit {
 	var out []searchHit
 	for _, iss := range e.Issues {
@@ -534,7 +533,9 @@ func issueSearchHits(e sessionstore.Entry, needle string) []searchHit {
 		if iss.Owner != "" && iss.Repo != "" {
 			slug = iss.Owner + "/" + iss.Repo
 		}
-		score := bestFieldScore(needle, iss.Identifier, num, "#"+num, slug)
+		cuCustom := sessionstore.NormalizeClickUpCustomID(iss.CustomID)
+		cuNative := strings.TrimSpace(iss.ClickUpID)
+		score := bestFieldScore(needle, iss.Identifier, num, "#"+num, slug, cuCustom, cuNative)
 		if num != "" && slug != "" {
 			if sc := fieldScore(slug+"#"+num, needle); sc > score {
 				score = sc
@@ -543,7 +544,7 @@ func issueSearchHits(e sessionstore.Entry, needle string) []searchHit {
 		if sc := fieldScore(iss.Title, needle); sc > score {
 			score = sc
 		}
-		if score == 0 && weakContains(needle, iss.URL, iss.TeamKey, iss.State) {
+		if score == 0 && weakContains(needle, iss.URL, iss.TeamKey, iss.State, iss.ListID) {
 			score = scoreWeak
 		}
 		if score == 0 {
@@ -565,7 +566,22 @@ func issueSearchHits(e sessionstore.Entry, needle string) []searchHit {
 			when:    e.UpdatedAt,
 			id:      iss.IssueKey(),
 		}
-		if iss.IsLinear() {
+		switch {
+		case iss.IsClickUp():
+			hit.Badge = "ClickUp"
+			hit.Mono = cuCustom
+			if hit.Mono == "" {
+				hit.Mono = cuNative
+			}
+			if title == "" {
+				title = hit.Mono
+			}
+			if e.Project != "" && hit.Mono != "" {
+				hit.Href = "/projects/" + url.PathEscape(e.Project) + "/clickup/" + url.PathEscape(hit.Mono)
+			} else if u := strings.TrimSpace(iss.URL); u != "" {
+				hit.Href, hit.External = u, true
+			}
+		case iss.IsLinear():
 			hit.Badge = "Linear"
 			hit.Mono = strings.TrimSpace(iss.Identifier)
 			if title == "" {
@@ -576,7 +592,7 @@ func issueSearchHits(e sessionstore.Entry, needle string) []searchHit {
 			} else if u := strings.TrimSpace(iss.URL); u != "" {
 				hit.Href, hit.External = u, true
 			}
-		} else {
+		default:
 			hit.Badge = "issue"
 			hit.Mono = "#" + num
 			if title == "" {

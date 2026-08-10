@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/acoshift/grokwork/internal/bot"
+	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
@@ -1685,5 +1686,68 @@ func TestIssuesIndexNav(t *testing.T) {
 	}
 	if loc := w.Header().Get("Location"); loc != "/" {
 		t.Fatalf("Location=%q want /", loc)
+	}
+}
+
+func TestClickUpListAndDetail(t *testing.T) {
+	srv := workflowServer(t)
+	if err := srv.cfg.SetProjectClickUp("proj", true, "123", "155", "DEV", "cu-key", false); err != nil {
+		t.Fatal(err)
+	}
+	srv.clickupNew = func(apiKey string) *clickup.Client {
+		c := clickup.New(apiKey)
+		// Use httptest via override - inject via Base on first call is hard;
+		// instead stub with a real httptest in the client factory.
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/v2/list/155/task", func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("order_by") != "updated" {
+				t.Errorf("order_by=%s", r.URL.Query().Get("order_by"))
+			}
+			if r.URL.Query().Get("include_closed") != "true" {
+				t.Errorf("include_closed=%s", r.URL.Query().Get("include_closed"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"tasks": []map[string]any{
+					{"id": "abc", "custom_id": "DEV-1", "name": "One", "status": map[string]string{"status": "open"}, "url": "https://app.clickup.com/t/abc"},
+				},
+			})
+		})
+		mux.HandleFunc("/api/v2/task/DEV-1", func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "abc", "custom_id": "DEV-1", "name": "One",
+				"status": map[string]string{"status": "open"},
+				"url": "https://app.clickup.com/t/abc",
+				"markdown_description": "hello",
+			})
+		})
+		ts := httptest.NewServer(mux)
+		t.Cleanup(ts.Close)
+		c.Base = ts.URL
+		c.HTTP = ts.Client()
+		return c
+	}
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/clickup", nil)
+	req.AddCookie(&http.Cookie{Name: "gw_session", Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("list status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "DEV-1") || !strings.Contains(w.Body.String(), "page-clickup-list") {
+		t.Fatalf("list body missing task: %s", w.Body.String()[:min(400, len(w.Body.String()))])
+	}
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/clickup/DEV-1", nil)
+	req.AddCookie(&http.Cookie{Name: "gw_session", Value: sid})
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("detail status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "page-clickup-detail") {
+		t.Fatalf("detail missing marker")
 	}
 }

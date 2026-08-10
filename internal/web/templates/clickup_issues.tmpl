@@ -1,0 +1,32 @@
+{{define "content"}}
+<h1 id="page-clickup-list">ClickUp · {{.Project}}</h1>
+<p class="sub">List <span class="mono">{{.ClickUpListID}}</span> · <a href="/projects/{{.Project}}/issues">GitHub issues</a> · <a href="/projects/{{.Project}}">Overview</a></p>
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+<div class="section">
+  {{if .ClickUpTasks}}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>ID</th><th>Title</th><th>Status</th></tr></thead>
+    <tbody>
+    {{range .ClickUpTasks}}
+      {{$ref := .ID}}{{if .CustomID}}{{$ref = .CustomID}}{{end}}
+      <tr>
+        <td class="mono"><a href="/projects/{{$.Project}}/clickup/{{$ref}}">{{if .CustomID}}{{.CustomID}}{{else}}{{.ID}}{{end}}</a></td>
+        <td><a class="pr-title" href="/projects/{{$.Project}}/clickup/{{$ref}}">{{.Name}}</a></td>
+        <td>
+          {{if eq .WorkState "FIXING"}}
+          <span class="badge status-fixing" title="Active Grok fix session">FIXING</span>
+          {{else}}
+          <span class="badge">{{.Status}}</span>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">No ClickUp tasks.</div>
+  {{end}}
+</div>
+{{end}}

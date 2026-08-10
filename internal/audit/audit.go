@@ -16,6 +16,7 @@ const (
 	ActionConfigAddProject       = "config.add_project"
 	ActionConfigRemoveProject    = "config.remove_project"
 	ActionConfigSetLinear        = "config.set_project_linear"
+	ActionConfigSetClickUp       = "config.set_project_clickup"
 	ActionConfigAddUser          = "config.add_user"
 	ActionConfigRemoveUser       = "config.remove_user"
 	ActionConfigSetTeam          = "config.set_team"

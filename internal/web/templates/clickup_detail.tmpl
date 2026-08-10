@@ -1,0 +1,84 @@
+{{define "content"}}
+{{$ref := .ClickUpTask.ID}}{{if .ClickUpTask.CustomID}}{{$ref = .ClickUpTask.CustomID}}{{end}}
+<p class="pr-crumb">
+  <a href="/projects/{{.Project}}/clickup">← ClickUp</a>
+  <span class="crumb-sep">/</span>
+  <span class="mono">{{if .ClickUpTask.CustomID}}{{.ClickUpTask.CustomID}}{{else}}{{.ClickUpTask.ID}}{{end}}</span>
+</p>
+<div class="pr-title-row">
+  <h1 id="page-clickup-detail">{{if .ClickUpTask.Name}}{{.ClickUpTask.Name}}{{else}}{{$ref}}{{end}}</h1>
+  <div class="pr-head-links">
+    {{if .ClickUpTask.URL}}<a class="btn btn-compact" href="{{.ClickUpTask.URL}}" target="_blank" rel="noopener">ClickUp ↗</a>{{end}}
+  </div>
+</div>
+<div class="pr-meta">
+  {{if eq .ClickUpTask.WorkState "FIXING"}}
+  <span class="badge status-fixing" title="Active Grok fix session">FIXING</span>
+  {{else if .ClickUpTask.Status}}
+  <span class="badge">{{.ClickUpTask.Status}}</span>
+  {{end}}
+  {{if .ClickUpTask.CustomID}}<span class="mono">{{.ClickUpTask.CustomID}}</span>{{end}}
+  {{if .ClickUpTask.ID}}<span class="mono muted">{{.ClickUpTask.ID}}</span>{{end}}
+</div>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+<div class="pr-cols">
+<div class="pr-main">
+
+<div class="section card">
+  <h2>Description</h2>
+  {{if .ClickUpTask.Description}}<div class="md">{{markdown .ClickUpTask.Description}}</div>{{else}}<p class="muted" style="margin:0">No description.</p>{{end}}
+</div>
+
+</div>{{/* /pr-main */}}
+
+{{template "rail_scrim" $}}
+<aside class="pr-rail" id="page-rail">
+{{template "rail_sheet_head" $}}
+
+{{if and .CanStartSession .ClickUpEnabled}}
+<div class="rail-group" id="clickup-fix-form">
+  <div class="rail-group-title">Agent</div>
+  {{if .ShowFixPicker}}
+  <p class="rail-note">Multiple sessions bind this task — continue one:</p>
+  {{range .FixHits}}
+  <div class="grok-pick">
+    <div class="grok-pick-head">
+      <span class="badge">{{.Label}}</span>
+      {{if .Busy}}<span class="badge live">busy</span>{{end}}
+      <a class="tid mono" href="/sessions/{{.ThreadID}}{{if $.Project}}?project={{urlquery $.Project}}{{end}}">{{.ThreadID}}</a>
+    </div>
+    {{if .Goal}}<div class="grok-pick-goal">{{.Goal}}</div>{{end}}
+    <form method="post" action="/projects/{{$.Project}}/clickup/{{$ref}}/fix" class="grok-pick-actions">
+      {{template "csrf" $}}
+      <input type="hidden" name="thread_id" value="{{.ThreadID}}">
+      <button type="submit" class="btn-secondary btn-compact">Continue</button>
+    </form>
+  </div>
+  {{else}}
+  <p class="rail-note">No sessions available to continue.</p>
+  {{end}}
+  <p class="rail-note">Or start a new session:</p>
+  {{end}}
+  <form method="post" action="/projects/{{.Project}}/clickup/{{$ref}}/fix" class="grok-dispatch">
+    {{template "csrf" $}}
+    {{if .ShowFixPicker}}
+    <input type="hidden" name="force_new" value="1">
+    {{else}}
+    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start a new session</label>
+    {{end}}
+    <div class="form-actions"><button type="submit" id="btn-fix-clickup">Fix with Grok</button></div>
+  </form>
+  <p class="rail-note">Starts or reuses a session for this task. Grok opens or updates a PR; it never merges. ClickUp is not updated by the bot.</p>
+</div>
+{{else}}
+<div class="rail-group">
+  <div class="rail-group-title">Actions</div>
+  <p class="rail-note">Read-only access — Grok dispatch needs a member role with web features enabled.</p>
+</div>
+{{end}}
+
+</aside>
+</div>{{/* /pr-cols */}}
+{{end}}

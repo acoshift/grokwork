@@ -40,6 +40,13 @@
         "apiKey": "",
         "teamKey": "ENG"
       },
+      "clickup": {
+        "enabled": false,
+        "apiKey": "",
+        "workspaceId": "",
+        "listId": "",
+        "customIdPrefix": ""
+      },
       "deploy": {
         "enabled": false,
         "environments": {

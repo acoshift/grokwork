@@ -52,7 +52,7 @@ func (b *Bot) ActiveFixGitHubIssues(project, owner, repo string) map[int]struct{
 			continue
 		}
 		for _, iss := range listed.Issues {
-			if iss.IsLinear() {
+			if iss.IsLinear() || iss.IsClickUp() {
 				continue
 			}
 			if iss.EffectiveKeyword() != sessionstore.IssueKeywordFixes {
@@ -105,6 +105,63 @@ func (b *Bot) ActiveFixLinearIssues(project string) map[string]struct{} {
 		}
 	}
 	return out
+}
+
+// ActiveFixClickUpIssues returns display keys (custom id or native id, lowercased)
+// with at least one non-terminal Fixes-bound ClickUp session in project.
+func (b *Bot) ActiveFixClickUpIssues(project string) map[string]struct{} {
+	out := make(map[string]struct{})
+	if b == nil || b.sessions == nil {
+		return out
+	}
+	project = strings.TrimSpace(project)
+	if project == "" {
+		return out
+	}
+	for _, listed := range b.sessions.List() {
+		if !strings.EqualFold(listed.Project, project) {
+			continue
+		}
+		if sessionstore.IsTerminalLabel(listed.EffectiveLabel()) {
+			continue
+		}
+		for _, iss := range listed.Issues {
+			if !iss.IsClickUp() {
+				continue
+			}
+			if iss.EffectiveKeyword() != sessionstore.IssueKeywordFixes {
+				continue
+			}
+			if cid := sessionstore.NormalizeClickUpCustomID(iss.CustomID); cid != "" {
+				out[strings.ToLower(cid)] = struct{}{}
+			}
+			if id := strings.TrimSpace(iss.ClickUpID); id != "" {
+				out[strings.ToLower(id)] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
+// FindByClickUpIssue returns candidate units for project + ClickUp task.
+func (b *Bot) FindByClickUpIssue(project, clickUpID, customID, identifier string, includeTerminal bool) []IssueSessionHit {
+	if b == nil || b.sessions == nil {
+		return nil
+	}
+	custom := sessionstore.NormalizeClickUpCustomID(customID)
+	if custom == "" {
+		custom = sessionstore.NormalizeClickUpCustomID(identifier)
+	}
+	native := strings.TrimSpace(clickUpID)
+	if custom == "" && native == "" {
+		return nil
+	}
+	target := sessionstore.TrackedIssue{
+		Provider:  sessionstore.ProviderClickUp,
+		ClickUpID: native,
+		CustomID:  custom,
+	}
+	return b.findIssueHits(project, target, includeTerminal)
 }
 
 // IsThreadBusy reports an active run or non-empty follow-up queue.

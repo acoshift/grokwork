@@ -10,6 +10,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grokwork/internal/audit"
+	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -40,7 +41,7 @@ func issueBindingPromptMode(issues []sessionstore.TrackedIssue, direct bool) str
 	for _, iss := range issues {
 		ref := iss.DisplayRef()
 		b.WriteString(fmt.Sprintf("- %s (%s)", ref, iss.EffectiveKeyword()))
-		if iss.IsLinear() {
+		if iss.IsLinear() || iss.IsClickUp() {
 			if st := strings.TrimSpace(iss.State); st != "" {
 				b.WriteString(" · " + st)
 			}
@@ -78,15 +79,24 @@ func issueBindingPromptMode(issues []sessionstore.TrackedIssue, direct bool) str
 	b.WriteString(strings.TrimSpace(sessionstore.IssueTitlePrefix(issues)))
 	b.WriteString(" short summary\").\n")
 	hasLinear := false
+	hasClickUp := false
 	for _, iss := range issues {
 		if iss.IsLinear() {
 			hasLinear = true
-			break
+		}
+		if iss.IsClickUp() {
+			hasClickUp = true
 		}
 	}
+	n := 3
 	if hasLinear {
-		b.WriteString("3. Prefer branch names containing the Linear identifier (lowercase, e.g. eng-123-…) when you choose a new branch name.\n")
+		b.WriteString(fmt.Sprintf("%d. Prefer branch names containing the Linear identifier (lowercase, e.g. eng-123-…) when you choose a new branch name.\n", n))
 		b.WriteString("Linear state is driven by its GitHub integration via the identifier in title/body — do not invent other ticket ids.\n")
+		n++
+	}
+	if hasClickUp {
+		b.WriteString(fmt.Sprintf("%d. Prefer branch names containing the ClickUp display id when you choose a new branch name.\n", n))
+		b.WriteString("Do not call ClickUp APIs. Do not invent other ticket ids.\n")
 	}
 	b.WriteString("Do not invent other issue numbers. Do not merge the PR.\n\n")
 	return b.String()
@@ -116,10 +126,96 @@ func (b *Bot) bindLinearIssuesFromText(threadID, project, text string) []session
 		return nil
 	}
 	parsed := sessionstore.ParseLinearIssueRefs(text)
+	parsed = b.filterLinearClaimedByClickUp(project, parsed, text)
 	if len(parsed) == 0 {
 		return nil
 	}
 	b.resolveLinearIssues(project, parsed)
+	return b.upsertIssues(threadID, parsed)
+}
+
+// filterLinearClaimedByClickUp drops bare Linear refs that ClickUp owns for this
+// project. Explicit linear.app URLs are never dropped.
+//
+// text is the same free-text the binders saw; when non-empty, bare Linear ids
+// that also appear as custom ids inside ClickUp URLs are dropped even when
+// customIdPrefix is empty (URL-only ClickUp mode) so pasting a ClickUp custom
+// URL does not dual-bind as Linear.
+func (b *Bot) filterLinearClaimedByClickUp(project string, issues []sessionstore.TrackedIssue, text string) []sessionstore.TrackedIssue {
+	if b == nil || b.cfg == nil || len(issues) == 0 {
+		return issues
+	}
+	if !b.cfg.ProjectClickUpEnabled(project) {
+		return issues
+	}
+	// Custom ids claimed by ClickUp URLs in this text (prefix-independent).
+	fromURL := map[string]struct{}{}
+	if strings.TrimSpace(text) != "" {
+		for _, cu := range sessionstore.ParseClickUpIssueRefs(text, "") {
+			if cid := sessionstore.NormalizeClickUpCustomID(cu.CustomID); cid != "" {
+				fromURL[strings.ToLower(cid)] = struct{}{}
+			}
+		}
+	}
+	prefix := ""
+	if b.cfg.ProjectClickUpPrefixParseEnabled(project) {
+		prefix = b.cfg.ProjectClickUpCustomIdPrefix(project)
+	}
+	out := issues[:0]
+	for _, iss := range issues {
+		// Explicit Linear URL always wins.
+		if strings.TrimSpace(iss.URL) != "" {
+			out = append(out, iss)
+			continue
+		}
+		id := sessionstore.NormalizeLinearIdentifier(iss.Identifier)
+		if id != "" {
+			if _, ok := fromURL[strings.ToLower(id)]; ok {
+				continue
+			}
+		}
+		if prefix != "" {
+			team := strings.ToUpper(strings.TrimSpace(iss.TeamKey))
+			if team == "" {
+				if t, _, ok := splitLinearTeam(iss.Identifier); ok {
+					team = t
+				}
+			}
+			if team == prefix {
+				continue
+			}
+		}
+		out = append(out, iss)
+	}
+	return out
+}
+
+func splitLinearTeam(ident string) (string, string, bool) {
+	ident = sessionstore.NormalizeLinearIdentifier(ident)
+	parts := strings.SplitN(ident, "-", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+// bindClickUpIssuesFromText parses ClickUp refs when the project has ClickUp enabled.
+func (b *Bot) bindClickUpIssuesFromText(threadID, project, text string) []sessionstore.TrackedIssue {
+	if b == nil || b.sessions == nil || threadID == "" || text == "" {
+		return nil
+	}
+	if b.cfg == nil || !b.cfg.ProjectClickUpEnabled(project) {
+		return nil
+	}
+	prefix := ""
+	if b.cfg.ProjectClickUpPrefixParseEnabled(project) {
+		prefix = b.cfg.ProjectClickUpCustomIdPrefix(project)
+	}
+	parsed := sessionstore.ParseClickUpIssueRefs(text, prefix)
+	if len(parsed) == 0 {
+		return nil
+	}
+	b.resolveClickUpIssues(project, parsed)
 	return b.upsertIssues(threadID, parsed)
 }
 
@@ -183,6 +279,67 @@ func (b *Bot) resolveLinearIssues(project string, issues []sessionstore.TrackedI
 		}
 	}
 }
+
+// resolveClickUpIssues fills title/state/url/ids when the project has an API key.
+func (b *Bot) resolveClickUpIssues(project string, issues []sessionstore.TrackedIssue) {
+	if b == nil || b.cfg == nil || !b.cfg.ProjectClickUpCanResolve(project) {
+		return
+	}
+	key := b.cfg.ProjectClickUpAPIKey(project)
+	client := clickup.New(key)
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	ws := b.cfg.ProjectClickUpWorkspaceID(project)
+	for i := range issues {
+		if !issues[i].IsClickUp() {
+			continue
+		}
+		var got clickup.Task
+		var err error
+		if cid := sessionstore.NormalizeClickUpCustomID(issues[i].CustomID); cid != "" {
+			team := strings.TrimSpace(issues[i].WorkspaceID)
+			if team == "" {
+				team = ws
+			}
+			if team == "" {
+				log.Printf("warn: clickup resolve %s project=%s: workspaceId required for custom id", cid, project)
+				continue
+			}
+			got, err = client.GetTask(ctx, cid, clickup.GetOpts{CustomTaskIDs: true, WorkspaceID: team, Markdown: true})
+		} else if nid := strings.TrimSpace(issues[i].ClickUpID); nid != "" {
+			got, err = client.GetTask(ctx, nid, clickup.GetOpts{Markdown: true})
+		} else {
+			continue
+		}
+		if err != nil {
+			ref := issues[i].DisplayRef()
+			log.Printf("warn: clickup resolve %s project=%s: %v", ref, project, err)
+			continue
+		}
+		if got.ID != "" {
+			issues[i].ClickUpID = got.ID
+		}
+		if got.CustomID != "" {
+			issues[i].CustomID = sessionstore.NormalizeClickUpCustomID(got.CustomID)
+		}
+		if got.Name != "" {
+			issues[i].Title = got.Name
+		}
+		if got.Status != "" {
+			issues[i].State = got.Status
+		}
+		if got.URL != "" {
+			issues[i].URL = got.URL
+		}
+		if got.ListID != "" {
+			issues[i].ListID = got.ListID
+		}
+		if got.WorkspaceID != "" {
+			issues[i].WorkspaceID = got.WorkspaceID
+		}
+	}
+}
+
 
 // defaultIssueRepo returns owner, repo for bare issue numbers from session PRs.
 func defaultIssueRepo(e sessionstore.Entry) (owner, repo string) {
@@ -318,19 +475,63 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 	keyword, rest := splitLinkKeyword(arg)
 	var refs []sessionstore.TrackedIssue
 
-	// Prefer Linear when enabled and the arg looks like Linear.
-	if b.cfg != nil && b.cfg.ProjectLinearEnabled(projName) {
+	// Prefer ClickUp when enabled (before Linear-disabled refusal).
+	if b.cfg != nil && b.cfg.ProjectClickUpEnabled(projName) {
+		prefix := ""
+		if b.cfg.ProjectClickUpPrefixParseEnabled(projName) {
+			prefix = b.cfg.ProjectClickUpCustomIdPrefix(projName)
+		}
+		if cu := sessionstore.ParseClickUpIssueRefs(rest, prefix); len(cu) > 0 {
+			refs = cu
+			b.resolveClickUpIssues(projName, refs)
+		} else if looksLikeClickUpNativeLink(rest) {
+			// Bare native id: resolve-or-refuse.
+			native := strings.TrimSpace(rest)
+			candidate := []sessionstore.TrackedIssue{{
+				Provider:  sessionstore.ProviderClickUp,
+				ClickUpID: native,
+			}}
+			if b.cfg.ProjectClickUpCanResolve(projName) {
+				b.resolveClickUpIssues(projName, candidate)
+				if candidate[0].Title != "" || candidate[0].URL != "" || candidate[0].CustomID != "" {
+					refs = candidate
+				} else {
+					if _, err := discordReply(s, threadID,
+						fmt.Sprintf("Could not resolve ClickUp task `%s`.", native), ref(m)); err != nil {
+						log.Printf("error: reply link-clickup-resolve: %v", err)
+					}
+					return
+				}
+			} else {
+				if _, err := discordReply(s, threadID,
+					fmt.Sprintf("ClickUp is enabled but has no API key for project **%s**; cannot verify bare task id `%s`. Paste a task URL or configure a key.",
+						displayProjectName(projName), native), ref(m)); err != nil {
+					log.Printf("error: reply link-clickup-nokey: %v", err)
+				}
+				return
+			}
+		}
+	}
+
+	// Linear when enabled (filter ClickUp-claimed prefixes).
+	if len(refs) == 0 && b.cfg != nil && b.cfg.ProjectLinearEnabled(projName) {
 		if lin := sessionstore.ParseLinearIssueRefs(rest); len(lin) > 0 {
-			refs = lin
-			b.resolveLinearIssues(projName, refs)
+			lin = b.filterLinearClaimedByClickUp(projName, lin, rest)
+			if len(lin) > 0 {
+				refs = lin
+				b.resolveLinearIssues(projName, refs)
+			}
 		}
-	} else if looksLikeLinearRef(rest) {
-		if _, err := discordReply(s, threadID,
-			fmt.Sprintf("Linear is not enabled for project **%s**. Enable it in config (`projects.*.linear.enabled`) with a per-project API key.",
-				displayProjectName(projName)), ref(m)); err != nil {
-			log.Printf("error: reply link-linear-off: %v", err)
+	} else if len(refs) == 0 && looksLikeLinearRef(rest) {
+		// Only refuse Linear-disabled when it does not look like ClickUp either.
+		if b.cfg == nil || !b.cfg.ProjectClickUpEnabled(projName) {
+			if _, err := discordReply(s, threadID,
+				fmt.Sprintf("Linear is not enabled for project **%s**. Enable it in config (`projects.*.linear.enabled`) with a per-project API key.",
+					displayProjectName(projName)), ref(m)); err != nil {
+				log.Printf("error: reply link-linear-off: %v", err)
+			}
+			return
 		}
-		return
 	}
 
 	if len(refs) == 0 {
@@ -388,10 +589,13 @@ func (b *Bot) handleLink(s *discordgo.Session, m *discordgo.MessageCreate, parse
 			iss = full
 		}
 		part := fmt.Sprintf("%s (%s)", iss.DisplayRef(), iss.EffectiveKeyword())
-		if iss.IsLinear() && iss.State != "" {
+		if (iss.IsLinear() || iss.IsClickUp()) && iss.State != "" {
 			part += " · " + iss.State
 		}
 		if iss.IsLinear() && iss.LinearID == "" && b.cfg != nil && b.cfg.ProjectLinearEnabled(projName) && !b.cfg.ProjectLinearCanResolve(projName) {
+			part += " · unresolved (no API key)"
+		}
+		if iss.IsClickUp() && iss.ClickUpID == "" && iss.Title == "" && b.cfg != nil && b.cfg.ProjectClickUpEnabled(projName) && !b.cfg.ProjectClickUpCanResolve(projName) {
 			part += " · unresolved (no API key)"
 		}
 		parts = append(parts, part)
@@ -409,6 +613,33 @@ func looksLikeLinearRef(s string) bool {
 		return false
 	}
 	return len(sessionstore.ParseLinearIssueRefs(s)) > 0
+}
+
+// looksLikeClickUpNativeLink is a bare native task id (not PREFIX-N, not pure digits).
+func looksLikeClickUpNativeLink(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.Contains(s, "/") || strings.Contains(s, "#") {
+		return false
+	}
+	if looksLikeLinearRef(s) {
+		return false
+	}
+	allDigit := true
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			allDigit = false
+			break
+		}
+	}
+	if allDigit {
+		return false
+	}
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return len(s) >= 4
 }
 
 func displayProjectName(name string) string {
@@ -486,7 +717,7 @@ func formatLinkStatus(e sessionstore.Entry) string {
 }
 
 func linkHelpText() string {
-	return "Link: `@Grok /link #42` · `@Grok /link ENG-123` · `@Grok /link fix #42` · `@Grok /unlink #42` · `@Grok /link clear`"
+	return "Link: `@Grok /link #42` · `@Grok /link ENG-123` · `@Grok /link DEV-12` · `@Grok /link fix #42` · `@Grok /unlink #42` · `@Grok /link clear`"
 }
 
 func (b *Bot) maybeRefreshBriefIssues(s *discordgo.Session, threadID string) {

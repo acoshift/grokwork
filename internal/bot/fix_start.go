@@ -16,6 +16,7 @@ var (
 	ErrDiscordNotReady = errors.New("discord gateway not ready")
 	ErrPickerRequired  = errors.New("multiple sessions bind this issue; pick one")
 	ErrLinearDisabled  = errors.New("linear is not enabled for this project")
+	ErrClickUpDisabled = errors.New("clickup is not enabled for this project")
 	ErrProjectRequired = errors.New("project required")
 	ErrInvalidIssue    = errors.New("invalid issue")
 	// ErrCannotStartFix is returned when the actor lacks builder-class ship caps
@@ -31,8 +32,9 @@ var (
 type FixKind string
 
 const (
-	FixKindGitHub FixKind = "github"
-	FixKindLinear FixKind = "linear"
+	FixKindGitHub  FixKind = "github"
+	FixKindLinear  FixKind = "linear"
+	FixKindClickUp FixKind = "clickup"
 )
 
 // FixStartOpts starts or reuses a work unit from the web Fix-with-Grok action.
@@ -51,6 +53,9 @@ type FixStartOpts struct {
 	// Linear
 	Identifier string
 	LinearID   string
+	// ClickUp
+	ClickUpID string
+	CustomID  string
 
 	// Shared presentation fields (title/body for prompt + bind metadata).
 	Title string
@@ -111,6 +116,13 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 		if sessionstore.NormalizeLinearIdentifier(opts.Identifier) == "" {
 			return FixStartResult{}, ErrInvalidIssue
 		}
+	case FixKindClickUp:
+		if !b.cfg.ProjectClickUpEnabled(project) {
+			return FixStartResult{}, ErrClickUpDisabled
+		}
+		if strings.TrimSpace(opts.ClickUpID) == "" && sessionstore.NormalizeClickUpCustomID(opts.CustomID) == "" && strings.TrimSpace(opts.Identifier) == "" {
+			return FixStartResult{}, ErrInvalidIssue
+		}
 	default:
 		return FixStartResult{}, fmt.Errorf("unknown fix kind %q", opts.Kind)
 	}
@@ -130,6 +142,8 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 			hits = b.FindByIssue(project, opts.Owner, opts.Repo, opts.Number, false)
 		case FixKindLinear:
 			hits = b.FindByLinearIssue(project, opts.Identifier, false)
+		case FixKindClickUp:
+			hits = b.FindByClickUpIssue(project, opts.ClickUpID, opts.CustomID, opts.Identifier, false)
 		}
 		switch len(hits) {
 		case 0:
@@ -156,6 +170,20 @@ func fixTrackedIssue(opts FixStartOpts) sessionstore.TrackedIssue {
 			State:      strings.TrimSpace(opts.State),
 			Keyword:    sessionstore.IssueKeywordFixes,
 		}
+	case FixKindClickUp:
+		custom := sessionstore.NormalizeClickUpCustomID(opts.CustomID)
+		if custom == "" {
+			custom = sessionstore.NormalizeClickUpCustomID(opts.Identifier)
+		}
+		return sessionstore.TrackedIssue{
+			Provider:  sessionstore.ProviderClickUp,
+			ClickUpID: strings.TrimSpace(opts.ClickUpID),
+			CustomID:  custom,
+			Title:     strings.TrimSpace(opts.Title),
+			URL:       strings.TrimSpace(opts.URL),
+			State:     strings.TrimSpace(opts.State),
+			Keyword:   sessionstore.IssueKeywordFixes,
+		}
 	default:
 		iss := sessionstore.TrackedIssue{
 			Owner:   strings.TrimSpace(opts.Owner),
@@ -174,6 +202,15 @@ func fixPromptFor(opts FixStartOpts) string {
 	switch opts.Kind {
 	case FixKindLinear:
 		return BuildLinearFixPrompt(opts.Actor.DisplayName, opts.Identifier, opts.Title, opts.URL, opts.State, opts.Body)
+	case FixKindClickUp:
+		display := strings.TrimSpace(opts.CustomID)
+		if display == "" {
+			display = strings.TrimSpace(opts.Identifier)
+		}
+		if display == "" {
+			display = strings.TrimSpace(opts.ClickUpID)
+		}
+		return BuildClickUpFixPrompt(opts.Actor.DisplayName, display, opts.Title, opts.URL, opts.State, opts.Body)
 	default:
 		return BuildGitHubFixPrompt(opts.Actor.DisplayName, opts.Owner, opts.Repo, opts.Number, opts.Title, opts.URL, opts.Body)
 	}
