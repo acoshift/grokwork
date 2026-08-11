@@ -323,6 +323,10 @@ func TestPagesRender(t *testing.T) {
 				`selectOverride`,
 				`querySelectorAll("#side-nav")`,
 				`boostScrollByPath`,
+				// Drill-in (list→issue detail) always lands at y=0; leave-path
+				// is needed because navFrom advances before afterSettle.
+				`boostScrollFromPath`,
+				`applyBoostScrollY`,
 				// SSE table reloads: keep .table-scroll horizontal position.
 				`_tableScrollX`,
 				// SSE live regions: keep window Y when content grows.

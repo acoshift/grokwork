@@ -6304,17 +6304,39 @@
 
     // Per-path scroll for boosted navigations (e.g. history detail → list via
     // "← History"). show:none keeps the *leaving* page's scrollY; without this
-    // the list jumps to top or to the detail offset. New destinations (not yet
-    // in the map) scroll to top so list→detail does not land mid-page.
+    // the list jumps to top or to the detail offset.
+    //
+    // Drill-in (push: list→detail) always lands at y=0 — even when the
+    // destination was visited before and the map still holds a mid/bottom
+    // offset (issue pages with long comment threads are the usual case).
+    // Pop/swap restore the map so "← Issues" returns to the list position.
     // Browser back/forward uses htmx's own history-cache scroll and can ignore this map.
     var boostScrollByPath = Object.create(null);
+    // Path we left on the in-flight boost. navFrom is advanced on
+    // pushedIntoHistory (before afterSettle), so direction must be measured
+    // against this rather than navFrom at settle time.
+    var boostScrollFromPath = "";
     function pagePath() {
       return location.pathname + location.search;
+    }
+    function applyBoostScrollY(y) {
+      if (typeof y !== "number") return;
+      window.scrollTo(0, y);
+      // View Transitions + settleDelay can re-clamp the window to the old
+      // (list) offset after the first scrollTo; re-assert after layout.
+      requestAnimationFrame(function () {
+        window.scrollTo(0, y);
+        requestAnimationFrame(function () {
+          window.scrollTo(0, y);
+        });
+      });
     }
     document.body.addEventListener("htmx:beforeRequest", function (e) {
       var d = e.detail;
       if (!d || !d.boosted) return;
-      boostScrollByPath[pagePath()] = window.scrollY || 0;
+      var path = pagePath();
+      boostScrollByPath[path] = window.scrollY || 0;
+      boostScrollFromPath = path;
     });
     document.body.addEventListener("htmx:afterSettle", function (e) {
       var d = e.detail;
@@ -6323,12 +6345,18 @@
       var elt = d.elt;
       if (!elt || elt.id !== "live-root") return;
       var path = pagePath();
-      var y = Object.prototype.hasOwnProperty.call(boostScrollByPath, path)
-        ? boostScrollByPath[path]
-        : 0;
-      if (typeof y === "number") {
-        window.scrollTo(0, y);
+      var from = boostScrollFromPath
+        ? navLocOf(boostScrollFromPath)
+        : navFrom;
+      var dir = navDirection(from, navLocOf(location.href));
+      var y = 0;
+      if (dir === "push") {
+        // Fresh detail screen: never inherit a previous mid-page offset.
+        boostScrollByPath[path] = 0;
+      } else if (Object.prototype.hasOwnProperty.call(boostScrollByPath, path)) {
+        y = boostScrollByPath[path];
       }
+      applyBoostScrollY(y);
     });
 
     if (!{{json .SSEPath}}) {
