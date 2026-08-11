@@ -330,7 +330,10 @@ func TestPagesRender(t *testing.T) {
 				// SSE table reloads: keep .table-scroll horizontal position.
 				`_tableScrollX`,
 				// SSE live regions: keep window Y when content grows.
+				// pageMax > 0 is load-bearing: short shells (issues hx-load)
+				// must not pin-to-bottom when the tall table arrives.
 				`_pageScrollY`,
+				`pageMax > 0`,
 				// Mid-session SSE reconnect catch-up (rev compare → partial refresh).
 				`lastLiveRevs`,
 				`applyLiveRevs`,

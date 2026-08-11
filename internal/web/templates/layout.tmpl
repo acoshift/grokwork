@@ -6013,10 +6013,15 @@
           xs.push(el.scrollLeft || 0);
         });
         target._tableScrollX = xs;
+        // Pin-to-bottom only when the page was already scrollable and the
+        // user was near its tail. A short shell (pageMax <= 0) is both top
+        // and bottom — treating it as pinned jumps list pages (issues table
+        // hx-trigger=load, Actions workflows/runs) to the new bottom once
+        // the tall partial swaps in. Preserve y=0 instead.
         var pageMax = document.documentElement.scrollHeight - window.innerHeight;
         var pageY = window.scrollY || 0;
         target._pageScrollY = pageY;
-        target._pagePinBottom = pageMax <= 0 || (pageMax - pageY) <= PAGE_PIN_PX;
+        target._pagePinBottom = pageMax > 0 && (pageMax - pageY) <= PAGE_PIN_PX;
       }
       if (!d.boosted) return;
       var html = d.serverResponse || "";
