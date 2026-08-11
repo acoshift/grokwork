@@ -370,6 +370,8 @@ func (s *Server) issueDetail(ctx *hime.Context) error {
 			d.TasklistDone++
 		}
 	}
+	// Fix is a ship task, so the modal's Default names the task model (not review).
+	s.attachModelPicker(&d, project, s.cfg.TaskModel())
 	return s.viewPage(ctx, "issue_detail", d)
 }
 
@@ -485,6 +487,7 @@ func (s *Server) linearDetail(ctx *hime.Context) error {
 	if d.ShowFixPicker || len(d.FixHits) > 1 {
 		d.ShowFixPicker = true
 	}
+	s.attachModelPicker(&d, project, s.cfg.TaskModel())
 	return s.viewPage(ctx, "linear_detail", d)
 }
 
@@ -993,5 +996,6 @@ func (s *Server) clickupDetail(ctx *hime.Context) error {
 	if d.ShowFixPicker || len(d.FixHits) > 1 {
 		d.ShowFixPicker = true
 	}
+	s.attachModelPicker(&d, project, s.cfg.TaskModel())
 	return s.viewPage(ctx, "clickup_detail", d)
 }

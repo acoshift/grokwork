@@ -204,9 +204,15 @@
     {{else}}
     <label class="check"><input type="checkbox" name="force_new" value="1"> Always start a new session</label>
     {{end}}
-    <div class="form-actions"><button type="submit" id="btn-fix-github">Fix with Grok</button></div>
+    {{/* Model is hidden: the confirm modal clones its options, and with scripting
+         off the form still posts the Default. Reuse ignores the choice. */}}
+    {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
+    <div class="form-actions">
+      <button type="submit" id="btn-fix-github"
+        {{- if .CanSelectModel}} data-confirm="Starts or reuses a session for this issue. Opens or updates a PR; it never merges." data-confirm-title="Fix" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Fix</button>
+    </div>
   </form>
-  <p class="rail-note">Starts or reuses a session for this issue. Grok opens or updates a PR; it never merges.</p>
+  <p class="rail-note">Starts or reuses a session for this issue. Opens or updates a PR; it never merges. A continued session keeps the model it started on.</p>
   {{if .CanPlanFeature}}
   <form method="post" action="/projects/{{.Project}}/issues/{{.Issue.Number}}/plan" class="grok-dispatch" style="margin-top:0.75rem">
     {{template "csrf" $}}

@@ -346,6 +346,7 @@ func (s *Server) postIssueFix(ctx *hime.Context) error {
 	}
 
 	actor := s.fixActor(ctx)
+	model := strings.TrimSpace(ctx.PostFormValue("model"))
 	res, startErr := s.bot.StartFix(bot.FixStartOpts{
 		Kind:     bot.FixKindGitHub,
 		Project:  project,
@@ -358,9 +359,10 @@ func (s *Server) postIssueFix(ctx *hime.Context) error {
 		Title:    title,
 		URL:      issueURL,
 		Body:     body,
+		Model:    model,
 	})
 	return s.handleFixResult(ctx, startErr, res, fixRedirectContext{
-		Kind: "github", Project: project, Owner: owner, Repo: repo, Number: n,
+		Kind: "github", Project: project, Owner: owner, Repo: repo, Number: n, Model: model,
 	})
 }
 
@@ -410,19 +412,21 @@ func (s *Server) postClickUpFix(ctx *hime.Context) error {
 	}
 
 	actor := s.fixActor(ctx)
+	model := strings.TrimSpace(ctx.PostFormValue("model"))
 	res, startErr := s.bot.StartFix(bot.FixStartOpts{
-		Kind:     bot.FixKindClickUp,
-		Project:  project,
-		Actor:    actor,
-		ForceNew: forceNew,
-		ThreadID: pickThread,
-		ClickUpID: nativeID,
-		CustomID:  customID,
+		Kind:       bot.FixKindClickUp,
+		Project:    project,
+		Actor:      actor,
+		ForceNew:   forceNew,
+		ThreadID:   pickThread,
+		ClickUpID:  nativeID,
+		CustomID:   customID,
 		Identifier: customID,
-		Title:    title,
-		URL:      issueURL,
-		Body:     body,
-		State:    state,
+		Title:      title,
+		URL:        issueURL,
+		Body:       body,
+		State:      state,
+		Model:      model,
 	})
 	display := customID
 	if display == "" {
@@ -432,7 +436,7 @@ func (s *Server) postClickUpFix(ctx *hime.Context) error {
 		display = id
 	}
 	return s.handleFixResult(ctx, startErr, res, fixRedirectContext{
-		Kind: "clickup", Project: project, Identifier: display,
+		Kind: "clickup", Project: project, Identifier: display, Model: model,
 	})
 }
 
@@ -468,6 +472,7 @@ func (s *Server) postLinearFix(ctx *hime.Context) error {
 	}
 
 	actor := s.fixActor(ctx)
+	model := strings.TrimSpace(ctx.PostFormValue("model"))
 	res, startErr := s.bot.StartFix(bot.FixStartOpts{
 		Kind:       bot.FixKindLinear,
 		Project:    project,
@@ -480,9 +485,10 @@ func (s *Server) postLinearFix(ctx *hime.Context) error {
 		URL:        issueURL,
 		Body:       body,
 		State:      state,
+		Model:      model,
 	})
 	return s.handleFixResult(ctx, startErr, res, fixRedirectContext{
-		Kind: "linear", Project: project, Identifier: identifier,
+		Kind: "linear", Project: project, Identifier: identifier, Model: model,
 	})
 }
 
@@ -493,6 +499,7 @@ type fixRedirectContext struct {
 	Repo       string
 	Number     int
 	Identifier string
+	Model      string
 }
 
 func (s *Server) handleFixResult(ctx *hime.Context, startErr error, res bot.FixStartResult, rc fixRedirectContext) error {
@@ -500,6 +507,9 @@ func (s *Server) handleFixResult(ctx *hime.Context, startErr error, res bot.FixS
 		"project": rc.Project, "kind": rc.Kind,
 		"threadId": res.ThreadID, "status": string(res.Status),
 		"queuePos": res.QueuePos, "created": res.Created,
+	}
+	if rc.Model != "" {
+		detail["model"] = rc.Model
 	}
 	if rc.Kind == "github" {
 		detail["owner"] = rc.Owner
@@ -540,7 +550,7 @@ func (s *Server) mapFixError(ctx *hime.Context, err error, rc fixRedirectContext
 		return s.fixSourceRedirect(ctx, rc, "", msg, http.StatusBadRequest)
 	case errors.Is(err, bot.ErrInvalidIssue), errors.Is(err, bot.ErrProjectRequired):
 		return s.fixSourceRedirect(ctx, rc, "", msg, http.StatusBadRequest)
-	case errors.Is(err, bot.ErrCannotStartFix):
+	case errors.Is(err, bot.ErrCannotStartFix), errors.Is(err, bot.ErrCannotSelectModel):
 		return s.fixSourceRedirect(ctx, rc, "", msg, http.StatusForbidden)
 	default:
 		// PreferDiscordChannel and other config errors → 400

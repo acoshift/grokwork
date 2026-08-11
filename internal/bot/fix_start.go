@@ -62,6 +62,10 @@ type FixStartOpts struct {
 	URL   string
 	Body  string // GitHub body or Linear description
 	State string
+	// Model applies only when this dispatch creates a session; a reused session
+	// keeps the agent it was stamped with. Empty takes the configured task model
+	// at run start. Requires builder-class caps when non-empty.
+	Model string
 }
 
 // FixStartStatus is the outcome of StartFix.
@@ -127,6 +131,21 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 		return FixStartResult{}, fmt.Errorf("unknown fix kind %q", opts.Kind)
 	}
 
+	// Authorize a named model before reuse/create so a forged form value fails the
+	// request outright rather than only on the create path. Empty is the configured
+	// default and needs no extra gate (same stance as freeform StartWebTask).
+	model := strings.TrimSpace(opts.Model)
+	var cli config.AgentCLI
+	if model != "" {
+		if err := b.requireCanSelectModel(project, opts.Actor.ID); err != nil {
+			return FixStartResult{}, err
+		}
+		var err error
+		if cli, err = b.cfg.RequestedAgentCLI(model); err != nil {
+			return FixStartResult{}, err
+		}
+	}
+
 	tracked := fixTrackedIssue(opts)
 	prompt := fixPromptFor(opts)
 
@@ -155,7 +174,7 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 		}
 	}
 
-	return b.startFixCreate(project, cwd, tracked, prompt, opts)
+	return b.startFixCreate(project, cwd, tracked, prompt, opts, cli, model != "")
 }
 
 func fixTrackedIssue(opts FixStartOpts) sessionstore.TrackedIssue {
@@ -262,7 +281,16 @@ func (b *Bot) startFixReuse(threadID, project, cwd string, tracked sessionstore.
 	}, nil
 }
 
-func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIssue, prompt string, opts FixStartOpts) (FixStartResult, error) {
+func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIssue, prompt string, opts FixStartOpts, cli config.AgentCLI, stampCLI bool) (FixStartResult, error) {
+	bind := func(unitID, discordURL string) error {
+		if err := b.bindFixIssue(unitID, project, tracked, opts.Actor, discordURL, true); err != nil {
+			return err
+		}
+		if !stampCLI {
+			return nil
+		}
+		return b.stampNewSessionCLI(unitID, cli)
+	}
 	// Prefer Discord thread when gateway or test threadAPI is available.
 	// CreateWorkflowThread REST failure falls back to web-native (session may be
 	// non-nil after Register even when Discord API is down — see DiscordReady).
@@ -272,7 +300,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 			// A project with no mapped channel is a normal state, not a failure:
 			// go web-native, matching StartWebTask and StartCase.
 			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, nil, func(unitID string) error {
-				return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
+				return bind(unitID, "")
 			})
 		}
 		if err != nil {
@@ -286,18 +314,18 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		if err != nil {
 			log.Printf("fix: create Discord thread failed project=%s: %v — web-native fallback", project, err)
 			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, nil, func(unitID string) error {
-				return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
+				return bind(unitID, "")
 			})
 		}
 		discordURL := DiscordThreadURL(b.cfg.ProjectDiscordGuildID(project), threadID)
-		if err := b.bindFixIssue(threadID, project, tracked, opts.Actor, discordURL, true); err != nil {
+		if err := bind(threadID, discordURL); err != nil {
 			return FixStartResult{}, err
 		}
 		return b.startWebTask(threadID, project, cwd, prompt, KindTask, opts.Actor, discordURL, nil, true)
 	}
 	// No gateway/threadAPI: web-native unit (no createWorkflowThread).
 	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, nil, func(unitID string) error {
-		return b.bindFixIssue(unitID, project, tracked, opts.Actor, "", true)
+		return bind(unitID, "")
 	})
 }
 

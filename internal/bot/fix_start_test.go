@@ -446,6 +446,73 @@ func TestStartFixClickUpDisabled(t *testing.T) {
 	}
 }
 
+func TestStartFixNamedModelStampsOnCreate(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	fake := &fakeThreadAPI{nextMsg: "m1", nextTh: "th-model-1"}
+	b.threadAPI = fake
+	// Pin task model so an empty pick would not accidentally look like a stamp.
+	b.cfg.Model = "grok-4.5"
+	b.cfg.Agent = "grok"
+
+	res, err := b.StartFix(FixStartOpts{
+		Kind: FixKindGitHub, Project: "app",
+		Owner: "acme", Repo: "app", Number: 9,
+		Title: "m", Actor: Actor{ID: "u1", DisplayName: "U"},
+		Model: "claude-opus-5", ForceNew: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, ok := b.sessions.Get(res.ThreadID)
+	if !ok {
+		t.Fatal("no entry")
+	}
+	if e.Model != "claude-opus-5" || e.Agent != "claude" {
+		t.Fatalf("agent=%q model=%q", e.Agent, e.Model)
+	}
+}
+
+func TestStartFixRejectsUnknownModel(t *testing.T) {
+	b, _ := testFixBot(t)
+	_, err := b.StartFix(FixStartOpts{
+		Kind: FixKindGitHub, Project: "app",
+		Owner: "acme", Repo: "app", Number: 1,
+		Actor: Actor{ID: "u1", DisplayName: "U"},
+		Model: "gpt-9", ForceNew: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "gpt-9") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestStartFixReuseIgnoresModel(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	e := sessionstore.Entry{Project: "app", Agent: "grok", Model: "grok-4.5"}
+	e.UpsertIssue(sessionstore.TrackedIssue{Owner: "acme", Repo: "app", Number: 3, Keyword: sessionstore.IssueKeywordFixes})
+	if err := b.sessions.Set("exist-m", e); err != nil {
+		t.Fatal(err)
+	}
+	res, err := b.StartFix(FixStartOpts{
+		Kind: FixKindGitHub, Project: "app",
+		Owner: "acme", Repo: "app", Number: 3,
+		ThreadID: "exist-m",
+		Title:    "again", Actor: Actor{ID: "u", DisplayName: "U"},
+		Model: "claude-opus-5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created || res.ThreadID != "exist-m" {
+		t.Fatalf("%+v", res)
+	}
+	got, _ := b.sessions.Get("exist-m")
+	if got.Model != "grok-4.5" || got.Agent != "grok" {
+		t.Fatalf("reuse re-stamped: agent=%q model=%q", got.Agent, got.Model)
+	}
+}
+
 func TestStartFixClickUpCreate(t *testing.T) {
 	b, _ := testFixBot(t)
 	pc := b.cfg.Projects["app"]

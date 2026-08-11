@@ -514,7 +514,10 @@ func TestFixLinearCreate(t *testing.T) {
 }
 
 func TestIssueDetailShowsFixWhenAllowed(t *testing.T) {
-	srv, _, _ := fixEnabledServer(t)
+	srv, cfg, _ := fixEnabledServer(t)
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5",
+	})
 	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
@@ -527,11 +530,22 @@ func TestIssueDetailShowsFixWhenAllowed(t *testing.T) {
 		t.Fatalf("status=%d", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "Fix with Grok") || !strings.Contains(body, "btn-fix-github") {
-		t.Fatalf("missing Fix UI: %s", body[:min(500, len(body))])
+	// Button is agent-neutral "Fix"; model choice lives in the confirm modal.
+	for _, want := range []string{
+		`id="btn-fix-github"`,
+		`>Fix</button>`,
+		`force_new`,
+		`<select name="model" hidden>`,
+		`data-confirm-title="Fix"`,
+		`data-confirm-select="model"`,
+		`<option value="">Default (grok-4.5)</option>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in Fix UI: %s", want, body[:min(800, len(body))])
+		}
 	}
-	if !strings.Contains(body, "force_new") {
-		t.Fatal("missing force_new checkbox")
+	if strings.Contains(body, "Fix with Grok") {
+		t.Fatal("stale Grok-branded Fix label")
 	}
 }
 
@@ -547,6 +561,42 @@ func TestIssueDetailHidesFixForViewer(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	if strings.Contains(w.Body.String(), "btn-fix-github") {
 		t.Fatal("viewer must not see Fix button")
+	}
+}
+
+// A named model from the issue Fix modal is stamped on the new session (agent
+// follows the model). Reuse and empty pick are covered by bot unit tests.
+func TestIssueFixModelPickStampsSession(t *testing.T) {
+	srv, cfg, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5",
+	})
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/issues/42/fix", sid, csrf, url.Values{
+		"owner": {"acme"}, "repo": {"app"}, "force_new": {"1"}, "model": {"claude-opus-5"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/sessions/") {
+		t.Fatalf("Location=%q", loc)
+	}
+	tid := strings.TrimPrefix(strings.Split(loc, "?")[0], "/sessions/")
+	bot.WaitIdleForTest(b, 5*time.Second)
+	e, ok := srv.sessions.Get(tid)
+	if !ok {
+		t.Fatalf("session %s missing", tid)
+	}
+	if e.Model != "claude-opus-5" || e.Agent != "claude" {
+		t.Fatalf("stamp agent=%q model=%q", e.Agent, e.Model)
 	}
 }
 
