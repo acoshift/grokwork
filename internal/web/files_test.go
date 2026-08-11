@@ -297,7 +297,7 @@ func TestFilesDownloadRefusals(t *testing.T) {
 
 func TestFilesPageNoBucketExplainer(t *testing.T) {
 	srv, cfg, _ := storageServer(t)
-	if err := cfg.SetProjectStorageGCS("proj", "", "", ""); err != nil {
+	if err := cfg.ClearProjectStorage("proj"); err != nil {
 		t.Fatal(err)
 	}
 	sid, _ := adminLogin(t, srv)
@@ -308,13 +308,61 @@ func TestFilesPageNoBucketExplainer(t *testing.T) {
 	if !strings.Contains(body, "/config/projects/proj/integrations") {
 		t.Fatal("admin viewer should see the Integrations settings link")
 	}
+	if !strings.Contains(body, "/config/storage") {
+		t.Fatal("admin viewer should see the global storage link")
+	}
+}
+
+func TestFilesPageDisabledDoesNotList(t *testing.T) {
+	srv, cfg, calls := storageServer(t)
+	if err := cfg.SetGlobalStorageGCS("company-bucket", "gw", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectStorageDisabled("proj"); err != nil {
+		t.Fatal(err)
+	}
+	*calls = nil
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	if !strings.Contains(body, "Storage disabled for this project") {
+		t.Fatal("disabled project must render disabled card")
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("disabled must not call gcs runner: %v", *calls)
+	}
+}
+
+func TestFilesPageInheritsGlobalJoinedPrefix(t *testing.T) {
+	srv, cfg, calls := storageServer(t)
+	if err := cfg.ClearProjectStorage("proj"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetGlobalStorageGCS("company-bucket", "gw", "/etc/keys/svc.json"); err != nil {
+		t.Fatal(err)
+	}
+	*calls = nil
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	if !strings.Contains(body, "company-bucket") {
+		t.Fatal("inherited page must show global bucket")
+	}
+	if !strings.Contains(body, "via global default") {
+		t.Fatal("inherited chrome missing")
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("want one ls call, got %v", *calls)
+	}
+	joined := strings.Join((*calls)[0], " ")
+	if !strings.Contains(joined, "gs://company-bucket/gw/proj/") {
+		t.Fatalf("ls must use joined prefix: %s", joined)
+	}
 }
 
 func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 	srv, cfg, _ := storageServer(t)
 	sid, csrf := adminLogin(t, srv)
 	w := postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
-		"name": {"proj"}, "gcsBucket": {"other-bucket"}, "prefix": {"files/"},
+		"name": {"proj"}, "action": {"save"}, "gcsBucket": {"other-bucket"}, "prefix": {"files/"},
 		"credentialsFile": {"/etc/keys/other.json"},
 	})
 	loc := w.Header().Get("Location")
@@ -327,7 +375,7 @@ func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 	}
 	// Invalid bucket → err= redirect, config unchanged.
 	w = postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
-		"name": {"proj"}, "gcsBucket": {"Bad*Bucket"},
+		"name": {"proj"}, "action": {"save"}, "gcsBucket": {"Bad*Bucket"},
 	})
 	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
 		t.Fatalf("invalid bucket Location = %q", loc)
@@ -337,7 +385,7 @@ func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 	}
 	// Relative credentials path → err= redirect, config unchanged.
 	w = postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
-		"name": {"proj"}, "gcsBucket": {"other-bucket"}, "credentialsFile": {"keys/svc.json"},
+		"name": {"proj"}, "action": {"save"}, "gcsBucket": {"other-bucket"}, "credentialsFile": {"keys/svc.json"},
 	})
 	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
 		t.Fatalf("relative credentials Location = %q", loc)
@@ -345,11 +393,78 @@ func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 	if st := cfg.ProjectStorage("proj"); st == nil || st.CredentialsFile != "/etc/keys/other.json" {
 		t.Fatalf("config changed on invalid credentials path: %+v", st)
 	}
-	// Clearing unlinks.
+	// Empty bucket on save is rejected (must not clear).
+	w = postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
+		"name": {"proj"}, "action": {"save"}, "gcsBucket": {""},
+	})
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
+		t.Fatalf("empty save Location = %q", loc)
+	}
+	if st := cfg.ProjectStorage("proj"); st == nil || st.GCSBucket != "other-bucket" {
+		t.Fatalf("empty save cleared storage: %+v", st)
+	}
+	// Clear via action=clear.
+	if err := cfg.SetGlobalStorageGCS("company-bucket", "gw", ""); err != nil {
+		t.Fatal(err)
+	}
 	_ = postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
-		"name": {"proj"}, "gcsBucket": {""},
+		"name": {"proj"}, "action": {"clear"},
 	})
 	if st := cfg.ProjectStorage("proj"); st != nil {
-		t.Fatalf("clear did not unlink: %+v", st)
+		t.Fatalf("clear did not nil raw: %+v", st)
+	}
+	if eff := cfg.EffectiveStorage("proj"); eff == nil || eff.Prefix != "gw/proj" {
+		t.Fatalf("clear under global should re-inherit: %+v", eff)
+	}
+	// Disable ≠ clear.
+	_ = postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
+		"name": {"proj"}, "action": {"disable"},
+	})
+	raw := cfg.ProjectStorage("proj")
+	if raw == nil || !raw.Disabled {
+		t.Fatalf("disable raw = %+v", raw)
+	}
+	if cfg.EffectiveStorage("proj") != nil {
+		t.Fatal("disable must yield nil effective")
+	}
+}
+
+func TestSetGlobalStoragePersistsAndRedirects(t *testing.T) {
+	srv, cfg, _ := storageServer(t)
+	sid, csrf := adminLogin(t, srv)
+	// Page marker.
+	body := getAuthed(t, srv, "/config/storage", sid)
+	if !strings.Contains(body, `id="page-config-storage"`) {
+		t.Fatal("global storage page marker missing")
+	}
+	w := postFix(t, srv, "/config/storage", sid, csrf, url.Values{
+		"gcsBucket": {"company-bucket"}, "prefix": {"gw"}, "credentialsFile": {"/etc/keys/g.json"},
+	})
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/config/storage?") || !strings.Contains(loc, "ok=") {
+		t.Fatalf("Location = %q", loc)
+	}
+	st := cfg.GlobalStorage()
+	if st == nil || st.GCSBucket != "company-bucket" || st.Prefix != "gw" {
+		t.Fatalf("global = %+v", st)
+	}
+	// Hub drill.
+	hub := getAuthed(t, srv, "/config", sid)
+	if !strings.Contains(hub, `href="/config/storage"`) || !strings.Contains(hub, "company-bucket") {
+		t.Fatal("hub missing storage drill")
+	}
+	// Member cannot POST.
+	msid, mcsrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w = postFix(t, srv, "/config/storage", msid, mcsrf, url.Values{
+		"gcsBucket": {"evil-bucket"},
+	})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("member global storage status = %d, want 403", w.Code)
+	}
+	if st := cfg.GlobalStorage(); st == nil || st.GCSBucket != "company-bucket" {
+		t.Fatalf("member write changed global: %+v", st)
 	}
 }

@@ -79,6 +79,11 @@
     "DISCORD_CHANNEL_ID_FOR_APP": "app",
     "DISCORD_CHANNEL_ID_FOR_API": "api"
   },
+  "storage": {
+    "gcsBucket": "acme-company-files",
+    "prefix": "grokwork",
+    "credentialsFile": "/etc/grokwork/gcs-key.json"
+  },
   "grokBin": "grok",
   "agent": "grok",
   "claudeBin": "claude",

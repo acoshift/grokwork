@@ -1,0 +1,60 @@
+{{define "content"}}
+<div class="config-sub" id="page-config-storage">
+{{template "config_sub_header" $}}
+<h1>File storage</h1>
+<p class="sub">
+  Host-wide Google Cloud Storage default for project <span class="mono">Files</span> pages.
+  Projects without an override inherit this bucket under an isolated prefix
+  (<span class="mono">{prefix}/{project}</span>). Projects with storage disabled stay off.
+  The host needs the <span class="mono">gcloud</span> CLI; auth is its login/ADC, or name a
+  service-account key file below.
+</p>
+<div class="section card">
+  <form method="post" action="{{route "config.storage"}}"
+    {{if .StorageInheritCount}}
+    data-confirm="Set global file storage? {{.StorageInheritCount}} project(s) without an override will inherit gs://…/{prefix}/{project}. Projects with storage disabled stay off. Projects with an override are unchanged."
+    data-confirm-title="Set global file storage"
+    data-confirm-ok="Save"
+    {{end}}>
+    {{template "csrf" $}}
+    <div class="inline" style="grid-template-columns: 1fr 1fr; align-items:end">
+      <div>
+        <label for="global-storage-bucket">GCS bucket</label>
+        <input id="global-storage-bucket" type="text" name="gcsBucket" value="{{.Config.StorageBucket}}"
+          placeholder="acme-company-files" class="mono" autocomplete="off">
+      </div>
+      <div>
+        <label for="global-storage-prefix">Prefix (optional)</label>
+        <input id="global-storage-prefix" type="text" name="prefix" value="{{.Config.StoragePrefix}}"
+          placeholder="grokwork" class="mono" autocomplete="off">
+      </div>
+    </div>
+    <div style="margin-top:0.65rem">
+      <label for="global-storage-credentials">Credentials file (optional)</label>
+      <input id="global-storage-credentials" type="text" name="credentialsFile" value="{{.Config.StorageCredentialsFile}}"
+        placeholder="/etc/grokwork/gcs-key.json" class="mono" autocomplete="off">
+      <p class="sub" style="margin:0.35rem 0 0">Absolute path on the host to a service-account JSON key.
+        Applied per invocation. Empty uses host gcloud login/ADC.</p>
+    </div>
+    <p class="sub" style="margin:0.65rem 0 0">
+      {{if .Config.StorageConfigured}}
+        Currently set. {{.StorageInheritCount}} project(s) inherit when they have no override.
+      {{else}}
+        Not set. {{.StorageInheritCount}} project(s) would inherit once a bucket is saved.
+      {{end}}
+      Project names should be path-safe (<span class="mono">[a-zA-Z0-9._-]</span>); exotic names share a sanitized segment or use a hash.
+    </p>
+    <button type="submit" style="margin-top:0.65rem">Save storage</button>
+  </form>
+  {{if .Config.StorageConfigured}}
+  <form method="post" action="{{route "config.storage"}}" style="margin-top:0.65rem"
+        data-confirm="Clear the global storage default? Projects that inherited it will lose Files until they set an override."
+        data-confirm-title="Clear global storage" data-confirm-ok="Clear" data-confirm-danger>
+    {{template "csrf" $}}
+    <input type="hidden" name="gcsBucket" value="">
+    <button type="submit" class="btn-secondary">Clear global default</button>
+  </form>
+  {{end}}
+</div>
+</div>
+{{end}}

@@ -1,20 +1,20 @@
 package config
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
 )
 
-// ProjectStorageConfig is per-project file storage on Google Cloud Storage.
-//
-// The bucket is provisioned out of band; grokwork only reads and writes objects
-// under an optional prefix. Auth is the host's gcloud login/ADC by default;
-// CredentialsFile overrides it per project.
-type ProjectStorageConfig struct {
-	GCSBucket string `json:"gcsBucket"`
+// StorageConfig is GCS file storage: the global host default and/or a
+// per-project override. Empty bucket after normalize yields nil (except
+// disabled project blocks, which keep Disabled only).
+type StorageConfig struct {
+	GCSBucket string `json:"gcsBucket,omitempty"`
 	// Prefix is an optional object-name prefix (no leading/trailing slash).
 	Prefix string `json:"prefix,omitempty"`
 	// CredentialsFile is an optional absolute path to a service-account JSON
@@ -22,14 +22,30 @@ type ProjectStorageConfig struct {
 	// (CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE) so it never rewrites the host's
 	// global gcloud auth. The path — never the key material — lives in config.
 	CredentialsFile string `json:"credentialsFile,omitempty"`
+	// Disabled is project-only: storage is off for this project even when a
+	// global default exists. Forbidden on the global block (load + setter error).
+	// When true, other fields are ignored and stripped on normalize.
+	Disabled bool `json:"disabled,omitempty"`
 }
+
+// Storage source labels for Snapshot / UI.
+const (
+	StorageSourceNone     = "none"
+	StorageSourceGlobal   = "global"
+	StorageSourceOverride = "override"
+	StorageSourceDisabled = "disabled"
+)
 
 // gcsBucketRe is a conservative subset of GCS bucket-name rules. The name is
 // spliced into a gs:// URL handed to a CLI that expands wildcards, so anything
 // outside this charset is refused even if GCS itself would accept it.
 var gcsBucketRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`)
 
-func cloneProjectStorage(s *ProjectStorageConfig) *ProjectStorageConfig {
+// storageSegmentRe is the post-condition for a single project path segment
+// under a shared global prefix.
+var storageSegmentRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$`)
+
+func cloneStorage(s *StorageConfig) *StorageConfig {
 	if s == nil {
 		return nil
 	}
@@ -37,17 +53,22 @@ func cloneProjectStorage(s *ProjectStorageConfig) *ProjectStorageConfig {
 	return &cp
 }
 
-// normalizeProjectStorage trims and validates. Empty bucket → nil so config.json
-// never grows an empty object. An invalid bucket/prefix is a hard error (like
-// normalizeSLA): a typo silently disabling storage looks identical to storage
-// being off.
-func normalizeProjectStorage(s *ProjectStorageConfig) (*ProjectStorageConfig, error) {
+// normalizeStorage trims and validates.
+// projectContext: when true, Disabled is allowed and yields {Disabled:true}.
+// when false (global), Disabled is a hard error if set.
+func normalizeStorage(s *StorageConfig, projectContext bool) (*StorageConfig, error) {
 	if s == nil {
 		return nil, nil
 	}
 	s.GCSBucket = strings.TrimSpace(s.GCSBucket)
 	s.Prefix = strings.TrimSpace(s.Prefix)
 	s.CredentialsFile = strings.TrimSpace(s.CredentialsFile)
+	if s.Disabled {
+		if !projectContext {
+			return nil, fmt.Errorf("disabled is only valid on projects.*.storage")
+		}
+		return &StorageConfig{Disabled: true}, nil
+	}
 	if s.GCSBucket == "" {
 		return nil, nil
 	}
@@ -125,9 +146,62 @@ func validateStoragePrefix(prefix string) (string, error) {
 	return prefix, nil
 }
 
-// ProjectStorage returns a copy of a project's storage config, or nil when
-// unlinked.
-func (c *Config) ProjectStorage(name string) *ProjectStorageConfig {
+// storageProjectSegment returns a single safe object-name segment for a project.
+// Post-conditions: non-empty; matches storageSegmentRe; length ≤ 63; never "".
+func storageProjectSegment(project string) string {
+	raw := strings.TrimSpace(project)
+	if raw != "" && len(raw) <= 63 && storageSegmentRe.MatchString(raw) {
+		return raw
+	}
+	var b strings.Builder
+	b.Grow(len(raw))
+	prevUnderscore := false
+	for _, r := range raw {
+		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-'
+		if ok {
+			b.WriteRune(r)
+			prevUnderscore = r == '_'
+			continue
+		}
+		if !prevUnderscore {
+			b.WriteByte('_')
+			prevUnderscore = true
+		}
+	}
+	s := strings.Trim(b.String(), "_.")
+	if s != "" && len(s) <= 63 && storageSegmentRe.MatchString(s) {
+		return s
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return fmt.Sprintf("p_%x", sum[:8]) // 16 hex chars
+}
+
+// JoinStoragePrefix joins optional base prefix with storageProjectSegment(project).
+// Re-validates the full string with validateStoragePrefix.
+func JoinStoragePrefix(base, project string) (string, error) {
+	seg := storageProjectSegment(project)
+	base = strings.TrimSpace(base)
+	joined := seg
+	if base != "" {
+		joined = base + "/" + seg
+	}
+	return validateStoragePrefix(joined)
+}
+
+// GlobalStorage returns a copy of the host default, or nil.
+func (c *Config) GlobalStorage() *StorageConfig {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return cloneStorage(c.Storage)
+}
+
+// ProjectStorage returns the project's raw stored block (override or disabled),
+// or nil when the project inherits. Does NOT apply global fallback.
+func (c *Config) ProjectStorage(name string) *StorageConfig {
 	if c == nil {
 		return nil
 	}
@@ -137,23 +211,80 @@ func (c *Config) ProjectStorage(name string) *ProjectStorageConfig {
 	if !ok || pc.Storage == nil {
 		return nil
 	}
-	return cloneProjectStorage(pc.Storage)
+	return cloneStorage(pc.Storage)
 }
 
-// SetProjectStorageGCS links (or unlinks) a project's GCS bucket. An empty
-// bucket clears the link and nils the sub-config (credentialsFile included —
-// an orphaned key path must not survive an unlink and silently re-apply on the
-// next link).
-func (c *Config) SetProjectStorageGCS(project, bucket, prefix, credentialsFile string) error {
-	project = strings.TrimSpace(project)
-	if project == "" {
-		return fmt.Errorf("project name is required")
+// EffectiveStorage is the single resolution entry for Files I/O.
+// On join/validate failure returns nil (fail closed); never returns global
+// with an unjoined prefix.
+func (c *Config) EffectiveStorage(name string) *StorageConfig {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.effectiveStorageLocked(name)
+}
+
+func (c *Config) effectiveStorageLocked(name string) *StorageConfig {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	pc, ok := c.Projects[name]
+	if !ok {
+		return nil
+	}
+	raw := pc.Storage
+	if raw != nil && raw.Disabled {
+		return nil
+	}
+	if raw != nil && strings.TrimSpace(raw.GCSBucket) != "" {
+		return cloneStorage(raw)
+	}
+	if c.Storage == nil || strings.TrimSpace(c.Storage.GCSBucket) == "" {
+		return nil
+	}
+	prefix, err := JoinStoragePrefix(c.Storage.Prefix, name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] effective storage for project %q: %v\n", name, err)
+		return nil
+	}
+	out := cloneStorage(c.Storage)
+	out.Prefix = prefix
+	out.Disabled = false
+	return out
+}
+
+func (c *Config) storageSourceLocked(name string) string {
+	name = strings.TrimSpace(name)
+	pc, ok := c.Projects[name]
+	if !ok {
+		return StorageSourceNone
+	}
+	raw := pc.Storage
+	if raw != nil && raw.Disabled {
+		return StorageSourceDisabled
+	}
+	if raw != nil && strings.TrimSpace(raw.GCSBucket) != "" {
+		return StorageSourceOverride
+	}
+	if c.Storage != nil && strings.TrimSpace(c.Storage.GCSBucket) != "" {
+		return StorageSourceGlobal
+	}
+	return StorageSourceNone
+}
+
+// SetGlobalStorageGCS sets or clears the host default.
+// Empty bucket clears (nils c.Storage). Disabled is never accepted.
+func (c *Config) SetGlobalStorageGCS(bucket, prefix, credentialsFile string) error {
+	if c == nil {
+		return fmt.Errorf("nil config")
 	}
 	bucket = strings.TrimSpace(bucket)
 	prefix = strings.TrimSpace(prefix)
 	credentialsFile = strings.TrimSpace(credentialsFile)
-	// Validate before locking so a bad form never holds the write lock.
-	var next *ProjectStorageConfig
+	var next *StorageConfig
 	if bucket != "" {
 		if err := validateGCSBucket(bucket); err != nil {
 			return err
@@ -165,17 +296,75 @@ func (c *Config) SetProjectStorageGCS(project, bucket, prefix, credentialsFile s
 		if err := validateStorageCredentialsFile(credentialsFile); err != nil {
 			return err
 		}
-		next = &ProjectStorageConfig{GCSBucket: bucket, Prefix: cleanPrefix, CredentialsFile: credentialsFile}
+		next = &StorageConfig{GCSBucket: bucket, Prefix: cleanPrefix, CredentialsFile: credentialsFile}
 	}
-	return c.mutateProjectStorage(project, func(_ *ProjectStorageConfig) (*ProjectStorageConfig, error) {
+	next, err := normalizeStorage(next, false)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Storage = next
+	return c.saveLocked()
+}
+
+// SetProjectStorageGCS sets a full override. Requires a non-empty bucket.
+// Empty bucket is an error — use ClearProjectStorage or SetProjectStorageDisabled.
+func (c *Config) SetProjectStorageGCS(project, bucket, prefix, credentialsFile string) error {
+	project = strings.TrimSpace(project)
+	if project == "" {
+		return fmt.Errorf("project name is required")
+	}
+	bucket = strings.TrimSpace(bucket)
+	prefix = strings.TrimSpace(prefix)
+	credentialsFile = strings.TrimSpace(credentialsFile)
+	if bucket == "" {
+		return fmt.Errorf("gcsBucket is required; use ClearProjectStorage to re-inherit/unlink, or SetProjectStorageDisabled to turn Files off")
+	}
+	if err := validateGCSBucket(bucket); err != nil {
+		return err
+	}
+	cleanPrefix, err := validateStoragePrefix(prefix)
+	if err != nil {
+		return err
+	}
+	if err := validateStorageCredentialsFile(credentialsFile); err != nil {
+		return err
+	}
+	next := &StorageConfig{GCSBucket: bucket, Prefix: cleanPrefix, CredentialsFile: credentialsFile}
+	return c.mutateProjectStorage(project, func(_ *StorageConfig) (*StorageConfig, error) {
 		return next, nil
+	})
+}
+
+// ClearProjectStorage nils projects[name].Storage.
+// With global set the project re-inherits; without global it has no storage.
+func (c *Config) ClearProjectStorage(project string) error {
+	project = strings.TrimSpace(project)
+	if project == "" {
+		return fmt.Errorf("project name is required")
+	}
+	return c.mutateProjectStorage(project, func(_ *StorageConfig) (*StorageConfig, error) {
+		return nil, nil
+	})
+}
+
+// SetProjectStorageDisabled stores {disabled: true}, turning Files off for
+// this project regardless of global.
+func (c *Config) SetProjectStorageDisabled(project string) error {
+	project = strings.TrimSpace(project)
+	if project == "" {
+		return fmt.Errorf("project name is required")
+	}
+	return c.mutateProjectStorage(project, func(_ *StorageConfig) (*StorageConfig, error) {
+		return &StorageConfig{Disabled: true}, nil
 	})
 }
 
 // mutateProjectStorage applies fn to a project's storage config and persists.
 // fn returns the replacement (may be nil to clear). Validate before locking;
 // mutate and persist under the write lock; nil an empty sub-config.
-func (c *Config) mutateProjectStorage(name string, fn func(*ProjectStorageConfig) (*ProjectStorageConfig, error)) error {
+func (c *Config) mutateProjectStorage(name string, fn func(*StorageConfig) (*StorageConfig, error)) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("project name is required")
@@ -189,16 +378,33 @@ func (c *Config) mutateProjectStorage(name string, fn func(*ProjectStorageConfig
 	if !ok {
 		return fmt.Errorf("project %q not found", name)
 	}
-	cur := cloneProjectStorage(pc.Storage)
+	cur := cloneStorage(pc.Storage)
 	next, err := fn(cur)
 	if err != nil {
 		return err
 	}
-	next, err = normalizeProjectStorage(next)
+	next, err = normalizeStorage(next, true)
 	if err != nil {
 		return err
 	}
 	pc.Storage = next
 	c.Projects[name] = pc
 	return c.saveLocked()
+}
+
+// CountInheritingStorageProjects returns how many projects would inherit the
+// global default (raw nil, not disabled). Used by the global Save confirm.
+func (c *Config) CountInheritingStorageProjects() int {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	n := 0
+	for _, pc := range c.Projects {
+		if pc.Storage == nil {
+			n++
+		}
+	}
+	return n
 }

@@ -130,6 +130,21 @@
         <span class="drill-v">{{if .Config.WorktreeIdleTTLDays}}wt {{.Config.WorktreeIdleTTLDays}}d{{else}}wt off{{end}}{{if .Config.TerminalSessionTTLDays}} · sess {{.Config.TerminalSessionTTLDays}}d{{else}} · sess off{{end}}</span>
       </a>
     </div>
+
+    <div class="drill-cap">Storage</div>
+    <div class="drill-group">
+      <a class="drill" href="{{route "config.storage"}}">
+        <span class="drill-main">
+          <span class="drill-t">File storage</span>
+          <span class="drill-s">default GCS bucket for project Files pages</span>
+        </span>
+        {{if .Config.StorageConfigured}}
+          <span class="drill-v mono">{{.Config.StorageBucket}}</span>
+        {{else}}
+          <span class="badge status-warn">not set</span>
+        {{end}}
+      </a>
+    </div>
   </div>
 </div>
 

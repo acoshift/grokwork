@@ -212,21 +212,57 @@
 <div class="section card" id="project-storage">
   <h2>File storage (GCS)</h2>
   <p class="sub" style="margin-top:0">
-    Link one Google Cloud Storage bucket for the project’s <a href="/projects/{{.ProjectItem.Name}}/files">Files</a> page
-    (browse, upload, download, delete). The bucket is provisioned out of band —
-    grokwork only reads and writes objects under an optional prefix.
-    The host needs the <span class="mono">gcloud</span> CLI; auth is its login/ADC,
-    or name a service-account key file below to authenticate this project’s calls only.
-    Clear the bucket name to unlink.
+    The project’s <a href="/projects/{{.ProjectItem.Name}}/files">Files</a> page uses an override when set,
+    otherwise the <a href="{{route "config.storage"}}">global default</a> under an isolated prefix.
+    The host needs the <span class="mono">gcloud</span> CLI. An override replaces the global default entirely
+    (bucket, prefix, and credentials) — the project name is <strong>not</strong> appended to an override prefix.
+    If you reuse the company bucket, set a unique prefix (e.g. <span class="mono">grokwork/{{.ProjectItem.Name}}</span>)
+    so this project does not share another project’s objects.
   </p>
-  <form method="post" action="{{route "config.setProjectStorage"}}">
+
+  {{if eq .ProjectItem.StorageSource "disabled"}}
+  <p class="sub"><span class="badge status-warn">disabled</span> Files page is off for this project.</p>
+  <form method="post" action="{{route "config.setProjectStorage"}}" style="display:inline">
     {{template "csrf" $}}
     <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <input type="hidden" name="action" value="clear">
+    {{if .Config.StorageConfigured}}
+    <button type="submit" data-confirm="Re-enable inheritance from the global default under an isolated prefix?"
+      data-confirm-title="Re-enable storage" data-confirm-ok="Re-enable">Re-enable inheritance</button>
+    {{else}}
+    <button type="submit">Clear disable</button>
+    {{end}}
+  </form>
+  {{else if eq .ProjectItem.StorageSource "global"}}
+  <p class="sub" style="margin-top:0">
+    <span class="badge">from global default</span>
+    Effective: bucket <span class="mono">{{.ProjectItem.StorageEffectiveBucket}}</span>
+    {{if .ProjectItem.StorageEffectivePrefix}}· prefix <span class="mono">{{.ProjectItem.StorageEffectivePrefix}}</span>{{end}}
+  </p>
+  <form method="post" action="{{route "config.setProjectStorage"}}" style="display:inline;margin-right:0.5rem"
+        data-confirm="Turn Files off for this project even if a global default is set?"
+        data-confirm-title="Disable storage" data-confirm-ok="Disable" data-confirm-danger>
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <input type="hidden" name="action" value="disable">
+    <button type="submit" class="btn-danger">Disable for this project</button>
+  </form>
+  {{else if eq .ProjectItem.StorageSource "override"}}
+  <p class="sub" style="margin-top:0"><span class="badge">override</span> Custom bucket for this project.</p>
+  {{else}}
+  <p class="sub" style="margin-top:0">No storage linked. Set a project override below{{if .Config.StorageConfigured}}, or it will inherit the global default once configured{{end}}.</p>
+  {{end}}
+
+  {{if ne .ProjectItem.StorageSource "disabled"}}
+  <form method="post" action="{{route "config.setProjectStorage"}}" style="margin-top:0.85rem">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <input type="hidden" name="action" value="save">
     <div class="inline" style="grid-template-columns: 1fr 1fr; align-items:end">
       <div>
         <label for="project-storage-bucket">GCS bucket</label>
         <input id="project-storage-bucket" type="text" name="gcsBucket" value="{{.ProjectItem.StorageBucket}}"
-          placeholder="acme-app-files" class="mono" autocomplete="off">
+          placeholder="acme-app-files" class="mono" autocomplete="off" required>
       </div>
       <div>
         <label for="project-storage-prefix">Prefix (optional)</label>
@@ -241,8 +277,45 @@
       <p class="sub" style="margin:0.35rem 0 0">Absolute path on the host to a service-account JSON key.
         Applied per invocation — the host’s global <span class="mono">gcloud</span> login is untouched. Empty uses that login/ADC.</p>
     </div>
-    <button type="submit" style="margin-top:0.65rem">Save storage</button>
+    <button type="submit" style="margin-top:0.65rem">{{if eq .ProjectItem.StorageSource "override"}}Save override{{else}}Link storage{{end}}</button>
   </form>
+  {{if eq .ProjectItem.StorageSource "override"}}
+  <form method="post" action="{{route "config.setProjectStorage"}}" style="margin-top:0.65rem"
+    {{if .Config.StorageConfigured}}
+        data-confirm="Clear this override and re-inherit the global default under an isolated prefix?"
+        data-confirm-title="Clear override" data-confirm-ok="Clear override"
+    {{else}}
+        data-confirm="Unlink storage for this project? The Files page will turn off."
+        data-confirm-title="Unlink storage" data-confirm-ok="Unlink" data-confirm-danger
+    {{end}}>
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <input type="hidden" name="action" value="clear">
+    <button type="submit" class="btn-secondary">{{if .Config.StorageConfigured}}Clear override (use global){{else}}Unlink storage{{end}}</button>
+  </form>
+  {{end}}
+  {{else}}
+  <form method="post" action="{{route "config.setProjectStorage"}}" style="margin-top:0.85rem">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <input type="hidden" name="action" value="save">
+    <div class="inline" style="grid-template-columns: 1fr 1fr; align-items:end">
+      <div>
+        <label for="project-storage-bucket-disabled">GCS bucket</label>
+        <input id="project-storage-bucket-disabled" type="text" name="gcsBucket" placeholder="acme-app-files" class="mono" autocomplete="off" required>
+      </div>
+      <div>
+        <label for="project-storage-prefix-disabled">Prefix (optional)</label>
+        <input id="project-storage-prefix-disabled" type="text" name="prefix" placeholder="grokwork" class="mono" autocomplete="off">
+      </div>
+    </div>
+    <div style="margin-top:0.65rem">
+      <label for="project-storage-credentials-disabled">Credentials file (optional)</label>
+      <input id="project-storage-credentials-disabled" type="text" name="credentialsFile" placeholder="/etc/grokwork/gcs-key.json" class="mono" autocomplete="off">
+    </div>
+    <button type="submit" style="margin-top:0.65rem">Set custom storage…</button>
+  </form>
+  {{end}}
 </div>
 
 <div class="section card" id="project-repo-fetch">

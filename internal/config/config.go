@@ -174,6 +174,10 @@ type Config struct {
 	NotifyOnDone string `json:"notifyOnDone,omitempty"`
 	// NotifyOnDoneLongMs is the elapsed threshold for long_only (default 300000 = 5m).
 	NotifyOnDoneLongMs int `json:"notifyOnDoneLongMs,omitempty"`
+	// Storage is the host-wide GCS default for project Files pages. Projects
+	// without an override inherit it under an isolated prefix segment. nil =
+	// no default (each project must set its own storage or have none).
+	Storage *StorageConfig `json:"storage,omitempty"`
 
 	mu         sync.RWMutex
 	DataDir    string `json:"-"`
@@ -247,14 +251,25 @@ type ProjectItem struct {
 	DeployEnvs         []DeployEnvItem
 	// ActionsRules are the branch-lock rules for workflow_dispatch (Integrations).
 	ActionsRules []ActionsDispatchRule
-	// StorageBucket / StoragePrefix are the linked GCS target (empty = unlinked).
-	// The bucket name is not a secret and may be shown verbatim.
+	// StorageBucket / StoragePrefix are the raw project override (empty when
+	// nil or disabled). The bucket name is not a secret and may be shown
+	// verbatim. Effective target is StorageEffective* / StorageSource.
 	StorageBucket string
 	StoragePrefix string
 	// StorageCredentialsFile is the service-account key path (empty = host
 	// gcloud auth). A local path — fine for the private web UI, never for
 	// Discord or audit details; the key contents never enter config at all.
 	StorageCredentialsFile string
+	// StorageDisabled is true when the project block has disabled:true.
+	StorageDisabled bool
+	// StorageInherited is true when the project has no override and a global
+	// default is configured (will inherit unless disabled).
+	StorageInherited bool
+	// StorageEffectiveBucket / StorageEffectivePrefix are from EffectiveStorage.
+	StorageEffectiveBucket string
+	StorageEffectivePrefix string
+	// StorageSource is "override" | "global" | "disabled" | "none".
+	StorageSource string
 }
 
 // ChannelItem is a channel→project mapping row for the config UI.
@@ -347,6 +362,11 @@ type Snapshot struct {
 	NotifyOnDone string
 	// NotifyOnDoneLongMs effective long_only threshold.
 	NotifyOnDoneLongMs int
+	// Host-wide GCS storage default (raw). Empty bucket = no default.
+	StorageBucket          string
+	StoragePrefix          string
+	StorageCredentialsFile string
+	StorageConfigured      bool
 }
 
 // DefaultShutdownTimeoutMs is used when shutdownTimeoutMs is unset/invalid.
@@ -616,6 +636,15 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
+	// Global storage has no UnmarshalJSON hook (projects normalize via
+	// ProjectsMap). Normalize here or any save that round-trips outObj would
+	// persist a bad block, and EffectiveStorage would see unvalidated fields.
+	st, err := normalizeStorage(c.Storage, false)
+	if err != nil {
+		return nil, fmt.Errorf("storage: %w", err)
+	}
+	c.Storage = st
+
 	// allowedRoleIds / capabilityByRole no longer exist as fields, so the parse
 	// above silently dropped them. Say so loudly: a project whose only grant was
 	// a Discord role is now fail-closed, and that has to be explained rather than
@@ -802,6 +831,7 @@ func (c *Config) saveLocked() error {
 		NotifyOnDoneLongMs        int                  `json:"notifyOnDoneLongMs,omitempty"`
 		MaxConcurrentDeploys      *int                 `json:"maxConcurrentDeploys,omitempty"`
 		DeployRunRetention        *int                 `json:"deployRunRetention,omitempty"`
+		Storage                   *StorageConfig       `json:"storage,omitempty"`
 	}{
 		DiscordToken:              c.DiscordToken,
 		DiscordClientID:           c.DiscordClientID,
@@ -847,6 +877,7 @@ func (c *Config) saveLocked() error {
 		NotifyOnDoneLongMs:        c.NotifyOnDoneLongMs,
 		MaxConcurrentDeploys:      cloneIntPtr(c.MaxConcurrentDeploys),
 		DeployRunRetention:        cloneIntPtr(c.DeployRunRetention),
+		Storage:                   cloneStorage(c.Storage),
 	}
 	raw, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
@@ -1306,10 +1337,17 @@ func (c *Config) Snapshot() Snapshot {
 		if pc.Actions != nil && len(pc.Actions.DispatchRules) > 0 {
 			item.ActionsRules = cloneProjectActions(pc.Actions).DispatchRules
 		}
-		if pc.Storage != nil {
+		item.StorageSource = c.storageSourceLocked(n)
+		item.StorageDisabled = item.StorageSource == StorageSourceDisabled
+		item.StorageInherited = item.StorageSource == StorageSourceGlobal
+		if pc.Storage != nil && !pc.Storage.Disabled {
 			item.StorageBucket = pc.Storage.GCSBucket
 			item.StoragePrefix = pc.Storage.Prefix
 			item.StorageCredentialsFile = pc.Storage.CredentialsFile
+		}
+		if eff := c.effectiveStorageLocked(n); eff != nil {
+			item.StorageEffectiveBucket = eff.GCSBucket
+			item.StorageEffectivePrefix = eff.Prefix
 		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled
@@ -1476,6 +1514,12 @@ func (c *Config) Snapshot() Snapshot {
 			}
 			return ""
 		}(),
+	}
+	if c.Storage != nil {
+		snap.StorageBucket = c.Storage.GCSBucket
+		snap.StoragePrefix = c.Storage.Prefix
+		snap.StorageCredentialsFile = c.Storage.CredentialsFile
+		snap.StorageConfigured = strings.TrimSpace(c.Storage.GCSBucket) != ""
 	}
 	// Features need WebAuthEnabled without re-locking — compute inline.
 	if c.WebAuth != nil && c.WebAuth.Enabled {

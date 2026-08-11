@@ -58,8 +58,8 @@ func (s *Server) gcsRun() gcs.Runner {
 	return nil
 }
 
-// storageTarget maps the stored project config onto the gcs boundary type.
-func storageTarget(st *config.ProjectStorageConfig) gcs.Target {
+// storageTarget maps config storage onto the gcs boundary type.
+func storageTarget(st *config.StorageConfig) gcs.Target {
 	if st == nil {
 		return gcs.Target{}
 	}
@@ -91,13 +91,18 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 		s.cfg.ResolveCapabilities(project, d.UserID).CanStorageWrite()
 	d.StorageFeatureOn = s.cfg.FeatureStorage()
 
-	st := s.cfg.ProjectStorage(project)
-	if st == nil || strings.TrimSpace(st.GCSBucket) == "" {
-		d.StorageNotConfigured = true
+	// I/O uses effective target; chrome flags need raw + global.
+	raw := s.cfg.ProjectStorage(project)
+	global := s.cfg.GlobalStorage()
+	eff := s.cfg.EffectiveStorage(project)
+	d.StorageDisabled = raw != nil && raw.Disabled
+	d.StorageInherited = raw == nil && global != nil && !d.StorageDisabled
+	d.StorageNotConfigured = eff == nil && !d.StorageDisabled
+	if eff == nil {
 		return s.viewPage(ctx, "files", d)
 	}
-	d.StorageBucket = st.GCSBucket
-	d.StoragePrefix = st.Prefix
+	d.StorageBucket = eff.GCSBucket
+	d.StoragePrefix = eff.Prefix
 
 	subPath := strings.TrimSpace(ctx.FormValue("path"))
 	subPath = strings.Trim(subPath, "/")
@@ -113,7 +118,7 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 	d.FilesPath = subPath
 	d.FilesCrumbs = fileBreadcrumbs(subPath)
 
-	entries, err := gcs.List(ctx.Context(), s.gcsRun(), storageTarget(st), subPath)
+	entries, err := gcs.List(ctx.Context(), s.gcsRun(), storageTarget(eff), subPath)
 	if err != nil {
 		if d.Error == "" {
 			d.Error = err.Error()
@@ -168,7 +173,7 @@ func (s *Server) postFileUpload(ctx *hime.Context) error {
 		return s.filesRedirect(ctx, project, subPath, "", parseErr)
 	}
 
-	st := s.cfg.ProjectStorage(project)
+	st := s.cfg.EffectiveStorage(project)
 	if st == nil || strings.TrimSpace(st.GCSBucket) == "" {
 		return s.filesRedirect(ctx, project, subPath, "", fmt.Errorf("file storage is not configured for this project"))
 	}
@@ -320,7 +325,7 @@ func (s *Server) postFileDelete(ctx *hime.Context) error {
 		}
 	}
 
-	st := s.cfg.ProjectStorage(project)
+	st := s.cfg.EffectiveStorage(project)
 	if st == nil || strings.TrimSpace(st.GCSBucket) == "" {
 		return s.filesRedirect(ctx, project, subPath, "", fmt.Errorf("file storage is not configured for this project"))
 	}
@@ -357,7 +362,7 @@ func (s *Server) fileDownload(ctx *hime.Context) error {
 	if object == "" || gcs.ValidateObjectPath(object) != nil {
 		return ctx.Status(http.StatusBadRequest).Error("invalid object name")
 	}
-	st := s.cfg.ProjectStorage(project)
+	st := s.cfg.EffectiveStorage(project)
 	if st == nil || strings.TrimSpace(st.GCSBucket) == "" {
 		return ctx.Status(http.StatusNotFound).Error("file storage is not configured")
 	}
@@ -403,23 +408,90 @@ func (s *Server) fileDownload(ctx *hime.Context) error {
 }
 
 // setProjectStorage is POST /config/projects/storage (Integrations tab).
+// action=save|clear|disable — empty bucket on save is rejected (never clear).
 func (s *Server) setProjectStorage(ctx *hime.Context) error {
 	name := strings.TrimSpace(ctx.PostFormValue("name"))
+	action := strings.ToLower(strings.TrimSpace(ctx.PostFormValue("action")))
+	if action == "" {
+		action = "save"
+	}
 	bucket := strings.TrimSpace(ctx.PostFormValue("gcsBucket"))
 	prefix := strings.TrimSpace(ctx.PostFormValue("prefix"))
 	credentialsFile := strings.TrimSpace(ctx.PostFormValue("credentialsFile"))
-	err := s.cfg.SetProjectStorageGCS(name, bucket, prefix, credentialsFile)
+
+	var err error
+	var msg string
+	switch action {
+	case "clear":
+		err = s.cfg.ClearProjectStorage(name)
+		if s.cfg.GlobalStorage() != nil {
+			msg = fmt.Sprintf("Cleared storage override for project %q (using global default)", name)
+		} else {
+			msg = fmt.Sprintf("Unlinked file storage for project %q", name)
+		}
+	case "disable":
+		err = s.cfg.SetProjectStorageDisabled(name)
+		msg = fmt.Sprintf("Disabled file storage for project %q", name)
+	case "save":
+		err = s.cfg.SetProjectStorageGCS(name, bucket, prefix, credentialsFile)
+		msg = fmt.Sprintf("Updated file storage for project %q", name)
+		// Non-blocking isolation warning when override reuses global bucket
+		// without the auto-isolated prefix.
+		if err == nil {
+			if g := s.cfg.GlobalStorage(); g != nil && bucket == g.GCSBucket {
+				if want, jerr := config.JoinStoragePrefix(g.Prefix, name); jerr == nil {
+					if prefix != want && !strings.HasPrefix(prefix, want+"/") {
+						msg += ". Warning: this project uses the same bucket as the global default without the isolated prefix " + want + ". Other projects may see the same objects."
+					}
+				}
+			}
+		}
+	default:
+		err = fmt.Errorf("unknown storage action %q", action)
+	}
+
 	// The detail carries whether a key file is set, never its path (no local
 	// paths in audit) and never its contents.
 	s.auditAction(ctx, audit.ActionConfigSetProjectStorage, err, map[string]any{
 		"name": name, "bucket": bucket, "prefix": prefix,
 		"credentialsFileSet": credentialsFile != "",
+		"action":             action,
 	})
-	msg := fmt.Sprintf("Updated file storage for project %q", name)
-	if bucket == "" {
-		msg = fmt.Sprintf("Unlinked file storage for project %q", name)
-	}
 	return s.projectConfigTabRedirect(ctx, name, "integrations", msg, err)
+}
+
+// storageConfigPage is GET /config/storage.
+func (s *Server) storageConfigPage(ctx *hime.Context) error {
+	d := s.basePage(ctx)
+	d.Title = "File storage · Config"
+	d.IsConfig = true
+	d.Config = s.cfg.Snapshot()
+	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
+	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
+		d.Error = e
+	}
+	d.StorageInheritCount = s.cfg.CountInheritingStorageProjects()
+	return s.viewPage(ctx, "config_storage", d)
+}
+
+// setGlobalStorage is POST /config/storage.
+func (s *Server) setGlobalStorage(ctx *hime.Context) error {
+	bucket := strings.TrimSpace(ctx.PostFormValue("gcsBucket"))
+	prefix := strings.TrimSpace(ctx.PostFormValue("prefix"))
+	credentialsFile := strings.TrimSpace(ctx.PostFormValue("credentialsFile"))
+	inheritN := s.cfg.CountInheritingStorageProjects()
+	err := s.cfg.SetGlobalStorageGCS(bucket, prefix, credentialsFile)
+	s.auditAction(ctx, audit.ActionConfigSetGlobalStorage, err, map[string]any{
+		"bucket": bucket, "prefix": prefix,
+		"credentialsFileSet":  credentialsFile != "",
+		"cleared":             bucket == "",
+		"inheritProjectCount": inheritN,
+	})
+	msg := "Updated global file storage default"
+	if bucket == "" {
+		msg = "Cleared global file storage default"
+	}
+	return s.configPageRedirect(ctx, "config.storage", msg, err)
 }
 
 // filesRedirect returns to the Files page preserving ?path= plus ok=/err=.

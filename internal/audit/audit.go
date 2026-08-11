@@ -84,6 +84,7 @@ const (
 	ActionStorageUpload           = "storage.upload"
 	ActionStorageDelete           = "storage.delete"
 	ActionConfigSetProjectStorage = "config.set_project_storage"
+	ActionConfigSetGlobalStorage  = "config.set_global_storage"
 )
 
 // ActorAnonymous is used when web auth is off or no session is present.

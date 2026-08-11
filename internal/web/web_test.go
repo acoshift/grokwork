@@ -194,6 +194,7 @@ func TestPagesRender(t *testing.T) {
 		{"/config", `href="/config/ci"`},
 		{"/config", `href="/config/pr-links"`},
 		{"/config", `href="/config/worktrees"`},
+		{"/config", `href="/config/storage"`},
 		{"/config", `href="/config/projects/new"`},
 		{"/config", `action="/config/resume"`},
 		{"/config", `href="/config/projects/proj"`},
@@ -241,6 +242,8 @@ func TestPagesRender(t *testing.T) {
 		{"/config/ci", `id="page-config-ci"`},
 		{"/config/pr-links", `id="page-config-prlinks"`},
 		{"/config/risky", `id="page-config-risky"`},
+		{"/config/storage", `id="page-config-storage"`},
+		{"/config/storage", `name="gcsBucket"`},
 		{"/config/projects/new", `id="page-config-project-new"`},
 		// Per-project settings: four sub-tab pages (Access is the default).
 		{"/config/projects/proj", `id="page-project-config"`},

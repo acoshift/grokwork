@@ -164,6 +164,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.setProjectClickUp":           "/config/projects/clickup",
 		"config.setProjectGitHub":            "/config/projects/github",
 		"config.setProjectStorage":           "/config/projects/storage",
+		"config.storage":                     "/config/storage",
 		"config.setProjectChannel":           "/config/projects/channel",
 		"config.setProjectFetch":             "/config/projects/fetch",
 		"config.setProjectShip":              "/config/projects/ship",
@@ -281,6 +282,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("config_risky", "layout.tmpl", "config_risky.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_skills", "layout.tmpl", "config_skills.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_rates", "layout.tmpl", "config_rates.tmpl", "config_shared.tmpl")
+	tp.ParseFiles("config_storage", "layout.tmpl", "config_storage.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("project_config", "layout.tmpl", "project_config.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("project_config_workflow", "layout.tmpl", "project_config_workflow.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("project_config_integrations", "layout.tmpl", "project_config_integrations.tmpl", "project_config_shared.tmpl")
@@ -591,6 +593,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/skills", s.requireAdmin(hime.Handler(s.configSkillsPage)))
 	mux.Handle("GET /config/model-rates", s.requireAdmin(hime.Handler(s.configSubPage("config_rates", "Model rates"))))
 	mux.Handle("POST /config/model-rates", s.requireAdmin(hime.Handler(s.updateModelRates)))
+	mux.Handle("GET /config/storage", s.requireAdmin(hime.Handler(s.storageConfigPage)))
+	mux.Handle("POST /config/storage", s.requireAdmin(hime.Handler(s.setGlobalStorage)))
 	mux.Handle("POST /config/run", s.requireAdmin(hime.Handler(s.updateRunSettings)))
 	mux.Handle("POST /config/agent", s.requireAdmin(hime.Handler(s.updateAgentSettings)))
 	mux.Handle("POST /config/worktrees", s.requireAdmin(hime.Handler(s.updateWorktreeSettings)))
@@ -758,16 +762,21 @@ type pageData struct {
 	DeployBoard deployBoard
 	// CanGenerateManifest gates the "write this with an agent" form.
 	CanGenerateManifest bool
-	// Project Files page (GCS). StorageNotConfigured is the normal empty state
-	// when no bucket is linked — same contract as DeployNotConfigured.
+	// Project Files page (GCS). StorageNotConfigured is the empty state when
+	// nothing is linked (no global and no override); StorageDisabled is an
+	// explicit project opt-out. I/O uses EffectiveStorage.
 	StorageNotConfigured bool
+	StorageDisabled      bool
+	StorageInherited     bool
 	StorageBucket        string
 	StoragePrefix        string
-	FilesPath            string
-	FilesCrumbs          []fileCrumb
-	FilesRows            []fileRow
-	FilesTotal           int
-	FilesClipped         bool
+	// StorageInheritCount is for the global /config/storage confirm (count only).
+	StorageInheritCount int
+	FilesPath           string
+	FilesCrumbs         []fileCrumb
+	FilesRows           []fileRow
+	FilesTotal          int
+	FilesClipped        bool
 	// CanStorageWrite is feature on + SafeOps. StorageFeatureOn is the flag alone
 	// so the page can explain why write controls are missing.
 	CanStorageWrite  bool

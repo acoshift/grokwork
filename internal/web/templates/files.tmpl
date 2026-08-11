@@ -5,21 +5,38 @@
 <p class="sub">
   Bucket <span class="mono">{{.StorageBucket}}</span>
   {{if .StoragePrefix}}· prefix <span class="mono">{{.StoragePrefix}}</span>{{end}}
+  {{if .StorageInherited}}· <span class="muted">via global default</span>{{end}}
 </p>
 {{end}}
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
-{{if .StorageNotConfigured}}
+{{if .StorageDisabled}}
 <div class="section card">
-  <h2>No file storage linked</h2>
+  <h2>Storage disabled for this project</h2>
   <p class="sub" style="margin-top:0">
-    Link a Google Cloud Storage bucket on the project’s Integrations settings to
-    park customer files, artifacts and hand-off material that does not belong in git.
+    File storage is explicitly turned off for this project, even if a global default is set.
   </p>
   {{if .IsAdmin}}
   <p class="sub">
     <a href="/config/projects/{{.Project}}/integrations">Open Integrations settings →</a>
+  </p>
+  {{else}}
+  <p class="sub">Ask an admin to re-enable storage under project Integrations.</p>
+  {{end}}
+</div>
+{{else if .StorageNotConfigured}}
+<div class="section card">
+  <h2>No file storage linked</h2>
+  <p class="sub" style="margin-top:0">
+    Link a Google Cloud Storage bucket on the project’s Integrations settings, or set a
+    host-wide default under global config, to park customer files, artifacts and hand-off
+    material that does not belong in git.
+  </p>
+  {{if .IsAdmin}}
+  <p class="sub">
+    <a href="/config/projects/{{.Project}}/integrations">Open Integrations settings →</a>
+    · <a href="/config/storage">Global file storage →</a>
   </p>
   {{else}}
   <p class="sub">Ask an admin to configure storage under project Integrations.</p>
