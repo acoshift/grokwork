@@ -2883,7 +2883,11 @@
       background: var(--bg);
       border-bottom: 1px solid var(--border-strong);
       margin: 0 0 1.5rem;
+      /* overflow-x alone forces overflow-y to auto (CSS overflow pairing),
+         which lets the sticky tab strip catch vertical wheel/trackpad
+         scroll. Keep only the horizontal strip for narrow viewports. */
       overflow-x: auto;
+      overflow-y: hidden;
     }
     .cfg-tabs a {
       position: relative;
