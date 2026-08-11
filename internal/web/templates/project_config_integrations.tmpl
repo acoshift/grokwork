@@ -112,14 +112,15 @@
 
 <div class="section card" id="project-clickup">
   <h2>ClickUp</h2>
-  <p class="sub">
+  <p class="sub" style="margin-top:0">
+    Opt-in ticket binding for this project.
     {{if .ProjectItem.ClickUpAPIKeySet}}<span class="badge status-done">API key set</span>{{else}}<span class="badge">no API key</span>{{end}}
     · env alternative: <span class="mono">{{.ProjectItem.ClickUpEnvHint}}</span>
   </p>
   <form method="post" action="{{route "config.setProjectClickUp"}}">
     {{template "csrf" $}}
     <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
-    <div class="form-grid">
+    <div class="inline" style="grid-template-columns: auto 1fr 1fr; margin-bottom:0.65rem;">
       <label class="check">
         <input type="checkbox" name="enabled" value="1" {{if .ProjectItem.ClickUpEnabled}}checked{{end}}>
         Enabled
@@ -132,6 +133,8 @@
         <label for="project-clickup-list">List ID</label>
         <input id="project-clickup-list" type="text" name="listId" value="{{.ProjectItem.ClickUpListID}}" placeholder="15505202" autocomplete="off">
       </div>
+    </div>
+    <div class="inline" style="grid-template-columns: 1fr 1fr; margin-bottom:0.65rem;">
       <div>
         <label for="project-clickup-prefix">Custom ID prefix</label>
         <input id="project-clickup-prefix" type="text" name="customIdPrefix" value="{{.ProjectItem.ClickUpCustomIdPrefix}}" placeholder="DEV" autocomplete="off">
@@ -140,11 +143,10 @@
         <label for="project-clickup-key">API key</label>
         <input id="project-clickup-key" type="password" name="apiKey" placeholder="leave blank to keep" autocomplete="off">
       </div>
-      <label class="check">
-        <input type="checkbox" name="clearApiKey" value="1">
-        Clear API key
-      </label>
     </div>
+    <label class="check">
+      <input type="checkbox" name="clearApiKey" value="1"> Clear stored API key
+    </label>
     <div class="form-actions"><button type="submit">Save ClickUp</button></div>
   </form>
 </div>
