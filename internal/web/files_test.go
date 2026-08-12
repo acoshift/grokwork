@@ -11,9 +11,12 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/filestore"
 )
 
 // storageServer is the auth-on fixture with the storage feature enabled and a
@@ -295,24 +298,6 @@ func TestFilesDownloadRefusals(t *testing.T) {
 	}
 }
 
-func TestFilesPageNoBucketExplainer(t *testing.T) {
-	srv, cfg, _ := storageServer(t)
-	if err := cfg.ClearProjectStorage("proj"); err != nil {
-		t.Fatal(err)
-	}
-	sid, _ := adminLogin(t, srv)
-	body := getAuthed(t, srv, "/projects/proj/files", sid)
-	if !strings.Contains(body, "No file storage linked") {
-		t.Fatal("unlinked project must render the explainer card")
-	}
-	if !strings.Contains(body, "/config/projects/proj/integrations") {
-		t.Fatal("admin viewer should see the Integrations settings link")
-	}
-	if !strings.Contains(body, "/config/storage") {
-		t.Fatal("admin viewer should see the global storage link")
-	}
-}
-
 func TestFilesPageDisabledDoesNotList(t *testing.T) {
 	srv, cfg, calls := storageServer(t)
 	if err := cfg.SetGlobalStorageGCS("company-bucket", "gw", ""); err != nil {
@@ -362,7 +347,8 @@ func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 	srv, cfg, _ := storageServer(t)
 	sid, csrf := adminLogin(t, srv)
 	w := postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
-		"name": {"proj"}, "action": {"save"}, "gcsBucket": {"other-bucket"}, "prefix": {"files/"},
+		"name": {"proj"}, "action": {"save"}, "backend": {"gcs"},
+		"gcsBucket": {"other-bucket"}, "prefix": {"files/"},
 		"credentialsFile": {"/etc/keys/other.json"},
 	})
 	loc := w.Header().Get("Location")
@@ -370,12 +356,12 @@ func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 		t.Fatalf("Location = %q", loc)
 	}
 	st := cfg.ProjectStorage("proj")
-	if st == nil || st.GCSBucket != "other-bucket" || st.Prefix != "files" || st.CredentialsFile != "/etc/keys/other.json" {
+	if st == nil || st.Backend != config.StorageBackendGCS || st.GCSBucket != "other-bucket" || st.Prefix != "files" || st.CredentialsFile != "/etc/keys/other.json" {
 		t.Fatalf("stored = %+v", st)
 	}
 	// Invalid bucket → err= redirect, config unchanged.
 	w = postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
-		"name": {"proj"}, "action": {"save"}, "gcsBucket": {"Bad*Bucket"},
+		"name": {"proj"}, "action": {"save"}, "backend": {"gcs"}, "gcsBucket": {"Bad*Bucket"},
 	})
 	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
 		t.Fatalf("invalid bucket Location = %q", loc)
@@ -385,7 +371,8 @@ func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 	}
 	// Relative credentials path → err= redirect, config unchanged.
 	w = postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
-		"name": {"proj"}, "action": {"save"}, "gcsBucket": {"other-bucket"}, "credentialsFile": {"keys/svc.json"},
+		"name": {"proj"}, "action": {"save"}, "backend": {"gcs"},
+		"gcsBucket": {"other-bucket"}, "credentialsFile": {"keys/svc.json"},
 	})
 	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
 		t.Fatalf("relative credentials Location = %q", loc)
@@ -395,7 +382,7 @@ func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 	}
 	// Empty bucket on save is rejected (must not clear).
 	w = postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
-		"name": {"proj"}, "action": {"save"}, "gcsBucket": {""},
+		"name": {"proj"}, "action": {"save"}, "backend": {"gcs"}, "gcsBucket": {""},
 	})
 	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
 		t.Fatalf("empty save Location = %q", loc)
@@ -432,20 +419,23 @@ func TestSetProjectStoragePersistsAndRedirects(t *testing.T) {
 func TestSetGlobalStoragePersistsAndRedirects(t *testing.T) {
 	srv, cfg, _ := storageServer(t)
 	sid, csrf := adminLogin(t, srv)
-	// Page marker.
+	// Page marker + backend picker.
 	body := getAuthed(t, srv, "/config/storage", sid)
 	if !strings.Contains(body, `id="page-config-storage"`) {
 		t.Fatal("global storage page marker missing")
 	}
+	if !strings.Contains(body, `name="backend"`) || !strings.Contains(body, "Google Drive") {
+		t.Fatal("backend picker missing")
+	}
 	w := postFix(t, srv, "/config/storage", sid, csrf, url.Values{
-		"gcsBucket": {"company-bucket"}, "prefix": {"gw"}, "credentialsFile": {"/etc/keys/g.json"},
+		"backend": {"gcs"}, "gcsBucket": {"company-bucket"}, "prefix": {"gw"}, "credentialsFile": {"/etc/keys/g.json"},
 	})
 	loc := w.Header().Get("Location")
 	if !strings.HasPrefix(loc, "/config/storage?") || !strings.Contains(loc, "ok=") {
 		t.Fatalf("Location = %q", loc)
 	}
 	st := cfg.GlobalStorage()
-	if st == nil || st.GCSBucket != "company-bucket" || st.Prefix != "gw" {
+	if st == nil || st.Backend != config.StorageBackendGCS || st.GCSBucket != "company-bucket" || st.Prefix != "gw" {
 		t.Fatalf("global = %+v", st)
 	}
 	// Hub drill.
@@ -459,7 +449,7 @@ func TestSetGlobalStoragePersistsAndRedirects(t *testing.T) {
 		t.Fatal(err)
 	}
 	w = postFix(t, srv, "/config/storage", msid, mcsrf, url.Values{
-		"gcsBucket": {"evil-bucket"},
+		"backend": {"gcs"}, "gcsBucket": {"evil-bucket"},
 	})
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("member global storage status = %d, want 403", w.Code)
@@ -468,3 +458,267 @@ func TestSetGlobalStoragePersistsAndRedirects(t *testing.T) {
 		t.Fatalf("member write changed global: %+v", st)
 	}
 }
+
+// fakeFilesBackend records List/Upload/Delete/Describe/Download for Drive tests.
+type fakeFilesBackend struct {
+	mu      sync.Mutex
+	lists   []filestore.Target
+	uploads []struct {
+		t         filestore.Target
+		object    string
+		overwrite bool
+	}
+	deletes   []string
+	describes []string
+	// listEntries returned by List (nil → empty).
+	listEntries []filestore.Entry
+	// describe returns this when object matches describeObject.
+	describeObject string
+	describeEntry  filestore.Entry
+	describeOK     bool
+	downloadBody   []byte
+}
+
+func (f *fakeFilesBackend) List(_ context.Context, t filestore.Target, _ string) ([]filestore.Entry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lists = append(f.lists, t)
+	return slices.Clone(f.listEntries), nil
+}
+func (f *fakeFilesBackend) Describe(_ context.Context, _ filestore.Target, object string) (filestore.Entry, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.describes = append(f.describes, object)
+	if f.describeObject != "" && object == f.describeObject {
+		return f.describeEntry, f.describeOK, nil
+	}
+	return filestore.Entry{}, false, nil
+}
+func (f *fakeFilesBackend) Upload(_ context.Context, _ string, t filestore.Target, object string, overwrite bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uploads = append(f.uploads, struct {
+		t         filestore.Target
+		object    string
+		overwrite bool
+	}{t, object, overwrite})
+	return nil
+}
+func (f *fakeFilesBackend) Download(_ context.Context, _ filestore.Target, object, destPath string) error {
+	f.mu.Lock()
+	body := f.downloadBody
+	f.mu.Unlock()
+	if body == nil {
+		body = []byte("DRIVE-" + object)
+	}
+	return os.WriteFile(destPath, body, 0o600)
+}
+func (f *fakeFilesBackend) Delete(_ context.Context, _ filestore.Target, object string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletes = append(f.deletes, object)
+	return nil
+}
+
+func driveStorageServer(t *testing.T) (*Server, *config.Config, *fakeFilesBackend) {
+	t.Helper()
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.Storage = true
+	if err := cfg.SetProjectStorageDrive("proj", "0ABcdEfghIjKlMnOp", "/etc/keys/drive.json"); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeFilesBackend{
+		listEntries: []filestore.Entry{
+			{Name: "brief.pdf", Size: 4096, Updated: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)},
+			{Name: "docs", IsDir: true},
+		},
+	}
+	srv.filesBackendFn = func(t filestore.Target) (filestore.Backend, error) {
+		if t.Backend != filestore.BackendGDrive {
+			return nil, fmt.Errorf("test fake: unexpected backend %q", t.Backend)
+		}
+		return fake, nil
+	}
+	return srv, cfg, fake
+}
+
+func TestFilesPageListsDrive(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	if !strings.Contains(body, `id="page-project-files"`) {
+		t.Fatal("page marker missing")
+	}
+	for _, want := range []string{"brief.pdf", "4.0 KiB", "docs/", "0ABcdEfghIjKlMnOp", "Drive"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q", want)
+		}
+	}
+	if len(fake.lists) != 1 {
+		t.Fatalf("list calls = %d", len(fake.lists))
+	}
+	if fake.lists[0].FolderID != "0ABcdEfghIjKlMnOp" || fake.lists[0].IsolationSegment != "" {
+		t.Fatalf("list target = %+v", fake.lists[0])
+	}
+}
+
+func TestFilesPageDisabledNoListDrive(t *testing.T) {
+	srv, cfg, fake := driveStorageServer(t)
+	if err := cfg.SetGlobalStorageDrive("0ABcdEfghIjKlMnOp", "/etc/keys/drive.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectStorageDisabled("proj"); err != nil {
+		t.Fatal(err)
+	}
+	fake.lists = nil
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	if !strings.Contains(body, "Storage disabled for this project") {
+		t.Fatal("disabled card missing")
+	}
+	if len(fake.lists) != 0 {
+		t.Fatalf("disabled must not List: %d calls", len(fake.lists))
+	}
+}
+
+func TestFilesPageInheritsDriveIsolation(t *testing.T) {
+	srv, cfg, fake := driveStorageServer(t)
+	if err := cfg.ClearProjectStorage("proj"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetGlobalStorageDrive("0AGlobalRootFolder", "/etc/keys/drive.json"); err != nil {
+		t.Fatal(err)
+	}
+	fake.lists = nil
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	if !strings.Contains(body, "0AGlobalRootFolder") {
+		t.Fatal("inherited page must show global folder id")
+	}
+	if !strings.Contains(body, "via global default") {
+		t.Fatal("inherited chrome missing")
+	}
+	if len(fake.lists) != 1 {
+		t.Fatalf("want one list, got %d", len(fake.lists))
+	}
+	got := fake.lists[0]
+	if got.FolderID != "0AGlobalRootFolder" || got.IsolationSegment != "proj" {
+		t.Fatalf("inherit target = %+v", got)
+	}
+}
+
+func TestFilesPageNoBucketExplainer(t *testing.T) {
+	srv, cfg, _ := storageServer(t)
+	if err := cfg.ClearProjectStorage("proj"); err != nil {
+		t.Fatal(err)
+	}
+	// Ensure no global either — identity-based empty state.
+	if err := cfg.SetGlobalStorage(config.StorageInput{}); err != nil {
+		t.Fatal(err)
+	}
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	if !strings.Contains(body, "No file storage linked") {
+		t.Fatal("unlinked project must render the explainer card")
+	}
+	if !strings.Contains(body, "/config/projects/proj/integrations") {
+		t.Fatal("admin viewer should see the Integrations settings link")
+	}
+	if !strings.Contains(body, "/config/storage") {
+		t.Fatal("admin viewer should see the global storage link")
+	}
+	if strings.Contains(body, "test-bucket") {
+		t.Fatal("cleared project must not show old bucket")
+	}
+}
+
+func TestSetGlobalStorageDrivePersistsAndClearIsIdentityBased(t *testing.T) {
+	srv, cfg, _ := storageServer(t)
+	sid, csrf := adminLogin(t, srv)
+	w := postFix(t, srv, "/config/storage", sid, csrf, url.Values{
+		"backend":         {"gdrive"},
+		"driveFolderId":   {"0ABcdEfghIjKlMnOp"},
+		"credentialsFile": {"/etc/keys/drive.json"},
+		// Empty gcsBucket must NOT mean cleared (K17).
+		"gcsBucket": {""},
+		"prefix":    {""},
+	})
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/config/storage?") || !strings.Contains(loc, "ok=") {
+		t.Fatalf("Location = %q", loc)
+	}
+	if strings.Contains(loc, "Cleared") || strings.Contains(loc, "cleared") {
+		// Flash is URL-encoded; "Updated" is expected, not "Cleared".
+		t.Fatalf("Drive save must not flash cleared: %q", loc)
+	}
+	st := cfg.GlobalStorage()
+	if st == nil || st.Backend != config.StorageBackendGDrive || st.DriveFolderID != "0ABcdEfghIjKlMnOp" {
+		t.Fatalf("global drive = %+v", st)
+	}
+	if st.GCSBucket != "" {
+		t.Fatalf("Drive block must strip bucket, got %q", st.GCSBucket)
+	}
+	// Hub shows Drive identity.
+	hub := getAuthed(t, srv, "/config", sid)
+	if !strings.Contains(hub, "0ABcdEfghIjKlMnOp") || !strings.Contains(hub, "Drive") {
+		t.Fatal("hub missing Drive drill")
+	}
+	// Clear empties all identity fields → GlobalStorage nil.
+	w = postFix(t, srv, "/config/storage", sid, csrf, url.Values{
+		"backend": {""}, "gcsBucket": {""}, "prefix": {""},
+		"driveFolderId": {""}, "credentialsFile": {""},
+	})
+	loc = w.Header().Get("Location")
+	if !strings.Contains(loc, "ok=") {
+		t.Fatalf("clear Location = %q", loc)
+	}
+	if cfg.GlobalStorage() != nil {
+		t.Fatalf("clear must nil global: %+v", cfg.GlobalStorage())
+	}
+}
+
+func TestSetProjectStorageDriveAndSameFolderWarning(t *testing.T) {
+	srv, cfg, _ := storageServer(t)
+	sid, csrf := adminLogin(t, srv)
+	if err := cfg.SetGlobalStorageDrive("0ABcdEfghIjKlMnOp", "/etc/keys/drive.json"); err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
+		"name": {"proj"}, "action": {"save"}, "backend": {"gdrive"},
+		"driveFolderId":   {"0ABcdEfghIjKlMnOp"},
+		"credentialsFile": {"/etc/keys/drive.json"},
+	})
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "ok=") {
+		t.Fatalf("Location = %q", loc)
+	}
+	// Warning is in the ok flash (URL-encoded).
+	if !strings.Contains(loc, "Warning") && !strings.Contains(loc, "same+Drive") && !strings.Contains(loc, "same Drive") {
+		// Accept either encoding of the warning fragment.
+		decoded, _ := url.QueryUnescape(loc)
+		if !strings.Contains(decoded, "same Drive folder") {
+			t.Fatalf("same-folder warning missing: %q", decoded)
+		}
+	}
+	st := cfg.ProjectStorage("proj")
+	if st == nil || st.Backend != config.StorageBackendGDrive || st.DriveFolderID != "0ABcdEfghIjKlMnOp" {
+		t.Fatalf("project drive = %+v", st)
+	}
+}
+
+func TestFilesUploadDrivePassesOverwrite(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	sid, csrf := adminLogin(t, srv)
+	w := postFilesMultipart(t, srv, "/projects/proj/files/upload", sid, csrf,
+		map[string]string{"path": "docs", "overwrite": "1"}, "notes.txt", []byte("hello"))
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	if len(fake.uploads) != 1 {
+		t.Fatalf("uploads = %+v", fake.uploads)
+	}
+	if fake.uploads[0].object != "docs/notes.txt" || !fake.uploads[0].overwrite {
+		t.Fatalf("upload = %+v", fake.uploads[0])
+	}
+}
+

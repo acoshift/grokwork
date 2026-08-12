@@ -16,14 +16,16 @@ import (
 
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/bot"
+	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/deploy"
+	"github.com/acoshift/grokwork/internal/filestore"
 	"github.com/acoshift/grokwork/internal/gcs"
+	"github.com/acoshift/grokwork/internal/gdrive"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/identity"
-	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/markdown"
 	"github.com/acoshift/grokwork/internal/reviewstore"
@@ -58,7 +60,12 @@ type Server struct {
 	// Test injectables (nil → production defaults).
 	ghRunner  ghpr.Runner
 	gcsRunner gcs.Runner
-	deploys   *deploy.Engine
+	// Drive Files injectables (nil → production JWT + default HTTP clients).
+	driveHTTP *http.Client
+	driveAuth gdrive.TokenSource
+	// filesBackendFn, when set, replaces filesBackend construction (unit tests).
+	filesBackendFn func(filestore.Target) (filestore.Backend, error)
+	deploys        *deploy.Engine
 	// deployScanLimit bounds the /deploys board's fold over the run store
 	// (0 → deploy.DefaultLaneScanLimit); tests shrink it to reach the clipped
 	// path without writing hundreds of records.
@@ -762,14 +769,16 @@ type pageData struct {
 	DeployBoard deployBoard
 	// CanGenerateManifest gates the "write this with an agent" form.
 	CanGenerateManifest bool
-	// Project Files page (GCS). StorageNotConfigured is the empty state when
-	// nothing is linked (no global and no override); StorageDisabled is an
-	// explicit project opt-out. I/O uses EffectiveStorage.
+	// Project Files page. StorageNotConfigured is the empty state when nothing
+	// is linked (no global and no override); StorageDisabled is an explicit
+	// project opt-out. I/O uses EffectiveStorage. Backend is gcs | gdrive.
 	StorageNotConfigured bool
 	StorageDisabled      bool
 	StorageInherited     bool
+	StorageBackend       string // "gcs" | "gdrive"
 	StorageBucket        string
 	StoragePrefix        string
+	StorageDriveFolderID string
 	// StorageInheritCount is for the global /config/storage confirm (count only).
 	StorageInheritCount int
 	FilesPath           string

@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/sha256"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,22 +11,37 @@ import (
 	"unicode"
 )
 
-// StorageConfig is GCS file storage: the global host default and/or a
-// per-project override. Empty bucket after normalize yields nil (except
-// disabled project blocks, which keep Disabled only).
+// Backend identifiers persisted in config and projected to the UI.
+const (
+	StorageBackendGCS    = "gcs"
+	StorageBackendGDrive = "gdrive"
+)
+
+// StorageConfig is file storage: global host default and/or per-project override.
 type StorageConfig struct {
+	// Backend is "gcs" or "gdrive". Empty is normalized from identity fields
+	// (see normalizeStorage). Persisted once set so Snapshot/forms stay stable.
+	Backend string `json:"backend,omitempty"`
+
 	GCSBucket string `json:"gcsBucket,omitempty"`
-	// Prefix is an optional object-name prefix (no leading/trailing slash).
+	// Prefix is an optional object-name prefix (GCS only; no leading/trailing slash).
 	Prefix string `json:"prefix,omitempty"`
-	// CredentialsFile is an optional absolute path to a service-account JSON
-	// key on the host, passed to gcloud per invocation
-	// (CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE) so it never rewrites the host's
-	// global gcloud auth. The path — never the key material — lives in config.
+
+	// DriveFolderID is the Drive folder id for this block (not a path).
+	// Required when Backend is gdrive.
+	DriveFolderID string `json:"driveFolderId,omitempty"`
+
+	// CredentialsFile is an absolute path to a service-account JSON key.
+	// GCS: empty = host gcloud ADC. Drive: required.
 	CredentialsFile string `json:"credentialsFile,omitempty"`
-	// Disabled is project-only: storage is off for this project even when a
-	// global default exists. Forbidden on the global block (load + setter error).
-	// When true, other fields are ignored and stripped on normalize.
+
+	// Disabled is project-only (unchanged).
 	Disabled bool `json:"disabled,omitempty"`
+
+	// IsolationSegment is set only by EffectiveStorage when inheriting Drive.
+	// Never persisted (json:"-"). The Drive adapter find-or-creates a child
+	// folder with this name under DriveFolderID. Empty on override / GCS.
+	IsolationSegment string `json:"-"`
 }
 
 // Storage source labels for Snapshot / UI.
@@ -45,12 +61,41 @@ var gcsBucketRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$`)
 // under a shared global prefix.
 var storageSegmentRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$`)
 
+// driveFolderIDRe is a conservative charset for Google Drive folder ids.
+var driveFolderIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{10,128}$`)
+
 func cloneStorage(s *StorageConfig) *StorageConfig {
 	if s == nil {
 		return nil
 	}
 	cp := *s
 	return &cp
+}
+
+// storageHasIdentity reports whether s is a usable storage identity after normalize.
+// Precondition: s is nil, disabled-only, or fully normalized (Backend always set when non-nil non-disabled).
+// Empty Backend is fail-closed except the legacy GCS defense: treat as gcs only when
+// bucket is set AND folder id is empty. Folder-only with empty backend returns false
+// (caller should have normalized; do not silently treat as gdrive).
+func storageHasIdentity(s *StorageConfig) bool {
+	if s == nil || s.Disabled {
+		return false
+	}
+	switch strings.TrimSpace(strings.ToLower(s.Backend)) {
+	case StorageBackendGCS:
+		return strings.TrimSpace(s.GCSBucket) != ""
+	case StorageBackendGDrive:
+		return strings.TrimSpace(s.DriveFolderID) != ""
+	case "":
+		// Defense only: pre-normalize or hand-built test fixtures.
+		// Fail closed on folder-only (empty backend + driveFolderId).
+		if strings.TrimSpace(s.DriveFolderID) != "" {
+			return false
+		}
+		return strings.TrimSpace(s.GCSBucket) != ""
+	default:
+		return false
+	}
 }
 
 // normalizeStorage trims and validates.
@@ -60,30 +105,141 @@ func normalizeStorage(s *StorageConfig, projectContext bool) (*StorageConfig, er
 	if s == nil {
 		return nil, nil
 	}
+	s.Backend = strings.ToLower(strings.TrimSpace(s.Backend))
 	s.GCSBucket = strings.TrimSpace(s.GCSBucket)
 	s.Prefix = strings.TrimSpace(s.Prefix)
+	s.DriveFolderID = strings.TrimSpace(s.DriveFolderID)
 	s.CredentialsFile = strings.TrimSpace(s.CredentialsFile)
+	s.IsolationSegment = "" // never load from disk
+
 	if s.Disabled {
 		if !projectContext {
 			return nil, fmt.Errorf("disabled is only valid on projects.*.storage")
 		}
 		return &StorageConfig{Disabled: true}, nil
 	}
-	if s.GCSBucket == "" {
-		return nil, nil
+
+	// Parse folder URL into id when it looks like a URL or contains /folders/.
+	if s.DriveFolderID != "" {
+		id, err := normalizeDriveFolderID(s.DriveFolderID)
+		if err != nil {
+			return nil, err
+		}
+		s.DriveFolderID = id
 	}
-	if err := validateGCSBucket(s.GCSBucket); err != nil {
-		return nil, err
+
+	// Infer backend when empty.
+	if s.Backend == "" {
+		switch {
+		case s.GCSBucket != "" && s.DriveFolderID == "":
+			s.Backend = StorageBackendGCS
+		case s.DriveFolderID != "" && s.GCSBucket == "":
+			s.Backend = StorageBackendGDrive
+		case s.GCSBucket == "" && s.DriveFolderID == "":
+			return nil, nil // empty block
+		default:
+			return nil, fmt.Errorf("storage: set backend explicitly when both gcsBucket and driveFolderId are set")
+		}
 	}
-	prefix, err := validateStoragePrefix(s.Prefix)
-	if err != nil {
-		return nil, err
+
+	switch s.Backend {
+	case StorageBackendGCS:
+		if s.GCSBucket == "" {
+			return nil, fmt.Errorf("gcsBucket is required when backend is gcs")
+		}
+		if err := validateGCSBucket(s.GCSBucket); err != nil {
+			return nil, err
+		}
+		prefix, err := validateStoragePrefix(s.Prefix)
+		if err != nil {
+			return nil, err
+		}
+		s.Prefix = prefix
+		if err := validateStorageCredentialsFile(s.CredentialsFile); err != nil {
+			return nil, err
+		}
+		// Strip foreign fields even if pasted.
+		s.DriveFolderID = ""
+		s.Backend = StorageBackendGCS
+		s.IsolationSegment = ""
+		return s, nil
+
+	case StorageBackendGDrive:
+		if s.DriveFolderID == "" {
+			return nil, fmt.Errorf("driveFolderId is required when backend is gdrive")
+		}
+		// Id already normalized above; re-validate charset after strip.
+		if !driveFolderIDRe.MatchString(s.DriveFolderID) {
+			return nil, fmt.Errorf("invalid driveFolderId %q", s.DriveFolderID)
+		}
+		if s.CredentialsFile == "" {
+			return nil, fmt.Errorf("credentialsFile is required when backend is gdrive")
+		}
+		if err := validateStorageCredentialsFile(s.CredentialsFile); err != nil {
+			return nil, err
+		}
+		// Strip foreign fields.
+		s.GCSBucket = ""
+		s.Prefix = ""
+		s.Backend = StorageBackendGDrive
+		s.IsolationSegment = ""
+		return s, nil
+
+	default:
+		return nil, fmt.Errorf("storage: unknown backend %q", s.Backend)
 	}
-	s.Prefix = prefix
-	if err := validateStorageCredentialsFile(s.CredentialsFile); err != nil {
-		return nil, err
+}
+
+// normalizeDriveFolderID accepts:
+//   - bare id: 0ABcd… / 1AbC…
+//   - https://drive.google.com/drive/folders/<id>[?…]
+//   - https://drive.google.com/drive/u/0/folders/<id>
+//   - folders/<id>
+//
+// Rejects empty, path traversal, spaces, control chars.
+// Id charset: [A-Za-z0-9_-], length 10–128 (conservative).
+func normalizeDriveFolderID(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("driveFolderId is empty")
 	}
-	return s, nil
+	for _, r := range raw {
+		if r < 0x20 || r == 0x7f || unicode.IsControl(r) {
+			return "", fmt.Errorf("driveFolderId must not contain control characters")
+		}
+	}
+	if strings.ContainsAny(raw, " \t\n\r") {
+		return "", fmt.Errorf("driveFolderId must not contain spaces")
+	}
+
+	id := raw
+	// URL form
+	if strings.Contains(raw, "://") || strings.Contains(raw, "/folders/") || strings.HasPrefix(raw, "folders/") {
+		if u, err := url.Parse(raw); err == nil && u.Path != "" {
+			// Prefer path segment after /folders/
+			if i := strings.Index(u.Path, "/folders/"); i >= 0 {
+				rest := u.Path[i+len("/folders/"):]
+				id = strings.SplitN(rest, "/", 2)[0]
+			} else if strings.HasPrefix(strings.TrimPrefix(u.Path, "/"), "folders/") {
+				rest := strings.TrimPrefix(strings.TrimPrefix(u.Path, "/"), "folders/")
+				id = strings.SplitN(rest, "/", 2)[0]
+			}
+		} else if i := strings.Index(raw, "folders/"); i >= 0 {
+			rest := raw[i+len("folders/"):]
+			// strip query/fragment
+			rest = strings.SplitN(rest, "?", 2)[0]
+			rest = strings.SplitN(rest, "#", 2)[0]
+			id = strings.SplitN(rest, "/", 2)[0]
+		}
+	}
+	id = strings.TrimSpace(id)
+	if id == "" || id == "." || id == ".." || strings.Contains(id, "/") {
+		return "", fmt.Errorf("invalid driveFolderId")
+	}
+	if !driveFolderIDRe.MatchString(id) {
+		return "", fmt.Errorf("invalid driveFolderId %q (expected 10–128 chars of A-Za-z0-9_-)", id)
+	}
+	return id, nil
 }
 
 // validateStorageCredentialsFile requires an absolute path (matching the
@@ -216,7 +372,7 @@ func (c *Config) ProjectStorage(name string) *StorageConfig {
 
 // EffectiveStorage is the single resolution entry for Files I/O.
 // On join/validate failure returns nil (fail closed); never returns global
-// with an unjoined prefix.
+// with an unjoined prefix / missing isolation segment.
 func (c *Config) EffectiveStorage(name string) *StorageConfig {
 	if c == nil {
 		return nil
@@ -239,19 +395,30 @@ func (c *Config) effectiveStorageLocked(name string) *StorageConfig {
 	if raw != nil && raw.Disabled {
 		return nil
 	}
-	if raw != nil && strings.TrimSpace(raw.GCSBucket) != "" {
+	if storageHasIdentity(raw) {
+		// Override as-is; IsolationSegment stays empty.
 		return cloneStorage(raw)
 	}
-	if c.Storage == nil || strings.TrimSpace(c.Storage.GCSBucket) == "" {
-		return nil
-	}
-	prefix, err := JoinStoragePrefix(c.Storage.Prefix, name)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[warn] effective storage for project %q: %v\n", name, err)
+	if !storageHasIdentity(c.Storage) {
 		return nil
 	}
 	out := cloneStorage(c.Storage)
-	out.Prefix = prefix
+	switch strings.TrimSpace(strings.ToLower(out.Backend)) {
+	case StorageBackendGCS, "":
+		// Empty backend with bucket is the legacy defense path (storageHasIdentity).
+		prefix, err := JoinStoragePrefix(out.Prefix, name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[warn] effective storage for project %q: %v\n", name, err)
+			return nil
+		}
+		out.Prefix = prefix
+	case StorageBackendGDrive:
+		seg := storageProjectSegment(name) // never empty
+		out.IsolationSegment = seg
+		// DriveFolderID stays the global parent root; Prefix stays empty.
+	default:
+		return nil
+	}
 	out.Disabled = false
 	return out
 }
@@ -266,74 +433,127 @@ func (c *Config) storageSourceLocked(name string) string {
 	if raw != nil && raw.Disabled {
 		return StorageSourceDisabled
 	}
-	if raw != nil && strings.TrimSpace(raw.GCSBucket) != "" {
+	if storageHasIdentity(raw) {
 		return StorageSourceOverride
 	}
-	if c.Storage != nil && strings.TrimSpace(c.Storage.GCSBucket) != "" {
+	if storageHasIdentity(c.Storage) {
 		return StorageSourceGlobal
 	}
 	return StorageSourceNone
 }
 
-// SetGlobalStorageGCS sets or clears the host default.
-// Empty bucket clears (nils c.Storage). Disabled is never accepted.
-func (c *Config) SetGlobalStorageGCS(bucket, prefix, credentialsFile string) error {
+// StorageInput is the structured form for save (global or project).
+type StorageInput struct {
+	Backend         string // "gcs" | "gdrive" | "" (infer)
+	GCSBucket       string
+	Prefix          string
+	DriveFolderID   string
+	CredentialsFile string
+}
+
+// SetGlobalStorage sets or clears the host default.
+// After normalizeStorage(next, false):
+//   - storageHasIdentity(next) → set c.Storage = next
+//   - else → nil c.Storage (clear). This is the only global clear path.
+//
+// Disabled never accepted (normalize with projectContext=false).
+func (c *Config) SetGlobalStorage(in StorageInput) error {
 	if c == nil {
 		return fmt.Errorf("nil config")
 	}
-	bucket = strings.TrimSpace(bucket)
-	prefix = strings.TrimSpace(prefix)
-	credentialsFile = strings.TrimSpace(credentialsFile)
-	var next *StorageConfig
-	if bucket != "" {
-		if err := validateGCSBucket(bucket); err != nil {
-			return err
-		}
-		cleanPrefix, err := validateStoragePrefix(prefix)
-		if err != nil {
-			return err
-		}
-		if err := validateStorageCredentialsFile(credentialsFile); err != nil {
-			return err
-		}
-		next = &StorageConfig{GCSBucket: bucket, Prefix: cleanPrefix, CredentialsFile: credentialsFile}
+	next := &StorageConfig{
+		Backend:         in.Backend,
+		GCSBucket:       in.GCSBucket,
+		Prefix:          in.Prefix,
+		DriveFolderID:   in.DriveFolderID,
+		CredentialsFile: in.CredentialsFile,
 	}
-	next, err := normalizeStorage(next, false)
+	normalized, err := normalizeStorage(next, false)
 	if err != nil {
 		return err
 	}
+	// Clear when no identity (empty input or stripped).
+	if !storageHasIdentity(normalized) {
+		normalized = nil
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Storage = next
+	c.Storage = normalized
 	return c.saveLocked()
 }
 
-// SetProjectStorageGCS sets a full override. Requires a non-empty bucket.
-// Empty bucket is an error — use ClearProjectStorage or SetProjectStorageDisabled.
-func (c *Config) SetProjectStorageGCS(project, bucket, prefix, credentialsFile string) error {
+// SetProjectStorage sets a full override. Requires identity after normalize.
+// Empty identity → error naming ClearProjectStorage / SetProjectStorageDisabled.
+func (c *Config) SetProjectStorage(project string, in StorageInput) error {
 	project = strings.TrimSpace(project)
 	if project == "" {
 		return fmt.Errorf("project name is required")
 	}
-	bucket = strings.TrimSpace(bucket)
-	prefix = strings.TrimSpace(prefix)
-	credentialsFile = strings.TrimSpace(credentialsFile)
-	if bucket == "" {
-		return fmt.Errorf("gcsBucket is required; use ClearProjectStorage to re-inherit/unlink, or SetProjectStorageDisabled to turn Files off")
+	next := &StorageConfig{
+		Backend:         in.Backend,
+		GCSBucket:       in.GCSBucket,
+		Prefix:          in.Prefix,
+		DriveFolderID:   in.DriveFolderID,
+		CredentialsFile: in.CredentialsFile,
 	}
-	if err := validateGCSBucket(bucket); err != nil {
-		return err
-	}
-	cleanPrefix, err := validateStoragePrefix(prefix)
+	// Pre-normalize so empty identity fails with a clear message (not "required" from normalize).
+	normalized, err := normalizeStorage(next, true)
 	if err != nil {
 		return err
 	}
-	if err := validateStorageCredentialsFile(credentialsFile); err != nil {
-		return err
+	if !storageHasIdentity(normalized) {
+		return fmt.Errorf("storage identity is required; use ClearProjectStorage to re-inherit/unlink, or SetProjectStorageDisabled to turn Files off")
 	}
-	next := &StorageConfig{GCSBucket: bucket, Prefix: cleanPrefix, CredentialsFile: credentialsFile}
 	return c.mutateProjectStorage(project, func(_ *StorageConfig) (*StorageConfig, error) {
-		return next, nil
+		return normalized, nil
+	})
+}
+
+// SetGlobalStorageGCS sets or clears the host default (GCS backend).
+// Empty bucket clears (nils c.Storage). Disabled is never accepted.
+func (c *Config) SetGlobalStorageGCS(bucket, prefix, credentialsFile string) error {
+	bucket = strings.TrimSpace(bucket)
+	if bucket == "" {
+		// Explicit clear: do not send backend=gcs with empty identity (normalize would error).
+		return c.SetGlobalStorage(StorageInput{})
+	}
+	return c.SetGlobalStorage(StorageInput{
+		Backend:         StorageBackendGCS,
+		GCSBucket:       bucket,
+		Prefix:          prefix,
+		CredentialsFile: credentialsFile,
+	})
+}
+
+// SetProjectStorageGCS sets a full GCS override. Requires a non-empty bucket.
+// Empty bucket is an error — use ClearProjectStorage or SetProjectStorageDisabled.
+func (c *Config) SetProjectStorageGCS(project, bucket, prefix, credentialsFile string) error {
+	if strings.TrimSpace(bucket) == "" {
+		return fmt.Errorf("gcsBucket is required; use ClearProjectStorage to re-inherit/unlink, or SetProjectStorageDisabled to turn Files off")
+	}
+	return c.SetProjectStorage(project, StorageInput{
+		Backend:         StorageBackendGCS,
+		GCSBucket:       bucket,
+		Prefix:          prefix,
+		CredentialsFile: credentialsFile,
+	})
+}
+
+// SetGlobalStorageDrive sets the host default to a Drive folder.
+func (c *Config) SetGlobalStorageDrive(folderID, credentialsFile string) error {
+	return c.SetGlobalStorage(StorageInput{
+		Backend:         StorageBackendGDrive,
+		DriveFolderID:   folderID,
+		CredentialsFile: credentialsFile,
+	})
+}
+
+// SetProjectStorageDrive sets a full Drive override.
+func (c *Config) SetProjectStorageDrive(project, folderID, credentialsFile string) error {
+	return c.SetProjectStorage(project, StorageInput{
+		Backend:         StorageBackendGDrive,
+		DriveFolderID:   folderID,
+		CredentialsFile: credentialsFile,
 	})
 }
 

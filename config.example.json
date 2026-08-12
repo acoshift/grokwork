@@ -72,7 +72,12 @@
       "path": "/absolute/path/to/api",
       "allowedUserIds": [
         "YOUR_DISCORD_USER_ID"
-      ]
+      ],
+      "storage": {
+        "backend": "gdrive",
+        "driveFolderId": "0ABcdEfghIjKlMnOp",
+        "credentialsFile": "/etc/grokwork/gdrive-sa.json"
+      }
     }
   },
   "channels": {
@@ -80,6 +85,7 @@
     "DISCORD_CHANNEL_ID_FOR_API": "api"
   },
   "storage": {
+    "backend": "gcs",
     "gcsBucket": "acme-company-files",
     "prefix": "grokwork",
     "credentialsFile": "/etc/grokwork/gcs-key.json"

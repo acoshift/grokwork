@@ -136,10 +136,14 @@
       <a class="drill" href="{{route "config.storage"}}">
         <span class="drill-main">
           <span class="drill-t">File storage</span>
-          <span class="drill-s">default GCS bucket for project Files pages</span>
+          <span class="drill-s">default GCS or Drive root for project Files pages</span>
         </span>
         {{if .Config.StorageConfigured}}
-          <span class="drill-v mono">{{.Config.StorageBucket}}</span>
+          {{if eq .Config.StorageBackend "gdrive"}}
+            <span class="drill-v mono">Drive · {{.Config.StorageDriveFolderID}}</span>
+          {{else}}
+            <span class="drill-v mono">{{.Config.StorageBucket}}</span>
+          {{end}}
         {{else}}
           <span class="badge status-warn">not set</span>
         {{end}}

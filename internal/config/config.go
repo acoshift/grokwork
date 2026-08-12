@@ -204,23 +204,23 @@ type TeamItem struct {
 
 // ProjectItem is a project row for the config UI.
 type ProjectItem struct {
-	Name             string
-	Path             string
-	LinearEnabled    bool
-	LinearTeamKey    string
-	LinearAPIKeySet  bool   // true when config or env has a key (never expose the secret)
-	LinearEnvHint    string // e.g. LINEAR_API_KEY_HOMECONNECT
+	Name                  string
+	Path                  string
+	LinearEnabled         bool
+	LinearTeamKey         string
+	LinearAPIKeySet       bool   // true when config or env has a key (never expose the secret)
+	LinearEnvHint         string // e.g. LINEAR_API_KEY_HOMECONNECT
 	ClickUpEnabled        bool
 	ClickUpWorkspaceID    string
 	ClickUpListID         string
 	ClickUpCustomIdPrefix string
 	ClickUpAPIKeySet      bool
 	ClickUpEnvHint        string // e.g. CLICKUP_API_KEY_APP
-	DiscordChannelID string
-	DiscordGuildID   string
-	GitHubReposText  string   // "owner/repo" lines for config form
-	ChannelOptions   []string // channel IDs mapped to this project (preferred dropdown)
-	AllowedUserIDs   []string
+	DiscordChannelID      string
+	DiscordGuildID        string
+	GitHubReposText       string   // "owner/repo" lines for config form
+	ChannelOptions        []string // channel IDs mapped to this project (preferred dropdown)
+	AllowedUserIDs        []string
 	// Teams are this project's teams, sorted by key.
 	Teams []TeamItem
 	// MemberIDs is the union of allowedUserIds and every team's members
@@ -254,8 +254,10 @@ type ProjectItem struct {
 	// StorageBucket / StoragePrefix are the raw project override (empty when
 	// nil or disabled). The bucket name is not a secret and may be shown
 	// verbatim. Effective target is StorageEffective* / StorageSource.
-	StorageBucket string
-	StoragePrefix string
+	StorageBackend       string // "gcs" | "gdrive" | "" (nil/disabled)
+	StorageBucket        string
+	StoragePrefix        string
+	StorageDriveFolderID string
 	// StorageCredentialsFile is the service-account key path (empty = host
 	// gcloud auth). A local path — fine for the private web UI, never for
 	// Discord or audit details; the key contents never enter config at all.
@@ -265,9 +267,12 @@ type ProjectItem struct {
 	// StorageInherited is true when the project has no override and a global
 	// default is configured (will inherit unless disabled).
 	StorageInherited bool
-	// StorageEffectiveBucket / StorageEffectivePrefix are from EffectiveStorage.
-	StorageEffectiveBucket string
-	StorageEffectivePrefix string
+	// StorageEffective* are from EffectiveStorage.
+	StorageEffectiveBackend       string
+	StorageEffectiveBucket        string
+	StorageEffectivePrefix        string
+	StorageEffectiveDriveFolderID string
+	StorageEffectiveIsolation     string // IsolationSegment when Drive inherit
 	// StorageSource is "override" | "global" | "disabled" | "none".
 	StorageSource string
 }
@@ -362,9 +367,11 @@ type Snapshot struct {
 	NotifyOnDone string
 	// NotifyOnDoneLongMs effective long_only threshold.
 	NotifyOnDoneLongMs int
-	// Host-wide GCS storage default (raw). Empty bucket = no default.
+	// Host-wide storage default (raw). StorageConfigured is identity-based.
+	StorageBackend         string // "gcs" | "gdrive" | ""
 	StorageBucket          string
 	StoragePrefix          string
+	StorageDriveFolderID   string
 	StorageCredentialsFile string
 	StorageConfigured      bool
 }
@@ -1341,13 +1348,18 @@ func (c *Config) Snapshot() Snapshot {
 		item.StorageDisabled = item.StorageSource == StorageSourceDisabled
 		item.StorageInherited = item.StorageSource == StorageSourceGlobal
 		if pc.Storage != nil && !pc.Storage.Disabled {
+			item.StorageBackend = pc.Storage.Backend
 			item.StorageBucket = pc.Storage.GCSBucket
 			item.StoragePrefix = pc.Storage.Prefix
+			item.StorageDriveFolderID = pc.Storage.DriveFolderID
 			item.StorageCredentialsFile = pc.Storage.CredentialsFile
 		}
 		if eff := c.effectiveStorageLocked(n); eff != nil {
+			item.StorageEffectiveBackend = eff.Backend
 			item.StorageEffectiveBucket = eff.GCSBucket
 			item.StorageEffectivePrefix = eff.Prefix
+			item.StorageEffectiveDriveFolderID = eff.DriveFolderID
+			item.StorageEffectiveIsolation = eff.IsolationSegment
 		}
 		if pc.Linear != nil {
 			item.LinearEnabled = pc.Linear.Enabled
@@ -1516,10 +1528,12 @@ func (c *Config) Snapshot() Snapshot {
 		}(),
 	}
 	if c.Storage != nil {
+		snap.StorageBackend = c.Storage.Backend
 		snap.StorageBucket = c.Storage.GCSBucket
 		snap.StoragePrefix = c.Storage.Prefix
+		snap.StorageDriveFolderID = c.Storage.DriveFolderID
 		snap.StorageCredentialsFile = c.Storage.CredentialsFile
-		snap.StorageConfigured = strings.TrimSpace(c.Storage.GCSBucket) != ""
+		snap.StorageConfigured = storageHasIdentity(c.Storage)
 	}
 	// Features need WebAuthEnabled without re-locking — compute inline.
 	if c.WebAuth != nil && c.WebAuth.Enabled {

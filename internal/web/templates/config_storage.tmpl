@@ -3,44 +3,78 @@
 {{template "config_sub_header" $}}
 <h1>File storage</h1>
 <p class="sub">
-  Host-wide Google Cloud Storage default for project <span class="mono">Files</span> pages.
-  Projects without an override inherit this bucket under an isolated prefix
-  (<span class="mono">{prefix}/{project}</span>). Projects with storage disabled stay off.
-  The host needs the <span class="mono">gcloud</span> CLI; auth is its login/ADC, or name a
-  service-account key file below.
+  Host-wide default for project <span class="mono">Files</span> pages — Google Cloud Storage or Google Drive.
+  Projects without an override inherit this root under an isolated path
+  (GCS: <span class="mono">{prefix}/{project}</span>; Drive: a child folder named after the project).
+  Projects with storage disabled stay off.
+  Switching backend on save strips the other backend’s identity from config.
 </p>
 <div class="section card">
-  <form method="post" action="{{route "config.storage"}}"
+  {{$backend := .Config.StorageBackend}}
+  {{if not $backend}}{{$backend = "gcs"}}{{end}}
+  <form method="post" action="{{route "config.storage"}}" id="global-storage-save"
     {{if .StorageInheritCount}}
+    data-confirm-gcs="Set global file storage? {{.StorageInheritCount}} project(s) without an override will inherit gs://…/{prefix}/{project}. Projects with storage disabled stay off. Projects with an override are unchanged."
+    data-confirm-gdrive="Set global file storage? {{.StorageInheritCount}} project(s) without an override will inherit a child folder named after each project under the configured Drive folder. Projects with storage disabled stay off. Projects with an override are unchanged."
+    {{if eq $backend "gdrive"}}
+    data-confirm="Set global file storage? {{.StorageInheritCount}} project(s) without an override will inherit a child folder named after each project under the configured Drive folder. Projects with storage disabled stay off. Projects with an override are unchanged."
+    {{else}}
     data-confirm="Set global file storage? {{.StorageInheritCount}} project(s) without an override will inherit gs://…/{prefix}/{project}. Projects with storage disabled stay off. Projects with an override are unchanged."
+    {{end}}
     data-confirm-title="Set global file storage"
     data-confirm-ok="Save"
     {{end}}>
     {{template "csrf" $}}
-    <div class="inline" style="grid-template-columns: 1fr 1fr; align-items:end">
-      <div>
-        <label for="global-storage-bucket">GCS bucket</label>
-        <input id="global-storage-bucket" type="text" name="gcsBucket" value="{{.Config.StorageBucket}}"
-          placeholder="acme-company-files" class="mono" autocomplete="off">
+    <div>
+      <label for="global-storage-backend">Backend</label>
+      <select id="global-storage-backend" name="backend" data-storage-backend-select>
+        <option value="gcs" {{if ne $backend "gdrive"}}selected{{end}}>Google Cloud Storage</option>
+        <option value="gdrive" {{if eq $backend "gdrive"}}selected{{end}}>Google Drive</option>
+      </select>
+    </div>
+    <div data-backend-fields="gcs" {{if eq $backend "gdrive"}}hidden{{end}} style="margin-top:0.65rem">
+      <div class="inline" style="grid-template-columns: 1fr 1fr; align-items:end">
+        <div>
+          <label for="global-storage-bucket">GCS bucket</label>
+          <input id="global-storage-bucket" type="text" name="gcsBucket" value="{{.Config.StorageBucket}}"
+            placeholder="acme-company-files" class="mono" autocomplete="off">
+        </div>
+        <div>
+          <label for="global-storage-prefix">Prefix (optional)</label>
+          <input id="global-storage-prefix" type="text" name="prefix" value="{{.Config.StoragePrefix}}"
+            placeholder="grokwork" class="mono" autocomplete="off">
+        </div>
       </div>
+      <p class="sub" style="margin:0.35rem 0 0">The host needs the <span class="mono">gcloud</span> CLI; auth is its login/ADC, or name a service-account key file below.</p>
+    </div>
+    <div data-backend-fields="gdrive" {{if ne $backend "gdrive"}}hidden{{end}} style="margin-top:0.65rem">
       <div>
-        <label for="global-storage-prefix">Prefix (optional)</label>
-        <input id="global-storage-prefix" type="text" name="prefix" value="{{.Config.StoragePrefix}}"
-          placeholder="grokwork" class="mono" autocomplete="off">
+        <label for="global-storage-folder">Drive folder ID or URL</label>
+        <input id="global-storage-folder" type="text" name="driveFolderId" value="{{.Config.StorageDriveFolderID}}"
+          placeholder="0ABcdEfghIjKlMnOp or https://drive.google.com/drive/folders/…" class="mono" autocomplete="off">
       </div>
+      <p class="sub" style="margin:0.35rem 0 0">
+        Shared Drive + service-account membership is the supported production setup.
+        Paste a bare folder id or a Drive folder URL.
+      </p>
     </div>
     <div style="margin-top:0.65rem">
-      <label for="global-storage-credentials">Credentials file (optional)</label>
+      <label for="global-storage-credentials">Credentials file <span data-backend-cred-label>{{if eq $backend "gdrive"}}(required){{else}}(optional){{end}}</span></label>
       <input id="global-storage-credentials" type="text" name="credentialsFile" value="{{.Config.StorageCredentialsFile}}"
-        placeholder="/etc/grokwork/gcs-key.json" class="mono" autocomplete="off">
-      <p class="sub" style="margin:0.35rem 0 0">Absolute path on the host to a service-account JSON key.
-        Applied per invocation. Empty uses host gcloud login/ADC.</p>
+        placeholder="/etc/grokwork/sa-key.json" class="mono" autocomplete="off">
+      <p class="sub" style="margin:0.35rem 0 0" data-backend-cred-help>
+        {{if eq $backend "gdrive"}}
+        Absolute path on the host to a service-account JSON key. Required for Drive.
+        {{else}}
+        Absolute path on the host to a service-account JSON key. Applied per invocation. Empty uses host gcloud login/ADC.
+        {{end}}
+      </p>
     </div>
     <p class="sub" style="margin:0.65rem 0 0">
       {{if .Config.StorageConfigured}}
         Currently set. {{.StorageInheritCount}} project(s) inherit when they have no override.
       {{else}}
-        Not set. {{.StorageInheritCount}} project(s) would inherit once a bucket is saved.
+        Not set. {{.StorageInheritCount}} project(s) would inherit once storage is saved.
       {{end}}
       Project names should be path-safe (<span class="mono">[a-zA-Z0-9._-]</span>); exotic names share a sanitized segment or use a hash.
     </p>
@@ -51,10 +85,41 @@
         data-confirm="Clear the global storage default? Projects that inherited it will lose Files until they set an override."
         data-confirm-title="Clear global storage" data-confirm-ok="Clear" data-confirm-danger>
     {{template "csrf" $}}
+    <input type="hidden" name="backend" value="">
     <input type="hidden" name="gcsBucket" value="">
+    <input type="hidden" name="prefix" value="">
+    <input type="hidden" name="driveFolderId" value="">
+    <input type="hidden" name="credentialsFile" value="">
     <button type="submit" class="btn-secondary">Clear global default</button>
   </form>
   {{end}}
 </div>
+<script>
+(function () {
+  var form = document.getElementById('global-storage-save');
+  if (!form) return;
+  var sel = form.querySelector('[data-storage-backend-select]');
+  if (!sel) return;
+  var gcsHelp = 'Absolute path on the host to a service-account JSON key. Applied per invocation. Empty uses host gcloud login/ADC.';
+  var driveHelp = 'Absolute path on the host to a service-account JSON key. Required for Drive.';
+  function sync() {
+    var v = sel.value === 'gdrive' ? 'gdrive' : 'gcs';
+    form.querySelectorAll('[data-backend-fields]').forEach(function (el) {
+      el.hidden = el.getAttribute('data-backend-fields') !== v;
+    });
+    var label = form.querySelector('[data-backend-cred-label]');
+    if (label) label.textContent = v === 'gdrive' ? '(required)' : '(optional)';
+    var help = form.querySelector('[data-backend-cred-help]');
+    if (help) help.textContent = v === 'gdrive' ? driveHelp : gcsHelp;
+    var gcsConfirm = form.getAttribute('data-confirm-gcs');
+    var driveConfirm = form.getAttribute('data-confirm-gdrive');
+    if (gcsConfirm && driveConfirm) {
+      form.setAttribute('data-confirm', v === 'gdrive' ? driveConfirm : gcsConfirm);
+    }
+  }
+  sel.addEventListener('change', sync);
+  sync();
+})();
+</script>
 </div>
 {{end}}

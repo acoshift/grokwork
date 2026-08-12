@@ -16,7 +16,9 @@ import (
 
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/filestore"
 	"github.com/acoshift/grokwork/internal/gcs"
+	"github.com/acoshift/grokwork/internal/gdrive"
 )
 
 const (
@@ -58,16 +60,83 @@ func (s *Server) gcsRun() gcs.Runner {
 	return nil
 }
 
-// storageTarget maps config storage onto the gcs boundary type.
-func storageTarget(st *config.StorageConfig) gcs.Target {
+// driveTokenSource returns the injected auth, or a JWT bearer for the key path.
+func (s *Server) driveTokenSource(creds string) gdrive.TokenSource {
+	if s != nil && s.driveAuth != nil {
+		return s.driveAuth
+	}
+	var httpClient *http.Client
+	if s != nil {
+		httpClient = s.driveHTTP
+	}
+	return &gdrive.JWTBearer{CredentialsFile: creds, HTTP: httpClient}
+}
+
+// filesBackend returns the storage backend for the resolved target.
+func (s *Server) filesBackend(t filestore.Target) (filestore.Backend, error) {
+	if s != nil && s.filesBackendFn != nil {
+		return s.filesBackendFn(t)
+	}
+	backend := strings.TrimSpace(strings.ToLower(t.Backend))
+	switch backend {
+	case "", filestore.BackendGCS:
+		return filestore.GCS{Run: s.gcsRun()}, nil
+	case filestore.BackendGDrive:
+		return filestore.GDrive{Client: &gdrive.Client{
+			Auth: s.driveTokenSource(t.CredentialsFile),
+			HTTP: s.driveHTTP,
+		}}, nil
+	default:
+		return nil, fmt.Errorf("unknown storage backend %q", t.Backend)
+	}
+}
+
+// storageTarget maps config storage onto the filestore boundary type.
+func storageTarget(st *config.StorageConfig) filestore.Target {
 	if st == nil {
-		return gcs.Target{}
+		return filestore.Target{}
 	}
-	return gcs.Target{
-		Bucket:          st.GCSBucket,
-		Prefix:          st.Prefix,
-		CredentialsFile: st.CredentialsFile,
+	backend := strings.TrimSpace(strings.ToLower(st.Backend))
+	if backend == "" {
+		if strings.TrimSpace(st.DriveFolderID) != "" {
+			backend = filestore.BackendGDrive
+		} else {
+			backend = filestore.BackendGCS
+		}
 	}
+	return filestore.Target{
+		Backend:          backend,
+		Bucket:           st.GCSBucket,
+		Prefix:           st.Prefix,
+		FolderID:         st.DriveFolderID,
+		IsolationSegment: st.IsolationSegment,
+		CredentialsFile:  st.CredentialsFile,
+	}
+}
+
+// storageAuditDetail builds upload/delete audit fields (never credentials path).
+func storageAuditDetail(st *config.StorageConfig, project, object string, size int64, withSize bool) map[string]any {
+	detail := map[string]any{
+		"project": project,
+		"object":  object,
+	}
+	if withSize {
+		detail["size"] = size
+	}
+	if st == nil {
+		return detail
+	}
+	detail["backend"] = st.Backend
+	switch strings.TrimSpace(strings.ToLower(st.Backend)) {
+	case config.StorageBackendGDrive:
+		detail["folderId"] = st.DriveFolderID
+		if st.IsolationSegment != "" {
+			detail["isolation"] = st.IsolationSegment
+		}
+	default:
+		detail["bucket"] = st.GCSBucket
+	}
+	return detail
 }
 
 // filesPage is GET /projects/{project}/files[?path=].
@@ -86,7 +155,7 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 		d.Error = e
 	}
 	// Fill affordances before every early return so the page renders its own
-	// chrome when the bucket is unset, gcloud is missing, or the listing fails.
+	// chrome when storage is unset, the backend fails, or the listing fails.
 	d.CanStorageWrite = s.cfg.FeatureStorage() &&
 		s.cfg.ResolveCapabilities(project, d.UserID).CanStorageWrite()
 	d.StorageFeatureOn = s.cfg.FeatureStorage()
@@ -101,13 +170,15 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 	if eff == nil {
 		return s.viewPage(ctx, "files", d)
 	}
+	d.StorageBackend = eff.Backend
 	d.StorageBucket = eff.GCSBucket
 	d.StoragePrefix = eff.Prefix
+	d.StorageDriveFolderID = eff.DriveFolderID
 
 	subPath := strings.TrimSpace(ctx.FormValue("path"))
 	subPath = strings.Trim(subPath, "/")
 	if subPath != "" {
-		if err := gcs.ValidateObjectPath(subPath); err != nil {
+		if err := filestore.ValidateObjectPath(subPath); err != nil {
 			// Invalid path → treat as root with an inline error; never echo into a URL.
 			if d.Error == "" {
 				d.Error = "invalid path: " + err.Error()
@@ -118,7 +189,14 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 	d.FilesPath = subPath
 	d.FilesCrumbs = fileBreadcrumbs(subPath)
 
-	entries, err := gcs.List(ctx.Context(), s.gcsRun(), storageTarget(eff), subPath)
+	be, err := s.filesBackend(storageTarget(eff))
+	if err != nil {
+		if d.Error == "" {
+			d.Error = err.Error()
+		}
+		return s.viewPage(ctx, "files", d)
+	}
+	entries, err := be.List(ctx.Context(), storageTarget(eff), subPath)
 	if err != nil {
 		if d.Error == "" {
 			d.Error = err.Error()
@@ -174,37 +252,20 @@ func (s *Server) postFileUpload(ctx *hime.Context) error {
 	}
 
 	st := s.cfg.EffectiveStorage(project)
-	if st == nil || strings.TrimSpace(st.GCSBucket) == "" {
+	if st == nil {
 		return s.filesRedirect(ctx, project, subPath, "", fmt.Errorf("file storage is not configured for this project"))
 	}
 
-	leaf := gcs.SanitizeFilename(fh.Filename)
+	leaf := filestore.SanitizeFilename(fh.Filename)
 	object := joinFilesPath(subPath, leaf)
-	if err := gcs.ValidateObjectPath(object); err != nil {
+	if err := filestore.ValidateObjectPath(object); err != nil {
 		return s.filesRedirect(ctx, project, subPath, "", err)
 	}
 
 	var upErr error
 	defer func() {
-		s.auditAction(ctx, audit.ActionStorageUpload, upErr, map[string]any{
-			"project": project,
-			"bucket":  st.GCSBucket,
-			"object":  object,
-			"size":    fh.Size,
-		})
+		s.auditAction(ctx, audit.ActionStorageUpload, upErr, storageAuditDetail(st, project, object, fh.Size, true))
 	}()
-
-	if !overwrite {
-		_, exists, err := gcs.Describe(ctx.Context(), s.gcsRun(), storageTarget(st), object)
-		if err != nil {
-			upErr = err
-			return s.filesRedirect(ctx, project, subPath, "", err)
-		}
-		if exists {
-			upErr = fmt.Errorf("object %q already exists (tick Overwrite to replace)", object)
-			return s.filesRedirect(ctx, project, subPath, "", upErr)
-		}
-	}
 
 	tmpDir, err := os.MkdirTemp("", "grokwork-upload-*")
 	if err != nil {
@@ -242,7 +303,12 @@ func (s *Server) postFileUpload(ctx *hime.Context) error {
 		return s.filesRedirect(ctx, project, subPath, "", upErr)
 	}
 
-	upErr = gcs.Upload(ctx.Context(), s.gcsRun(), localPath, storageTarget(st), object)
+	be, err := s.filesBackend(storageTarget(st))
+	if err != nil {
+		upErr = err
+		return s.filesRedirect(ctx, project, subPath, "", err)
+	}
+	upErr = be.Upload(ctx.Context(), localPath, storageTarget(st), object, overwrite)
 	if upErr != nil {
 		return s.filesRedirect(ctx, project, subPath, "", upErr)
 	}
@@ -276,7 +342,7 @@ func (s *Server) parseFileUpload(ctx *hime.Context) (fh fileUploadHeader, subPat
 	// Form values only after ParseMultipartForm.
 	subPath = strings.Trim(strings.TrimSpace(ctx.PostFormValue("path")), "/")
 	if subPath != "" {
-		if err := gcs.ValidateObjectPath(subPath); err != nil {
+		if err := filestore.ValidateObjectPath(subPath); err != nil {
 			return fh, "", false, fmt.Errorf("invalid path: %w", err)
 		}
 	}
@@ -320,32 +386,33 @@ func (s *Server) postFileDelete(ctx *hime.Context) error {
 	object := strings.Trim(strings.TrimSpace(ctx.PostFormValue("object")), "/")
 	subPath := strings.Trim(strings.TrimSpace(ctx.PostFormValue("path")), "/")
 	if subPath != "" {
-		if err := gcs.ValidateObjectPath(subPath); err != nil {
+		if err := filestore.ValidateObjectPath(subPath); err != nil {
 			subPath = ""
 		}
 	}
 
 	st := s.cfg.EffectiveStorage(project)
-	if st == nil || strings.TrimSpace(st.GCSBucket) == "" {
+	if st == nil {
 		return s.filesRedirect(ctx, project, subPath, "", fmt.Errorf("file storage is not configured for this project"))
 	}
-	if err := gcs.ValidateObjectPath(object); err != nil || object == "" {
+	if err := filestore.ValidateObjectPath(object); err != nil || object == "" {
 		err := fmt.Errorf("invalid object name")
 		if object != "" {
-			if e := gcs.ValidateObjectPath(object); e != nil {
+			if e := filestore.ValidateObjectPath(object); e != nil {
 				err = e
 			}
 		}
-		s.auditAction(ctx, audit.ActionStorageDelete, err, map[string]any{
-			"project": project, "bucket": st.GCSBucket, "object": object,
-		})
+		s.auditAction(ctx, audit.ActionStorageDelete, err, storageAuditDetail(st, project, object, 0, false))
 		return s.filesRedirect(ctx, project, subPath, "", err)
 	}
 
-	delErr := gcs.Delete(ctx.Context(), s.gcsRun(), storageTarget(st), object)
-	s.auditAction(ctx, audit.ActionStorageDelete, delErr, map[string]any{
-		"project": project, "bucket": st.GCSBucket, "object": object,
-	})
+	be, err := s.filesBackend(storageTarget(st))
+	if err != nil {
+		s.auditAction(ctx, audit.ActionStorageDelete, err, storageAuditDetail(st, project, object, 0, false))
+		return s.filesRedirect(ctx, project, subPath, "", err)
+	}
+	delErr := be.Delete(ctx.Context(), storageTarget(st), object)
+	s.auditAction(ctx, audit.ActionStorageDelete, delErr, storageAuditDetail(st, project, object, 0, false))
 	if delErr != nil {
 		return s.filesRedirect(ctx, project, subPath, "", delErr)
 	}
@@ -359,15 +426,19 @@ func (s *Server) fileDownload(ctx *hime.Context) error {
 		return forbiddenProject(ctx, err)
 	}
 	object := strings.Trim(strings.TrimSpace(ctx.FormValue("object")), "/")
-	if object == "" || gcs.ValidateObjectPath(object) != nil {
+	if object == "" || filestore.ValidateObjectPath(object) != nil {
 		return ctx.Status(http.StatusBadRequest).Error("invalid object name")
 	}
 	st := s.cfg.EffectiveStorage(project)
-	if st == nil || strings.TrimSpace(st.GCSBucket) == "" {
+	if st == nil {
 		return ctx.Status(http.StatusNotFound).Error("file storage is not configured")
 	}
 
-	meta, exists, err := gcs.Describe(ctx.Context(), s.gcsRun(), storageTarget(st), object)
+	be, err := s.filesBackend(storageTarget(st))
+	if err != nil {
+		return ctx.Status(http.StatusBadGateway).Error(err.Error())
+	}
+	meta, exists, err := be.Describe(ctx.Context(), storageTarget(st), object)
 	if err != nil {
 		return ctx.Status(http.StatusBadGateway).Error(err.Error())
 	}
@@ -385,9 +456,9 @@ func (s *Server) fileDownload(ctx *hime.Context) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	leaf := gcs.SanitizeFilename(path.Base(object))
+	leaf := filestore.SanitizeFilename(path.Base(object))
 	dest := filepath.Join(tmpDir, leaf)
-	if err := gcs.Download(ctx.Context(), s.gcsRun(), storageTarget(st), object, dest); err != nil {
+	if err := be.Download(ctx.Context(), storageTarget(st), object, dest); err != nil {
 		return ctx.Status(http.StatusBadGateway).Error(err.Error())
 	}
 	f, err := os.Open(dest)
@@ -408,15 +479,17 @@ func (s *Server) fileDownload(ctx *hime.Context) error {
 }
 
 // setProjectStorage is POST /config/projects/storage (Integrations tab).
-// action=save|clear|disable — empty bucket on save is rejected (never clear).
+// action=save|clear|disable — empty identity on save is rejected (never clear).
 func (s *Server) setProjectStorage(ctx *hime.Context) error {
 	name := strings.TrimSpace(ctx.PostFormValue("name"))
 	action := strings.ToLower(strings.TrimSpace(ctx.PostFormValue("action")))
 	if action == "" {
 		action = "save"
 	}
+	backend := strings.TrimSpace(ctx.PostFormValue("backend"))
 	bucket := strings.TrimSpace(ctx.PostFormValue("gcsBucket"))
 	prefix := strings.TrimSpace(ctx.PostFormValue("prefix"))
+	folderID := strings.TrimSpace(ctx.PostFormValue("driveFolderId"))
 	credentialsFile := strings.TrimSpace(ctx.PostFormValue("credentialsFile"))
 
 	var err error
@@ -433,15 +506,31 @@ func (s *Server) setProjectStorage(ctx *hime.Context) error {
 		err = s.cfg.SetProjectStorageDisabled(name)
 		msg = fmt.Sprintf("Disabled file storage for project %q", name)
 	case "save":
-		err = s.cfg.SetProjectStorageGCS(name, bucket, prefix, credentialsFile)
+		err = s.cfg.SetProjectStorage(name, config.StorageInput{
+			Backend:         backend,
+			GCSBucket:       bucket,
+			Prefix:          prefix,
+			DriveFolderID:   folderID,
+			CredentialsFile: credentialsFile,
+		})
 		msg = fmt.Sprintf("Updated file storage for project %q", name)
-		// Non-blocking isolation warning when override reuses global bucket
-		// without the auto-isolated prefix.
+		// Non-blocking isolation warnings when override reuses the global root.
 		if err == nil {
-			if g := s.cfg.GlobalStorage(); g != nil && bucket == g.GCSBucket {
-				if want, jerr := config.JoinStoragePrefix(g.Prefix, name); jerr == nil {
-					if prefix != want && !strings.HasPrefix(prefix, want+"/") {
-						msg += ". Warning: this project uses the same bucket as the global default without the isolated prefix " + want + ". Other projects may see the same objects."
+			if st := s.cfg.ProjectStorage(name); st != nil {
+				if g := s.cfg.GlobalStorage(); g != nil {
+					switch st.Backend {
+					case config.StorageBackendGCS:
+						if st.GCSBucket == g.GCSBucket && g.GCSBucket != "" {
+							if want, jerr := config.JoinStoragePrefix(g.Prefix, name); jerr == nil {
+								if st.Prefix != want && !strings.HasPrefix(st.Prefix, want+"/") {
+									msg += ". Warning: this project uses the same bucket as the global default without the isolated prefix " + want + ". Other projects may see the same objects."
+								}
+							}
+						}
+					case config.StorageBackendGDrive:
+						if st.DriveFolderID == g.DriveFolderID && st.DriveFolderID != "" {
+							msg += ". Warning: this project uses the same Drive folder as the global default. Sibling isolation folders of inheriting projects may be visible."
+						}
 					}
 				}
 			}
@@ -452,11 +541,16 @@ func (s *Server) setProjectStorage(ctx *hime.Context) error {
 
 	// The detail carries whether a key file is set, never its path (no local
 	// paths in audit) and never its contents.
-	s.auditAction(ctx, audit.ActionConfigSetProjectStorage, err, map[string]any{
-		"name": name, "bucket": bucket, "prefix": prefix,
+	detail := map[string]any{
+		"name":               name,
+		"backend":            backend,
+		"bucket":             bucket,
+		"prefix":             prefix,
+		"folderId":           folderID,
 		"credentialsFileSet": credentialsFile != "",
 		"action":             action,
-	})
+	}
+	s.auditAction(ctx, audit.ActionConfigSetProjectStorage, err, detail)
 	return s.projectConfigTabRedirect(ctx, name, "integrations", msg, err)
 }
 
@@ -476,19 +570,32 @@ func (s *Server) storageConfigPage(ctx *hime.Context) error {
 
 // setGlobalStorage is POST /config/storage.
 func (s *Server) setGlobalStorage(ctx *hime.Context) error {
+	backend := strings.TrimSpace(ctx.PostFormValue("backend"))
 	bucket := strings.TrimSpace(ctx.PostFormValue("gcsBucket"))
 	prefix := strings.TrimSpace(ctx.PostFormValue("prefix"))
+	folderID := strings.TrimSpace(ctx.PostFormValue("driveFolderId"))
 	credentialsFile := strings.TrimSpace(ctx.PostFormValue("credentialsFile"))
 	inheritN := s.cfg.CountInheritingStorageProjects()
-	err := s.cfg.SetGlobalStorageGCS(bucket, prefix, credentialsFile)
+	err := s.cfg.SetGlobalStorage(config.StorageInput{
+		Backend:         backend,
+		GCSBucket:       bucket,
+		Prefix:          prefix,
+		DriveFolderID:   folderID,
+		CredentialsFile: credentialsFile,
+	})
+	// K17: cleared ⇔ identity-based (GlobalStorage nil after successful save).
+	cleared := err == nil && s.cfg.GlobalStorage() == nil
 	s.auditAction(ctx, audit.ActionConfigSetGlobalStorage, err, map[string]any{
-		"bucket": bucket, "prefix": prefix,
+		"backend":             backend,
+		"bucket":              bucket,
+		"prefix":              prefix,
+		"folderId":            folderID,
 		"credentialsFileSet":  credentialsFile != "",
-		"cleared":             bucket == "",
+		"cleared":             cleared,
 		"inheritProjectCount": inheritN,
 	})
 	msg := "Updated global file storage default"
-	if bucket == "" {
+	if cleared {
 		msg = "Cleared global file storage default"
 	}
 	return s.configPageRedirect(ctx, "config.storage", msg, err)

@@ -1,7 +1,12 @@
 {{define "content"}}
 <div id="page-project-files">
 <h1>{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· files</span></h1>
-{{if .StorageBucket}}
+{{if eq .StorageBackend "gdrive"}}
+<p class="sub">
+  Drive · folder <span class="mono">{{.StorageDriveFolderID}}</span>
+  {{if .StorageInherited}}· <span class="muted">via global default</span>{{end}}
+</p>
+{{else if .StorageBucket}}
 <p class="sub">
   Bucket <span class="mono">{{.StorageBucket}}</span>
   {{if .StoragePrefix}}· prefix <span class="mono">{{.StoragePrefix}}</span>{{end}}
@@ -29,8 +34,8 @@
 <div class="section card">
   <h2>No file storage linked</h2>
   <p class="sub" style="margin-top:0">
-    Link a Google Cloud Storage bucket on the project’s Integrations settings, or set a
-    host-wide default under global config, to park customer files, artifacts and hand-off
+    Link a Google Cloud Storage bucket or Google Drive folder on the project’s Integrations settings,
+    or set a host-wide default under global config, to park customer files, artifacts and hand-off
     material that does not belong in git.
   </p>
   {{if .IsAdmin}}
