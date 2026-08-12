@@ -229,6 +229,7 @@ func TestPagesRender(t *testing.T) {
 		// optgroup label is how the inferred agent shows at the point of choice.
 		{"/config/agent", `<optgroup label="Grok">`},
 		{"/config/agent", `<optgroup label="Claude">`},
+		{"/config/agent", `<option value="grok-4.6"`},
 		{"/config/agent", `<option value="grok-4.5"`},
 		{"/config/agent", `<option value="claude-opus-5"`},
 		{"/config/agent", `<option value="claude-sonnet-5"`},

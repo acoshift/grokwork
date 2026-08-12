@@ -43,4 +43,7 @@ func TestExampleConfigParses(t *testing.T) {
 	if cfg.MaxConcurrentDeploys == nil || *cfg.MaxConcurrentDeploys != 4 {
 		t.Fatalf("example maxConcurrentDeploys = %v", cfg.MaxConcurrentDeploys)
 	}
+	if cfg.Model != "grok-4.6" {
+		t.Fatalf("example model = %q, want grok-4.6", cfg.Model)
+	}
 }

@@ -96,7 +96,7 @@
   "claudeExtraArgs": [],
   "claudeIncludeAnthropicEnv": false,
   "yolo": true,
-  "model": "",
+  "model": "grok-4.6",
   "summarizeModel": "",
   "modelRates": {
     "claude-opus-5": {

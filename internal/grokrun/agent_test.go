@@ -100,6 +100,9 @@ func TestModelOptionsMatchInference(t *testing.T) {
 	if grok == 0 || claude == 0 {
 		t.Fatalf("options cover grok=%d claude=%d; both must be offered", grok, claude)
 	}
+	if opts[0].Value != "grok-4.6" || opts[0].Agent != AgentGrok {
+		t.Fatalf("first option is %q/%q; newest grok model must lead", opts[0].Value, opts[0].Agent)
+	}
 }
 
 func TestAgentForModel(t *testing.T) {
@@ -108,6 +111,7 @@ func TestAgentForModel(t *testing.T) {
 		want Agent
 		ok   bool
 	}{
+		{"grok-4.6", AgentGrok, true},
 		{"grok-4.5", AgentGrok, true},
 		{"grok-code-fast-1", AgentGrok, true},
 		{"sonnet", AgentClaude, true},

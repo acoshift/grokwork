@@ -76,6 +76,7 @@ func ModelOptions() []ModelOption {
 	return []ModelOption{
 		// grok. `grok models` reports what a given account can actually reach, so
 		// this list is intentionally short — extend it per deployment.
+		{Value: "grok-4.6", Label: "grok-4.6", Agent: AgentGrok},
 		{Value: "grok-4.5", Label: "grok-4.5", Agent: AgentGrok},
 
 		// claude.

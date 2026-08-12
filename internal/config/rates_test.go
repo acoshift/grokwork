@@ -211,7 +211,7 @@ func TestModelRateItemsCoverCuratedAndCustomModels(t *testing.T) {
 	}
 	// Curated models are always offered, priced or not, so the table can be filled
 	// in without typing names.
-	grok, ok := byModel["grok-4.5"]
+	grok, ok := byModel["grok-4.6"]
 	if !ok || grok.Configured || grok.Input != "" || !grok.Curated {
 		t.Fatalf("curated unpriced row: %+v", grok)
 	}
