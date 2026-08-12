@@ -35,8 +35,8 @@ func (b *Bot) ResetUnit(threadID string) (string, error) {
 // handleLabel (which never refuses a manual /label); the K18 auto-label freeze
 // still lives in sessionstore.ApplyAutoLabel/SuggestAutoLabel, so ClearLabelManual
 // on a closed case is a no-op on the stored label. Best-effort brief-card refresh
-// only for Discord units when the gateway is connected; never surfaces Discord
-// errors to the caller.
+// runs asynchronously so the web POST (Mark as done, label, …) returns after the
+// store write — never surfaces Discord/git work to the caller.
 func (b *Bot) SetSessionLabel(threadID, label string) error {
 	if b == nil || b.sessions == nil || strings.TrimSpace(threadID) == "" {
 		return fmt.Errorf("no session store")
@@ -72,7 +72,7 @@ func (b *Bot) SetSessionLabel(threadID, label string) error {
 	if setErr != nil {
 		return setErr
 	}
-	b.maybeRefreshBriefWeb(threadID)
+	go b.maybeRefreshBriefWeb(threadID)
 	return nil
 }
 
@@ -96,7 +96,7 @@ func (b *Bot) SetSessionGoal(threadID, goal string) error {
 	if !ok {
 		return fmt.Errorf("no session for thread %s", threadID)
 	}
-	b.maybeRefreshBriefWeb(threadID)
+	go b.maybeRefreshBriefWeb(threadID)
 	return nil
 }
 
@@ -136,8 +136,9 @@ func (b *Bot) ClaimThread(threadID string, actor Actor) error {
 }
 
 // maybeRefreshBriefWeb best-effort refreshes the pinned brief card after a web
-// label/goal write. Clean no-op for web-native (w_*) units and when the gateway
-// is down; Discord errors are logged, never returned to the caller.
+// label/goal write. Callers launch it with go so git + Discord stay off the HTTP
+// path. Clean no-op for web-native (w_*) units and when the gateway is down;
+// Discord errors are logged, never returned to the caller.
 func (b *Bot) maybeRefreshBriefWeb(threadID string) {
 	if b == nil || strings.TrimSpace(threadID) == "" || !b.hasDiscordSurface(threadID) {
 		return
