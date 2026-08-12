@@ -40,9 +40,9 @@ Phase 0 adds `/projects/{name}/issues/new`:
 - **Kind selector: Feature / Bug**, mapped to labels (`feature` / `bug`) on
   the created issue — labels rather than separate routes, because a GitHub
   issue is one kind of record and a label is what lists and the future epic
-  hub filter on. `ghpr.CreateIssue` already retries label-less when a label
-  does not exist in the repo, so an unlabeled repo degrades to a plain issue
-  instead of an error.
+  hub filter on. `ghpr.CreateIssue` creates a missing repo label (`gh label
+  create`) and retries with `--label`, so a fresh repo still gets `feature` /
+  `bug` instead of an unlabeled issue.
 - Kind also scaffolds the body placeholder: a feature asks for motivation /
   scope / acceptance criteria; a bug asks for repro / expected / actual.
 - **A customer-reported problem is a case, not an issue.** Cases carry

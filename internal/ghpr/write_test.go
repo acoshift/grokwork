@@ -69,22 +69,37 @@ func TestCreateIssueEmptyTitle(t *testing.T) {
 	}
 }
 
-func TestCreateIssueLabelFallback(t *testing.T) {
-	calls := 0
+func TestCreateIssueCreatesMissingLabel(t *testing.T) {
+	var calls []string
+	created := false
 	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
-		calls++
+		joined := name + " " + strings.Join(args, " ")
+		calls = append(calls, joined)
 		for _, a := range args {
 			if a == "--json" {
 				t.Fatal("gh issue create does not support --json")
 			}
 		}
-		joined := strings.Join(args, " ")
-		if strings.Contains(joined, "--label") {
-			return nil, fmt.Errorf("label missing")
+		switch {
+		case strings.Contains(joined, "issue create") && strings.Contains(joined, "--label") && !created:
+			return nil, fmt.Errorf("could not add label: 'missing-label' not found")
+		case strings.Contains(joined, "label create"):
+			if !strings.Contains(joined, "missing-label") || !strings.Contains(joined, "--repo o/r") {
+				t.Fatalf("label create args=%v", args)
+			}
+			created = true
+			return []byte("created"), nil
+		case strings.Contains(joined, "issue create"):
+			if !strings.Contains(joined, "--label missing-label") {
+				t.Fatalf("retry must keep --label: %v", args)
+			}
+			return []byte("https://github.com/o/r/issues/7\n"), nil
+		default:
+			t.Fatalf("unexpected gh call: %s", joined)
+			return nil, nil
 		}
-		return []byte("https://github.com/o/r/issues/7\n"), nil
 	}
-	n, _, err := CreateIssueWith(context.Background(), run, "/repo", "o", "r", CreateIssueOpts{
+	n, _, err := CreateIssueWith(t.Context(), run, "/repo", "o", "r", CreateIssueOpts{
 		Title:  "T",
 		Body:   "B",
 		Labels: []string{"missing-label"},
@@ -92,8 +107,88 @@ func TestCreateIssueLabelFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 7 || calls != 2 {
-		t.Fatalf("n=%d calls=%d", n, calls)
+	if n != 7 || !created || len(calls) != 3 {
+		t.Fatalf("n=%d created=%v calls=%v", n, created, calls)
+	}
+}
+
+func TestCreateIssueLabelAlreadyExistsOnEnsure(t *testing.T) {
+	var calls []string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := name + " " + strings.Join(args, " ")
+		calls = append(calls, joined)
+		if strings.Contains(joined, "issue create") && len(calls) == 1 {
+			return nil, fmt.Errorf("HTTP 422: Label does not exist: feature")
+		}
+		if strings.Contains(joined, "label create") {
+			return nil, fmt.Errorf("HTTP 422: Validation Failed already_exists label")
+		}
+		if strings.Contains(joined, "issue create") {
+			return []byte("https://github.com/o/r/issues/8\n"), nil
+		}
+		t.Fatalf("unexpected gh call: %s", joined)
+		return nil, nil
+	}
+	n, _, err := CreateIssueWith(t.Context(), run, "/repo", "o", "r", CreateIssueOpts{
+		Title:  "T",
+		Labels: []string{"feature"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 8 || len(calls) != 3 {
+		t.Fatalf("n=%d calls=%v", n, calls)
+	}
+}
+
+func TestCreateIssueNonLabelErrorDoesNotDropLabels(t *testing.T) {
+	var calls []string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		return nil, fmt.Errorf("GraphQL: Resource not accessible by integration")
+	}
+	_, _, err := CreateIssueWith(t.Context(), run, "/repo", "o", "r", CreateIssueOpts{
+		Title:  "T",
+		Labels: []string{"feature"},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("must not retry or create labels: %v", calls)
+	}
+	if !strings.Contains(err.Error(), "Resource not accessible") {
+		t.Fatalf("lost original error: %v", err)
+	}
+}
+
+func TestCreateIssueLabelCreatePermissionDenied(t *testing.T) {
+	var calls []string
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := name + " " + strings.Join(args, " ")
+		calls = append(calls, joined)
+		if strings.Contains(joined, "issue create") {
+			return nil, fmt.Errorf("could not add label: 'bug' not found")
+		}
+		return nil, fmt.Errorf("HTTP 403: Resource not accessible by integration")
+	}
+	_, _, err := CreateIssueWith(t.Context(), run, "/repo", "o", "r", CreateIssueOpts{
+		Title:  "T",
+		Labels: []string{"bug"},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "create missing labels") {
+		t.Fatalf("want wrap: %v", err)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("must not file unlabeled: %v", calls)
+	}
+	for _, c := range calls {
+		if strings.Contains(c, "issue create") && !strings.Contains(c, "--label") {
+			t.Fatalf("must not drop labels: %v", calls)
+		}
 	}
 }
 

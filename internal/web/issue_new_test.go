@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -235,6 +236,56 @@ func TestIssueCreateHappyPath(t *testing.T) {
 	}
 	if !strings.Contains(call.body, "customer data in body") {
 		t.Fatalf("body file=%q", call.body)
+	}
+	assertIssueCreateAudit(t, srv, true)
+}
+
+func TestIssueCreateCreatesMissingGitHubLabel(t *testing.T) {
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.GitHubWrites = true
+	if err := cfg.SetProjectGitHubRepos("proj", []config.GitHubRepoRef{{Owner: "acme", Repo: "app"}}); err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	created := false
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := name + " " + strings.Join(args, " ")
+		calls = append(calls, joined)
+		switch {
+		case strings.Contains(joined, "issue create") && !created:
+			return nil, fmt.Errorf("could not add label: 'feature' not found")
+		case strings.Contains(joined, "label create"):
+			if !strings.Contains(joined, "feature") || !strings.Contains(joined, "--repo acme/app") {
+				t.Fatalf("label create args=%v", args)
+			}
+			created = true
+			return []byte("created"), nil
+		case strings.Contains(joined, "issue create"):
+			if !strings.Contains(joined, "--label") || !strings.Contains(joined, "feature") {
+				t.Fatalf("retry must keep --label feature: %v", args)
+			}
+			return []byte("https://github.com/acme/app/issues/7\n"), nil
+		default:
+			t.Fatalf("unexpected gh call: %s", joined)
+			return nil, nil
+		}
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/issues/new", sid, csrf, url.Values{
+		"kind": {"feature"}, "owner": {"acme"}, "repo": {"app"}, "title": {"secret title"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/projects/proj/issues/7?") {
+		t.Fatalf("Location=%q want issue detail", loc)
+	}
+	if !created || len(calls) != 3 {
+		t.Fatalf("created=%v calls=%v", created, calls)
 	}
 	assertIssueCreateAudit(t, srv, true)
 }

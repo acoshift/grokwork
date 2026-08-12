@@ -145,29 +145,74 @@ func CreateIssueWith(ctx context.Context, run Runner, repoDir, owner, repo strin
 	if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
 		args = append(args, "--repo", o+"/"+r)
 	}
+	var labels []string
 	for _, lab := range opts.Labels {
 		lab = strings.TrimSpace(lab)
 		if lab == "" {
 			continue
 		}
+		labels = append(labels, lab)
 		args = append(args, "--label", lab)
 	}
 	out, err := run(ctx, repoDir, "gh", args...)
 	if err != nil {
-		// Retry without labels if labels caused failure (missing label in repo).
-		if len(opts.Labels) > 0 {
-			argsNoLabel := []string{"issue", "create", "--title", title, "--body-file", path}
-			if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
-				argsNoLabel = append(argsNoLabel, "--repo", o+"/"+r)
-			}
-			out2, err2 := run(ctx, repoDir, "gh", argsNoLabel...)
-			if err2 == nil {
-				return parseCreateIssueOutput(out2)
-			}
+		// A missing repo label used to drop --label and file unlabeled. Create
+		// the label instead so kind (feature/bug) survives a fresh repo.
+		if len(labels) == 0 || !isMissingLabelErr(err) {
+			return 0, "", err
 		}
-		return 0, "", err
+		if e := ensureIssueLabels(ctx, run, repoDir, owner, repo, labels); e != nil {
+			return 0, "", fmt.Errorf("create missing labels: %w", e)
+		}
+		out, err = run(ctx, repoDir, "gh", args...)
+		if err != nil {
+			return 0, "", err
+		}
 	}
 	return parseCreateIssueOutput(out)
+}
+
+func ensureIssueLabels(ctx context.Context, run Runner, repoDir, owner, repo string, labels []string) error {
+	var repoSlug string
+	if o, r := strings.TrimSpace(owner), strings.TrimSpace(repo); o != "" && r != "" {
+		repoSlug = o + "/" + r
+	}
+	for _, lab := range labels {
+		args := []string{"label", "create", lab}
+		if repoSlug != "" {
+			args = append(args, "--repo", repoSlug)
+		}
+		if _, err := run(ctx, repoDir, "gh", args...); err != nil && !isLabelExistsErr(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func isMissingLabelErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	if strings.Contains(s, "could not add label") {
+		return true
+	}
+	if !strings.Contains(s, "label") {
+		return false
+	}
+	return strings.Contains(s, "not found") ||
+		strings.Contains(s, "does not exist") ||
+		strings.Contains(s, "unknown label")
+}
+
+func isLabelExistsErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "already_exists") ||
+		strings.Contains(s, "already exists") ||
+		strings.Contains(s, "already been taken")
 }
 
 func parseCreateIssueOutput(out []byte) (number int, url string, err error) {
