@@ -114,6 +114,7 @@ func (b *Bot) ClaimThread(threadID string, actor Actor) error {
 		if ent.IsOwner(actor.ID) {
 			return
 		}
+		sticky := tokenCollaborators(ent)
 		prevID := ent.OwnerID
 		// Full takeover: reset co-owners, then keep only the previous primary so
 		// the list does not grow unbounded across repeated claims.
@@ -121,6 +122,13 @@ func (b *Bot) ClaimThread(threadID string, actor Actor) error {
 		ent.SetOwner(actor.ID, actor.String())
 		if prevID != "" && prevID != actor.ID {
 			ent.AddCoOwner(prevID)
+		}
+		// Machine starters stay collaborators: a second human claim must not
+		// evict the token from CanControl (K23).
+		for _, id := range sticky {
+			if id != actor.ID {
+				ent.AddCoOwner(id)
+			}
 		}
 	})
 	if err != nil {

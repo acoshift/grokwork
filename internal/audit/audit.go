@@ -69,6 +69,8 @@ const (
 	// to my account" report is checked against.
 	ActionIdentityLink   = "identity.link"
 	ActionIdentityUnlink = "identity.unlink"
+	ActionAPITokenMint   = "api.token.mint"
+	ActionAPITokenRevoke = "api.token.revoke"
 	// Case actions. Both surfaces write these strings; keep them here so the
 	// Discord and web halves of one workflow cannot drift into two action names.
 	ActionCaseEscalate       = "case.escalate"
@@ -81,8 +83,8 @@ const (
 	// GitHub Actions (workflow_dispatch from the web Actions page).
 	ActionActionsDispatch = "actions.dispatch"
 	// Project file storage (GCS). Local staging paths never enter details.
-	ActionStorageUpload           = "storage.upload"
-	ActionStorageDelete           = "storage.delete"
+	ActionStorageUpload                 = "storage.upload"
+	ActionStorageDelete                 = "storage.delete"
 	ActionConfigSetProjectStorage       = "config.set_project_storage"
 	ActionConfigSetGlobalStorage        = "config.set_global_storage"
 	ActionConfigSetProjectPrimaryBranch = "config.set_project_primary_branch"

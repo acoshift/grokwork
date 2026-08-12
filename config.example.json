@@ -119,6 +119,9 @@
   "webPublicBaseURL": "",
   "webMergeMethod": "squash",
   "discordPRLink": "github",
+  "api": {
+    "enabled": false
+  },
   "webAuth": {
     "enabled": false,
     "sessionSecret": "",

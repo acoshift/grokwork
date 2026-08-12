@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/moonrhythm/hime"
 
+	"github.com/acoshift/grokwork/internal/apitoken"
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/clickup"
@@ -56,7 +58,8 @@ type Server struct {
 	// identity resolves a login to the account it belongs to, at the one place a
 	// web actor id is minted (oauthCallback). It is the bot's instance, not a
 	// second one over the same file — see bot.SetIdentity.
-	identity *identity.Store
+	identity  *identity.Store
+	apiTokens *apitoken.Store
 	// Test injectables (nil → production defaults).
 	ghRunner  ghpr.Runner
 	gcsRunner gcs.Runner
@@ -114,7 +117,14 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	if err != nil {
 		panic("web: deploy engine: " + err.Error())
 	}
-	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, webUsers: webUsers, audit: auditLog, deploys: deployEngine, identity: b.Identity()}
+	tokens, err := apitoken.New(cfg.DataDir)
+	if err != nil {
+		panic("web: api tokens: " + err.Error())
+	}
+	if _, err := tokens.BootstrapFromEnv(); err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] api token bootstrap: %v\n", err)
+	}
+	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, webUsers: webUsers, audit: auditLog, deploys: deployEngine, identity: b.Identity(), apiTokens: tokens}
 	s.wireDeployNotifier()
 	app := hime.New()
 	app.Address(cfg.ListenAddr())
@@ -209,6 +219,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.worktrees":                   "/config/worktrees",
 		"config.board":                       "/config/board",
 		"config.notify":                      "/config/notify",
+		"config.apiTokens":                   "/config/api-tokens",
+		"config.apiTokens.revoke":            "/config/api-tokens/revoke",
 		"config.ci":                          "/config/ci",
 		"config.prlinks":                     "/config/pr-links",
 		"config.risky":                       "/config/risky",
@@ -285,6 +297,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("config_worktrees", "layout.tmpl", "config_worktrees.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_board", "layout.tmpl", "config_board.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_notify", "layout.tmpl", "config_notify.tmpl", "config_shared.tmpl")
+	tp.ParseFiles("config_api_tokens", "layout.tmpl", "config_api_tokens.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_ci", "layout.tmpl", "config_ci.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_prlinks", "layout.tmpl", "config_prlinks.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_risky", "layout.tmpl", "config_risky.tmpl", "config_shared.tmpl")
@@ -328,6 +341,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// Public (static + PWA install assets + auth)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", cacheStatic(http.FileServer(http.FS(static)))))
 	registerPWA(mux)
+	s.registerAPI(mux)
 	mux.Handle("GET /login", hime.Handler(s.loginPage))
 	// {provider} matches exactly one segment, so /auth/discord/callback cannot
 	// be swallowed by /auth/{provider}; an unknown key 404s in the handler.
@@ -596,6 +610,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/worktrees", s.requireAdmin(hime.Handler(s.configSubPage("config_worktrees", "Worktrees"))))
 	mux.Handle("GET /config/board", s.requireAdmin(hime.Handler(s.configSubPage("config_board", "Team activity board"))))
 	mux.Handle("GET /config/notify", s.requireAdmin(hime.Handler(s.configSubPage("config_notify", "Run notifications"))))
+	mux.Handle("GET /config/api-tokens", s.requireTokenAdmin(hime.Handler(s.apiTokensPage)))
+	mux.Handle("POST /config/api-tokens", s.requireTokenAdmin(hime.Handler(s.postAPITokenMint)))
+	mux.Handle("POST /config/api-tokens/revoke", s.requireTokenAdmin(hime.Handler(s.postAPITokenRevoke)))
 	mux.Handle("GET /config/ci", s.requireAdmin(hime.Handler(s.configSubPage("config_ci", "CI triage"))))
 	mux.Handle("GET /config/pr-links", s.requireAdmin(hime.Handler(s.configSubPage("config_prlinks", "Discord PR links"))))
 	mux.Handle("GET /config/risky", s.requireAdmin(hime.Handler(s.configSubPage("config_risky", "Completion risk paths"))))
@@ -636,30 +653,34 @@ func (s *Server) Shutdown() error {
 }
 
 type pageData struct {
-	Title       string
-	IsDashboard bool
-	IsOverview  bool
-	IsHistory   bool
-	IsSessions  bool
-	IsShip      bool
-	IsCases     bool
-	IsInbox     bool
-	IsWorktrees bool
-	IsConfig    bool
-	IsLogin     bool
-	IsIssues    bool
-	IsLinear    bool
-	IsClickUp   bool
-	IsCommits   bool
-	IsReviews   bool
-	IsStart     bool
-	IsDeploys   bool
-	IsFiles     bool
-	IsActions   bool
-	IsSpend     bool
-	IsAccount   bool
-	Flash       string
-	Error       string
+	Title          string
+	IsDashboard    bool
+	IsOverview     bool
+	IsHistory      bool
+	IsSessions     bool
+	IsShip         bool
+	IsCases        bool
+	IsInbox        bool
+	IsWorktrees    bool
+	IsConfig       bool
+	IsLogin        bool
+	IsIssues       bool
+	IsLinear       bool
+	IsClickUp      bool
+	IsCommits      bool
+	IsReviews      bool
+	IsStart        bool
+	IsDeploys      bool
+	IsFiles        bool
+	IsActions      bool
+	IsSpend        bool
+	IsAccount      bool
+	APIEnabled     bool
+	APITokens      []apitoken.Record
+	APITokenSecret string
+	APIProjects    []string
+	Flash          string
+	Error          string
 	// ErrorAlertTitle, when set with Error, opens the appAlert modal on the
 	// PR page (merge failures, etc.) instead of relying on the flash alone.
 	ErrorAlertTitle string
@@ -705,10 +726,10 @@ type pageData struct {
 	// Project-first shell scope: NavProject switches the sidebar into
 	// workspace mode. URL-derived only (see navScopeFromURL) so history
 	// restores can recompute it client-side.
-	NavProject       string
-	NavProjects      []string // visible projects for the sidebar switcher
-	NavLinearEnabled  bool // workspace nav: show the Linear item
-	NavClickUpEnabled bool // workspace nav: show the ClickUp item
+	NavProject        string
+	NavProjects       []string // visible projects for the sidebar switcher
+	NavLinearEnabled  bool     // workspace nav: show the Linear item
+	NavClickUpEnabled bool     // workspace nav: show the ClickUp item
 	// Home launcher cards.
 	ProjectCards []projectCard
 	// Auth chrome
@@ -737,17 +758,17 @@ type pageData struct {
 	// noise on an account with no GitHub login at all.
 	AccountHandleStale bool
 	// Workflow read UI (PR4–7)
-	Project       string
-	RepoCatalog   []config.GitHubRepoRef
-	ActiveOwner   string
-	ActiveRepo    string
-	IssueState    string
-	Issues        []ghpr.IssueInfo
-	Issue         ghpr.IssueInfo
-	LinearEnabled bool
-	LinearTeam    string
-	LinearIssues  []linear.Issue
-	LinearIssue   linear.Issue
+	Project        string
+	RepoCatalog    []config.GitHubRepoRef
+	ActiveOwner    string
+	ActiveRepo     string
+	IssueState     string
+	Issues         []ghpr.IssueInfo
+	Issue          ghpr.IssueInfo
+	LinearEnabled  bool
+	LinearTeam     string
+	LinearIssues   []linear.Issue
+	LinearIssue    linear.Issue
 	ClickUpEnabled bool
 	ClickUpListID  string
 	ClickUpTasks   []clickup.Task

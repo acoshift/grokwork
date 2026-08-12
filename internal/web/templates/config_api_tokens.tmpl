@@ -1,0 +1,65 @@
+{{define "content"}}
+<div class="config-sub" id="page-config-api-tokens">
+{{template "config_sub_header" $}}
+<h1>API tokens</h1>
+<p class="sub">
+  Machine tokens for remote agents. Mint requires web auth and admin.
+  Add the shown <span class="mono">token:&lt;id&gt;</span> to a project team that names a capability template
+  (allowlist-only grants no capabilities). Default mask is startSessions only.
+</p>
+<p class="sub">API routes: {{if .APIEnabled}}<span class="badge">enabled</span>{{else}}<span class="badge status-warn">disabled</span> — set <span class="mono">api.enabled</span> in config.json{{end}}</p>
+
+{{if .APITokenSecret}}
+<div class="flash">
+  Wire secret (shown once): <span class="mono" data-copy>{{.APITokenSecret}}</span>
+</div>
+{{end}}
+
+<div class="section card">
+  <h2>Mint</h2>
+  <form method="post" action="{{route "config.apiTokens"}}">
+    {{template "csrf" $}}
+    <label>Label <input name="label" required autocomplete="off" placeholder="cloud-agent-prod-vm"></label>
+    <fieldset>
+      <legend>Projects</legend>
+      {{range .APIProjects}}
+      <label><input type="checkbox" name="project" value="{{.}}"> {{.}}</label>
+      {{end}}
+    </fieldset>
+    <label><input type="checkbox" name="githubWrites" value="1"> githubWrites (create issues / ship-class with team)</label>
+    <button type="submit">Mint token</button>
+  </form>
+</div>
+
+<div class="section card">
+  <h2>Tokens</h2>
+  {{if .APITokens}}
+  <table class="data">
+    <thead><tr><th>Label</th><th>Actor</th><th>Projects</th><th>Caps</th><th>Revoked</th><th></th></tr></thead>
+    <tbody>
+    {{range .APITokens}}
+      <tr>
+        <td>{{.Label}}</td>
+        <td class="mono">{{.ActorID}}</td>
+        <td class="mono">{{range $i, $p := .Projects}}{{if $i}}, {{end}}{{$p}}{{end}}</td>
+        <td>{{if .Caps.StartSessions}}startSessions{{end}}{{if .Caps.GithubWrites}} githubWrites{{end}}</td>
+        <td>{{if not .RevokedAt.IsZero}}yes{{end}}</td>
+        <td>
+          {{if .RevokedAt.IsZero}}
+          <form method="post" action="{{route "config.apiTokens.revoke"}}" data-confirm="Revoke this token?">
+            {{template "csrf" $}}
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button type="submit" class="danger">Revoke</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="sub">No tokens yet.</p>
+  {{end}}
+</div>
+</div>
+{{end}}

@@ -137,6 +137,8 @@ type Config struct {
 	DiscordPRLink string `json:"discordPRLink,omitempty"`
 	// WebAuth enables Discord OAuth for the private web UI. Nil/disabled = open LAN mode.
 	WebAuth *WebAuthConfig `json:"webAuth,omitempty"`
+	// API is the machine-to-machine HTTP API. Nil/omitted/disabled = no /api/v1 routes.
+	API *APIConfig `json:"api,omitempty"`
 	// RiskyPathGlobs flags completion-card paths for review (**, * globs).
 	// nil/omitted → built-in defaults. Empty slice → no risk highlighting.
 	RiskyPathGlobs []string `json:"riskyPathGlobs,omitempty"`
@@ -835,6 +837,7 @@ func (c *Config) saveLocked() error {
 		WebMergeMethod            string               `json:"webMergeMethod,omitempty"`
 		DiscordPRLink             string               `json:"discordPRLink,omitempty"`
 		WebAuth                   *WebAuthConfig       `json:"webAuth,omitempty"`
+		API                       *APIConfig           `json:"api,omitempty"`
 		RiskyPathGlobs            []string             `json:"riskyPathGlobs,omitempty"`
 		AutoFixCI                 *bool                `json:"autoFixCI,omitempty"`
 		AutoFixCIMax              int                  `json:"autoFixCIMax,omitempty"`
@@ -881,6 +884,7 @@ func (c *Config) saveLocked() error {
 		WebMergeMethod:            c.WebMergeMethod,
 		DiscordPRLink:             c.DiscordPRLink,
 		WebAuth:                   cloneWebAuth(c.WebAuth),
+		API:                       cloneAPI(c.API),
 		RiskyPathGlobs:            slices.Clone(c.RiskyPathGlobs),
 		AutoFixCI:                 c.AutoFixCI,
 		AutoFixCIMax:              c.AutoFixCIMax,

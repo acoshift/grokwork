@@ -261,6 +261,8 @@ func sanitize(f storeFile) (map[string]Link, map[string]Handle, []string) {
 			warn("dropped link %q: its canonical id %q is empty or unusable.", rawKey, link.Canonical)
 		case alias == canonical:
 			warn("dropped self-link %q → %q: an account cannot be its own alias.", rawKey, link.Canonical)
+		case config.ActorKind(alias) == config.ActorKindToken || config.ActorKind(canonical) == config.ActorKindToken:
+			warn("dropped link %q → %q: machine tokens cannot be linked as logins.", rawKey, link.Canonical)
 		default:
 			link.Canonical = canonical
 			byAlias[alias] = append(byAlias[alias], candidate{rawKey: rawKey, link: link})
@@ -704,6 +706,9 @@ func (s *Store) Link(alias, canonical, handle string) error {
 	}
 	if a == c {
 		return fmt.Errorf("%s cannot be an alias of itself", wireForm(a))
+	}
+	if config.ActorKind(a) == config.ActorKindToken || config.ActorKind(c) == config.ActorKindToken {
+		return fmt.Errorf("machine tokens cannot be linked as logins")
 	}
 	handle = strings.TrimPrefix(strings.TrimSpace(handle), "@")
 	if config.ActorKind(a) != config.ActorKindGitHub {

@@ -73,6 +73,7 @@ cp config.example.json config.json
 | `projects.*.deploy.environments.<env>.stepTimeoutMaxMs` | Lower the per-step ceiling for this environment (hard max 1h) |
 | `boardStaleDays` | Days without session activity before `/board` lists a thread as **stale** (default `3`). Editable on the Config page |
 | `boardDigestChannel` | Optional Discord channel ID for a nightly team board post (empty = disabled). Editable on the Config page |
+| `api.enabled` | Machine JSON API (`/api/v1`). Default off. See `docs/api-v1.md` |
 | `httpListen` | Private-network web UI bind address (default `:8787`; override with `GROK_WORK_HTTP_LISTEN`) |
 | `webPublicBaseURL` | Absolute origin for OAuth redirect URIs (e.g. `http://100.x.y.z:8787`). Required when `webAuth.enabled` |
 | `discordClientSecret` | Discord OAuth2 client secret for web login (or env `DISCORD_CLIENT_SECRET` / `GROK_WORK_DISCORD_CLIENT_SECRET`) |

@@ -27,6 +27,9 @@ type StartWebTaskOpts struct {
 	Model string
 	// AttachmentPaths are staged web images; ownership transfers to StartTask.
 	AttachmentPaths []string
+	// WebNative forces a w_* unit on grok/web/. When true, skip Discord thread
+	// create even if the gateway is up and a channel is mapped.
+	WebNative bool
 }
 
 // StartWebTask creates a workflow unit and enqueues a freeform Grok task.
@@ -99,6 +102,12 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 		return b.stampNewSessionCLI(threadID, cli)
 	}
 
+	if opts.WebNative {
+		return b.startWebNativeUnit(project, cwd, prompt, kind, opts.Actor, opts.AttachmentPaths, func(unitID string) error {
+			return bind(unitID, "")
+		})
+	}
+
 	if b.canCreateDiscordThread() {
 		channelID, err := b.cfg.PreferDiscordChannel(project)
 		if errors.Is(err, config.ErrNoDiscordChannel) {
@@ -158,6 +167,12 @@ func webTaskKind(mode string) Kind {
 	default:
 		return KindTask
 	}
+}
+
+// WantsFixStartMode reports whether a start mode (or project default when
+// mode is empty) requests Fix & ship. Exported for the machine API gate.
+func WantsFixStartMode(mode, projectDefault string) bool {
+	return wantsFixStartMode(mode, projectDefault)
 }
 
 // wantsFixStartMode reports whether a web start form mode (or project default

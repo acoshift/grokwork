@@ -248,6 +248,9 @@ func (c *Config) ResolveCapabilities(project, userID string) Capabilities {
 		return Capabilities{} // broken mapping → fail closed, never the default
 	}
 	// Unmapped
+	if ActorKind(uid) == ActorKindToken {
+		return Capabilities{} // never builder / safeTeam default
+	}
 	if safe {
 		t, ok := lookupTemplate(defaultTpl, overlays)
 		if !ok {

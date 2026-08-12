@@ -23,6 +23,9 @@ const (
 	ActorKindOIDC    = "oidc"
 	ActorKindGoogle  = "google"
 	ActorKindGitHub  = "github"
+	// ActorKindToken is a machine API token. It is not a login and must never
+	// inherit the unmapped human builder default (see ResolveCapabilities).
+	ActorKindToken = "token"
 )
 
 // knownActorKinds are the namespaces this build understands.
@@ -32,6 +35,7 @@ var knownActorKinds = map[string]struct{}{
 	ActorKindOIDC:    {},
 	ActorKindGoogle:  {},
 	ActorKindGitHub:  {},
+	ActorKindToken:   {},
 }
 
 // NormalizeActorID canonicalizes an actor id to "<kind>:<subject>".

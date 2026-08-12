@@ -239,6 +239,7 @@ func TestPagesRender(t *testing.T) {
 		{"/config/board", `id="page-config-board"`},
 		{"/config/notify", `id="page-config-notify"`},
 		{"/config", `href="/config/notify"`},
+		{"/config", `href="/config/api-tokens"`},
 		{"/config", "Run notifications"},
 		{"/config/ci", `id="page-config-ci"`},
 		{"/config/pr-links", `id="page-config-prlinks"`},

@@ -232,6 +232,29 @@ func TestClaimThreadDemotesOwner(t *testing.T) {
 	}
 }
 
+func TestClaimThreadKeepsTokenCollaborator(t *testing.T) {
+	b, _ := testFixBot(t)
+	const threadID = "token-claim-th"
+	e := sessionstore.Entry{Project: "app", CreatedBy: "token:abc"}
+	e.SetOwner("token:abc", "cloud-vm")
+	if err := b.sessions.Set(threadID, e); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.ClaimThread(threadID, Actor{ID: "human-a", DisplayName: "A"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.ClaimThread(threadID, Actor{ID: "human-b", DisplayName: "B"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := b.sessions.Get(threadID)
+	if got.OwnerID != "human-b" {
+		t.Fatalf("owner=%q", got.OwnerID)
+	}
+	if !got.CanControl("token:abc") {
+		t.Fatalf("token lost control after two claims: %+v", got)
+	}
+}
+
 func TestClaimThreadCreatesShell(t *testing.T) {
 	b, _ := testFixBot(t)
 	if err := b.ClaimThread("no-session-yet", Actor{ID: "owner1", DisplayName: "One"}); err != nil {

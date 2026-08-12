@@ -235,6 +235,49 @@ func TestLinkRefreshesHandleAndKeepsLinkedAt(t *testing.T) {
 	}
 }
 
+func TestLinkRefusesTokenActors(t *testing.T) {
+	s, _ := newStore(t)
+	if err := s.Link("token:abc", "42424", ""); err == nil {
+		t.Fatal("token alias must be refused")
+	}
+	if err := s.Link("github:999", "token:abc", ""); err == nil {
+		t.Fatal("token canonical must be refused")
+	}
+	if err := s.Link("Token:abc", "42424", ""); err == nil {
+		t.Fatal("Token: spelling must be refused after normalize")
+	}
+	if got := len(s.links); got != 0 {
+		t.Fatalf("refused token links mutated the store: %d", got)
+	}
+}
+
+func TestSanitizeDropsTokenLinks(t *testing.T) {
+	dir := t.TempDir()
+	writeLinks(t, dir, `{
+		"links": {
+			"token:abc": {"canonical": "42424"},
+			"github:1": {"canonical": "token:xyz"},
+			"github:999": {"canonical": "42424"}
+		}
+	}`)
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Canonical("token:abc"); got != "token:abc" {
+		t.Fatalf("token alias should not resolve, Canonical = %q", got)
+	}
+	if got := s.Canonical("github:1"); got != "github:1" {
+		t.Fatalf("token canonical link should drop, Canonical = %q", got)
+	}
+	if got := s.Canonical("github:999"); got != "42424" {
+		t.Fatalf("human link dropped: Canonical = %q", got)
+	}
+	if len(s.Warnings()) < 2 {
+		t.Fatalf("expected warnings for dropped token links, got %v", s.Warnings())
+	}
+}
+
 func TestLinkRejectsMovingAnAliasBetweenAccounts(t *testing.T) {
 	s, _ := newStore(t)
 	if err := s.Link("github:999", "42424", "alice"); err != nil {

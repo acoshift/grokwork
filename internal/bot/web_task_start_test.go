@@ -29,6 +29,37 @@ func TestWebTaskKindMapping(t *testing.T) {
 	}
 }
 
+func TestStartWebTaskWebNativeSkipsDiscord(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	fake := &fakeThreadAPI{nextMsg: "m1", nextTh: "th-should-not-create"}
+	SetThreadAPIForTest(b, fake)
+
+	res, err := b.StartWebTask(StartWebTaskOpts{
+		Project:   "app",
+		Prompt:    "investigate the checkout panic",
+		Actor:     Actor{ID: "token:abc", DisplayName: "cloud-vm"},
+		Mode:      ModeInvestigate,
+		WebNative: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gitworktree.IsWebUnitID(res.ThreadID) {
+		t.Fatalf("WebNative start produced Discord-shaped id %q", res.ThreadID)
+	}
+	if res.DiscordURL != "" {
+		t.Fatalf("discordURL=%q", res.DiscordURL)
+	}
+	if len(fake.starts) != 0 {
+		t.Fatalf("Discord thread create ran: %v", fake.starts)
+	}
+	e, ok := b.sessions.Get(res.ThreadID)
+	if !ok || e.OwnerID != "token:abc" {
+		t.Fatalf("owner stamp: ok=%v %+v", ok, e)
+	}
+}
+
 func TestStartWebTaskDiscordCreate(t *testing.T) {
 	b, _ := testFixBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
