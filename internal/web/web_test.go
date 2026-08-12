@@ -1139,6 +1139,66 @@ func TestNavBrandChrome(t *testing.T) {
 	}
 }
 
+// TestOverviewMobileBrowseListsWorkspaceSections pins the phone-only Browse
+// block on the project overview: every workspace section that is not a bottom
+// tab (or the Start-task top-bar chip) must appear here, or mobile users have
+// no path to Files / Actions / Spend / etc. Order mirrors the desktop sidebar.
+func TestOverviewMobileBrowseListsWorkspaceSections(t *testing.T) {
+	srv, _, _ := testServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	start := strings.Index(body, `id="m-workspace-browse"`)
+	if start < 0 {
+		t.Fatal("overview missing #m-workspace-browse")
+	}
+	browse := body[start:]
+	if end := strings.Index(browse, `class="section"`); end > 0 {
+		// Next section after the Browse block (Recent sessions).
+		browse = browse[:end]
+	}
+	for _, want := range []string{
+		`href="/projects/proj/issues"`,
+		`href="/projects/proj/commits"`,
+		`href="/projects/proj/files"`,
+		`href="/projects/proj/deploys"`,
+		`href="/projects/proj/actions"`,
+		`href="/projects/proj/worktrees"`,
+		`href="/projects/proj/spend"`,
+		`href="/config/projects/proj"`,
+		">Issues<",
+		">Commits<",
+		">Files<",
+		">Deploys<",
+		">Actions<",
+		">Worktrees<",
+		">Spend<",
+		">Settings<",
+	} {
+		if !strings.Contains(browse, want) {
+			t.Fatalf("mobile Browse missing %q", want)
+		}
+	}
+	// Tab-bar destinations stay off the Browse list (they already have a
+	// permanent footer control). Start task is the top-bar chip.
+	for _, ban := range []string{
+		`href="/projects/proj/ship"`,
+		`href="/projects/proj/cases"`,
+		`href="/projects/proj/sessions"`,
+		`href="/projects/proj/reviews"`,
+		`href="/projects/proj/start"`,
+		">Overview<",
+	} {
+		if strings.Contains(browse, ban) {
+			t.Fatalf("mobile Browse must not duplicate tab/top-bar item %q", ban)
+		}
+	}
+}
+
 // TestProjectSettingsHasNoConfigCrumb pins the removal of the "← Config" link.
 // /config/projects/{p} scopes the shell to the project workspace (see the
 // /config/projects/proj row in TestNavScopeRules), so the sidebar is the way

@@ -23,7 +23,8 @@
 </div>
 
 {{/* Phone-only: workspace sections without a bottom tab (the scoped footer
-     keeps Overview/Ship/Cases/Sessions/Reviews; the rest drill in here). */}}
+     keeps Overview/Ship/Cases/Sessions/Reviews; the rest drill in here, in
+     the same order as the desktop workspace sidebar). */}}
 <div class="section m-only" id="m-workspace-browse">
   <h2>Browse</h2>
   <div class="m-rows">
@@ -35,14 +36,28 @@
       <span class="m-row-main"><span class="m-row-t">Linear</span><span class="m-row-s">assigned Linear issues</span></span>
     </a>
     {{end}}
+    {{if .NavClickUpEnabled}}
+    <a class="m-row" href="/projects/{{.Project}}/clickup">
+      <span class="m-row-main"><span class="m-row-t">ClickUp</span><span class="m-row-s">assigned ClickUp tasks</span></span>
+    </a>
+    {{end}}
     <a class="m-row" href="/projects/{{.Project}}/commits">
       <span class="m-row-main"><span class="m-row-t">Commits</span><span class="m-row-s">history browser · request commit review</span></span>
+    </a>
+    <a class="m-row" href="/projects/{{.Project}}/files">
+      <span class="m-row-main"><span class="m-row-t">Files</span><span class="m-row-s">project storage · download · upload</span></span>
     </a>
     <a class="m-row" href="/projects/{{.Project}}/deploys">
       <span class="m-row-main"><span class="m-row-t">Deploys</span><span class="m-row-s">environments · trigger · run history</span></span>
     </a>
+    <a class="m-row" href="/projects/{{.Project}}/actions">
+      <span class="m-row-main"><span class="m-row-t">Actions</span><span class="m-row-s">GitHub workflows · dispatch · run history</span></span>
+    </a>
     <a class="m-row" href="/projects/{{.Project}}/worktrees">
       <span class="m-row-main"><span class="m-row-t">Worktrees</span><span class="m-row-s">per-session checkouts · prune</span></span>
+    </a>
+    <a class="m-row" href="/projects/{{.Project}}/spend">
+      <span class="m-row-main"><span class="m-row-t">Spend</span><span class="m-row-s">token cost · by actor and session</span></span>
     </a>
     {{if .IsAdmin}}
     <a class="m-row" href="/config/projects/{{.Project}}">
