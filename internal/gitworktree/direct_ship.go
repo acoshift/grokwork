@@ -16,14 +16,26 @@ type DirectShipResult struct {
 }
 
 // ResolvePrimaryBranch returns the short primary branch name and origin remote
-// ref (e.g. "main", "origin/main") for a checkout. Uses origin/HEAD, then common
-// origin/* names, then the current local branch of the main checkout.
-func ResolvePrimaryBranch(ctx context.Context, repo string) (name, remoteRef string, err error) {
+// ref (e.g. "main", "origin/main") for a checkout. preferred is a short branch
+// name (no origin/); when non-empty, requires origin/<preferred> to exist
+// (local-only is not enough). When preferred is empty, uses origin/HEAD, then
+// common origin/* names, then the current local branch of the main checkout.
+func ResolvePrimaryBranch(ctx context.Context, repo, preferred string) (name, remoteRef string, err error) {
 	repo = strings.TrimSpace(repo)
 	if repo == "" || !IsRepo(repo) {
 		return "", "", fmt.Errorf("not a git repository")
 	}
-	start := resolveNewBranchStart(ctx, repo)
+	preferred = strings.TrimSpace(preferred)
+	if preferred != "" {
+		remote := "origin/" + preferred
+		if !commitRefExists(ctx, repo, remote) {
+			return "", "", fmt.Errorf(
+				"configured primary branch %q not found as %s (fetch origin or fix projects.*.primaryBranch)",
+				preferred, remote)
+		}
+		return preferred, remote, nil
+	}
+	start := resolveNewBranchStart(ctx, repo, "")
 	if start == "HEAD" {
 		// Fall back to current branch name if possible.
 		if cur, cerr := gitOutput(ctx, repo, "rev-parse", "--abbrev-ref", "HEAD"); cerr == nil {
@@ -70,8 +82,9 @@ func DirectShipFF(ctx context.Context, mainRepo, worktreePath, sessionBranch, pr
 	if !IsManagedBranch(sessionBranch) {
 		return out, fmt.Errorf("refuse to ship non-managed branch %q", sessionBranch)
 	}
+	primaryWasEmpty := primary == ""
 	if primary == "" {
-		name, _, err := ResolvePrimaryBranch(ctx, mainRepo)
+		name, _, err := ResolvePrimaryBranch(ctx, mainRepo, "")
 		if err != nil {
 			return out, err
 		}
@@ -111,12 +124,21 @@ func DirectShipFF(ctx context.Context, mainRepo, worktreePath, sessionBranch, pr
 		out.FromSHA = strings.TrimSpace(fromSHA)
 	}
 
+	// When callers passed a concrete primary (configured path), refuse push if
+	// origin/<primary> is still missing — git push would create that branch.
+	// Empty-primary path keeps today's local-only noop / create semantics.
+	if !primaryWasEmpty && out.FromSHA == "" {
+		return out, fmt.Errorf(
+			"primary branch %q not found as %s after fetch (refusing push that would create it)",
+			primary, remoteRef)
+	}
+
 	// Noop: session head already is origin/primary (or primary tip if no remote ref).
 	if out.FromSHA != "" && out.FromSHA == sessionHead {
 		out.Noop = true
 		return out, nil
 	}
-	// Also noop if local primary matches and remote missing.
+	// Also noop if local primary matches and remote missing (empty-primary path only).
 	if out.FromSHA == "" {
 		if local, lerr := gitOutput(ctx, mainRepo, "rev-parse", "--verify", primary+"^{commit}"); lerr == nil {
 			if strings.TrimSpace(local) == sessionHead {

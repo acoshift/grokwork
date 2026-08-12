@@ -83,8 +83,9 @@ const (
 	// Project file storage (GCS). Local staging paths never enter details.
 	ActionStorageUpload           = "storage.upload"
 	ActionStorageDelete           = "storage.delete"
-	ActionConfigSetProjectStorage = "config.set_project_storage"
-	ActionConfigSetGlobalStorage  = "config.set_global_storage"
+	ActionConfigSetProjectStorage       = "config.set_project_storage"
+	ActionConfigSetGlobalStorage        = "config.set_global_storage"
+	ActionConfigSetProjectPrimaryBranch = "config.set_project_primary_branch"
 )
 
 // ActorAnonymous is used when web auth is off or no session is present.

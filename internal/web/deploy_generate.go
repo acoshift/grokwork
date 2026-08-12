@@ -49,7 +49,11 @@ func (s *Server) postDeployGenerate(ctx *hime.Context) error {
 	// from the primary tip, the same revision the board displays.
 	existing := ""
 	manifestPath := s.cfg.ProjectDeployManifestPath(project)
-	ref := gitworktree.PrimaryStartRef(ctx.Context(), repoPath)
+	pref := ""
+	if s.cfg != nil {
+		pref = s.cfg.ProjectPrimaryBranch(project)
+	}
+	ref := gitworktree.PrimaryStartRef(ctx.Context(), repoPath, pref)
 	if raw, err := deploy.ReadRawManifestAt(ctx.Context(), deploy.Runner(s.ghRun()), repoPath, ref, manifestPath); err == nil {
 		existing = raw
 	}

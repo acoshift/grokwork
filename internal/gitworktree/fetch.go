@@ -83,18 +83,36 @@ func fetchKey(repo string) string {
 	return abs
 }
 
+// PrimaryBranchCandidateNames is the ordered short-name list used when
+// preferred is empty (after origin/HEAD). Exported so ghpr Actions primary
+// resolution can share the same order without import cycles.
+var PrimaryBranchCandidateNames = []string{
+	"main",
+	"master",
+	"prod",
+	"production",
+	"staging",
+	"develop",
+	"dev",
+}
+
 // PrimaryStartRef is the tip new managed worktrees are based on, and the
-// default ref for the commits browser. Prefers origin's default branch (or
-// common origin/* candidates) so views are not based on a stale local HEAD
-// after fetch. Falls back to HEAD.
-func PrimaryStartRef(ctx context.Context, repo string) string {
-	return resolveNewBranchStart(ctx, repo)
+// default ref for the commits browser. preferred is a short branch name (no
+// origin/, no '/'); empty keeps the heuristic. When preferred is non-empty,
+// always returns "origin/<preferred>" (may not exist) so string callers get a
+// deterministic ref for git to reject.
+func PrimaryStartRef(ctx context.Context, repo, preferred string) string {
+	return resolveNewBranchStart(ctx, repo, preferred)
 }
 
 // resolveNewBranchStart picks the tip for a newly created managed branch.
 // Prefers origin's default branch (or common origin/* candidates) so worktrees
 // are not based on a stale local HEAD after fetch. Falls back to HEAD.
-func resolveNewBranchStart(ctx context.Context, repo string) string {
+func resolveNewBranchStart(ctx context.Context, repo, preferred string) string {
+	preferred = strings.TrimSpace(preferred)
+	if preferred != "" {
+		return "origin/" + preferred
+	}
 	if out, err := gitOutput(ctx, repo, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"); err == nil {
 		ref := strings.TrimSpace(out)
 		ref = strings.TrimPrefix(ref, "refs/remotes/")
@@ -102,15 +120,8 @@ func resolveNewBranchStart(ctx context.Context, repo string) string {
 			return ref
 		}
 	}
-	for _, c := range []string{
-		"origin/main",
-		"origin/master",
-		"origin/prod",
-		"origin/production",
-		"origin/staging",
-		"origin/develop",
-		"origin/dev",
-	} {
+	for _, name := range PrimaryBranchCandidateNames {
+		c := "origin/" + name
 		if commitRefExists(ctx, repo, c) {
 			return c
 		}
@@ -130,9 +141,9 @@ func commitRefExists(ctx context.Context, repo, ref string) bool {
 // fetchBeforeCreate runs a short-throttle fetch and returns the start ref for
 // worktree add -b. Fetch errors are logged; start ref still resolves from what
 // is already on disk.
-func fetchBeforeCreate(ctx context.Context, repo string) string {
+func fetchBeforeCreate(ctx context.Context, repo, preferred string) string {
 	if _, err := MaybeFetch(ctx, repo, CreateFetchThrottle); err != nil {
 		log.Printf("gitworktree: fetch before create repo=%s: %v", repo, err)
 	}
-	return resolveNewBranchStart(ctx, repo)
+	return resolveNewBranchStart(ctx, repo, preferred)
 }

@@ -59,7 +59,7 @@ Wiring lives in `main.go`: `config.Load()` → `sessionstore.New` → `history.N
 
 ### Core invariant (see TODO.md "Design principles")
 
-**One Discord thread = one git worktree = one branch (`grokwork/<threadId>`, legacy `grok/discord/<threadId>` still managed) = one agent session.** All collaboration metadata (ownership, brief card, PR cards, queue) wraps that unit. The bot owns deterministic git/gh operations; Grok owns judgment. The bot never merges **GitHub PRs**. When a project has `directToPrimary` enabled, sessions stamp sticky `ShipMode=direct` and the bot may fast-forward a managed session branch onto the project primary and push (No-PR mode) — not `gh pr merge`.
+**One Discord thread = one git worktree = one branch (`grokwork/<threadId>`, legacy `grok/discord/<threadId>` still managed) = one agent session.** All collaboration metadata (ownership, brief card, PR cards, queue) wraps that unit. The bot owns deterministic git/gh operations; Grok owns judgment. The bot never merges **GitHub PRs**. When a project has `directToPrimary` enabled, sessions stamp sticky `ShipMode=direct` and the bot may fast-forward a managed session branch onto the project primary and push (No-PR mode) — not `gh pr merge`. Optional per-project `primaryBranch` overrides which git branch is “primary” (worktrees, ship, `/sync`, commits tip, deploy empty allowlist, Actions YAML tip); empty keeps the `origin/HEAD` + common-name heuristic — see `docs/design-project-primary-branch.md`.
 
 ### Message pipeline (`internal/bot`, the bulk of the code)
 

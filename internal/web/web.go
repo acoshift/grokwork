@@ -187,6 +187,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.generateProjectVerify":       "/config/projects/verify/generate",
 		"config.setProjectMode":              "/config/projects/mode",
 		"config.setProjectCaseKey":           "/config/projects/case-key",
+		"config.setProjectPrimaryBranch":     "/config/projects/primary-branch",
 		"config.setProjectSLA":               "/config/projects/sla",
 		"config.addProjectMember":            "/config/projects/members",
 		"config.setProjectCapabilityUser":    "/config/projects/capabilities/users",
@@ -568,6 +569,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/safe-team", s.requireAdmin(hime.Handler(s.setProjectSafeTeam)))
 	mux.Handle("POST /config/projects/mode", s.requireAdmin(hime.Handler(s.setProjectMode)))
 	mux.Handle("POST /config/projects/case-key", s.requireAdmin(hime.Handler(s.setProjectCaseKey)))
+	mux.Handle("POST /config/projects/primary-branch", s.requireAdmin(hime.Handler(s.setProjectPrimaryBranch)))
 	mux.Handle("POST /config/projects/sla", s.requireAdmin(hime.Handler(s.setProjectSLA)))
 	mux.Handle("POST /config/projects/members", s.requireAdmin(hime.Handler(s.addProjectMember)))
 	mux.Handle("POST /config/projects/verify", s.requireAdmin(hime.Handler(s.setProjectVerify)))
@@ -1585,6 +1587,21 @@ func (s *Server) setProjectCaseKey(ctx *hime.Context) error {
 		"name": name, "caseKey": key,
 	})
 	return s.projectConfigTabRedirect(ctx, name, "workflow", fmt.Sprintf("Updated case id prefix for project %q", name), err)
+}
+
+// setProjectPrimaryBranch saves the Workflow tab's primary branch override.
+func (s *Server) setProjectPrimaryBranch(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	branch := ctx.PostFormValue("primaryBranch")
+	err := s.cfg.SetProjectPrimaryBranch(name, branch)
+	s.auditAction(ctx, audit.ActionConfigSetProjectPrimaryBranch, err, map[string]any{
+		"name": name, "primaryBranch": branch,
+	})
+	msg := fmt.Sprintf("Updated primary branch for project %q", name)
+	if strings.TrimSpace(branch) == "" {
+		msg = fmt.Sprintf("Cleared primary branch override for project %q (using origin/HEAD heuristic)", name)
+	}
+	return s.projectConfigTabRedirect(ctx, name, "workflow", msg, err)
 }
 
 // setProjectSLA saves the Workflow tab's per-severity case deadlines. One form

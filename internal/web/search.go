@@ -678,7 +678,11 @@ func (s *Server) searchCommits(ctx *hime.Context, project, needle string, allowe
 	// Primary tip, not local HEAD — the same base the commits browser lists and
 	// a worktree is cut from, so a stale checkout does not silently narrow the
 	// window to someone else's branch.
-	ref := gitworktree.PrimaryStartRef(cctx, repoPath)
+	pref := ""
+	if s.cfg != nil {
+		pref = s.cfg.ProjectPrimaryBranch(project)
+	}
+	ref := gitworktree.PrimaryStartRef(cctx, repoPath, pref)
 	list, logErr := ghpr.ListCommitsWith(cctx, s.ghRun(), repoPath, ghpr.CommitListOpts{
 		Ref:   ref,
 		Limit: searchCommitScan,

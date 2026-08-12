@@ -425,7 +425,11 @@ func (b *Bot) collectBriefInput(threadID string, e sessionstore.Entry, cwd strin
 	}
 	if cwd != "" && gitworktree.IsRepo(cwd) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		diff, err := CollectDiffSummary(ctx, cwd, b.riskyPathGlobs())
+		pref := ""
+		if b.cfg != nil && e.Project != "" {
+			pref = b.cfg.ProjectPrimaryBranch(e.Project)
+		}
+		diff, err := CollectDiffSummary(ctx, cwd, b.riskyPathGlobs(), pref)
 		cancel()
 		if err == nil {
 			if in.Branch == "" {

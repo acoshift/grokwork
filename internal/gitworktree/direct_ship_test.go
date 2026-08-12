@@ -14,7 +14,7 @@ func TestResolvePrimaryBranch(t *testing.T) {
 	repo := initTestRepo(t)
 	// Set default branch to main if git used master.
 	_ = exec.Command("git", "-C", repo, "branch", "-M", "main").Run()
-	name, remote, err := ResolvePrimaryBranch(ctx, repo)
+	name, remote, err := ResolvePrimaryBranch(ctx, repo, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,6 +24,31 @@ func TestResolvePrimaryBranch(t *testing.T) {
 	// Without origin, remote may still be origin/<name>
 	if !strings.Contains(remote, name) {
 		t.Fatalf("remote=%q name=%q", remote, name)
+	}
+}
+
+func TestDirectShipFFRefusesCreateWhenPrimaryArgMissingOnOrigin(t *testing.T) {
+	ctx := t.Context()
+	_, main, worktree, branch := setupDirectShipFixture(t)
+	if err := os.WriteFile(filepath.Join(worktree, "f.txt"), []byte("y\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, worktree, "add", "f.txt")
+	runGitTest(t, worktree, "commit", "-m", "f")
+
+	// Concrete primary that does not exist on origin — must refuse (no create-on-push).
+	_, err := DirectShipFF(ctx, main, worktree, branch, "no-such-primary")
+	if err == nil {
+		t.Fatal("expected refuse when origin/no-such-primary missing")
+	}
+	if !strings.Contains(err.Error(), "no-such-primary") {
+		t.Fatalf("error: %v", err)
+	}
+	// Branch must not have been created on remote.
+	if out, err := gitOutput(ctx, main, "ls-remote", "--heads", "origin", "no-such-primary"); err == nil {
+		if strings.TrimSpace(out) != "" {
+			t.Fatalf("remote branch was created: %q", out)
+		}
 	}
 }
 

@@ -257,6 +257,7 @@ func TestPagesRender(t *testing.T) {
 		{"/config/projects/proj/workflow", `id="page-project-config-workflow"`},
 		{"/config/projects/proj/workflow", "Shipping"},
 		{"/config/projects/proj/workflow", "name=\"directToPrimary\""},
+		{"/config/projects/proj/workflow", "name=\"primaryBranch\""},
 		{"/config/projects/proj/workflow", "name=\"defaultMode\""},
 		{"/config/projects/proj/workflow", "Verify commands"},
 		{"/config/projects/proj/workflow", "name=\"verifyCommands\""},
@@ -2247,6 +2248,8 @@ func TestProjectConfigPage(t *testing.T) {
 		{"/config/projects/proj/workflow", []string{
 			`id="page-project-config-workflow"`,
 			`name="directToPrimary"`,
+			`name="primaryBranch"`,
+			`id="project-primary-branch"`,
 			`id="project-verify"`,
 			"go test ./...",
 			"make lint",

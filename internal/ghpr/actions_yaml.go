@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/acoshift/grokwork/internal/gitworktree"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -97,21 +99,23 @@ func WorkflowFileAtPrimaryWith(ctx context.Context, run Runner, repoDir, workflo
 	}
 	workflowPath = clean
 
-	ref, err := resolveOriginPrimaryRef(ctx, run, repoDir)
+	ref, err := resolveOriginPrimaryRef(ctx, run, repoDir, "")
 	if err != nil {
 		return nil, err
 	}
 	return WorkflowFileAtRefWith(ctx, run, repoDir, ref, workflowPath)
 }
 
-// ResolveOriginPrimaryRef resolves the origin primary commit (origin/HEAD,
-// falling back to origin/main then origin/master). Callers reading several
-// workflow files should resolve once and use WorkflowFileAtRefWith per file.
-func ResolveOriginPrimaryRef(ctx context.Context, run Runner, repoDir string) (string, error) {
+// ResolveOriginPrimaryRef resolves the origin primary commit. preferred is a
+// short branch name (empty = heuristic). Empty preferred tries origin/HEAD then
+// the same common names as gitworktree.PrimaryBranchCandidateNames.
+// Callers reading several workflow files should resolve once and use
+// WorkflowFileAtRefWith per file.
+func ResolveOriginPrimaryRef(ctx context.Context, run Runner, repoDir, preferred string) (string, error) {
 	if run == nil {
 		run = defaultRunner
 	}
-	return resolveOriginPrimaryRef(ctx, run, repoDir)
+	return resolveOriginPrimaryRef(ctx, run, repoDir, preferred)
 }
 
 // WorkflowFileAtRefWith reads a workflow file from the committed tree at ref.
@@ -136,12 +140,25 @@ func WorkflowFileAtRefWith(ctx context.Context, run Runner, repoDir, ref, workfl
 	return raw, nil
 }
 
-func resolveOriginPrimaryRef(ctx context.Context, run Runner, repoDir string) (string, error) {
-	for _, cand := range []string{
-		"refs/remotes/origin/HEAD",
-		"origin/main",
-		"origin/master",
-	} {
+func resolveOriginPrimaryRef(ctx context.Context, run Runner, repoDir, preferred string) (string, error) {
+	preferred = strings.TrimSpace(preferred)
+	if preferred != "" {
+		cand := "origin/" + preferred
+		out, err := run(ctx, repoDir, "git", "rev-parse", "--verify", cand)
+		if err != nil {
+			return "", fmt.Errorf("configured primary branch %q not found as %s", preferred, cand)
+		}
+		ref := strings.TrimSpace(string(out))
+		if ref == "" {
+			return "", fmt.Errorf("configured primary branch %q not found as %s", preferred, cand)
+		}
+		return ref, nil
+	}
+	cands := []string{"refs/remotes/origin/HEAD"}
+	for _, name := range gitworktree.PrimaryBranchCandidateNames {
+		cands = append(cands, "origin/"+name)
+	}
+	for _, cand := range cands {
 		out, err := run(ctx, repoDir, "git", "rev-parse", "--verify", cand)
 		if err != nil {
 			continue
@@ -151,7 +168,7 @@ func resolveOriginPrimaryRef(ctx context.Context, run Runner, repoDir string) (s
 			return ref, nil
 		}
 	}
-	return "", fmt.Errorf("no origin primary ref (tried origin/HEAD, origin/main, origin/master)")
+	return "", fmt.Errorf("no origin primary ref (tried origin/HEAD and common origin/* names)")
 }
 
 func shortRef(ref string) string {

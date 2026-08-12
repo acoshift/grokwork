@@ -81,7 +81,11 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	}
 	// Empty ref → primary tip (same as new worktree base), not stale local HEAD.
 	if ref == "" {
-		ref = gitworktree.PrimaryStartRef(ctx.Context(), repoPath)
+		pref := ""
+		if s.cfg != nil {
+			pref = s.cfg.ProjectPrimaryBranch(project)
+		}
+		ref = gitworktree.PrimaryStartRef(ctx.Context(), repoPath, pref)
 	}
 	d.CommitRef = ref
 	// Fetch one extra row so we know whether a next page exists.

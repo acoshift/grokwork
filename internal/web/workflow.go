@@ -816,6 +816,9 @@ func (s *Server) sessionDiffBase(ctx context.Context, ent sessionstore.Entry, cw
 		return b
 	}
 	preferred := s.sessionPRBaseName(ctx, ent, cwd)
+	if preferred == "" && s.cfg != nil && ent.Project != "" {
+		preferred = s.cfg.ProjectPrimaryBranch(ent.Project)
+	}
 	if cwd != "" {
 		return ghpr.ResolveDiffBaseRef(ctx, s.ghRun(), cwd, preferred)
 	}

@@ -1124,6 +1124,9 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 	}
 
 	opts := b.ensureOptsForUnit(threadID)
+	if b.cfg != nil {
+		opts.PreferredPrimary = b.cfg.ProjectPrimaryBranch(proj.Name)
+	}
 	// Direct-to-primary sessions never track PRs for cleanup; skip gh pr list.
 	// Terminal PRs free the worktree but keep the session (PR links + closed state).
 	skipPRCleanup := false
@@ -1176,13 +1179,15 @@ func (b *Bot) ensureOptsForUnit(unitID string) gitworktree.EnsureOpts {
 
 // remoteWorkPromptPrefix is the PR-mode contract (default).
 func remoteWorkPromptPrefix(branch string) string {
-	return remoteWorkPromptPrefixMode(branch, false)
+	return remoteWorkPromptPrefixMode(branch, false, "")
 }
 
 // remoteWorkPromptPrefixMode builds the remote-work contract.
 // direct=true enables No-PR / direct-to-primary wording when a managed branch is present.
 // Without a branch, direct mode falls back to PR-mode wording (ship is skipped).
-func remoteWorkPromptPrefixMode(branch string, direct bool) string {
+// primary is the configured project primary (empty = heuristic / main-master wording).
+func remoteWorkPromptPrefixMode(branch string, direct bool, primary string) string {
+	primary = strings.TrimSpace(primary)
 	lines := []string{
 		"You are working on a shared workflow unit (Discord thread and/or web session) on a remote machine — not a local interactive session.",
 	}
@@ -1194,26 +1199,39 @@ func remoteWorkPromptPrefixMode(branch string, direct bool) string {
 			"Stay in this worktree; do not switch to the main checkout.",
 		)
 		if useDirect {
+			noPush := "Do NOT push to main/master and do NOT run `git push origin HEAD:main` (or similar)."
+			neverCommit := "2. Commit on this branch only (never commit to main/master yourself)."
+			afterShip := "After a successful run the bot will fast-forward integrate this branch onto the project primary and push."
+			if primary != "" {
+				noPush = "Do NOT push to " + primary + " and do NOT run `git push origin HEAD:" + primary + "` (or similar)."
+				neverCommit = "2. Commit on this branch only (never commit to " + primary + " yourself)."
+				afterShip = "After a successful run the bot will fast-forward integrate this branch onto " + primary + " and push."
+				lines = append(lines, "Project primary branch: "+primary)
+			}
 			lines = append(lines,
 				"Ship mode: direct-to-primary (no pull request for this project's repository).",
 				"When you make code changes you MUST:",
 				"1. "+scrutinizeBeforeShipStep,
-				"2. Commit on this branch only (never commit to main/master yourself).",
+				neverCommit,
 				"3. Leave the working tree clean for tracked files (commit or discard staged/unstaged changes).",
 				"4. Do NOT open a pull request for this project's repository (`gh pr create` for this repo is forbidden).",
-				"5. Do NOT push to main/master and do NOT run `git push origin HEAD:main` (or similar).",
+				"5. "+noPush,
 				"6. Do NOT merge anything.",
-				"After a successful run the bot will fast-forward integrate this branch onto the project primary and push.",
+				afterShip,
 				"Summarize your commits in the final reply (no PR URL required for this ship).",
 				"If the task legitimately touches another repository, you may open a PR there; still do not open a PR for this project repo.",
 			)
 		} else {
+			prCreate := "4. Open a pull request with `gh pr create` (or push to update an existing PR for this branch)."
+			if primary != "" {
+				prCreate = "4. Open a pull request with `gh pr create --base " + primary + "` (or push to update an existing PR for this branch)."
+			}
 			lines = append(lines,
 				"When you make code changes you MUST:",
 				"1. "+scrutinizeBeforeShipStep,
 				"2. Commit on this branch only (never commit to main/master).",
 				"3. Push the branch to the remote (`git push -u origin HEAD`).",
-				"4. Open a pull request with `gh pr create` (or push to update an existing PR for this branch).",
+				prCreate,
 			)
 		}
 		lines = append(lines,
@@ -1956,7 +1974,11 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 				prefix = EscalationPackage(e)
 			}
 		}
-		prefix += remoteWorkPromptPrefixMode(wtBranch, promptDirect)
+		primary := ""
+		if b.cfg != nil {
+			primary = b.cfg.ProjectPrimaryBranch(proj.Name)
+		}
+		prefix += remoteWorkPromptPrefixMode(wtBranch, promptDirect, primary)
 		if pol.AllowPR || pol.AllowDirectShip {
 			attr := AttributionInput{
 				PrompterName: actor.String(),

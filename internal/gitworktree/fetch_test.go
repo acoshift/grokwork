@@ -13,25 +13,66 @@ import (
 func TestResolveNewBranchStartPrefersOrigin(t *testing.T) {
 	repo := initTestRepo(t)
 	ctx := context.Background()
-	if got := resolveNewBranchStart(ctx, repo); got != "HEAD" {
+	if got := resolveNewBranchStart(ctx, repo, ""); got != "HEAD" {
 		t.Fatalf("no origin: got %q want HEAD", got)
 	}
-	if got := PrimaryStartRef(ctx, repo); got != "HEAD" {
+	if got := PrimaryStartRef(ctx, repo, ""); got != "HEAD" {
 		t.Fatalf("PrimaryStartRef no origin: got %q want HEAD", got)
 	}
 
 	// Simulate origin/main without a real remote.
 	runGitTest(t, repo, "update-ref", "refs/remotes/origin/main", "HEAD")
-	if got := resolveNewBranchStart(ctx, repo); got != "origin/main" {
+	if got := resolveNewBranchStart(ctx, repo, ""); got != "origin/main" {
 		t.Fatalf("got %q want origin/main", got)
 	}
-	if got := PrimaryStartRef(ctx, repo); got != "origin/main" {
+	if got := PrimaryStartRef(ctx, repo, ""); got != "origin/main" {
 		t.Fatalf("PrimaryStartRef: got %q want origin/main", got)
 	}
 
 	runGitTest(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-	if got := resolveNewBranchStart(ctx, repo); got != "origin/main" {
+	if got := resolveNewBranchStart(ctx, repo, ""); got != "origin/main" {
 		t.Fatalf("symbolic-ref: got %q", got)
+	}
+}
+
+func TestPrimaryStartRefPreferred(t *testing.T) {
+	repo := initTestRepo(t)
+	ctx := t.Context()
+	runGitTest(t, repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+	runGitTest(t, repo, "update-ref", "refs/remotes/origin/prod", "HEAD")
+	// Preferred wins over origin/HEAD → main.
+	runGitTest(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+	if got := PrimaryStartRef(ctx, repo, "prod"); got != "origin/prod" {
+		t.Fatalf("got %q want origin/prod", got)
+	}
+	// Missing preferred still returns the string tip.
+	if got := PrimaryStartRef(ctx, repo, "missing"); got != "origin/missing" {
+		t.Fatalf("missing tip: got %q", got)
+	}
+	name, remote, err := ResolvePrimaryBranch(ctx, repo, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "prod" || remote != "origin/prod" {
+		t.Fatalf("resolve: name=%q remote=%q", name, remote)
+	}
+	if _, _, err := ResolvePrimaryBranch(ctx, repo, "missing"); err == nil {
+		t.Fatal("expected error for missing preferred")
+	}
+}
+
+func TestEnsurePreferredNoHEADFallback(t *testing.T) {
+	repo := initTestRepo(t)
+	ctx := t.Context()
+	// Only origin/main exists — preferred prod must fail without HEAD fallback.
+	runGitTest(t, repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+	data := t.TempDir()
+	_, err := EnsureWith(ctx, repo, data, "app", "tid-pref", EnsureOpts{PreferredPrimary: "prod"})
+	if err == nil {
+		t.Fatal("expected ensure error when preferred missing")
+	}
+	if !strings.Contains(err.Error(), "prod") {
+		t.Fatalf("error should name prod: %v", err)
 	}
 }
 

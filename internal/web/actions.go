@@ -158,7 +158,11 @@ func (s *Server) actionsWorkflowsPartial(ctx *hime.Context) error {
 	}
 	remoteBranches, _ := ghpr.ListRemoteBranchesWith(ctx.Context(), s.ghRun(), repoPath)
 	// One ref resolution for the whole register; per-file reads are one exec each.
-	primaryRef, refErr := ghpr.ResolveOriginPrimaryRef(ctx.Context(), s.ghRun(), repoPath)
+	pref := ""
+	if s.cfg != nil {
+		pref = s.cfg.ProjectPrimaryBranch(project)
+	}
+	primaryRef, refErr := ghpr.ResolveOriginPrimaryRef(ctx.Context(), s.ghRun(), repoPath, pref)
 
 	rows := make([]actionsWorkflowRow, 0, len(workflows))
 	for _, wf := range workflows {

@@ -79,7 +79,7 @@ func TestAttributionInShipPrefix(t *testing.T) {
 }
 
 func TestRemoteWorkPromptPrefixDirect(t *testing.T) {
-	p := remoteWorkPromptPrefixMode("grok/discord/123", true)
+	p := remoteWorkPromptPrefixMode("grok/discord/123", true, "")
 	for _, want := range []string{
 		"direct-to-primary",
 		"Branch: grok/discord/123",
@@ -102,12 +102,44 @@ func TestRemoteWorkPromptPrefixDirect(t *testing.T) {
 		t.Fatalf("direct mode must not instruct opening a PR:\n%s", p)
 	}
 	// No branch → falls back to PR-style wording even if direct flag set.
-	p2 := remoteWorkPromptPrefixMode("", true)
+	p2 := remoteWorkPromptPrefixMode("", true, "")
 	if !strings.Contains(p2, "gh pr create") {
 		t.Fatalf("no-branch direct should fall back to PR wording:\n%s", p2)
 	}
 	if !strings.Contains(p2, "SCRUTINIZE_VERDICT:") {
 		t.Fatalf("no-branch direct must still require scrutinize:\n%s", p2)
+	}
+}
+
+func TestRemoteWorkPromptConfiguredPrimary(t *testing.T) {
+	// PR mode: --base <primary>
+	pr := remoteWorkPromptPrefixMode("grokwork/1", false, "prod")
+	if !strings.Contains(pr, "gh pr create --base prod") {
+		t.Fatalf("PR mode should pass --base prod:\n%s", pr)
+	}
+	if strings.Contains(pr, "HEAD:prod") {
+		t.Fatalf("PR mode should not mention HEAD:prod:\n%s", pr)
+	}
+	// Direct mode: forbid push/commit to configured primary by name
+	d := remoteWorkPromptPrefixMode("grokwork/1", true, "prod")
+	for _, want := range []string{
+		"Project primary branch: prod",
+		"never commit to prod yourself",
+		"Do NOT push to prod",
+		"HEAD:prod",
+		"onto prod",
+	} {
+		if !strings.Contains(d, want) {
+			t.Fatalf("direct missing %q in:\n%s", want, d)
+		}
+	}
+	if strings.Contains(d, "Do NOT push to main/master") {
+		t.Fatalf("configured primary should replace main/master forbid:\n%s", d)
+	}
+	// Empty primary keeps default PR wording without --base
+	empty := remoteWorkPromptPrefixMode("grokwork/1", false, "")
+	if strings.Contains(empty, "--base ") {
+		t.Fatalf("empty primary must not inject --base:\n%s", empty)
 	}
 }
 

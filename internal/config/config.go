@@ -234,6 +234,10 @@ type ProjectItem struct {
 	DefaultMode             string // empty = legacy fix
 	// CaseKey is the configured case-id prefix override, empty when derived.
 	CaseKey string
+	// PrimaryBranch is the raw projects.*.primaryBranch (may be invalid for repair).
+	PrimaryBranch string
+	// PrimaryBranchInvalid is true when raw PrimaryBranch fails validation.
+	PrimaryBranchInvalid bool
 	// SLA is one settings-form row per severity (SLASeverities order); empty
 	// minutes mean that clock has no target. SLAConfigured is true when at
 	// least one row has one.
@@ -709,6 +713,13 @@ func Load() (*Config, error) {
 		}
 		if _, err := os.Stat(cwd); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] project %q path does not exist: %s\n", name, cwd)
+		}
+		if raw := strings.TrimSpace(pc.PrimaryBranch); raw != "" {
+			if err := ValidatePrimaryBranchName(raw); err != nil {
+				fmt.Fprintf(os.Stderr,
+					"[warn] project %q: primaryBranch %q is invalid (%v) and will be ignored until fixed in Workflow settings\n",
+					name, raw, err)
+			}
 		}
 		// ClickUp customIdPrefix colliding with Linear teamKey: bare PREFIX-N stays
 		// Linear-only; free-text ClickUp prefix parse is off. Warn so the silence
@@ -1333,6 +1344,11 @@ func (c *Config) Snapshot() Snapshot {
 			SafeTeamDefaultTemplate:  defaultTpl,
 			DefaultMode:              strings.TrimSpace(strings.ToLower(pc.DefaultMode)),
 			CaseKey:                  strings.TrimSpace(pc.CaseKey),
+			PrimaryBranch:            strings.TrimSpace(pc.PrimaryBranch),
+			PrimaryBranchInvalid: func() bool {
+				raw := strings.TrimSpace(pc.PrimaryBranch)
+				return raw != "" && ValidatePrimaryBranchName(raw) != nil
+			}(),
 			SLA:                      slaItems(pc.SLA),
 			SLAConfigured:            slaConfigured(pc.SLA),
 			CapabilityByUser:         capabilityMapItems(pc.CapabilityByUser),

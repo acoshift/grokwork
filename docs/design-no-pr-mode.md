@@ -100,7 +100,7 @@ Integrate algorithm (from **main checkout** `ProjectConfig.Path`):
 1. `IsManagedBranch(sessionBranch)` — refuse otherwise.
 2. `rev-parse` session HEAD in worktree; require clean **tracked** status (see K7).
 3. `git -C mainRepo fetch origin` (best-effort freshness).
-4. Resolve primary name (same heuristic as worktree create / base detection).
+4. Resolve primary name (project `primaryBranch` when set; else same heuristic as worktree create / base detection — see `docs/design-project-primary-branch.md`).
 5. Optional: ancestor pre-check for friendly error / noop.
 6. `git -C mainRepo push origin <sessionHEAD>:refs/heads/<primary>` (never `--force`).
 7. On push success: return SHAs; caller handles session stamp + optional worktree remove.

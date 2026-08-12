@@ -45,7 +45,8 @@ var ManagedPrefixes = []string{
 // EnsureOpts selects which managed branch prefix Ensure/Cleanup use.
 // Empty BranchPrefix means PrefixForUnitID (BranchPrefix for Discord units).
 type EnsureOpts struct {
-	BranchPrefix string
+	BranchPrefix     string
+	PreferredPrimary string // short name; empty = origin/HEAD heuristic
 }
 
 // BranchName returns the default managed branch for a Discord unit id (thread snowflake).
@@ -401,11 +402,17 @@ func EnsureWith(ctx context.Context, repo, worktreesRoot, project, unitID string
 		_ = removeRegisteredWorktreesForBranch(ctx, repo, branch)
 		err = runGit(ctx, repo, "worktree", "add", path, branch)
 	} else {
-		start := fetchBeforeCreate(ctx, repo)
+		preferred := strings.TrimSpace(opts.PreferredPrimary)
+		start := fetchBeforeCreate(ctx, repo, preferred)
+		if preferred != "" && !commitRefExists(ctx, repo, start) {
+			return Tree{}, fmt.Errorf(
+				"configured primary branch %q not found as %s (fetch origin or fix projects.*.primaryBranch)",
+				preferred, start)
+		}
 		err = runGit(ctx, repo, "worktree", "add", "-b", branch, path, start)
 		if err != nil {
-			// Fallback to HEAD if origin ref vanished mid-flight.
-			if start != "HEAD" {
+			// Fallback to HEAD if origin ref vanished mid-flight — only for heuristic start.
+			if preferred == "" && start != "HEAD" {
 				log.Printf("gitworktree: start %s failed (%v); retrying with HEAD", start, err)
 				err = runGit(ctx, repo, "worktree", "add", "-b", branch, path, "HEAD")
 			}

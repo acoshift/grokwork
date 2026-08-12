@@ -139,7 +139,35 @@ func (b *Bot) shipDirectAfterTask(s *discordgo.Session, present bool, threadID s
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	res, err := gitworktree.DirectShipFF(ctx, mainRepo, worktree, wtBranch, "")
+	pref := ""
+	if b.cfg != nil {
+		pref = b.cfg.ProjectPrimaryBranch(proj.Name)
+	}
+	primaryArg := ""
+	if pref != "" {
+		// Fetch so mid-flight config or a newly pushed primary is visible.
+		if err := gitworktree.FetchOrigin(ctx, mainRepo); err != nil {
+			log.Printf("ship: fetch before primary resolve thread=%s: %v", threadID, err)
+		}
+		name, _, err := gitworktree.ResolvePrimaryBranch(ctx, mainRepo, pref)
+		if err != nil {
+			log.Printf("ship: resolve primary thread=%s: %v", threadID, err)
+			if present && s != nil {
+				msg := fmt.Sprintf(
+					"Could not ship: configured primary **%s** not found as `origin/%s` after fetch.\n"+
+						"Fetch the main checkout or fix Workflow → Primary branch.\n"+
+						"(%s)",
+					pref, pref, err.Error(),
+				)
+				if _, sendErr := s.ChannelMessageSend(threadID, msg); sendErr != nil {
+					log.Printf("ship: notify resolve fail: %v", sendErr)
+				}
+			}
+			return false
+		}
+		primaryArg = name
+	}
+	res, err := gitworktree.DirectShipFF(ctx, mainRepo, worktree, wtBranch, primaryArg)
 	if err != nil {
 		log.Printf("ship: failed thread=%s: %v", threadID, err)
 		if present && s != nil {

@@ -198,7 +198,11 @@ func (e *Engine) Trigger(ctx context.Context, req TriggerRequest) (Run, error) {
 			gitworktree.NoteFetched(req.RepoPath)
 		}
 		if refUsed == "" {
-			refUsed = gitworktree.PrimaryStartRef(ctx, req.RepoPath)
+			pref := ""
+			if e.cfg != nil {
+				pref = e.cfg.ProjectPrimaryBranch(req.Project)
+			}
+			refUsed = gitworktree.PrimaryStartRef(ctx, req.RepoPath, pref)
 		}
 		if err := e.checkRef(ctx, req, refUsed); err != nil {
 			return Run{}, err
@@ -409,7 +413,11 @@ func (e *Engine) checkRef(ctx context.Context, req TriggerRequest, ref string) e
 	allowed := envCfg.AllowedRefs
 	if len(allowed) == 0 {
 		// Default: the project primary branch only.
-		primary, _, err := gitworktree.ResolvePrimaryBranch(ctx, req.RepoPath)
+		pref := ""
+		if e.cfg != nil {
+			pref = e.cfg.ProjectPrimaryBranch(req.Project)
+		}
+		primary, _, err := gitworktree.ResolvePrimaryBranch(ctx, req.RepoPath, pref)
 		if err != nil || primary == "" {
 			return fmt.Errorf("deploy: cannot determine the primary branch for %s", req.Project)
 		}

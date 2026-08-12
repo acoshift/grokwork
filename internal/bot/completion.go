@@ -51,9 +51,10 @@ type DiffSummary struct {
 }
 
 // CollectDiffSummary runs git in cwd against a detected base branch.
-// riskyGlobs nil or omitted by caller should pass DefaultRiskyPathGlobs;
-// an explicit empty slice disables risk highlighting.
-func CollectDiffSummary(ctx context.Context, cwd string, riskyGlobs []string) (DiffSummary, error) {
+// preferredPrimary is an optional short branch name (project primary); empty
+// keeps closest-base only. riskyGlobs nil or omitted by caller should pass
+// DefaultRiskyPathGlobs; an explicit empty slice disables risk highlighting.
+func CollectDiffSummary(ctx context.Context, cwd string, riskyGlobs []string, preferredPrimary string) (DiffSummary, error) {
 	if cwd == "" || !gitworktree.IsRepo(cwd) {
 		return DiffSummary{}, fmt.Errorf("not a git repo")
 	}
@@ -70,7 +71,7 @@ func CollectDiffSummary(ctx context.Context, cwd string, riskyGlobs []string) (D
 		out.HeadShort = head
 	}
 
-	base, err := detectBaseRef(ctx, cwd)
+	base, err := detectBaseRef(ctx, cwd, preferredPrimary)
 	if err != nil {
 		// Still report dirty working tree if any.
 		base = ""
@@ -119,9 +120,9 @@ func CollectDiffSummary(ctx context.Context, cwd string, riskyGlobs []string) (D
 	return out, nil
 }
 
-func detectBaseRef(ctx context.Context, cwd string) (string, error) {
-	// Same closest-base heuristic as the worktree diff page (backports → prod
-	// must not score against origin/main).
+func detectBaseRef(ctx context.Context, cwd, preferredPrimary string) (string, error) {
+	// Soft-prefer project primary when set; fall through to closest-base
+	// (backports → prod must not hard-fail).
 	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		if name != "git" {
 			return nil, fmt.Errorf("unexpected %s", name)
@@ -131,6 +132,9 @@ func detectBaseRef(ctx context.Context, cwd string) (string, error) {
 			return nil, err
 		}
 		return []byte(out + "\n"), nil
+	}
+	if base := ghpr.ResolveDiffBaseRef(ctx, run, cwd, preferredPrimary); base != "" && base != "HEAD" {
+		return base, nil
 	}
 	if base := ghpr.DetectClosestBaseRef(ctx, run, cwd); base != "" {
 		return base, nil
@@ -630,7 +634,11 @@ func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	diff, err := CollectDiffSummary(ctx, cwd, b.riskyPathGlobs())
+	pref := ""
+	if b.cfg != nil && project != "" {
+		pref = b.cfg.ProjectPrimaryBranch(project)
+	}
+	diff, err := CollectDiffSummary(ctx, cwd, b.riskyPathGlobs(), pref)
 	if err != nil {
 		log.Printf("completion: diff thread=%s: %v", threadID, err)
 		return

@@ -178,7 +178,7 @@ func TestCollectDiffSummary(t *testing.T) {
 	ctx := context.Background()
 
 	// On main with no extra commits: empty-ish.
-	sum, err := CollectDiffSummary(ctx, repo, DefaultRiskyPathGlobs)
+	sum, err := CollectDiffSummary(ctx, repo, DefaultRiskyPathGlobs, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestCollectDiffSummary(t *testing.T) {
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "-m", "add migration")
 
-	sum, err = CollectDiffSummary(ctx, repo, DefaultRiskyPathGlobs)
+	sum, err = CollectDiffSummary(ctx, repo, DefaultRiskyPathGlobs, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -72,7 +72,11 @@ func (b *Bot) handleSync(s *discordgo.Session, m *discordgo.MessageCreate, parse
 		if mainRepo == "" {
 			mainRepo = cwd
 		}
-		name, _, err := gitworktree.ResolvePrimaryBranch(ctx, mainRepo)
+		pref := ""
+		if b.cfg != nil {
+			pref = b.cfg.ProjectPrimaryBranch(e.Project)
+		}
+		name, _, err := gitworktree.ResolvePrimaryBranch(ctx, mainRepo, pref)
 		if err != nil {
 			replyText(s, m, "Could not resolve primary branch: "+err.Error())
 			return

@@ -113,7 +113,11 @@ func (s *Server) deploysPage(ctx *hime.Context) error {
 			log.Printf("warn: deploys page fetch %s: %v", project, err)
 		}
 	}
-	ref := gitworktree.PrimaryStartRef(ctx.Context(), repoPath)
+	pref := ""
+	if s.cfg != nil {
+		pref = s.cfg.ProjectPrimaryBranch(project)
+	}
+	ref := gitworktree.PrimaryStartRef(ctx.Context(), repoPath, pref)
 	d.DeployRef = ref
 	if sha, err := gitworktree.ResolveRefSHA(ctx.Context(), repoPath, ref); err == nil {
 		d.DeploySHA = sha

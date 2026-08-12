@@ -55,6 +55,11 @@ type ProjectConfig struct {
 	// CaseKey overrides the prefix new case keys take. Empty derives it from
 	// the project name (see ProjectCaseKeyPrefix).
 	CaseKey string `json:"caseKey,omitempty"`
+	// PrimaryBranch is the short git branch grokwork treats as this project's
+	// primary (worktree base, direct ship, /sync, commits default, deploy empty
+	// allowlist, Actions tip). Empty = origin/HEAD heuristic. Single path
+	// component only; never include "origin/" or refs/ prefixes.
+	PrimaryBranch string `json:"primaryBranch,omitempty"`
 	// SLA are this project's per-severity case deadlines, keyed by severity
 	// (see sla.go). Absent or empty means this project has no SLAs, which is
 	// deliberately different from having ones nobody can meet.
@@ -204,6 +209,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		SafeTeamDefaultTemplate  string                  `json:"safeTeamDefaultTemplate,omitempty"`
 		DefaultMode              string                  `json:"defaultMode,omitempty"`
 		CaseKey                  string                  `json:"caseKey,omitempty"`
+		PrimaryBranch            string                  `json:"primaryBranch,omitempty"`
 		SLA                      map[string]SLATarget    `json:"sla,omitempty"`
 		CapabilityTemplates      map[string]Capabilities `json:"capabilityTemplates,omitempty"`
 		CapabilityByUser         map[string]string       `json:"capabilityByUser,omitempty"`
@@ -230,6 +236,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			SafeTeamDefaultTemplate:  pc.SafeTeamDefaultTemplate,
 			DefaultMode:              pc.DefaultMode,
 			CaseKey:                  pc.CaseKey,
+			PrimaryBranch:            pc.PrimaryBranch,
 			SLA:                      cloneSLA(pc.SLA),
 			CapabilityTemplates:      cloneCapabilitiesMap(pc.CapabilityTemplates),
 			CapabilityByUser:         cloneStringMap(pc.CapabilityByUser),
@@ -287,6 +294,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			SafeTeamDefaultTemplate:  v.SafeTeamDefaultTemplate,
 			DefaultMode:              v.DefaultMode,
 			CaseKey:                  v.CaseKey,
+			PrimaryBranch:            v.PrimaryBranch,
 			SLA:                      cloneSLA(v.SLA),
 			CapabilityTemplates:      cloneCapabilitiesMap(v.CapabilityTemplates),
 			CapabilityByUser:         cloneStringMap(v.CapabilityByUser),
@@ -578,6 +586,98 @@ func (c *Config) SetProjectCaseKey(name, prefix string) error {
 		return fmt.Errorf("unknown project %q", name)
 	}
 	pc.CaseKey = strings.ToUpper(prefix)
+	c.Projects[name] = pc
+	return c.saveLocked()
+}
+
+// MaxPrimaryBranchLen is the max rune length for projects.*.primaryBranch.
+const MaxPrimaryBranchLen = 128
+
+// ValidatePrimaryBranchName is a documented best-effort subset of
+// `git check-ref-format --branch` for a single path component (no '/').
+func ValidatePrimaryBranchName(branch string) error {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return fmt.Errorf("primary branch is empty")
+	}
+	if len([]rune(branch)) > MaxPrimaryBranchLen {
+		return fmt.Errorf("primary branch is longer than %d characters", MaxPrimaryBranchLen)
+	}
+	if branch == "HEAD" {
+		return fmt.Errorf("primary branch cannot be HEAD")
+	}
+	if strings.Contains(branch, "/") {
+		return fmt.Errorf("primary branch must be a single path component (no '/')")
+	}
+	if strings.HasPrefix(branch, "-") {
+		return fmt.Errorf("primary branch cannot start with '-'")
+	}
+	if strings.HasPrefix(branch, ".") {
+		return fmt.Errorf("primary branch cannot start with '.'")
+	}
+	if strings.HasSuffix(branch, ".") {
+		return fmt.Errorf("primary branch cannot end with '.'")
+	}
+	if strings.HasSuffix(branch, ".lock") {
+		return fmt.Errorf("primary branch cannot end with '.lock'")
+	}
+	if branch == "@" {
+		return fmt.Errorf("primary branch cannot be '@'")
+	}
+	if strings.Contains(branch, "..") || strings.Contains(branch, "@{") {
+		return fmt.Errorf("primary branch contains disallowed sequence")
+	}
+	for _, r := range branch {
+		if r <= 0x1f || r == 0x7f || r == ' ' || r == '~' || r == '^' || r == ':' ||
+			r == '?' || r == '*' || r == '[' || r == '\\' {
+			return fmt.Errorf("primary branch contains disallowed character")
+		}
+	}
+	return nil
+}
+
+// ProjectPrimaryBranch returns the effective primary branch override for a
+// project, or "" when unset or invalid (invalid values stay on disk for repair).
+func (c *Config) ProjectPrimaryBranch(name string) string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return ""
+	}
+	raw := strings.TrimSpace(pc.PrimaryBranch)
+	if raw == "" {
+		return ""
+	}
+	if err := ValidatePrimaryBranchName(raw); err != nil {
+		return ""
+	}
+	return raw
+}
+
+// SetProjectPrimaryBranch sets the project primary branch override and
+// persists. Empty clears the override (back to origin/HEAD heuristic).
+func (c *Config) SetProjectPrimaryBranch(name, branch string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	branch = strings.TrimSpace(branch)
+	if branch != "" {
+		if err := ValidatePrimaryBranchName(branch); err != nil {
+			return err
+		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	pc.PrimaryBranch = branch
 	c.Projects[name] = pc
 	return c.saveLocked()
 }
