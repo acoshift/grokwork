@@ -293,6 +293,104 @@ func TestActionsDispatchHappyPath(t *testing.T) {
 	assertActionsDispatchAudit(t, srv, true)
 }
 
+// TestActionsDispatchUsesConfiguredPrimary pins inventory #11: dispatch must
+// read workflow YAML from the configured primary tip (same as the list path),
+// not WorkflowFileAtPrimaryWith's empty preferred / origin/HEAD heuristic.
+// When origin/HEAD is main with push-only YAML and only origin/prod has the
+// dispatchable definition, primaryBranch=prod is required for dispatch to succeed.
+func TestActionsDispatchUsesConfiguredPrimary(t *testing.T) {
+	srv, cfg, calls := actionsServer(t)
+	if err := cfg.SetProjectPrimaryBranch("proj", "prod"); err != nil {
+		t.Fatal(err)
+	}
+	const shaMain = "sha-main-from-origin-head"
+	const shaProd = "sha-prod-from-configured-primary"
+	// Replace runner: heuristic primary (HEAD/main) → non-dispatchable YAML;
+	// origin/prod → dispatchable. Dispatch succeeds only if preferred is wired.
+	srv.ghRunner = func(_ context.Context, _ string, name string, args ...string) ([]byte, error) {
+		*calls = append(*calls, actionsGHCall{name: name, args: append([]string(nil), args...)})
+		joined := name + " " + strings.Join(args, " ")
+		switch {
+		case name == "gh" && strings.HasPrefix(strings.Join(args, " "), "workflow list"):
+			return []byte(`[{"id":11,"name":"Deploy","path":".github/workflows/deploy.yml","state":"active"}]`), nil
+		case name == "gh" && strings.Contains(joined, "workflow run"):
+			return nil, nil
+		case name == "git" && strings.Contains(joined, "rev-parse --verify"):
+			ref := args[len(args)-1]
+			switch {
+			case ref == "origin/prod":
+				return []byte(shaProd + "\n"), nil
+			case ref == "refs/remotes/origin/HEAD", ref == "origin/main", ref == "origin/master":
+				return []byte(shaMain + "\n"), nil
+			default:
+				return nil, fmt.Errorf("missing ref %s", ref)
+			}
+		case name == "git" && strings.Contains(joined, "cat-file blob"):
+			blob := args[len(args)-1]
+			switch {
+			case strings.HasPrefix(blob, shaProd+":") && strings.Contains(blob, "deploy.yml"):
+				return []byte(testDispatchWorkflowYAML), nil
+			case strings.HasPrefix(blob, shaMain+":") && strings.Contains(blob, "deploy.yml"):
+				return []byte(testPushOnlyWorkflowYAML), nil
+			default:
+				return nil, fmt.Errorf("unknown blob: %s", joined)
+			}
+		case name == "git" && strings.Contains(joined, "for-each-ref"):
+			return []byte("main\nprod\n"), nil
+		}
+		return nil, fmt.Errorf("unexpected command: %s", joined)
+	}
+
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Clear calls from any prior setup noise.
+	*calls = (*calls)[:0]
+	w := postFix(t, srv, "/projects/proj/actions/dispatch", sid, csrf, url.Values{
+		"owner":     {"acme"},
+		"repo":      {"app"},
+		"workflow":  {".github/workflows/deploy.yml"},
+		"ref":       {"prod"},
+		"input.env": {"dev"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if strings.Contains(loc, "err=") {
+		decoded, _ := url.QueryUnescape(loc)
+		t.Fatalf("dispatch failed (would happen if YAML were read from origin/HEAD main tip): %s", decoded)
+	}
+	if !strings.Contains(loc, "ok=") {
+		t.Fatalf("want success redirect, got %q", loc)
+	}
+	// Must have resolved origin/prod and cat-file'd sha-prod, not only HEAD/main.
+	var sawProdResolve, sawProdBlob bool
+	for _, c := range *calls {
+		if c.name != "git" {
+			continue
+		}
+		j := strings.Join(c.args, " ")
+		if strings.Contains(j, "rev-parse --verify origin/prod") {
+			sawProdResolve = true
+		}
+		if strings.Contains(j, "cat-file blob "+shaProd+":") {
+			sawProdBlob = true
+		}
+	}
+	if !sawProdResolve {
+		t.Fatalf("dispatch must rev-parse origin/prod when primaryBranch=prod; calls=%+v", *calls)
+	}
+	if !sawProdBlob {
+		t.Fatalf("dispatch must read workflow at configured primary SHA %s; calls=%+v", shaProd, *calls)
+	}
+	if _, ok := actionsDispatchCall(*calls); !ok {
+		t.Fatal("workflow run not invoked")
+	}
+	assertActionsDispatchAudit(t, srv, true)
+}
+
 func TestActionsDispatchLockedBranchRefuses(t *testing.T) {
 	srv, cfg, calls := actionsServer(t)
 	if err := cfg.SetProjectActionsRule("proj", config.ActionsDispatchRule{

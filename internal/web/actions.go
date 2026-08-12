@@ -459,7 +459,20 @@ func (s *Server) postActionsDispatch(ctx *hime.Context) error {
 	}
 	detailMap["workflow"] = found.Path
 
-	raw, readErr := ghpr.WorkflowFileAtPrimaryWith(ctx.Context(), s.ghRun(), cwd, found.Path)
+	// Same primary tip as the workflows list (design inventory #11): respect
+	// projects.*.primaryBranch. WorkflowFileAtPrimaryWith hardcodes preferred=""
+	// and would validate dispatch inputs against origin/HEAD while the list
+	// already showed the configured primary.
+	pref := ""
+	if s.cfg != nil {
+		pref = s.cfg.ProjectPrimaryBranch(project)
+	}
+	primaryRef, refErr := ghpr.ResolveOriginPrimaryRef(ctx.Context(), s.ghRun(), cwd, pref)
+	if refErr != nil {
+		s.auditAction(ctx, audit.ActionActionsDispatch, refErr, detailMap)
+		return s.actionsRedirect(ctx, project, owner, repo, "", refErr)
+	}
+	raw, readErr := ghpr.WorkflowFileAtRefWith(ctx.Context(), s.ghRun(), cwd, primaryRef, found.Path)
 	if readErr != nil {
 		s.auditAction(ctx, audit.ActionActionsDispatch, readErr, detailMap)
 		return s.actionsRedirect(ctx, project, owner, repo, "", readErr)
