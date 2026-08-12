@@ -15,6 +15,12 @@ import (
 
 const defaultBase = "https://api.clickup.com"
 
+// maxResponseBody caps ClickUp response reads. List-task payloads include
+// custom fields and descriptions for up to 100 tasks and routinely exceed 1 MiB
+// on active lists (observed ~1.8 MiB on 2br-api); silent truncation used to
+// surface as "decode: unexpected end of JSON input".
+const maxResponseBody = 8 << 20 // 8 MiB
+
 // Client talks to ClickUp REST with a personal API token.
 type Client struct {
 	APIKey string
@@ -82,9 +88,14 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		return err
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	// Read one byte past the cap so truncation is detectable (LimitReader alone
+	// returns a valid prefix and json.Unmarshal fails with a confusing EOF).
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
 	if err != nil {
 		return err
+	}
+	if len(raw) > maxResponseBody {
+		return fmt.Errorf("clickup: response too large (>%d bytes)", maxResponseBody)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("clickup: HTTP %d: %s", resp.StatusCode, truncate(string(raw), 200))

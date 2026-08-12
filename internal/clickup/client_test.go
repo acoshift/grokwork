@@ -1,8 +1,10 @@
 package clickup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -133,6 +135,72 @@ func TestMissingKey(t *testing.T) {
 	_, err := New("").GetTask(context.Background(), "9hx", GetOpts{})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// Active ClickUp lists return ~100 full task objects (custom fields, etc.) and
+// often exceed the old 1 MiB read cap. The client must accept multi-MiB bodies
+// used by ListTasks, or the web list page fails with a misleading decode EOF.
+func TestListTasksAcceptsMultiMiBBody(t *testing.T) {
+	// Build a valid JSON list payload just over 1 MiB (old hard limit).
+	const pad = 2000
+	tasks := make([]map[string]any, 0, 600)
+	for i := range 600 {
+		tasks = append(tasks, map[string]any{
+			"id":   fmt.Sprintf("t%d", i),
+			"name": strings.Repeat("x", pad),
+			"url":  "https://app.clickup.com/t/x",
+			"status": map[string]string{
+				"status": "open",
+			},
+		})
+	}
+	body, err := json.Marshal(map[string]any{"tasks": tasks})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) <= 1<<20 {
+		t.Fatalf("fixture too small: %d bytes (need >1MiB)", len(body))
+	}
+	if len(body) > maxResponseBody {
+		t.Fatalf("fixture too large for current cap: %d", len(body))
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("k")
+	c.Base = srv.URL
+	c.HTTP = srv.Client()
+
+	got, err := c.ListTasks(context.Background(), "list1", 40)
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(got) != 40 {
+		t.Fatalf("len=%d want 40", len(got))
+	}
+}
+
+func TestDoRejectsBodyOverCap(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Exactly maxResponseBody+1 of JSON-looking bytes so truncation is forced.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tasks":[`))
+		_, _ = w.Write(bytes.Repeat([]byte("a"), maxResponseBody))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("k")
+	c.Base = srv.URL
+	c.HTTP = srv.Client()
+
+	_, err := c.ListTasks(context.Background(), "list1", 10)
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
