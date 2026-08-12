@@ -11,11 +11,17 @@ import (
 
 // Stop cancels in-flight runs, checkpoints journals as interrupted, and waits for drains.
 // If Active.Status is cancelling, it is left as cancelling (not forced to interrupted).
+// Background workers (idle sweep, idle fetch, PR poller, …) are cancelled first so
+// they do not keep doing git/gh after stop:done while the process is exiting.
 func (b *Bot) Stop(ctx context.Context) {
 	if b == nil {
 		return
 	}
 	b.stopping.Store(true)
+	if b.bgCancel != nil {
+		b.bgCancel()
+		log.Printf("stop: background workers cancelled")
+	}
 	log.Printf("stop: cancelling active runs…")
 
 	b.states.Range(func(key, value any) bool {

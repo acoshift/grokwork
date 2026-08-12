@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -21,27 +20,38 @@ import (
 // prStatusPollInterval is how often open-PR sessions are refreshed via gh.
 const prStatusPollInterval = 90 * time.Second
 
-var prStatusPollerOnce sync.Once
-
 // startPRStatusPoller starts the PR poller once. Uses live b.Discord() each cycle
 // so web-native cleanup works before (or without) gateway ready.
 func (b *Bot) startPRStatusPoller() {
-	prStatusPollerOnce.Do(func() {
+	if b == nil {
+		return
+	}
+	b.prStatusOnce.Do(func() {
 		log.Printf("bg: starting pr-status poller interval=%s initial_delay=45s", prStatusPollInterval)
 		go b.runPRStatusPoller()
 	})
 }
 
 func (b *Bot) runPRStatusPoller() {
+	ctx := b.bgContext()
 	log.Printf("bg: pr-status poller running (waiting 45s before first poll)")
 	// Stagger after idle sweeper so ready is not flooded.
-	time.Sleep(45 * time.Second)
+	if !sleepCtx(ctx, 45*time.Second) {
+		log.Printf("bg: pr-status poller stopped before first poll")
+		return
+	}
 	b.runPRStatusPollCycle("initial")
 
 	ticker := time.NewTicker(prStatusPollInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		b.runPRStatusPollCycle("tick")
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("bg: pr-status poller stopped")
+			return
+		case <-ticker.C:
+			b.runPRStatusPollCycle("tick")
+		}
 	}
 }
 
@@ -65,11 +75,21 @@ type prPollStats struct {
 
 // pollPRStatuses refreshes session PR state (and Discord cards when s != nil).
 // s may be nil: terminal cleanup and gh View still run for web-native units.
+// Aborts early when the bot background context is cancelled (Stop).
 func (b *Bot) pollPRStatuses(s *discordgo.Session) prPollStats {
 	var stats prPollStats
+	if b == nil || b.sessions == nil {
+		return stats
+	}
+	bg := b.bgContext()
 	list := b.sessions.List()
 	stats.Sessions = len(list)
 	for _, listed := range list {
+		if bg.Err() != nil {
+			log.Printf("pr-status: poll aborted (stopping) after %d with_pr=%d updated=%d",
+				stats.Sessions, stats.WithPR, stats.Updated)
+			break
+		}
 		e := listed.Entry
 		e.NormalizePRs()
 		threadID := listed.ThreadID
@@ -98,7 +118,7 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) prPollStats {
 		// folder without its own .git (gh pr view <url> does not need a repo).
 		repoDir := b.prViewCwd(e)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		ctx, cancel := context.WithTimeout(bg, 90*time.Second)
 		for _, pr := range e.PRs {
 			if ghpr.IsTerminal(pr.State) {
 				continue // keep terminal cards as-is until all done

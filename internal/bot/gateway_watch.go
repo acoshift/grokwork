@@ -5,7 +5,6 @@ import (
 	"log"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -24,33 +23,33 @@ const (
 	gatewayHeartbeatMaxStale = 90 * time.Second
 )
 
-var gatewayWatchOnce sync.Once
-
 // startGatewayWatch starts a single background loop that forces reconnect when
 // the gateway heartbeat goes silent. Safe to call from onReady repeatedly.
 func (b *Bot) startGatewayWatch() {
 	if b == nil {
 		return
 	}
-	gatewayWatchOnce.Do(func() {
+	b.gatewayWatchOnce.Do(func() {
 		go b.gatewayWatchLoop()
 	})
 }
 
 func (b *Bot) gatewayWatchLoop() {
+	ctx := b.bgContext()
 	log.Printf("bg: gateway watch interval=%s max_stale=%s", gatewayWatchInterval, gatewayHeartbeatMaxStale)
 	ticker := time.NewTicker(gatewayWatchInterval)
 	defer ticker.Stop()
 	for {
-		if b.stopping.Load() {
+		if b.stopping.Load() || ctx.Err() != nil {
+			log.Printf("bg: gateway watch stopped")
 			return
 		}
 		b.checkGatewayHealth()
 		select {
-		case <-ticker.C:
-		}
-		if b.stopping.Load() {
+		case <-ctx.Done():
+			log.Printf("bg: gateway watch stopped")
 			return
+		case <-ticker.C:
 		}
 	}
 }

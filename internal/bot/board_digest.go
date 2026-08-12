@@ -3,7 +3,6 @@ package bot
 import (
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -12,12 +11,13 @@ import (
 // boardDigestInterval is how often the optional nightly digest posts.
 const boardDigestInterval = 24 * time.Hour
 
-var boardDigestOnce sync.Once
-
 func (b *Bot) startBoardDigest(s *discordgo.Session) {
-	boardDigestOnce.Do(func() {
+	if b == nil {
+		return
+	}
+	b.boardDigestOnce.Do(func() {
 		ch := ""
-		if b != nil && b.cfg != nil {
+		if b.cfg != nil {
 			ch = b.cfg.BoardDigestChannelValue()
 		}
 		if ch == "" {
@@ -30,16 +30,26 @@ func (b *Bot) startBoardDigest(s *discordgo.Session) {
 }
 
 func (b *Bot) runBoardDigest(s *discordgo.Session) {
+	ctx := b.bgContext()
 	// Brief delay so gateway ready isn't competing with the first post.
-	time.Sleep(2 * time.Minute)
+	if !sleepCtx(ctx, 2*time.Minute) {
+		log.Printf("bg: board digest stopped before first post")
+		return
+	}
 	// First fire after the initial delay only if a channel is configured;
 	// subsequent fires are on the 24h ticker (nightly-ish for long-running hosts).
 	b.runBoardDigestCycle(s, "initial")
 
 	ticker := time.NewTicker(boardDigestInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		b.runBoardDigestCycle(s, "tick")
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("bg: board digest stopped")
+			return
+		case <-ticker.C:
+			b.runBoardDigestCycle(s, "tick")
+		}
 	}
 }
 

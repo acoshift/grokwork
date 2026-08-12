@@ -7,7 +7,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/acoshift/grokwork/internal/gitworktree"
@@ -17,10 +16,11 @@ import (
 // idleCleanupInterval is how often the background sweeper runs.
 const idleCleanupInterval = 24 * time.Hour
 
-var idleCleanupOnce sync.Once
-
 func (b *Bot) startIdleWorktreeCleanup() {
-	idleCleanupOnce.Do(func() {
+	if b == nil {
+		return
+	}
+	b.idleCleanupOnce.Do(func() {
 		ttl := b.cfg.WorktreeIdleTTL()
 		termTTL := b.cfg.TerminalSessionTTL()
 		log.Printf("bg: starting idle-worktree sweeper interval=%s worktreeTTL=%s terminalSessionTTL=%s initial_delay=30s",
@@ -30,15 +30,25 @@ func (b *Bot) startIdleWorktreeCleanup() {
 }
 
 func (b *Bot) runIdleWorktreeCleanup() {
+	ctx := b.bgContext()
 	log.Printf("bg: idle-worktree sweeper running (waiting 30s before first sweep)")
 	// Brief delay so gateway ready / first messages aren't competing with a sweep.
-	time.Sleep(30 * time.Second)
+	if !sleepCtx(ctx, 30*time.Second) {
+		log.Printf("bg: idle-worktree sweeper stopped before first sweep")
+		return
+	}
 	b.runIdleSweepCycle("initial")
 
 	ticker := time.NewTicker(idleCleanupInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		b.runIdleSweepCycle("tick")
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("bg: idle-worktree sweeper stopped")
+			return
+		case <-ticker.C:
+			b.runIdleSweepCycle("tick")
+		}
 	}
 }
 

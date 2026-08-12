@@ -22,11 +22,22 @@ import (
 )
 
 func main() {
+	boot := time.Now()
+	phase := func(name string, start time.Time) {
+		log.Printf("startup: phase=%s elapsed=%s total=%s",
+			name,
+			time.Since(start).Round(time.Millisecond),
+			time.Since(boot).Round(time.Millisecond))
+	}
+
+	t := time.Now()
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal(err)
 	}
+	phase("config", t)
 
+	t = time.Now()
 	sessions, err := sessionstore.New(cfg.DataDir)
 	if err != nil {
 		log.Fatal(err)
@@ -46,7 +57,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	phase("stores", t)
 
+	t = time.Now()
 	b := bot.New(cfg, sessions, hist)
 	b.SetIdentity(links)
 	// Gate claims until RecoverActiveRuns finishes so a crash re-drive cannot
@@ -60,13 +73,16 @@ func main() {
 			log.Fatalf("run journal lock: %v\n\nAnother grokwork process may be using this data directory.", err)
 		}
 	}
+	phase("bot", t)
 
+	t = time.Now()
 	dg, err := discordgo.New("Bot " + cfg.DiscordToken)
 	if err != nil {
 		log.Fatalf("discord session: %v", err)
 	}
 	b.Register(dg)
 	dg.LogLevel = discordgo.LogWarning
+	phase("discord_session", t)
 
 	// Open the gateway in parallel with web setup. Discord Open is usually the
 	// multi-second stall after restart; the HTTP UI must not wait on it.
@@ -76,6 +92,7 @@ func main() {
 		openErr <- dg.Open()
 	}()
 
+	t = time.Now()
 	addr := cfg.ListenAddr()
 	webSrv := web.New(cfg, sessions, hist, b)
 	// Reconcile deploy records before the server accepts triggers, so a lane
@@ -88,7 +105,9 @@ func main() {
 			log.Printf("bg: web server stopped: %v", err)
 		}
 	}()
+	phase("web", t)
 
+	t = time.Now()
 	if err := <-openErr; err != nil {
 		if strings.Contains(err.Error(), "4014") {
 			log.Fatalf("open gateway: %v\n\n"+
@@ -100,14 +119,18 @@ func main() {
 		}
 		log.Fatalf("open gateway: %v", err)
 	}
+	phase("discord_open", t)
 	defer dg.Close()
 
 	// Recover while ready=false so user claims get ErrNotReady (no double-Grok).
+	t = time.Now()
 	if err := b.RecoverActiveRuns(context.Background()); err != nil {
 		log.Printf("warn: recover active runs: %v", err)
 	}
+	phase("recover", t)
 	b.SetReady(true)
-	log.Printf("startup: ready (discord open, active-run recovery done)")
+	log.Printf("startup: ready total=%s (discord open, active-run recovery done)",
+		time.Since(boot).Round(time.Millisecond))
 
 	fmt.Println("Grok Work bridge running. Ctrl+C to stop.")
 

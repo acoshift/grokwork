@@ -144,10 +144,29 @@ type Bot struct {
 	// Per main-checkout path locks for direct-to-primary ship (abs+symlink key).
 	shipMu    sync.Mutex
 	shipLocks map[string]*sync.Mutex
+
+	// Background workers (idle sweep, idle fetch, PR poller, board digest,
+	// gateway watch) share this context. Stop cancels it so they exit instead
+	// of racing a restarted process on the same worktrees.
+	bgCtx    context.Context
+	bgCancel context.CancelFunc
+
+	// Once flags are per-bot so start* is idempotent (New + onReady both call).
+	idleCleanupOnce   sync.Once
+	idleRepoFetchOnce sync.Once
+	prStatusOnce      sync.Once
+	boardDigestOnce   sync.Once
+	gatewayWatchOnce  sync.Once
 }
 
 func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) *Bot {
-	b := &Bot{cfg: cfg, sessions: sessions, history: hist, shipLocks: map[string]*sync.Mutex{}}
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	b := &Bot{
+		cfg: cfg, sessions: sessions, history: hist,
+		shipLocks: map[string]*sync.Mutex{},
+		bgCtx:     bgCtx,
+		bgCancel:  bgCancel,
+	}
 	if cfg != nil && cfg.DataDir != "" {
 		if store, err := runjournal.New(cfg.DataDir); err != nil {
 			log.Printf("warn: runjournal: %v", err)
