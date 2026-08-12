@@ -302,21 +302,31 @@ func TestIssuesListShowsFixingWorkState(t *testing.T) {
 	if !strings.Contains(body, `value="fixing"`) {
 		t.Fatal("expected Fixing filter option on shell")
 	}
+	// Default state=open partitions out issues with an active Fixes session.
 	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	body = w.Body.String()
-	if !strings.Contains(body, `class="badge status-fixing"`) || !strings.Contains(body, "FIXING") {
-		t.Fatalf("expected status-fixing FIXING badge in list: %s", body)
+	if strings.Contains(body, "#7") || strings.Contains(body, "FIXING") {
+		t.Fatalf("open filter must exclude fixing issues: %s", body)
 	}
 
-	// Filter state=fixing keeps the issue
+	// Filter state=fixing keeps the issue with FIXING badge
 	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api&state=fixing", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	body = w.Body.String()
-	if !strings.Contains(body, "#7") || !strings.Contains(body, "FIXING") {
+	if !strings.Contains(body, "#7") || !strings.Contains(body, `class="badge status-fixing"`) || !strings.Contains(body, "FIXING") {
 		t.Fatalf("fixing filter: %s", body)
+	}
+
+	// state=all still shows the FIXING overlay on open GitHub issues
+	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api&state=all", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	body = w.Body.String()
+	if !strings.Contains(body, "#7") || !strings.Contains(body, "FIXING") {
+		t.Fatalf("all filter should keep fixing overlay: %s", body)
 	}
 
 	// Detail for app#7 without session stays OPEN; bind app#7 and check detail.

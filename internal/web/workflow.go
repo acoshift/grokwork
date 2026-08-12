@@ -193,7 +193,8 @@ type issueListCacheEntry struct {
 }
 
 // loadIssuesInto fetches (or reuses a short-TTL cache of) GitHub issues and
-// applies the FIXING overlay / state=fixing filter.
+// applies the FIXING overlay. state=open and state=fixing partition open
+// issues by whether a non-terminal Fixes session is bound.
 func (s *Server) loadIssuesInto(d *pageData, ctx *hime.Context) {
 	if d == nil || d.ActiveOwner == "" || d.ActiveRepo == "" {
 		return
@@ -208,7 +209,8 @@ func (s *Server) loadIssuesInto(d *pageData, ctx *hime.Context) {
 	if state == "" {
 		state = "open"
 	}
-	// "fixing" is a grokwork overlay: load open GitHub issues, keep those with active Fixes sessions.
+	// "fixing" is a grokwork overlay on open GitHub issues. "open" and "fixing"
+	// partition those issues: open = no active Fixes session; fixing = has one.
 	ghState := state
 	if state == "fixing" {
 		ghState = "open"
@@ -223,10 +225,19 @@ func (s *Server) loadIssuesInto(d *pageData, ctx *hime.Context) {
 	})
 	if listErr == nil {
 		issues = s.annotateGitHubIssueWorkState(project, d.ActiveOwner, d.ActiveRepo, issues)
-		if state == "fixing" {
+		switch state {
+		case "fixing":
 			filtered := issues[:0]
 			for _, iss := range issues {
 				if iss.WorkState == bot.IssueWorkStateFixing {
+					filtered = append(filtered, iss)
+				}
+			}
+			issues = filtered
+		case "open":
+			filtered := issues[:0]
+			for _, iss := range issues {
+				if iss.WorkState != bot.IssueWorkStateFixing {
 					filtered = append(filtered, iss)
 				}
 			}
