@@ -2344,6 +2344,7 @@ func applySessionOverlay(row *history.Summary, se sessionstore.Listed) {
 	row.Phase = e.CasePhase()
 	row.Resolution = strings.TrimSpace(e.Resolution)
 	row.HasPRs = e.HasAnyPR()
+	row.AllPRsTerminal = e.AllPRsTerminal()
 	if pr, ok := e.PrimaryPR(); ok {
 		row.PRNumber = pr.Number
 		row.PRState = strings.ToUpper(strings.TrimSpace(pr.State))

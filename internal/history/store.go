@@ -141,6 +141,10 @@ type Summary struct {
 	PRURL    string
 	PRTitle  string
 	HasPRs   bool
+	// AllPRsTerminal is true when the unit tracks ≥1 PR and none are open.
+	// Used by the sessions Active filter: shipped units drop off after recency
+	// even when the lifecycle label is still needs_review / in_progress.
+	AllPRsTerminal bool
 	// Running is true when the bot has an active agent job on this thread
 	// (web overlay from StatusSnapshot; not stored in history JSON).
 	Running bool

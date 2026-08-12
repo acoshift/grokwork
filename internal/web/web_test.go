@@ -882,6 +882,16 @@ func TestSessionsActiveRecency(t *testing.T) {
 		{ThreadID: "case-fresh", Mode: "case", Phase: "closed", Label: "blocked", UpdatedAt: "2026-07-24T00:00:00Z"},
 		{ThreadID: "case-stale", Mode: "case", Phase: "closed", Label: "blocked", UpdatedAt: "2026-07-22T00:00:00Z"},
 		{ThreadID: "done-notime", Label: "done"},
+		// Shipped work: all PRs terminal but label still needs_review (no auto-done).
+		{ThreadID: "merged-fresh", Label: "needs_review", AllPRsTerminal: true, UpdatedAt: "2026-07-24T10:00:00Z"},
+		{ThreadID: "merged-stale", Label: "needs_review", AllPRsTerminal: true, UpdatedAt: "2026-07-20T00:00:00Z"},
+		// Live run on a fully-merged unit still counts as active.
+		{ThreadID: "merged-running", Label: "needs_review", AllPRsTerminal: true, Running: true, UpdatedAt: "2026-07-01T00:00:00Z"},
+		// Open case with terminal PRs is still in flight (phase lifecycle owns it).
+		{ThreadID: "case-pr-old", Mode: "case", Phase: "fixing", Label: "needs_review", AllPRsTerminal: true, UpdatedAt: "2026-06-01T00:00:00Z"},
+		// History-only (no session overlay → empty Label): not in-flight.
+		{ThreadID: "hist-fresh", UpdatedAt: "2026-07-24T11:30:00Z"},
+		{ThreadID: "hist-stale", UpdatedAt: "2026-06-01T00:00:00Z"},
 	}
 	ids := func(rows []history.Summary) string {
 		out := make([]string, 0, len(rows))
@@ -891,10 +901,10 @@ func TestSessionsActiveRecency(t *testing.T) {
 		return strings.Join(out, " ")
 	}
 
-	// Active: in-flight regardless of age, terminal only within 24h.
-	// Terminal rows without a timestamp never qualify as recent.
+	// Active: true in-flight regardless of age; settled only within 24h;
+	// live Running always; settled-without-timestamp never.
 	got := ids(filterSessionRows(rows, sessionFilters{State: "active"}, now))
-	if want := "open-old done-fresh abandoned-fresh case-fresh"; got != want {
+	if want := "open-old done-fresh abandoned-fresh case-fresh merged-fresh merged-running case-pr-old hist-fresh"; got != want {
 		t.Fatalf("active: got %q want %q", got, want)
 	}
 	// All: everything, any age.
@@ -915,6 +925,16 @@ func TestSessionsActiveRecency(t *testing.T) {
 	got = ids(filterSessionRows(rows, sessionFilters{State: "blocked"}, now))
 	if got != "" {
 		t.Fatalf("blocked: got %q want no rows", got)
+	}
+	// needs_review still lists shipped units (label filter ≠ Active).
+	got = ids(filterSessionRows(rows, sessionFilters{State: "needs_review"}, now))
+	if want := "merged-fresh merged-stale merged-running case-pr-old"; got != want {
+		t.Fatalf("needs_review: got %q want %q", got, want)
+	}
+	// History-only defaults to open for the open label filter.
+	got = ids(filterSessionRows(rows, sessionFilters{State: "open"}, now))
+	if want := "open-old hist-fresh hist-stale"; got != want {
+		t.Fatalf("open: got %q want %q", got, want)
 	}
 }
 
