@@ -9,7 +9,11 @@ import (
 )
 
 // ApplyPRTerminalState finds every session tracking owner/repo#number, sets State
-// (MERGED or CLOSED), and runs terminal cleanup when that thread's PRs are all done.
+// (MERGED or CLOSED), and kicks off terminal cleanup when that thread's PRs are
+// all done. The session store patch is synchronous so the web merge/close
+// redirect can report affected sessions immediately; worktree removal is
+// best-effort and can take tens of seconds of git, so it runs in a goroutine
+// (same cleanup the PR-status poller would eventually do).
 // Returns affected thread IDs. Discord cards are not required (s may be nil).
 func (b *Bot) ApplyPRTerminalState(owner, repo string, number int, state string) []string {
 	if b == nil || b.sessions == nil || number <= 0 {
@@ -70,7 +74,8 @@ func (b *Bot) ApplyPRTerminalState(owner, repo string, number int, state string)
 			}
 		}
 		affected = append(affected, threadID)
-		b.tryCleanupTerminalPR(threadID)
+		// Capture for the goroutine; tryCleanupTerminalPR re-reads the store.
+		go b.tryCleanupTerminalPR(threadID)
 	}
 	return affected
 }

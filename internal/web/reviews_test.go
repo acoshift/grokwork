@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/reviewstore"
@@ -94,8 +95,17 @@ func TestSubmitTeamReview(t *testing.T) {
 	if bucket.Reviews[0].HeadSHA != "abc1234" {
 		t.Fatalf("head=%s", bucket.Reviews[0].HeadSHA)
 	}
-	if bucket.Reviews[0].GHCommentURL == "" {
-		t.Fatal("expected GH mirror URL")
+	// Mirror runs asynchronously after the redirect; poll for the stamp.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		bucket = srv.bot.Reviews().ListForPR("acme", "app", 9)
+		if len(bucket.Reviews) == 1 && bucket.Reviews[0].GHCommentURL != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected GH mirror URL (async mirror did not finish)")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

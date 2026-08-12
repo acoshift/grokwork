@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -121,42 +122,43 @@ func (s *Server) postPRReview(ctx *hime.Context) error {
 		return s.prRedirect(ctx, owner, repo, n, project, "", err)
 	}
 
-	mirrorOK := false
-	if mirror && s.cfg.FeatureGitHubWrites() {
-		commentBody := formatReviewMirrorComment(saved)
-		url, mErr := ghpr.CommentPRWithURL(ctx.Context(), s.ghRun(), cwd, owner, repo, n, commentBody)
-		if mErr != nil {
-			_, _, _ = store.PatchReview(owner, repo, n, saved.ID, func(r *reviewstore.Review) {
-				r.GHMirrorErr = mErr.Error()
-			})
-			detail["mirrorErr"] = mErr.Error()
-		} else {
-			mirrorOK = true
-			now := time.Now().UTC()
-			_, _, _ = store.PatchReview(owner, repo, n, saved.ID, func(r *reviewstore.Review) {
-				r.GHCommentURL = url
-				r.GHMirroredAt = now
-				r.GHMirrorErr = ""
-			})
-			detail["ghCommentUrl"] = url
-		}
-	}
-	detail["mirrored"] = mirrorOK
+	// Mirror is best-effort: the team review is already durable. GitHub comment
+	// + optional store patch run off the request so a slow gh does not block
+	// the redirect. Failures land on the review row (GHMirrorErr), not the flash.
+	wantMirror := mirror && s.cfg.FeatureGitHubWrites()
+	detail["mirrorRequested"] = wantMirror
 	s.auditAction(ctx, audit.ActionPRReviewSubmit, nil, detail)
 
+	if wantMirror {
+		go s.mirrorTeamReviewToGitHub(cwd, owner, repo, n, saved)
+	}
 	msg := "Review submitted (" + string(verdict) + ")"
-	if headSHA != "" {
-		selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
-		if live, vErr := ghpr.ViewWith(ctx.Context(), s.ghRun(), cwd, selector); vErr == nil {
-			if live.HeadSHA != "" && !strings.EqualFold(live.HeadSHA, headSHA) {
-				msg += " — head moved; this review covers the older commit"
-			}
-		}
-	}
-	if mirror && s.cfg.FeatureGitHubWrites() && !mirrorOK {
-		msg += " · GitHub mirror failed"
-	}
 	return s.prRedirect(ctx, owner, repo, n, project, msg, nil)
+}
+
+// mirrorTeamReviewToGitHub posts the team review as a PR comment and stamps
+// GHCommentURL / GHMirrorErr on the stored row. Uses Background — the request
+// context is already cancelled by the time this runs.
+func (s *Server) mirrorTeamReviewToGitHub(cwd, owner, repo string, n int, saved reviewstore.Review) {
+	store := s.reviewsStore()
+	if store == nil {
+		return
+	}
+	commentBody := formatReviewMirrorComment(saved)
+	url, mErr := ghpr.CommentPRWithURL(context.Background(), s.ghRun(), cwd, owner, repo, n, commentBody)
+	if mErr != nil {
+		_, _, _ = store.PatchReview(owner, repo, n, saved.ID, func(r *reviewstore.Review) {
+			r.GHMirrorErr = mErr.Error()
+		})
+		log.Printf("web: team review GH mirror %s/%s#%d review=%s: %v", owner, repo, n, saved.ID, mErr)
+		return
+	}
+	now := time.Now().UTC()
+	_, _, _ = store.PatchReview(owner, repo, n, saved.ID, func(r *reviewstore.Review) {
+		r.GHCommentURL = url
+		r.GHMirroredAt = now
+		r.GHMirrorErr = ""
+	})
 }
 
 func formatReviewMirrorComment(r reviewstore.Review) string {
@@ -265,7 +267,8 @@ func (s *Server) postPRReviewRequest(ctx *hime.Context) error {
 				msg += "\n> " + note
 			}
 			msg += "\n" + prURL
-			s.bot.NotifyThread(threadID, msg)
+			// Discord ping is best-effort after the request is durable.
+			go s.bot.NotifyThread(threadID, msg)
 		}
 		// A reviewer who signed in without Discord cannot be mentioned or DMed, and
 		// a web-native unit has no thread to mention them in — so the request used
