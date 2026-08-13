@@ -601,7 +601,10 @@ func TestIssueFixModelPickStampsSession(t *testing.T) {
 }
 
 func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
-	srv, _, _ := fixEnabledServer(t)
+	srv, cfg, _ := fixEnabledServer(t)
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5",
+	})
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		joined := name + " " + strings.Join(args, " ")
 		if strings.Contains(joined, "issue list") {
@@ -631,6 +634,10 @@ func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
 		`id="btn-issues-fix"`,
 		`id="btn-issues-fix-cancel"`,
 		`form="issues-bulk-fix"`,
+		// Confirm lives on the toolbar button (form= associated). The select is
+		// in the table partial so the modal can clone its options at submit.
+		`data-confirm-select="model"`,
+		`data-confirm-title="Fix"`,
 	} {
 		if !strings.Contains(shell, want) {
 			t.Fatalf("shell missing %q", want)
@@ -657,6 +664,8 @@ func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
 		`value="1"`,
 		`value="2"`,
 		`class="issue-link"`,
+		`<select name="model" hidden>`,
+		`<option value="">Default (grok-4.5)</option>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("partial missing %q", want)
@@ -664,6 +673,9 @@ func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
 	}
 	if strings.Contains(body, `id="btn-issues-fix"`) {
 		t.Fatal("Fix button belongs on the shell toolbar, not the table partial")
+	}
+	if strings.Contains(body, `data-confirm-select="model"`) {
+		t.Fatal("confirm attributes belong on the toolbar button, not the table partial")
 	}
 }
 
@@ -766,6 +778,110 @@ func TestBulkFixStartsSessions(t *testing.T) {
 		t.Fatalf("bound=%d", bound)
 	}
 	assertAuditAction(t, srv, audit.ActionSessionStart, true)
+}
+
+// A named model from the list-page confirm modal is stamped on every new
+// session in the batch (agent follows the model). Empty pick is the default
+// path already covered by TestBulkFixStartsSessions.
+func TestBulkFixModelPickStampsSessions(t *testing.T) {
+	srv, cfg, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5",
+	})
+	spy := &bot.FakeThreadAPI{NextMsg: "m1", NextTh: "bulk-model-th"}
+	bot.SetThreadAPIForTest(b, spy)
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := name + " " + strings.Join(args, " ")
+		if strings.Contains(joined, "issue view") {
+			n := "0"
+			for i, a := range args {
+				if a == "view" && i+1 < len(args) {
+					n = args[i+1]
+					break
+				}
+			}
+			return []byte(`{
+				"number":` + n + `,"title":"Bug ` + n + `","body":"body","url":"https://github.com/acme/app/issues/` + n + `",
+				"state":"OPEN","author":{"login":"z"},"labels":[],"comments":[]
+			}`), nil
+		}
+		return []byte("{}"), nil
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/issues/fix", sid, csrf, url.Values{
+		"owner":   {"acme"},
+		"repo":    {"app"},
+		"numbers": {"10", "20"},
+		"model":   {"claude-opus-5"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/projects/proj/sessions") {
+		t.Fatalf("Location=%q want /projects/proj/sessions", loc)
+	}
+	bot.WaitIdleForTest(b, 5*time.Second)
+	for _, id := range []string{"bulk-model-th", "bulk-model-th-2"} {
+		e, ok := srv.sessions.Get(id)
+		if !ok {
+			t.Fatalf("session %s missing", id)
+		}
+		if e.Model != "claude-opus-5" || e.Agent != "claude" {
+			t.Fatalf("%s stamp agent=%q model=%q", id, e.Agent, e.Model)
+		}
+	}
+}
+
+func TestIssuesListHidesModelPickerWithoutShipCaps(t *testing.T) {
+	srv, cfg, _ := fixEnabledServer(t)
+	if err := cfg.AddProjectAllowedUser("proj", "member-2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-2", "investigator"); err != nil {
+		t.Fatal(err)
+	}
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5",
+	})
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if strings.Contains(strings.Join(args, " "), "issue list") {
+			return []byte(`[{"number":1,"url":"u","title":"t","state":"OPEN","author":{"login":"a"},"labels":[],"body":"","closedByPullRequestsReferences":[]}]`), nil
+		}
+		return []byte("{}"), nil
+	}
+	sid, _, err := srv.LoginAs("member-2", "M2", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/issues?owner=acme&repo=app", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("shell status=%d", w.Code)
+	}
+	shell := w.Body.String()
+	if !strings.Contains(shell, `id="btn-issues-fix"`) {
+		t.Fatal("member still sees bulk Fix")
+	}
+	if strings.Contains(shell, `data-confirm-select="model"`) {
+		t.Fatal("investigator must not get the model confirm on the toolbar")
+	}
+	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=app", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if strings.Contains(w.Body.String(), `name="model"`) {
+		t.Fatal("investigator must not see the model field on the bulk form")
+	}
 }
 
 func TestBulkFixEmptyRedirectList(t *testing.T) {

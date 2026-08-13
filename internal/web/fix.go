@@ -164,6 +164,7 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 	}
 
 	actor := s.fixActor(ctx)
+	model := strings.TrimSpace(ctx.PostFormValue("model"))
 	reqCtx := ctx.Context()
 	gh := s.ghRun()
 
@@ -195,6 +196,7 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 				Title:    title,
 				URL:      issueURL,
 				Body:     body,
+				Model:    model,
 			})
 			out[i] = bulkOne{n: n, res: res, err: startErr}
 			detail := map[string]any{
@@ -202,6 +204,9 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 				"owner": owner, "repo": repo, "number": n,
 				"threadId": res.ThreadID, "status": string(res.Status),
 				"queuePos": res.QueuePos, "created": res.Created,
+			}
+			if model != "" {
+				detail["model"] = model
 			}
 			s.auditAction(ctx, audit.ActionSessionStart, startErr, detail)
 		})

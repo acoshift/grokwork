@@ -163,6 +163,8 @@ func (s *Server) issuesPageShell(ctx *hime.Context) (pageData, error) {
 	d.ClickUpEnabled = s.cfg.ProjectClickUpEnabled(project)
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	d.CanCreateIssue = s.canCreateIssue(d, project)
+	// Bulk Fix is a ship task; the confirm modal's Default names the task model.
+	s.attachModelPicker(&d, project, s.cfg.TaskModel())
 	if err != nil {
 		// Still render page with error if catalog empty / bad picker.
 		d.Error = err.Error()

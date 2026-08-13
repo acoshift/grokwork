@@ -38,7 +38,8 @@
   <button type="submit" class="btn-secondary">Apply</button>
 </form>
 {{if .CanStartSession}}
-  <button type="button" id="btn-issues-fix" class="btn-secondary" form="issues-bulk-fix" disabled>Fix</button>
+  <button type="button" id="btn-issues-fix" class="btn-secondary" form="issues-bulk-fix" disabled
+    {{- if .CanSelectModel}} data-confirm="Starts a new session for each selected issue. Opens or updates a PR; it never merges." data-confirm-title="Fix" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model"{{end}}>Fix</button>
   <button type="button" id="btn-issues-fix-cancel" class="btn-secondary" hidden>Cancel</button>
   <span id="issues-fix-hint" class="sub" style="margin:0;align-self:center" hidden>Select issues, then Confirm. Each gets a new fix session.</span>
 {{end}}
@@ -225,6 +226,8 @@
     {{template "csrf" $}}
     <input type="hidden" name="owner" value="{{.ActiveOwner}}">
     <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    {{/* Hidden: the confirm modal clones its options. Scripting off posts Default. */}}
+    {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
   {{end}}
   <div class="table-scroll">
   <table id="issues-table">
