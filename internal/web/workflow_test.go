@@ -399,6 +399,14 @@ func TestLinearListAndDetail(t *testing.T) {
 	if !strings.Contains(body, "ENG-1") || !strings.Contains(body, "Lin fixture") {
 		t.Fatalf("body=%s", body)
 	}
+	for _, extra := range []string{
+		` · <a href="/projects/proj/issues">GitHub issues</a>`,
+		` · <a href="/projects/proj">Overview</a>`,
+	} {
+		if strings.Contains(body, extra) {
+			t.Fatalf("linear title must not include %q", extra)
+		}
+	}
 	// Workspace nav gives Linear its own tab when enabled for the project.
 	assertNavActive(t, body, "Linear")
 	req = httptest.NewRequest(http.MethodGet, "/projects/proj/linear/ENG-1", nil)

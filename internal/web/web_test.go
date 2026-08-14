@@ -1266,7 +1266,10 @@ func TestOverviewMobileBrowseListsWorkspaceSections(t *testing.T) {
 // not a parent. If that scoping ever regresses, this page loses its only
 // escape, so the two tests are meant to be read together.
 func TestProjectSettingsHasNoConfigCrumb(t *testing.T) {
-	srv, _, _ := testServer(t)
+	srv, cfg, _ := testServer(t)
+	if err := cfg.SetProjectLinear("proj", true, "ENG", "lin-key", false); err != nil {
+		t.Fatal(err)
+	}
 	h := srv.Handler()
 	for _, path := range []string{
 		"/config/projects/proj",
@@ -1283,6 +1286,9 @@ func TestProjectSettingsHasNoConfigCrumb(t *testing.T) {
 		body := w.Body.String()
 		if strings.Contains(body, "← Config") {
 			t.Fatalf("%s still renders the Config crumb", path)
+		}
+		if strings.Contains(body, ` · <a href="/projects/proj/linear">Linear</a>`) {
+			t.Fatalf("%s title still hops to Linear", path)
 		}
 		// The workspace sidebar is what replaced it.
 		if !strings.Contains(body, `data-scope="proj"`) {
