@@ -17,6 +17,7 @@ import (
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/deploy"
+	"github.com/acoshift/grokwork/internal/filestore"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -122,6 +123,7 @@ func TestPreviewServer(t *testing.T) {
 				Merge:         true,
 				StartSessions: true,
 				PRReviews:     true,
+				Storage:       true,
 			},
 		}
 	}
@@ -372,6 +374,7 @@ func TestPreviewServer(t *testing.T) {
 		})
 	}
 	seedPreviewDeploys(t, srv)
+	seedPreviewFiles(t, srv, cfg)
 	// Synthetic git/gh so the diff review UI can be exercised with a large
 	// changeset: /projects/webapp/commits → commit detail (lazy per-file
 	// hunks), /prs/acme/webapp/128/diff for the PR surface.
@@ -809,4 +812,49 @@ func seedPreviewDeploys(t *testing.T, srv *Server) {
 		QueuedAt: previewStamp(-6 * 24 * time.Hour), StartedAt: previewStamp(-6 * 24 * time.Hour),
 		EndedAt: previewStamp(-6*24*time.Hour + 3*time.Minute),
 	})
+}
+
+// seedPreviewFiles links webapp to a bucket and serves a nested listing so
+// /projects/webapp/files?path=Docs%20for%20Customer/CR%20AMB exercises the
+// path trail (the screenshot that used to stack each crumb on its own line).
+func seedPreviewFiles(t *testing.T, srv *Server, cfg *config.Config) {
+	t.Helper()
+	if err := cfg.SetProjectStorageGCS("webapp", "preview-files", "webapp", ""); err != nil {
+		t.Fatal(err)
+	}
+	srv.filesBackendFn = func(filestore.Target) (filestore.Backend, error) {
+		return previewFiles{}, nil
+	}
+}
+
+type previewFiles struct{}
+
+func (previewFiles) List(_ context.Context, _ filestore.Target, subPath string) ([]filestore.Entry, error) {
+	stamp := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	switch strings.Trim(subPath, "/") {
+	case "":
+		return []filestore.Entry{{Name: "Docs for Customer", IsDir: true}}, nil
+	case "Docs for Customer":
+		return []filestore.Entry{{Name: "CR AMB", IsDir: true}}, nil
+	case "Docs for Customer/CR AMB":
+		return []filestore.Entry{
+			{Name: "handoff.pdf", Size: 184320, Updated: stamp, ContentType: "application/pdf"},
+			{Name: "notes.txt", Size: 2048, Updated: stamp, ContentType: "text/plain"},
+		}, nil
+	default:
+		return nil, nil
+	}
+}
+
+func (previewFiles) Describe(context.Context, filestore.Target, string) (filestore.Entry, bool, error) {
+	return filestore.Entry{}, false, nil
+}
+func (previewFiles) Upload(context.Context, string, filestore.Target, string, bool) error {
+	return nil
+}
+func (previewFiles) Download(context.Context, filestore.Target, string, string) error {
+	return nil
+}
+func (previewFiles) Delete(context.Context, filestore.Target, string) error {
+	return nil
 }

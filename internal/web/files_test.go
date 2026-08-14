@@ -140,6 +140,60 @@ func TestFilesPageInvalidPathFallsBackToRoot(t *testing.T) {
 	}
 }
 
+func TestFileBreadcrumbs(t *testing.T) {
+	got := fileBreadcrumbs("Docs for Customer/CR AMB")
+	want := []fileCrumb{
+		{Label: "Files", Path: ""},
+		{Label: "Docs for Customer", Path: "Docs for Customer"},
+		{Label: "CR AMB", Path: "Docs for Customer/CR AMB", Last: true},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
+	}
+	root := fileBreadcrumbs("")
+	if !slices.Equal(root, []fileCrumb{{Label: "Files", Path: "", Last: true}}) {
+		t.Fatalf("root = %#v", root)
+	}
+}
+
+func TestFilesPageBreadcrumbIsInlineTrail(t *testing.T) {
+	srv, _, _ := storageServer(t)
+	sid, _ := adminLogin(t, srv)
+	root := getAuthed(t, srv, "/projects/proj/files", sid)
+	if i := strings.Index(root, `id="page-project-files"`); i >= 0 {
+		root = root[i:]
+	}
+	if strings.Contains(root, `class="pr-crumb"`) {
+		t.Fatal("root listing must not render a one-segment Files crumb")
+	}
+	body := getAuthed(t, srv, "/projects/proj/files?path=Docs%20for%20Customer/CR%20AMB", sid)
+	// The sidebar owns the element selector `nav { flex-direction: column }`.
+	// A files crumb that is itself a <nav> stacks each segment on its own line.
+	if i := strings.Index(body, `id="page-project-files"`); i >= 0 {
+		body = body[i:]
+	}
+	if strings.Contains(body, "<nav") {
+		t.Fatal("files crumb must not use <nav>; sidebar nav rules stack it vertically")
+	}
+	if !strings.Contains(body, `class="pr-crumb"`) {
+		t.Fatal("files crumb must use the shared inline pr-crumb trail")
+	}
+	for _, want := range []string{
+		`class="pr-crumb"`,
+		`aria-label="Current folder"`,
+		`>Files</a>`,
+		// urlquery emits + for space; html/template then writes &#43; in href.
+		`href="/projects/proj/files?path=Docs&#43;for&#43;Customer"`,
+		`>Docs for Customer</a>`,
+		`>CR AMB</span>`,
+		`<span class="crumb-sep">/</span>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q", want)
+		}
+	}
+}
+
 func TestFilesUploadHappyPath(t *testing.T) {
 	srv, _, calls := storageServer(t)
 	sid, csrf := adminLogin(t, srv)

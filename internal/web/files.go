@@ -634,7 +634,7 @@ func joinFilesPath(parts ...string) string {
 
 func fileBreadcrumbs(subPath string) []fileCrumb {
 	subPath = strings.Trim(subPath, "/")
-	out := []fileCrumb{{Label: "root", Path: ""}}
+	out := []fileCrumb{{Label: "Files", Path: ""}}
 	if subPath == "" {
 		out[0].Last = true
 		return out

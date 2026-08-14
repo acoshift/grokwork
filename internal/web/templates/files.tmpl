@@ -50,19 +50,19 @@
 </div>
 {{else}}
 
-{{if .FilesCrumbs}}
-<nav class="sub" aria-label="Breadcrumb" style="margin-bottom:0.85rem">
+{{if gt (len .FilesCrumbs) 1}}
+<p class="pr-crumb" aria-label="Current folder">
   {{range $i, $c := .FilesCrumbs}}
-    {{if $i}}<span class="muted"> / </span>{{end}}
+    {{if $i}}<span class="crumb-sep">/</span>{{end}}
     {{if $c.Last}}
-      <span class="mono">{{$c.Label}}</span>
+      <span>{{$c.Label}}</span>
     {{else if eq $c.Path ""}}
-      <a href="/projects/{{$.Project}}/files" class="mono">{{$c.Label}}</a>
+      <a href="/projects/{{$.Project}}/files">{{$c.Label}}</a>
     {{else}}
-      <a href="/projects/{{$.Project}}/files?path={{$c.Path}}" class="mono">{{$c.Label}}</a>
+      <a href="/projects/{{$.Project}}/files?path={{urlquery $c.Path}}">{{$c.Label}}</a>
     {{end}}
   {{end}}
-</nav>
+</p>
 {{end}}
 
 {{if .CanStorageWrite}}
@@ -89,7 +89,7 @@
 {{end}}
 
 <div class="section">
-  <h2>Contents{{if .FilesPath}} <span class="muted mono" style="font-weight:500;font-size:0.9rem">/ {{.FilesPath}}</span>{{end}}</h2>
+  <h2>Contents</h2>
   {{if .FilesClipped}}
   <p class="sub">Showing {{len .FilesRows}} of {{.FilesTotal}} entries (capped at 200).</p>
   {{end}}
@@ -109,7 +109,7 @@
       <tr>
         <td class="mono">
           {{if .IsDir}}
-            <a href="/projects/{{$.Project}}/files?path={{.Path}}">{{.Name}}/</a>
+            <a href="/projects/{{$.Project}}/files?path={{urlquery .Path}}">{{.Name}}/</a>
           {{else}}
             {{.Name}}
           {{end}}

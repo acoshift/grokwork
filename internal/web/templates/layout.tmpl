@@ -2132,6 +2132,10 @@
        the pattern; all detail templates share them. ─────────────────── */
     .pr-crumb {
       display: flex;
+      /* Row is load-bearing: the element selector `nav { flex-direction: column }`
+         is the sidebar, and a crumb marked up as <nav class="pr-crumb"> would
+         otherwise stack each segment (Files page used to). */
+      flex-direction: row;
       flex-wrap: wrap;
       align-items: center;
       gap: 0.55rem;
