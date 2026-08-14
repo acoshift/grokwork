@@ -26,5 +26,16 @@ func runAgentMCPStdio() error {
 		}
 		return agentmcp.ClientCall(ctx, sock, tok, name, args)
 	}
-	return agentmcp.RunStdioDefault(ctx, call, token)
+	list := func(ctx context.Context, tok string) []agentmcp.ToolDef {
+		if token == "" || sock == "" {
+			// User-scope grok attach outside a run: show the full catalog.
+			return agentmcp.ToolDefs()
+		}
+		defs, err := agentmcp.ClientListTools(ctx, sock, tok)
+		if err != nil {
+			return []agentmcp.ToolDef{}
+		}
+		return defs
+	}
+	return agentmcp.RunStdioDefaultList(ctx, call, list, token)
 }

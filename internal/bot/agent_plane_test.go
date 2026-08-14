@@ -18,16 +18,39 @@ func TestPrepareAgentMCPClaudeOnly(t *testing.T) {
 		// testFixBot may not set DataDir the same way — init via New path.
 		t.Skip(err.Error())
 	}
-	// Unrestricted Claude → MCP ok
+	// Unrestricted Claude → MCP ok (ship caps)
 	path, tok, ok := b.prepareAgentMCP("t1", "app", "actor", grokrun.AgentClaude, RunPolicy{})
 	if !ok || path == "" || tok == "" {
 		t.Fatalf("expected mcp path=%q tok empty=%v ok=%v", path, tok == "", ok)
 	}
-	// Investigate tools → no MCP
-	tools := "read_file,grep"
-	_, _, ok = b.prepareAgentMCP("t1", "app", "actor", grokrun.AgentClaude, RunPolicy{Tools: &tools})
+	cred, err := b.agent.Auth.Verify(tok)
+	if err != nil || !cred.Caps.SessionDone {
+		t.Fatalf("ship token should allow session_done: %+v %v", cred.Caps, err)
+	}
+	// Claude investigate → read-only MCP
+	tools := "Read,Grep,Glob"
+	ipath, itok, iok := b.prepareAgentMCP("t1", "app", "actor", grokrun.AgentClaude, RunPolicy{Tools: &tools})
+	if !iok || ipath == "" || itok == "" {
+		t.Fatal("claude investigate must get MCP")
+	}
+	icred, err := b.agent.Auth.Verify(itok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !icred.Caps.SessionRead || icred.Caps.SessionDone || icred.Caps.StorageWrite || icred.Caps.ReviewRequest {
+		t.Fatalf("investigate caps=%+v", icred.Caps)
+	}
+	// Grok investigate → still no MCP (--deny MCPTool)
+	gtools := "read_file,grep"
+	_, _, ok = b.prepareAgentMCP("t1", "app", "actor", grokrun.AgentGrok, RunPolicy{Tools: &gtools})
 	if ok {
-		t.Fatal("investigate must not get MCP")
+		t.Fatal("grok investigate must not get MCP")
+	}
+	// Tools-off / explain → no MCP
+	empty := ""
+	_, _, ok = b.prepareAgentMCP("t1", "app", "actor", grokrun.AgentClaude, RunPolicy{Tools: &empty})
+	if ok {
+		t.Fatal("tools-off must not get MCP")
 	}
 	// Grok unrestricted → MCP (this host's default agent)
 	gpath, gtok, ok := b.prepareAgentMCP("t1", "app", "actor", grokrun.AgentGrok, RunPolicy{})
@@ -35,6 +58,43 @@ func TestPrepareAgentMCPClaudeOnly(t *testing.T) {
 		t.Fatalf("grok expected mcp path=%q tok empty=%v ok=%v", gpath, gtok == "", ok)
 	}
 	b.revokeAgentThread("t1")
+}
+
+func TestMCPCapsForRun(t *testing.T) {
+	t.Parallel()
+	if _, ok := mcpCapsForRun(grokrun.AgentGrok, RunPolicy{}); !ok {
+		t.Fatal("grok ship")
+	}
+	tools := "Read,Grep"
+	caps, ok := mcpCapsForRun(grokrun.AgentClaude, RunPolicy{Tools: &tools})
+	if !ok || caps.SessionDone || !caps.SessionRead {
+		t.Fatalf("claude investigate: %+v ok=%v", caps, ok)
+	}
+	if _, ok := mcpCapsForRun(grokrun.AgentGrok, RunPolicy{Tools: &tools}); ok {
+		t.Fatal("grok investigate")
+	}
+	empty := ""
+	if _, ok := mcpCapsForRun(grokrun.AgentClaude, RunPolicy{Tools: &empty}); ok {
+		t.Fatal("tools-off")
+	}
+}
+
+func TestAgentMCPPromptContractInvestigateOmitsWrites(t *testing.T) {
+	t.Parallel()
+	p := agentMCPPromptContract(agentauth.DefaultInvestigateCaps())
+	for _, name := range []string{"session_get", "prs_list", "clickup_get_task", "linear_get_issue", "storage_get"} {
+		if !strings.Contains(p, name) {
+			t.Fatalf("missing %q in %s", name, p)
+		}
+	}
+	for _, name := range []string{"session_done", "session_abandon", "review_request", "storage_put", "storage_delete"} {
+		if strings.Contains(p, name) {
+			t.Fatalf("investigate prompt must not name %q:\n%s", name, p)
+		}
+	}
+	if !strings.Contains(p, "read-only") {
+		t.Fatalf("want read-only note:\n%s", p)
+	}
 }
 
 func TestEligibleTeamReviewerBuilder(t *testing.T) {

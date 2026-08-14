@@ -103,6 +103,20 @@ func TestClaudeArgsMCPConfigUsesStrict(t *testing.T) {
 	}
 }
 
+func TestClaudeArgsInvestigateAllowlistKeepsOurMCPConfig(t *testing.T) {
+	tools := "Read,Grep,Glob"
+	args := claudeArgs(Options{Tools: &tools, MCPConfigPath: "/tmp/mcp.json"})
+	if got := argValue(args, "--tools"); got != tools {
+		t.Fatalf("tools=%q", got)
+	}
+	if got := argValue(args, "--mcp-config"); got != "/tmp/mcp.json" {
+		t.Fatalf("mcp-config=%q", got)
+	}
+	if !slices.Contains(args, "--strict-mcp-config") {
+		t.Fatalf("must keep --strict-mcp-config: %v", args)
+	}
+}
+
 func TestClaudeArgsUnrestrictedToolsOmitsFlags(t *testing.T) {
 	args := claudeArgs(Options{})
 	for _, never := range []string{"--tools", "--strict-mcp-config"} {

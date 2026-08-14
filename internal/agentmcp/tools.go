@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/acoshift/grokwork/internal/agentapi"
+	"github.com/acoshift/grokwork/internal/agentauth"
 )
 
 // Tool names exposed to the coding CLI.
@@ -69,6 +70,57 @@ func ToolDefs() []ToolDef {
 		{Name: ToolLinearList, Description: "List recent Linear issues on this project's configured team.", InputSchema: obj(map[string]any{"limit": num})},
 		{Name: ToolReviewersList, Description: "List team-review-eligible project members (canonical actor ids for review_request).", InputSchema: obj(nil)},
 	}
+}
+
+func toolAllowed(name string, c agentauth.Caps) bool {
+	switch name {
+	case ToolSessionGet:
+		return c.SessionRead
+	case ToolSessionDone:
+		return c.SessionDone
+	case ToolSessionAbandon:
+		return c.SessionAbandon
+	case ToolPRsList:
+		return c.PRsList
+	case ToolIssuesList:
+		return c.IssuesList
+	case ToolReviewRequest, ToolReviewersList:
+		return c.ReviewRequest
+	case ToolStoragePut, ToolStorageDelete:
+		return c.StorageWrite
+	case ToolStorageGet, ToolStorageList:
+		return c.StorageRead
+	case ToolClickUpGetTask, ToolClickUpList:
+		return c.ClickUpRead
+	case ToolLinearGetIssue, ToolLinearList:
+		return c.LinearRead
+	default:
+		return false
+	}
+}
+
+// ToolDefsFor returns the catalog subset the minted caps allow.
+func ToolDefsFor(c agentauth.Caps) []ToolDef {
+	all := ToolDefs()
+	out := make([]ToolDef, 0, len(all))
+	for _, d := range all {
+		if toolAllowed(d.Name, c) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// CatalogForToken verifies the token and returns the cap-filtered catalog.
+func CatalogForToken(svc *agentapi.Service, token string) ([]ToolDef, error) {
+	if svc == nil || svc.Auth == nil {
+		return nil, fmt.Errorf("service unavailable")
+	}
+	cred, err := svc.Auth.Verify(token)
+	if err != nil {
+		return nil, err
+	}
+	return ToolDefsFor(cred.Caps), nil
 }
 
 // Call dispatches a tool by name with JSON args object.

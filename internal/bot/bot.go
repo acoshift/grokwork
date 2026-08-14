@@ -2030,7 +2030,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	timeout := time.Duration(b.cfg.TimeoutMsValue()) * time.Millisecond
 	mcpPath, agentTok, mcpOK := b.prepareAgentMCP(threadID, proj.Name, actor.ID, agentCLI.Agent, pol)
 	if mcpOK {
-		prompt += agentMCPPromptContract()
+		prompt += b.agentMCPPromptForToken(agentTok)
 		defer b.revokeAgentThread(threadID)
 	}
 	envPol := b.childEnvPolicyWithAgentToken(agentCLI.Agent, pol, mcpOK)

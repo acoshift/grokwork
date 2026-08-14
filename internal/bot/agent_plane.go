@@ -194,16 +194,33 @@ func (b *Bot) AgentAPI() *agentapi.Service {
 	return b.agent.API
 }
 
+// mcpCapsForRun decides whether this run attaches grokwork MCP and which
+// caps to mint. Grok investigate stays off: --deny MCPTool is what blocks
+// ambient user-scope MCP, and dropping it would attach every configured
+// server. Claude can attach only our server via --mcp-config + --strict-mcp-config.
+func mcpCapsForRun(agent grokrun.Agent, pol RunPolicy) (agentauth.Caps, bool) {
+	if pol.Tools == nil {
+		return agentauth.DefaultShipCaps(), true
+	}
+	if strings.TrimSpace(*pol.Tools) == "" {
+		return agentauth.Caps{}, false
+	}
+	if agent != grokrun.AgentClaude {
+		return agentauth.Caps{}, false
+	}
+	return agentauth.DefaultInvestigateCaps(), true
+}
+
 // prepareAgentMCP mints a session-bound token and writes MCP config outside
-// the worktree when the run is unrestricted (investigate/tools-off excluded).
-// Claude uses the file via --mcp-config; grok uses the same server from user
-// scope plus TOKEN/SOCK in the child env. Returns path, raw token, attached.
+// the worktree. Ship/fix (any agent) and Claude investigate attach; Grok
+// investigate and tools-off do not. Claude uses --mcp-config; grok ship uses
+// the same server from user scope plus TOKEN/SOCK in the child env.
 func (b *Bot) prepareAgentMCP(threadID, project, actorID string, agent grokrun.Agent, pol RunPolicy) (mcpPath, token string, ok bool) {
 	if b == nil || b.agent == nil || b.cfg == nil || !b.cfg.AgentMCPEnabled() {
 		return "", "", false
 	}
-	// Unrestricted tools only (investigate/tools-off must not get MCP).
-	if pol.Tools != nil {
+	caps, attach := mcpCapsForRun(agent, pol)
+	if !attach {
 		return "", "", false
 	}
 	if strings.TrimSpace(threadID) == "" || strings.TrimSpace(project) == "" {
@@ -214,7 +231,7 @@ func (b *Bot) prepareAgentMCP(threadID, project, actorID string, agent grokrun.A
 	if ttl < 30*time.Minute {
 		ttl = 45 * time.Minute
 	}
-	raw, cred, err := b.agent.Auth.Mint(threadID, project, actorID, "", agentauth.DefaultShipCaps(), ttl)
+	raw, cred, err := b.agent.Auth.Mint(threadID, project, actorID, "", caps, ttl)
 	if err != nil {
 		log.Printf("warn: agent mint: %v", err)
 		return "", "", false
@@ -265,22 +282,60 @@ func (b *Bot) revokeAgentThread(threadID string) {
 	b.agent.Auth.RevokeThread(threadID)
 }
 
+func (b *Bot) agentMCPPromptForToken(tok string) string {
+	if b == nil || b.agent == nil || b.agent.Auth == nil {
+		return ""
+	}
+	cred, err := b.agent.Auth.Verify(tok)
+	if err != nil {
+		return ""
+	}
+	return agentMCPPromptContract(cred.Caps)
+}
+
 // agentMCPPromptContract is appended when MCP was actually attached.
-func agentMCPPromptContract() string {
-	return strings.Join([]string{
-		"You have grokwork MCP tools (server \"grokwork\"): session_get, session_done, session_abandon,",
-		"prs_list, issues_list, review_request, reviewers_list, storage_put, storage_get, storage_list, storage_delete,",
-		"clickup_get_task, clickup_list_tasks, linear_get_issue, linear_list_issues.",
+func agentMCPPromptContract(caps agentauth.Caps) string {
+	defs := agentmcp.ToolDefsFor(caps)
+	names := make([]string, 0, len(defs))
+	for _, d := range defs {
+		names = append(names, d.Name)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	lines := []string{
+		"You have grokwork MCP tools (server \"grokwork\"): " + strings.Join(names, ", ") + ".",
 		"Use them for team workflow state; do not invent HTTP calls to the admin UI.",
-		"ClickUp refs (custom id, native id, or ClickUp URL) go to clickup_get_task — not issues_list, and not ClickUp's HTTP API.",
-		"Do not invent ClickUp API keys. Do not change ClickUp status.",
-		"Linear refs (TEAM-N or a Linear issue URL) go to linear_get_issue — not issues_list, and not Linear HTTP.",
-		"Do not invent Linear API keys. Do not call Linear issueUpdate.",
-		"When the task is complete you may call session_done (or session_abandon if giving up),",
-		"and/or end with SESSION_DONE: / SESSION_ABANDON: markers.",
-		"Project storage is shared across sessions in this project — use clear keys (e.g. reports/<case>/…).",
-		"",
-	}, "\n")
+	}
+	if caps.ClickUpRead {
+		lines = append(lines,
+			"ClickUp refs (custom id, native id, or ClickUp URL) go to clickup_get_task — not issues_list, and not ClickUp's HTTP API.",
+			"Do not invent ClickUp API keys. Do not change ClickUp status.",
+		)
+	}
+	if caps.LinearRead {
+		lines = append(lines,
+			"Linear refs (TEAM-N or a Linear issue URL) go to linear_get_issue — not issues_list, and not Linear HTTP.",
+			"Do not invent Linear API keys. Do not call Linear issueUpdate.",
+		)
+	}
+	if caps.SessionDone || caps.SessionAbandon {
+		lines = append(lines,
+			"When the task is complete you may call session_done (or session_abandon if giving up),",
+			"and/or end with SESSION_DONE: / SESSION_ABANDON: markers.",
+		)
+	} else {
+		lines = append(lines,
+			"This run is read-only on grokwork workflow state: do not mark the session done or abandon it.",
+		)
+	}
+	if caps.StorageRead {
+		lines = append(lines,
+			"Project storage is shared across sessions in this project — use clear keys (e.g. reports/<case>/…).",
+		)
+	}
+	lines = append(lines, "")
+	return strings.Join(lines, "\n")
 }
 
 // ShutdownAgentPlane stops the UDS bridge (optional at process exit).

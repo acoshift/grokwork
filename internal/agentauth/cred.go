@@ -41,6 +41,20 @@ func DefaultShipCaps() Caps {
 	}
 }
 
+// DefaultInvestigateCaps is the read-only tool set for Claude investigate
+// attach. Write/lifecycle tools stay off so a diagnosis run cannot mark the
+// board or mutate project storage.
+func DefaultInvestigateCaps() Caps {
+	return Caps{
+		SessionRead: true,
+		PRsList:     true,
+		IssuesList:  true,
+		StorageRead: true,
+		ClickUpRead: true,
+		LinearRead:  true,
+	}
+}
+
 // Cred is a verified credential view (no raw token).
 type Cred struct {
 	ID       string

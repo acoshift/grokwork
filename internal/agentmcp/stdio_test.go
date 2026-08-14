@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/acoshift/grokwork/internal/agentauth"
 )
 
 func TestRunStdioMissingEnvCallIsError(t *testing.T) {
@@ -40,6 +42,37 @@ func TestRunStdioMissingEnvCallIsError(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(lines[2]), &callResp); err != nil || !callResp.Result.IsError {
 		t.Fatalf("call: %s", lines[2])
+	}
+}
+
+func TestRunStdioListUsesFilteredCatalog(t *testing.T) {
+	t.Parallel()
+	call := func(context.Context, string, string, map[string]any) (any, error) {
+		return nil, errNotAttached
+	}
+	list := func(context.Context, string) []ToolDef {
+		return ToolDefsFor(agentauth.DefaultInvestigateCaps())
+	}
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n")
+	var out bytes.Buffer
+	if err := RunStdioList(t.Context(), call, list, "tok", in, &out); err != nil {
+		t.Fatal(err)
+	}
+	var resp struct {
+		Result struct {
+			Tools []ToolDef `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range resp.Result.Tools {
+		if d.Name == ToolSessionDone {
+			t.Fatal("filtered list advertised session_done")
+		}
+	}
+	if len(resp.Result.Tools) == 0 {
+		t.Fatal("expected read tools")
 	}
 }
 

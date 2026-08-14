@@ -49,6 +49,7 @@ func (b *Bridge) listenUnix(socketPath string) (net.Listener, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/tool", b.handleTool)
+	mux.HandleFunc("POST /v1/tools", b.handleTools)
 	b.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	socketPath = ShortUnixPath(socketPath)
 	_ = removeSocket(socketPath)
@@ -93,6 +94,58 @@ func (b *Bridge) handleTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": out})
+}
+
+func (b *Bridge) handleTools(w http.ResponseWriter, r *http.Request) {
+	var req toolReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	defs, err := CatalogForToken(b.Service, req.Token)
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "tools": defs})
+}
+
+// ClientListTools returns the cap-filtered catalog for a token.
+func ClientListTools(ctx context.Context, socketPath, token string) ([]ToolDef, error) {
+	tr := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", socketPath)
+		},
+	}
+	client := &http.Client{Transport: tr, Timeout: 2 * time.Minute}
+	body, _ := json.Marshal(toolReq{Token: token})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/v1/tools", bytesReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	var out struct {
+		OK    bool      `json:"ok"`
+		Error string    `json:"error"`
+		Tools []ToolDef `json:"tools"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if !out.OK {
+		return nil, fmt.Errorf("%s", out.Error)
+	}
+	if out.Tools == nil {
+		return []ToolDef{}, nil
+	}
+	return out.Tools, nil
 }
 
 // ClientCall dials the UDS bridge and invokes a tool.

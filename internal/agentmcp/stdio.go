@@ -27,8 +27,16 @@ type rpcError struct {
 // CallFunc is tools/call dispatch (token is fixed for the process).
 type CallFunc func(ctx context.Context, token, name string, args map[string]any) (any, error)
 
+// ListFunc returns the tools/list catalog. Nil means ToolDefs() (full catalog).
+type ListFunc func(ctx context.Context, token string) []ToolDef
+
 // RunStdio drives MCP over newline-delimited JSON-RPC.
 func RunStdio(ctx context.Context, call CallFunc, token string, r io.Reader, w io.Writer) error {
+	return RunStdioList(ctx, call, nil, token, r, w)
+}
+
+// RunStdioList is RunStdio with a cap-filtered tools/list.
+func RunStdioList(ctx context.Context, call CallFunc, list ListFunc, token string, r io.Reader, w io.Writer) error {
 	if call == nil {
 		return fmt.Errorf("nil call")
 	}
@@ -61,7 +69,14 @@ func RunStdio(ctx context.Context, call CallFunc, token string, r io.Reader, w i
 				"serverInfo":      map[string]any{"name": "grokwork", "version": "1"},
 			}
 		case "tools/list":
-			resp.Result = map[string]any{"tools": ToolDefs()}
+			defs := ToolDefs()
+			if list != nil {
+				defs = list(ctx, token)
+				if defs == nil {
+					defs = []ToolDef{}
+				}
+			}
+			resp.Result = map[string]any{"tools": defs}
 		case "tools/call":
 			var p struct {
 				Name      string         `json:"name"`
@@ -101,5 +116,10 @@ func RunStdio(ctx context.Context, call CallFunc, token string, r io.Reader, w i
 
 // RunStdioDefault serves MCP on stdin/stdout.
 func RunStdioDefault(ctx context.Context, call CallFunc, token string) error {
-	return RunStdio(ctx, call, token, os.Stdin, os.Stdout)
+	return RunStdioList(ctx, call, nil, token, os.Stdin, os.Stdout)
+}
+
+// RunStdioDefaultList serves MCP on stdin/stdout with a custom tools/list.
+func RunStdioDefaultList(ctx context.Context, call CallFunc, list ListFunc, token string) error {
+	return RunStdioList(ctx, call, list, token, os.Stdin, os.Stdout)
 }

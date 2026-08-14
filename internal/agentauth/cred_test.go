@@ -54,6 +54,16 @@ func TestDefaultShipCapsIncludeLinearRead(t *testing.T) {
 	}
 }
 
+func TestDefaultInvestigateCapsAreReadOnly(t *testing.T) {
+	c := DefaultInvestigateCaps()
+	if !c.SessionRead || !c.PRsList || !c.IssuesList || !c.StorageRead || !c.ClickUpRead || !c.LinearRead {
+		t.Fatalf("missing reads: %+v", c)
+	}
+	if c.SessionDone || c.SessionAbandon || c.ReviewRequest || c.StorageWrite {
+		t.Fatalf("writes must be off: %+v", c)
+	}
+}
+
 func TestRevokeThread(t *testing.T) {
 	s := NewStore()
 	raw, _, err := s.Mint("t1", "app", "a", "", DefaultShipCaps(), time.Hour)

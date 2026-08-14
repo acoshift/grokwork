@@ -119,3 +119,64 @@ func TestCallReviewersListAndLinearDispatch(t *testing.T) {
 		t.Fatal("linear get must reject junk via shipped Call")
 	}
 }
+
+func TestToolDefsForInvestigateOmitsWrites(t *testing.T) {
+	t.Parallel()
+	defs := ToolDefsFor(agentauth.DefaultInvestigateCaps())
+	got := map[string]bool{}
+	for _, d := range defs {
+		got[d.Name] = true
+	}
+	for _, name := range []string{ToolSessionGet, ToolPRsList, ToolIssuesList, ToolStorageGet, ToolStorageList, ToolClickUpGetTask, ToolLinearGetIssue} {
+		if !got[name] {
+			t.Fatalf("missing read tool %s: %+v", name, defs)
+		}
+	}
+	for _, name := range []string{ToolSessionDone, ToolSessionAbandon, ToolReviewRequest, ToolReviewersList, ToolStoragePut, ToolStorageDelete} {
+		if got[name] {
+			t.Fatalf("investigate catalog must not list %s", name)
+		}
+	}
+}
+
+func TestCatalogForTokenUsesMintedCaps(t *testing.T) {
+	auth := agentauth.NewStore()
+	svc := &agentapi.Service{Auth: auth}
+	raw, _, err := auth.Mint("t1", "app", "a", "", agentauth.DefaultInvestigateCaps(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defs, err := CatalogForToken(svc, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range defs {
+		if d.Name == ToolSessionDone {
+			t.Fatal("investigate token listed session_done")
+		}
+	}
+	if _, err := CatalogForToken(svc, "nope"); err == nil {
+		t.Fatal("invalid token")
+	}
+}
+
+func TestCallSessionDoneForbiddenOnInvestigateCaps(t *testing.T) {
+	dir := t.TempDir()
+	sessions, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = sessions.Set("t1", sessionstore.Entry{Project: "app"})
+	auth := agentauth.NewStore()
+	svc := &agentapi.Service{Auth: auth, Sessions: sessions, Bot: nopBot{}}
+	raw, _, err := auth.Mint("t1", "app", "a", "", agentauth.DefaultInvestigateCaps(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Call(t.Context(), svc, raw, ToolSessionGet, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Call(t.Context(), svc, raw, ToolSessionDone, nil); err == nil {
+		t.Fatal("session_done must be forbidden")
+	}
+}
