@@ -9,7 +9,13 @@ func TestValidateObjectPath(t *testing.T) {
 	if err := ValidateObjectPath("a/b"); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{"/x", "a/../b", "x*", "a//b"} {
+	if err := ValidateObjectPath("Report [final].pdf"); err != nil {
+		t.Fatalf("bracket name: %v", err)
+	}
+	if err := ValidateObjectPath("x*"); err != nil {
+		t.Fatalf("wildcard name is a Drive-legal leaf: %v", err)
+	}
+	for _, bad := range []string{"/x", "a/../b", "a//b"} {
 		if err := ValidateObjectPath(bad); err == nil {
 			t.Fatalf("want error for %q", bad)
 		}

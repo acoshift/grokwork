@@ -68,20 +68,21 @@
 {{if .CanStorageWrite}}
 <div class="section card" id="files-upload">
   <h2>Upload</h2>
-  <form method="post" action="/projects/{{.Project}}/files/upload" enctype="multipart/form-data">
+  <form method="post" action="/projects/{{.Project}}/files/upload" enctype="multipart/form-data" hx-boost="false">
     {{template "csrf" $}}
     <input type="hidden" name="path" value="{{.FilesPath}}">
-    <div class="inline" style="grid-template-columns: 1fr auto; align-items:end">
-      <div>
-        <label for="files-file">File</label>
-        <input id="files-file" type="file" name="file" required>
-      </div>
+    <div id="files-drop" class="files-drop">
+      <label for="files-file">Files</label>
+      <input id="files-file" type="file" name="file" multiple required>
+      <p class="sub" style="margin:0.35rem 0 0">Drop files here or choose. Uploads into this folder.</p>
+    </div>
+    <div class="inline" style="grid-template-columns: 1fr auto; align-items:end; margin-top:0.75rem">
+      <label class="check">
+        <input type="checkbox" name="overwrite" value="1"> Overwrite if exists
+      </label>
       <button type="submit">Upload</button>
     </div>
-    <label class="check" style="margin-top:0.65rem">
-      <input type="checkbox" name="overwrite" value="1"> Overwrite if exists
-    </label>
-    <p class="sub" style="margin:0.5rem 0 0">Max 50 MiB. Filename is sanitized before upload.</p>
+    <p class="sub" style="margin:0.5rem 0 0">Max 50 MiB per file, 64 MiB per request. Filename is sanitized before upload.</p>
   </form>
 </div>
 {{else if .StorageFeatureOn}}
@@ -110,16 +111,26 @@
         <td class="mono">
           {{if .IsDir}}
             <a href="/projects/{{$.Project}}/files?path={{urlquery .Path}}">{{.Name}}/</a>
+          {{else if .PreviewKind}}
+            <a href="/projects/{{$.Project}}/files/preview?object={{urlquery .Object}}"
+               hx-boost="false"
+               data-preview="{{.PreviewKind}}"
+               data-name="{{.Name}}"
+               data-download="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}">{{.Name}}</a>
+          {{else if .Downloadable}}
+            <a href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false">{{.Name}}</a>
           {{else}}
             {{.Name}}
+            {{if .NativeGoogle}}<div class="muted" style="font-family:var(--sans);font-size:0.78rem;font-weight:400">Google Doc — export as PDF to download</div>{{end}}
           {{end}}
         </td>
         <td class="muted">{{if .IsDir}}—{{else}}{{.SizeHuman}}{{end}}</td>
         <td class="muted">{{if .UpdatedText}}{{.UpdatedText}}{{else}}—{{end}}</td>
         <td style="white-space:nowrap;text-align:right">
-          {{if not .IsDir}}
-            <a class="btn-secondary" href="/projects/{{$.Project}}/files/download?object={{.Object}}">Download</a>
-            {{if $.CanStorageWrite}}
+          {{if .Downloadable}}
+            <a class="btn-secondary" href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false">Download</a>
+          {{end}}
+          {{if and (not .IsDir) $.CanStorageWrite}}
             <form method="post" action="/projects/{{$.Project}}/files/delete" style="display:inline"
                   data-confirm="Delete {{.Name}}? This cannot be undone."
                   data-confirm-title="Delete file" data-confirm-ok="Delete" data-confirm-danger>
@@ -128,7 +139,6 @@
               <input type="hidden" name="path" value="{{$.FilesPath}}">
               <button type="submit" class="btn-danger">Delete</button>
             </form>
-            {{end}}
           {{end}}
         </td>
       </tr>
@@ -141,6 +151,19 @@
   {{end}}
 </div>
 
+<dialog id="files-preview-dialog" class="files-preview-dialog" aria-labelledby="files-preview-title">
+  <div class="files-preview-shell">
+    <h2 id="files-preview-title" class="files-preview-title"></h2>
+    <div class="files-preview-body">
+      <img id="files-preview-img" alt="" hidden>
+      <iframe id="files-preview-frame" title="Preview" hidden></iframe>
+    </div>
+    <div class="files-preview-foot">
+      <a id="files-preview-download" class="btn-secondary" href="#" hx-boost="false">Download</a>
+      <button type="button" id="files-preview-close">Close</button>
+    </div>
+  </div>
+</dialog>
 {{end}}
 </div>
 {{end}}

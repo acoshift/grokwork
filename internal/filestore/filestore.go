@@ -51,9 +51,10 @@ type Backend interface {
 	Delete(ctx context.Context, t Target, object string) error
 }
 
-// ValidateObjectPath rejects names that would escape the prefix, expand as
-// wildcards under gcloud, or inject control characters. Empty is allowed so
-// callers can treat "" as the root.
+// ValidateObjectPath rejects names that would escape the prefix or inject
+// control characters. Empty is allowed so callers can treat "" as the root.
+// Wildcard characters (*?[]) are allowed here — Drive display names use them.
+// GCS still refuses them at the gcloud argv boundary (internal/gcs).
 func ValidateObjectPath(p string) error {
 	if p == "" {
 		return nil
@@ -63,9 +64,6 @@ func ValidateObjectPath(p string) error {
 	}
 	if len(p) > maxObjectPathBytes {
 		return fmt.Errorf("object path exceeds %d bytes", maxObjectPathBytes)
-	}
-	if strings.ContainsAny(p, "*?[]") {
-		return fmt.Errorf("object path must not contain wildcard characters")
 	}
 	for _, r := range p {
 		if r < 0x20 || r == 0x7f || unicode.IsControl(r) {

@@ -312,11 +312,16 @@ func TestFilesDownloadStreamsObject(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 	}
-	if got := w.Header().Get("Content-Disposition"); !strings.Contains(got, `filename="report.pdf"`) {
+	if got := w.Header().Get("Content-Disposition"); !strings.Contains(got, `filename="report.pdf"`) ||
+		!strings.Contains(got, "attachment") ||
+		!strings.Contains(got, "filename*=UTF-8''report.pdf") {
 		t.Fatalf("Content-Disposition = %q", got)
 	}
 	if got := w.Header().Get("Content-Type"); got != "application/pdf" {
 		t.Fatalf("Content-Type = %q", got)
+	}
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("nosniff = %q", got)
 	}
 	if w.Body.String() != "PDF-CONTENT" {
 		t.Fatalf("body = %q", w.Body.String())
@@ -333,23 +338,29 @@ func TestFilesDownloadRefusals(t *testing.T) {
 		srv.Handler().ServeHTTP(w, req)
 		return w
 	}
-	// Missing object (describe answers not-found) → 404.
-	if w := get("/projects/proj/files/download?object=gone.txt"); w.Code != http.StatusNotFound {
-		t.Fatalf("missing object status = %d, want 404", w.Code)
-	}
-	// Wildcard / traversal names → 400 before any runner call.
-	for _, obj := range []string{"a%2A", "..%2Fescape", ""} {
-		if w := get("/projects/proj/files/download?object=" + obj); w.Code != http.StatusBadRequest {
-			t.Fatalf("object %q status = %d, want 400", obj, w.Code)
+	redirectErr := func(path, label string) {
+		t.Helper()
+		w := get(path)
+		if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+			t.Fatalf("%s status = %d, want redirect; body=%s", label, w.Code, w.Body.String())
+		}
+		if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
+			t.Fatalf("%s Location = %q", label, loc)
 		}
 	}
-	// Oversize object → 413.
+	// Missing object (describe answers not-found) → back to the listing.
+	redirectErr("/projects/proj/files/download?object=gone.txt", "missing object")
+	// Traversal / empty names are refused before backend I/O.
+	for _, obj := range []string{"..%2Fescape", ""} {
+		redirectErr("/projects/proj/files/download?object="+obj, "object "+obj)
+	}
+	// GCS wildcard: web containment allows it; the adapter refuses without gcloud.
+	redirectErr("/projects/proj/files/download?object=a%2A", "gcs wildcard")
+	// Oversize object → listing flash, not a raw 413 page.
 	srv.gcsRunner = func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error) {
 		return []byte(`{"name":"pre/huge.bin","size":"999999999999"}`), nil
 	}
-	if w := get("/projects/proj/files/download?object=huge.bin"); w.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("oversize status = %d, want 413", w.Code)
-	}
+	redirectErr("/projects/proj/files/download?object=huge.bin", "oversize")
 }
 
 func TestFilesPageDisabledDoesNotList(t *testing.T) {
@@ -817,3 +828,199 @@ func TestFilesUploadDrivePassesOverwrite(t *testing.T) {
 	}
 }
 
+func TestFilePreviewKind(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, ctype, want string
+	}{
+		{"a.png", "image/png", "image"},
+		{"a.jpg", "image/jpeg", "image"},
+		{"a.pdf", "application/pdf", "pdf"},
+		{"a.pdf", "", "pdf"},
+		{"a.bin", "application/octet-stream", ""},
+		{"a.svg", "image/svg+xml", ""},
+		{"a.html", "text/html", ""},
+		{"Sheet", "application/vnd.google-apps.spreadsheet", ""},
+		{"photo.png", "text/html", ""},
+	}
+	for _, tc := range cases {
+		if got := filePreviewKind(tc.name, tc.ctype); got != tc.want {
+			t.Errorf("filePreviewKind(%q, %q)=%q want %q", tc.name, tc.ctype, got, tc.want)
+		}
+	}
+}
+
+func TestFilesPageDownloadAndPreviewMarkup(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	fake.listEntries = []filestore.Entry{
+		{Name: "Report [final].pdf", Size: 4096, ContentType: "application/pdf"},
+		{Name: "Sheet", Size: 0, ContentType: "application/vnd.google-apps.spreadsheet"},
+		{Name: "notes [v2].txt", Size: 12, ContentType: "text/plain"},
+	}
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	if i := strings.Index(body, `id="page-project-files"`); i >= 0 {
+		body = body[i:]
+	}
+	for _, want := range []string{
+		`hx-boost="false"`,
+		// urlquery emits + for space; html/template then writes &#43; in href.
+		`href="/projects/proj/files/download?object=Report&#43;%5Bfinal%5D.pdf"`,
+		`href="/projects/proj/files/preview?object=Report&#43;%5Bfinal%5D.pdf"`,
+		`data-preview="pdf"`,
+		`Google Doc — export as PDF to download`,
+		`notes [v2].txt`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q", want)
+		}
+	}
+	if strings.Contains(body, `/files/download?object=Sheet`) {
+		t.Fatal("native Google file must not have a Download href")
+	}
+	if strings.Contains(body, `/files/preview?object=Sheet`) {
+		t.Fatal("native Google file must not have a Preview href")
+	}
+}
+
+func TestFilesDownloadDriveStreamsObject(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	fake.describeObject = "brief.pdf"
+	fake.describeEntry = filestore.Entry{Name: "brief.pdf", Size: 11, ContentType: "application/pdf"}
+	fake.describeOK = true
+	fake.downloadBody = []byte("PDF-CONTENT")
+	sid, _ := adminLogin(t, srv)
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/files/download?object=brief.pdf", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "PDF-CONTENT" {
+		t.Fatalf("body = %q", w.Body.String())
+	}
+}
+
+func TestFilesDownloadDriveNativeRedirects(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	fake.describeObject = "Sheet"
+	fake.describeEntry = filestore.Entry{
+		Name: "Sheet", Size: 0, ContentType: "application/vnd.google-apps.spreadsheet",
+	}
+	fake.describeOK = true
+	sid, _ := adminLogin(t, srv)
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/files/download?object=Sheet", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want redirect; body=%s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
+		t.Fatalf("Location = %q", loc)
+	}
+}
+
+func TestFilesPreviewPDFAndRefusals(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	fake.describeObject = "brief.pdf"
+	fake.describeEntry = filestore.Entry{Name: "brief.pdf", Size: 11, ContentType: "application/pdf"}
+	fake.describeOK = true
+	fake.downloadBody = []byte("%PDF-1.1 test")
+	sid, _ := adminLogin(t, srv)
+	get := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+	w := get("/projects/proj/files/preview?object=brief.pdf")
+	if w.Code != http.StatusOK {
+		t.Fatalf("pdf preview status = %d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Disposition"); !strings.Contains(got, "inline") {
+		t.Fatalf("Content-Disposition = %q", got)
+	}
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("nosniff = %q", got)
+	}
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Fatalf("preview must not redirect, Location=%q", loc)
+	}
+
+	fake.describeObject = "page.html"
+	fake.describeEntry = filestore.Entry{Name: "page.html", Size: 12, ContentType: "text/html"}
+	w = get("/projects/proj/files/preview?object=page.html")
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("html preview status = %d, want 415", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Fatalf("preview 415 must not redirect, Location=%q", loc)
+	}
+
+	fake.describeObject = "Sheet"
+	fake.describeEntry = filestore.Entry{Name: "Sheet", Size: 0, ContentType: "application/vnd.google-apps.spreadsheet"}
+	w = get("/projects/proj/files/preview?object=Sheet")
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("native preview status = %d, want 415", w.Code)
+	}
+}
+
+func TestFilesDeleteDriveBracketNameReachesBackend(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	sid, csrf := adminLogin(t, srv)
+	w := postFix(t, srv, "/projects/proj/files/delete", sid, csrf, url.Values{
+		"object": {"Report [final].pdf"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	if len(fake.deletes) != 1 || fake.deletes[0] != "Report [final].pdf" {
+		t.Fatalf("deletes = %v", fake.deletes)
+	}
+}
+
+func TestFilesUploadMultiple(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	sid, csrf := adminLogin(t, srv)
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	if err := mw.WriteField("csrf", csrf); err != nil {
+		t.Fatal(err)
+	}
+	if err := mw.WriteField("path", "docs"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.txt", "b.txt"} {
+		fw, err := mw.CreateFormFile("file", name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fw.Write([]byte(name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/projects/proj/files/upload", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	if len(fake.uploads) != 2 {
+		t.Fatalf("uploads = %+v", fake.uploads)
+	}
+	if fake.uploads[0].object != "docs/a.txt" || fake.uploads[1].object != "docs/b.txt" {
+		t.Fatalf("objects = %+v", fake.uploads)
+	}
+	loc, _ := url.QueryUnescape(w.Header().Get("Location"))
+	if !strings.Contains(loc, "Uploaded a.txt, b.txt") {
+		t.Fatalf("Location = %q", loc)
+	}
+}

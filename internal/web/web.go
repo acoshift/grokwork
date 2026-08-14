@@ -436,10 +436,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeployCancel))))
 	mux.Handle("POST /projects/{project}/deploys/{runID}/redeploy",
 		s.requireFeature("deploy", s.requireMember(hime.Handler(s.postDeployRedeploy))))
-	// Project file storage (GCS). Page + download are membership-only reads;
-	// upload/delete need the storage feature flag and SafeOps in the handler.
+	// Project file storage. Page + download + preview are membership-only reads;
+	// upload/delete need the storage feature flag and CanStorageWrite in the handler.
 	mux.Handle("GET /projects/{project}/files", s.requireAuth(hime.Handler(s.filesPage)))
 	mux.Handle("GET /projects/{project}/files/download", s.requireAuth(hime.Handler(s.fileDownload)))
+	mux.Handle("GET /projects/{project}/files/preview", s.requireAuth(hime.Handler(s.filePreview)))
 	mux.Handle("POST /projects/{project}/files/upload",
 		s.requireFeature("storage", s.requireMember(hime.Handler(s.postFileUpload))))
 	mux.Handle("POST /projects/{project}/files/delete",

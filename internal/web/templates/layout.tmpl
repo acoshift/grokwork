@@ -2056,6 +2056,86 @@
       .gw-confirm-modal[open]::backdrop { animation: none; }
     }
 
+    /* ── Files preview + drop zone ───────────────────────────────────── */
+    .files-drop {
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
+      padding: 0.7rem 0.85rem;
+      background: var(--bg);
+    }
+    .files-drop.is-drag {
+      border-color: var(--text);
+      box-shadow: inset 0 0 0 1px var(--text);
+    }
+    .files-drop input[type="file"] { width: 100%; }
+    .files-preview-dialog {
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 0;
+      width: min(56rem, calc(100vw - 2rem));
+      max-height: calc(100vh - 2rem);
+      background: var(--surface);
+      color: var(--text);
+      overflow: hidden;
+      box-shadow: var(--shadow-2), 0 24px 64px -28px hsl(var(--black) / 35%);
+    }
+    .files-preview-dialog::backdrop {
+      background: hsl(0 0% 0% / 42%);
+      backdrop-filter: blur(2px);
+    }
+    .files-preview-shell { margin: 0; padding: 1rem 1.15rem 0.95rem; }
+    .files-preview-title {
+      margin: 0 0 0.7rem;
+      font-size: 1.02rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      overflow-wrap: anywhere;
+    }
+    .files-preview-body {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      min-height: 12rem;
+      max-height: min(70vh, 40rem);
+      overflow: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .files-preview-body img {
+      max-width: 100%;
+      max-height: min(70vh, 40rem);
+      display: block;
+    }
+    .files-preview-body iframe {
+      width: 100%;
+      height: min(70vh, 40rem);
+      border: 0;
+      background: var(--surface);
+    }
+    .files-preview-foot {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-top: 0.85rem;
+    }
+    @media (max-width: 920px) {
+      .files-preview-dialog {
+        width: 100vw;
+        max-width: 100vw;
+        height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0;
+        border: 0;
+      }
+      .files-preview-body,
+      .files-preview-body img,
+      .files-preview-body iframe {
+        max-height: calc(100dvh - 8rem);
+        height: calc(100dvh - 8rem);
+      }
+    }
+
     /* ── PR team review card ─────────────────────────────────────────── */
     #pr-team-review .team-review-head {
       display: flex;
@@ -5567,6 +5647,97 @@
     }
     document.body.addEventListener("htmx:afterSettle", setupAttachInputs);
     document.body.addEventListener("htmx:historyRestore", setupAttachInputs);
+  })();
+  (function () {
+    function dropZone(e) {
+      return e.target && e.target.closest ? e.target.closest("#files-drop") : null;
+    }
+    document.body.addEventListener("dragover", function (e) {
+      if (!dropZone(e)) return;
+      e.preventDefault();
+      dropZone(e).classList.add("is-drag");
+    });
+    document.body.addEventListener("dragleave", function (e) {
+      var z = dropZone(e);
+      if (!z) return;
+      if (e.relatedTarget && z.contains(e.relatedTarget)) return;
+      z.classList.remove("is-drag");
+    });
+    document.body.addEventListener("drop", function (e) {
+      var z = dropZone(e);
+      if (!z) return;
+      e.preventDefault();
+      z.classList.remove("is-drag");
+      var input = document.getElementById("files-file");
+      if (!input || !e.dataTransfer || !e.dataTransfer.files.length) return;
+      input.files = e.dataTransfer.files;
+    });
+
+    function previewEls() {
+      return {
+        dlg: document.getElementById("files-preview-dialog"),
+        title: document.getElementById("files-preview-title"),
+        img: document.getElementById("files-preview-img"),
+        frame: document.getElementById("files-preview-frame"),
+        dl: document.getElementById("files-preview-download"),
+        close: document.getElementById("files-preview-close")
+      };
+    }
+    function closePreview() {
+      var el = previewEls();
+      if (!el.dlg || !el.dlg.open) return;
+      if (el.img) { el.img.removeAttribute("src"); el.img.hidden = true; }
+      if (el.frame) { el.frame.removeAttribute("src"); el.frame.hidden = true; }
+      el.dlg.close();
+    }
+    function openPreview(kind, name, href, download) {
+      var el = previewEls();
+      if (!el.dlg) {
+        window.location.href = href;
+        return;
+      }
+      if (el.title) el.title.textContent = name || "Preview";
+      if (el.dl) el.dl.href = download || href;
+      if (el.img) { el.img.removeAttribute("src"); el.img.hidden = true; }
+      if (el.frame) { el.frame.removeAttribute("src"); el.frame.hidden = true; }
+      if (kind === "image" && el.img) {
+        el.img.alt = name || "";
+        el.img.src = href;
+        el.img.hidden = false;
+      } else if (el.frame) {
+        el.frame.src = href;
+        el.frame.hidden = false;
+      }
+      if (typeof el.dlg.showModal === "function") el.dlg.showModal();
+      else window.location.href = href;
+    }
+    document.body.addEventListener("click", function (e) {
+      var closeBtn = e.target.closest && e.target.closest("#files-preview-close");
+      if (closeBtn) {
+        e.preventDefault();
+        closePreview();
+        return;
+      }
+      var a = e.target.closest && e.target.closest("#page-project-files a[data-preview]");
+      if (!a) return;
+      e.preventDefault();
+      openPreview(
+        a.getAttribute("data-preview"),
+        a.getAttribute("data-name"),
+        a.getAttribute("href"),
+        a.getAttribute("data-download")
+      );
+    });
+    document.body.addEventListener("click", function (e) {
+      var dlg = document.getElementById("files-preview-dialog");
+      if (dlg && e.target === dlg) closePreview();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closePreview();
+    });
+    document.body.addEventListener("htmx:beforeRequest", function (e) {
+      if (e.detail && e.detail.boosted) closePreview();
+    });
   })();
   (function () {
     var statusEl = document.getElementById("sse-status");

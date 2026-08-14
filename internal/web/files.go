@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/moonrhythm/hime"
 
@@ -42,7 +44,11 @@ type fileRow struct {
 	// download/delete). Empty for directories.
 	Object string
 	// Path is the ?path= value to enter a directory (relative to prefix).
-	Path string
+	Path         string
+	ContentType  string
+	PreviewKind  string // "", "image", "pdf"
+	Downloadable bool
+	NativeGoogle bool
 }
 
 // fileCrumb is one breadcrumb segment on the Files page.
@@ -212,10 +218,12 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 	d.FilesRows = make([]fileRow, 0, len(entries))
 	for _, e := range entries {
 		row := fileRow{
-			Name:      e.Name,
-			IsDir:     e.IsDir,
-			Size:      e.Size,
-			SizeHuman: formatFileBytes(e.Size),
+			Name:         e.Name,
+			IsDir:        e.IsDir,
+			Size:         e.Size,
+			SizeHuman:    formatFileBytes(e.Size),
+			ContentType:  e.ContentType,
+			NativeGoogle: isGoogleNativeMIME(e.ContentType),
 		}
 		if !e.Updated.IsZero() {
 			row.Updated = e.Updated
@@ -225,6 +233,10 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 			row.Path = joinFilesPath(subPath, e.Name)
 		} else {
 			row.Object = joinFilesPath(subPath, e.Name)
+			row.Downloadable = !row.NativeGoogle
+			if row.Downloadable {
+				row.PreviewKind = filePreviewKind(e.Name, e.ContentType)
+			}
 		}
 		d.FilesRows = append(d.FilesRows, row)
 	}
@@ -247,7 +259,7 @@ func (s *Server) postFileUpload(ctx *hime.Context) error {
 	}
 
 	// Parse multipart BEFORE any PostFormValue (uploads.go ordering contract).
-	fh, subPath, overwrite, parseErr := s.parseFileUpload(ctx)
+	fhs, subPath, overwrite, parseErr := s.parseFileUpload(ctx)
 	if parseErr != nil {
 		return s.filesRedirect(ctx, project, subPath, "", parseErr)
 	}
@@ -257,63 +269,74 @@ func (s *Server) postFileUpload(ctx *hime.Context) error {
 		return s.filesRedirect(ctx, project, subPath, "", fmt.Errorf("file storage is not configured for this project"))
 	}
 
-	leaf := filestore.SanitizeFilename(fh.Filename)
-	object := joinFilesPath(subPath, leaf)
-	if err := filestore.ValidateObjectPath(object); err != nil {
+	be, err := s.filesBackend(storageTarget(st))
+	if err != nil {
 		return s.filesRedirect(ctx, project, subPath, "", err)
 	}
 
-	var upErr error
-	defer func() {
-		s.auditAction(ctx, audit.ActionStorageUpload, upErr, storageAuditDetail(st, project, object, fh.Size, true))
-	}()
-
 	tmpDir, err := os.MkdirTemp("", "grokwork-upload-*")
 	if err != nil {
-		upErr = err
 		return s.filesRedirect(ctx, project, subPath, "", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	src, err := fh.Open()
-	if err != nil {
-		upErr = err
-		return s.filesRedirect(ctx, project, subPath, "", err)
-	}
-	defer src.Close()
+	var uploaded []string
+	for i, fh := range fhs {
+		leaf := filestore.SanitizeFilename(fh.Filename)
+		object := joinFilesPath(subPath, leaf)
+		if err := filestore.ValidateObjectPath(object); err != nil {
+			return s.uploadPartialRedirect(ctx, project, subPath, uploaded, leaf, err)
+		}
 
-	localPath := filepath.Join(tmpDir, leaf)
-	dst, err := os.Create(localPath)
-	if err != nil {
-		upErr = err
-		return s.filesRedirect(ctx, project, subPath, "", err)
-	}
-	// Cap at maxFileUploadBytes even if Content-Length lied.
-	written, err := io.Copy(dst, io.LimitReader(src, maxFileUploadBytes+1))
-	closeErr := dst.Close()
-	if err != nil {
-		upErr = err
-		return s.filesRedirect(ctx, project, subPath, "", err)
-	}
-	if closeErr != nil {
-		upErr = closeErr
-		return s.filesRedirect(ctx, project, subPath, "", closeErr)
-	}
-	if written > maxFileUploadBytes {
-		upErr = fmt.Errorf("file exceeds %s limit", formatFileBytes(maxFileUploadBytes))
-		return s.filesRedirect(ctx, project, subPath, "", upErr)
-	}
+		var upErr error
+		func() {
+			defer func() {
+				s.auditAction(ctx, audit.ActionStorageUpload, upErr, storageAuditDetail(st, project, object, fh.Size, true))
+			}()
 
-	be, err := s.filesBackend(storageTarget(st))
-	if err != nil {
-		upErr = err
+			src, err := fh.Open()
+			if err != nil {
+				upErr = err
+				return
+			}
+			defer src.Close()
+
+			localPath := filepath.Join(tmpDir, fmt.Sprintf("%d-%s", i, leaf))
+			dst, err := os.Create(localPath)
+			if err != nil {
+				upErr = err
+				return
+			}
+			written, err := io.Copy(dst, io.LimitReader(src, maxFileUploadBytes+1))
+			closeErr := dst.Close()
+			if err != nil {
+				upErr = err
+				return
+			}
+			if closeErr != nil {
+				upErr = closeErr
+				return
+			}
+			if written > maxFileUploadBytes {
+				upErr = fmt.Errorf("file exceeds %s limit", formatFileBytes(maxFileUploadBytes))
+				return
+			}
+			upErr = be.Upload(ctx.Context(), localPath, storageTarget(st), object, overwrite)
+		}()
+		if upErr != nil {
+			return s.uploadPartialRedirect(ctx, project, subPath, uploaded, leaf, upErr)
+		}
+		uploaded = append(uploaded, leaf)
+	}
+	return s.filesRedirect(ctx, project, subPath, fmt.Sprintf("Uploaded %s", strings.Join(uploaded, ", ")), nil)
+}
+
+func (s *Server) uploadPartialRedirect(ctx *hime.Context, project, subPath string, uploaded []string, failed string, err error) error {
+	if len(uploaded) == 0 {
 		return s.filesRedirect(ctx, project, subPath, "", err)
 	}
-	upErr = be.Upload(ctx.Context(), localPath, storageTarget(st), object, overwrite)
-	if upErr != nil {
-		return s.filesRedirect(ctx, project, subPath, "", upErr)
-	}
-	return s.filesRedirect(ctx, project, subPath, fmt.Sprintf("Uploaded %s", leaf), nil)
+	return s.filesRedirect(ctx, project, subPath, "",
+		fmt.Errorf("uploaded %s; %s failed: %w", strings.Join(uploaded, ", "), failed, err))
 }
 
 // fileUploadHeader is the multipart file field we accept.
@@ -324,51 +347,57 @@ type fileUploadHeader struct {
 }
 
 // parseFileUpload parses the multipart form. MUST run before PostFormValue.
-func (s *Server) parseFileUpload(ctx *hime.Context) (fh fileUploadHeader, subPath string, overwrite bool, err error) {
+// Body size is already capped at memberMutationBodyLimit by requireMember
+// (before CSRF parses the multipart). Per-file 50 MiB is checked here and
+// again with LimitReader when staging.
+func (s *Server) parseFileUpload(ctx *hime.Context) (fhs []fileUploadHeader, subPath string, overwrite bool, err error) {
 	if ctx == nil || ctx.Request == nil {
-		return fh, "", false, fmt.Errorf("missing request")
+		return nil, "", false, fmt.Errorf("missing request")
 	}
-	// requireMember already capped the body; re-wrap as belt-and-braces for the
-	// single-file 50 MiB limit (multipart framing is small on top).
-	ctx.Request.Body = http.MaxBytesReader(ctx.ResponseWriter(), ctx.Request.Body, maxFileUploadBytes+2<<20)
 	if err := ctx.Request.ParseMultipartForm(32 << 20); err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			return fh, "", false, fmt.Errorf("file too large (max %s)", formatFileBytes(maxFileUploadBytes))
+			return nil, "", false, fmt.Errorf("request exceeds %s limit", formatFileBytes(memberMutationBodyLimit))
 		}
 		if strings.Contains(err.Error(), "request body too large") {
-			return fh, "", false, fmt.Errorf("file too large (max %s)", formatFileBytes(maxFileUploadBytes))
+			return nil, "", false, fmt.Errorf("request exceeds %s limit", formatFileBytes(memberMutationBodyLimit))
 		}
-		return fh, "", false, fmt.Errorf("parse upload: %w", err)
+		return nil, "", false, fmt.Errorf("parse upload: %w", err)
 	}
-	// Form values only after ParseMultipartForm.
 	subPath = strings.Trim(strings.TrimSpace(ctx.PostFormValue("path")), "/")
 	if subPath != "" {
 		if err := filestore.ValidateObjectPath(subPath); err != nil {
-			return fh, "", false, fmt.Errorf("invalid path: %w", err)
+			return nil, "", false, fmt.Errorf("invalid path: %w", err)
 		}
 	}
 	overwrite = ctx.PostFormValue("overwrite") == "1" ||
 		strings.EqualFold(ctx.PostFormValue("overwrite"), "on")
 
 	if ctx.Request.MultipartForm == nil {
-		return fh, subPath, overwrite, fmt.Errorf("file is required")
+		return nil, subPath, overwrite, fmt.Errorf("file is required")
 	}
-	fhs := ctx.Request.MultipartForm.File["file"]
-	if len(fhs) == 0 || fhs[0] == nil {
-		return fh, subPath, overwrite, fmt.Errorf("file is required")
+	headers := ctx.Request.MultipartForm.File["file"]
+	out := make([]fileUploadHeader, 0, len(headers))
+	for _, header := range headers {
+		if header == nil {
+			continue
+		}
+		if header.Filename == "" && header.Size == 0 {
+			continue
+		}
+		if header.Size > maxFileUploadBytes {
+			return nil, subPath, overwrite, fmt.Errorf("file exceeds %s limit", formatFileBytes(maxFileUploadBytes))
+		}
+		h := header
+		out = append(out, fileUploadHeader{
+			Filename: h.Filename,
+			Size:     h.Size,
+			Open:     func() (io.ReadCloser, error) { return h.Open() },
+		})
 	}
-	header := fhs[0]
-	if header.Filename == "" && header.Size == 0 {
-		return fh, subPath, overwrite, fmt.Errorf("file is required")
+	if len(out) == 0 {
+		return nil, subPath, overwrite, fmt.Errorf("file is required")
 	}
-	if header.Size > maxFileUploadBytes {
-		return fh, subPath, overwrite, fmt.Errorf("file exceeds %s limit", formatFileBytes(maxFileUploadBytes))
-	}
-	return fileUploadHeader{
-		Filename: header.Filename,
-		Size:     header.Size,
-		Open:     func() (io.ReadCloser, error) { return header.Open() },
-	}, subPath, overwrite, nil
+	return out, subPath, overwrite, nil
 }
 
 // postFileDelete is POST /projects/{project}/files/delete.
@@ -420,61 +449,118 @@ func (s *Server) postFileDelete(ctx *hime.Context) error {
 	return s.filesRedirect(ctx, project, subPath, fmt.Sprintf("Deleted %s", path.Base(object)), nil)
 }
 
+type fileServeMode int
+
+const (
+	fileServeAttachment fileServeMode = iota
+	fileServeInline
+)
+
 // fileDownload is GET /projects/{project}/files/download?object=.
 func (s *Server) fileDownload(ctx *hime.Context) error {
+	return s.serveStoredFile(ctx, fileServeAttachment)
+}
+
+// filePreview is GET /projects/{project}/files/preview?object=.
+func (s *Server) filePreview(ctx *hime.Context) error {
+	return s.serveStoredFile(ctx, fileServeInline)
+}
+
+func (s *Server) serveStoredFile(ctx *hime.Context, mode fileServeMode) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
 	if err := s.ensureProjectAccess(ctx, project); err != nil {
 		return forbiddenProject(ctx, err)
 	}
 	object := strings.Trim(strings.TrimSpace(ctx.FormValue("object")), "/")
+	fail := func(status int, err error) error {
+		if mode == fileServeAttachment {
+			parent := path.Dir(object)
+			if parent == "." {
+				parent = ""
+			}
+			return s.filesRedirect(ctx, project, parent, "", err)
+		}
+		return ctx.Status(status).Error(err.Error())
+	}
 	if object == "" || filestore.ValidateObjectPath(object) != nil {
-		return ctx.Status(http.StatusBadRequest).Error("invalid object name")
+		err := fmt.Errorf("invalid object name")
+		if object != "" {
+			if e := filestore.ValidateObjectPath(object); e != nil {
+				err = e
+			}
+		}
+		return fail(http.StatusBadRequest, err)
 	}
 	st := s.cfg.EffectiveStorage(project)
 	if st == nil {
-		return ctx.Status(http.StatusNotFound).Error("file storage is not configured")
+		return fail(http.StatusNotFound, fmt.Errorf("file storage is not configured"))
 	}
 
 	be, err := s.filesBackend(storageTarget(st))
 	if err != nil {
-		return ctx.Status(http.StatusBadGateway).Error(err.Error())
+		return fail(http.StatusBadGateway, err)
 	}
-	meta, exists, err := be.Describe(ctx.Context(), storageTarget(st), object)
+	tgt := storageTarget(st)
+	meta, exists, err := be.Describe(ctx.Context(), tgt, object)
 	if err != nil {
-		return ctx.Status(http.StatusBadGateway).Error(err.Error())
+		return fail(http.StatusBadGateway, err)
 	}
 	if !exists {
-		return ctx.Status(http.StatusNotFound).Error("object not found")
+		return fail(http.StatusNotFound, fmt.Errorf("object not found"))
+	}
+	if isGoogleNativeMIME(meta.ContentType) {
+		action := "downloaded"
+		if mode == fileServeInline {
+			action = "previewed"
+		}
+		return fail(http.StatusUnsupportedMediaType,
+			fmt.Errorf("Google Docs/Sheets cannot be %s here; export as PDF first", action))
 	}
 	if meta.Size > maxFileDownloadBytes {
-		return ctx.Status(http.StatusRequestEntityTooLarge).Error(
-			fmt.Sprintf("object is %s; max download is %s", formatFileBytes(meta.Size), formatFileBytes(maxFileDownloadBytes)))
+		return fail(http.StatusRequestEntityTooLarge,
+			fmt.Errorf("object is %s; max download is %s", formatFileBytes(meta.Size), formatFileBytes(maxFileDownloadBytes)))
+	}
+	if mode == fileServeInline && filePreviewKind(meta.Name, meta.ContentType) == "" &&
+		filePreviewKind(path.Base(object), meta.ContentType) == "" {
+		return fail(http.StatusUnsupportedMediaType, fmt.Errorf("this file type cannot be previewed"))
 	}
 
 	tmpDir, err := os.MkdirTemp("", "grokwork-download-*")
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).Error(err.Error())
+		return fail(http.StatusInternalServerError, err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	leaf := filestore.SanitizeFilename(path.Base(object))
 	dest := filepath.Join(tmpDir, leaf)
-	if err := be.Download(ctx.Context(), storageTarget(st), object, dest); err != nil {
-		return ctx.Status(http.StatusBadGateway).Error(err.Error())
+	if err := be.Download(ctx.Context(), tgt, object, dest); err != nil {
+		return fail(http.StatusBadGateway, err)
 	}
 	f, err := os.Open(dest)
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).Error(err.Error())
+		return fail(http.StatusInternalServerError, err)
 	}
 	defer f.Close()
 
 	ctype := strings.TrimSpace(meta.ContentType)
 	if ctype == "" {
-		ctype = "application/octet-stream"
+		if t := mime.TypeByExtension(path.Ext(leaf)); t != "" {
+			ctype = t
+		} else {
+			ctype = "application/octet-stream"
+		}
 	}
-	ctx.ResponseWriter().Header().Set("Content-Type", ctype)
-	ctx.ResponseWriter().Header().Set("Content-Disposition",
-		fmt.Sprintf(`attachment; filename=%q`, leaf))
+	if i := strings.IndexByte(ctype, ';'); i >= 0 {
+		ctype = strings.TrimSpace(ctype[:i])
+	}
+	original := path.Base(object)
+	if meta.Name != "" {
+		original = meta.Name
+	}
+	h := ctx.ResponseWriter().Header()
+	h.Set("Content-Type", ctype)
+	h.Set("Content-Disposition", contentDispositionHeader(mode, leaf, original))
+	h.Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(ctx.ResponseWriter(), ctx.Request, leaf, meta.Updated, f)
 	return nil
 }
@@ -649,6 +735,91 @@ func fileBreadcrumbs(subPath string) []fileCrumb {
 	}
 	out[len(out)-1].Last = true
 	return out
+}
+
+const googleAppsFolderMIME = "application/vnd.google-apps.folder"
+
+func isGoogleNativeMIME(m string) bool {
+	m = strings.TrimSpace(strings.ToLower(m))
+	return strings.HasPrefix(m, "application/vnd.google-apps.") && m != googleAppsFolderMIME
+}
+
+func filePreviewKind(name, ctype string) string {
+	if isGoogleNativeMIME(ctype) {
+		return ""
+	}
+	ct := strings.ToLower(strings.TrimSpace(ctype))
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
+	}
+	if ct == "text/html" || ct == "application/xhtml+xml" || ct == "image/svg+xml" {
+		return ""
+	}
+	switch ct {
+	case "image/jpeg", "image/png", "image/gif", "image/webp":
+		return "image"
+	case "application/pdf":
+		return "pdf"
+	}
+	if ct == "" || ct == "application/octet-stream" {
+		switch strings.ToLower(path.Ext(name)) {
+		case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+			return "image"
+		case ".pdf":
+			return "pdf"
+		}
+	}
+	return ""
+}
+
+func contentDispositionHeader(mode fileServeMode, sanitized, original string) string {
+	disp := "attachment"
+	if mode == fileServeInline {
+		disp = "inline"
+	}
+	var b strings.Builder
+	b.WriteString(disp)
+	b.WriteString("; filename=")
+	b.WriteString(quotedASCIIFilename(sanitized))
+	leaf := strings.TrimSpace(original)
+	if leaf == "" {
+		leaf = sanitized
+	}
+	b.WriteString("; filename*=UTF-8''")
+	b.WriteString(rfc5987Attr(leaf))
+	return b.String()
+}
+
+func quotedASCIIFilename(name string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range name {
+		switch {
+		case r == '"' || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r >= 0x20 && r < 0x7f:
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+func rfc5987Attr(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '.' || r == '_' || r == '~' {
+			b.WriteRune(r)
+			continue
+		}
+		for _, by := range []byte(string(r)) {
+			fmt.Fprintf(&b, "%%%02X", by)
+		}
+	}
+	return b.String()
 }
 
 // formatFileBytes is a small local helper (web must not import internal/bot).

@@ -3,6 +3,7 @@ package web
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
@@ -838,23 +839,64 @@ func (previewFiles) List(_ context.Context, _ filestore.Target, subPath string) 
 		return []filestore.Entry{{Name: "CR AMB", IsDir: true}}, nil
 	case "Docs for Customer/CR AMB":
 		return []filestore.Entry{
-			{Name: "handoff.pdf", Size: 184320, Updated: stamp, ContentType: "application/pdf"},
-			{Name: "notes.txt", Size: 2048, Updated: stamp, ContentType: "text/plain"},
+			{Name: "handoff.pdf", Size: int64(len(previewPDF)), Updated: stamp, ContentType: "application/pdf"},
+			{Name: "photo.png", Size: int64(len(previewPNG)), Updated: stamp, ContentType: "image/png"},
+			{Name: "notes [v2].txt", Size: int64(len(previewNotes)), Updated: stamp, ContentType: "text/plain"},
+			{Name: "Sheet", Size: 0, Updated: stamp, ContentType: "application/vnd.google-apps.spreadsheet"},
 		}, nil
 	default:
 		return nil, nil
 	}
 }
 
-func (previewFiles) Describe(context.Context, filestore.Target, string) (filestore.Entry, bool, error) {
-	return filestore.Entry{}, false, nil
+func previewFileByObject(object string) (filestore.Entry, []byte, bool) {
+	stamp := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	switch strings.Trim(object, "/") {
+	case "Docs for Customer/CR AMB/handoff.pdf":
+		return filestore.Entry{Name: "handoff.pdf", Size: int64(len(previewPDF)), Updated: stamp, ContentType: "application/pdf"}, previewPDF, true
+	case "Docs for Customer/CR AMB/photo.png":
+		return filestore.Entry{Name: "photo.png", Size: int64(len(previewPNG)), Updated: stamp, ContentType: "image/png"}, previewPNG, true
+	case "Docs for Customer/CR AMB/notes [v2].txt":
+		return filestore.Entry{Name: "notes [v2].txt", Size: int64(len(previewNotes)), Updated: stamp, ContentType: "text/plain"}, previewNotes, true
+	case "Docs for Customer/CR AMB/Sheet":
+		return filestore.Entry{Name: "Sheet", Size: 0, Updated: stamp, ContentType: "application/vnd.google-apps.spreadsheet"}, nil, true
+	default:
+		return filestore.Entry{}, nil, false
+	}
+}
+
+func (previewFiles) Describe(_ context.Context, _ filestore.Target, object string) (filestore.Entry, bool, error) {
+	e, _, ok := previewFileByObject(object)
+	return e, ok, nil
 }
 func (previewFiles) Upload(context.Context, string, filestore.Target, string, bool) error {
 	return nil
 }
-func (previewFiles) Download(context.Context, filestore.Target, string, string) error {
-	return nil
+func (previewFiles) Download(_ context.Context, _ filestore.Target, object, destPath string) error {
+	_, data, ok := previewFileByObject(object)
+	if !ok {
+		return fmt.Errorf("object not found")
+	}
+	if data == nil {
+		return fmt.Errorf("Google Docs/Sheets cannot be downloaded here; export as PDF first")
+	}
+	return os.WriteFile(destPath, data, 0o600)
 }
 func (previewFiles) Delete(context.Context, filestore.Target, string) error {
 	return nil
+}
+
+// Minimal valid PDF / 1×1 PNG so the preview server can actually render them.
+var previewPDF = []byte("%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 300 200]/Parent 2 0 R>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n")
+
+var previewPNG = mustPreviewB64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+
+var previewNotes = []byte("handoff notes\n")
+
+func mustPreviewB64(s string) []byte {
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
