@@ -9,7 +9,7 @@ import (
 // except credentials a ChildEnvPolicy explicitly re-admits.
 var DefaultEnvDenylistPrefixes = []string{
 	"AWS_", "AZURE_", "GOOGLE_", "GCP_", "OPENAI_", "ANTHROPIC_", "XAI_",
-	"DISCORD_", "GROK_WORK_",
+	"DISCORD_", "GROK_WORK_", "CLICKUP_", "LINEAR_",
 	"NPM_TOKEN", "NODE_AUTH_TOKEN", "DOCKER_AUTH", "KUBECONFIG",
 }
 
@@ -22,9 +22,18 @@ type ChildEnvPolicy struct {
 	// namespace. An OAuth/keychain login authenticates without it, so this stays
 	// off unless the host runs on an API key, a gateway, or a custom base URL.
 	IncludeAnthropicEnv bool
+	// IncludeAgentToken keeps GROKWORK_AGENT_TOKEN for the in-session MCP bridge.
+	// The name is intentionally not under GROK_WORK_* (that prefix is denylisted).
+	IncludeAgentToken bool
 	// ExtraDenylist is additional configured name prefixes to strip.
 	ExtraDenylist []string
 }
+
+// AgentTokenEnv is the child env var name for the session-bound agent API token.
+const AgentTokenEnv = "GROKWORK_AGENT_TOKEN"
+
+// AgentSockEnv is the Unix socket path for the in-session MCP bridge.
+const AgentSockEnv = "GROKWORK_AGENT_SOCK"
 
 // FilterChildEnv builds a child environment from base (usually os.Environ())
 // under pol. Returns the env slice and dropped variable names (for logging;
@@ -49,6 +58,14 @@ func FilterChildEnv(base []string, pol ChildEnvPolicy) (env []string, dropped []
 		}
 		if isClaudeCredentialName(name) {
 			if pol.IncludeAnthropicEnv {
+				env = append(env, kv)
+			} else {
+				dropped = append(dropped, name)
+			}
+			continue
+		}
+		if name == AgentTokenEnv {
+			if pol.IncludeAgentToken {
 				env = append(env, kv)
 			} else {
 				dropped = append(dropped, name)

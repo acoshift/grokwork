@@ -223,8 +223,8 @@ func TestIssueBindingPromptClickUp(t *testing.T) {
 	if !strings.Contains(p, "Fixes DEV-3") {
 		t.Fatalf("missing Fixes line: %s", p)
 	}
-	if !strings.Contains(p, "Do not call ClickUp") {
-		t.Fatalf("missing no-call: %s", p)
+	if !strings.Contains(p, "clickup_get_task") {
+		t.Fatalf("missing mcp tool: %s", p)
 	}
 	if strings.Contains(p, "Linear's") || strings.Contains(p, "Linear state") {
 		t.Fatalf("must not claim Linear integration for ClickUp-only: %s", p)

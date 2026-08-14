@@ -26,6 +26,7 @@ func TestApplyPRTerminalStateMultiSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := New(cfg, store, hist)
+	drainBotOnCleanup(t, b)
 	pr := sessionstore.TrackedPR{
 		URL: "https://github.com/acme/app/pull/5", Number: 5, State: "OPEN",
 		Owner: "acme", Repo: "app", Title: "t",

@@ -22,6 +22,7 @@ func (b *Bot) Stop(ctx context.Context) {
 		b.bgCancel()
 		log.Printf("stop: background workers cancelled")
 	}
+	b.ShutdownAgentPlane(ctx)
 	log.Printf("stop: cancelling active runs…")
 
 	b.states.Range(func(key, value any) bool {

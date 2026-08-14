@@ -388,67 +388,69 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 		byThread[d.ThreadID] = c
 	}
 
-	for _, listed := range b.sessions.List() {
-		e := listed.Entry
-		threadID := listed.ThreadID
-		if !sessionHasWorktree(e) {
-			continue
-		}
-
-		last := parseRFC3339(e.UpdatedAt)
-		mainCwd := e.MainCwd
-		if mainCwd == "" {
-			mainCwd, _ = b.resolveProjectRepo(e.Project, "")
-		}
-		// Prefer live dirs: session cwd if still present, else canonical worktrees root
-		// (covers dataDir renames like grok-discord → grokwork).
-		path, pathOnDisk := gitworktree.ResolveSessionWorktreePath(
-			wtRoot, e.Project, threadID, e.Cwd, mainCwd,
-		)
-		if pathOnDisk && e.Cwd != "" && e.Cwd != path {
-			// Heal stale absolute cwd left after a dataDir / host path rename.
-			b.healSessionWorktreeCwd(threadID, path)
-		}
-		branch := e.WorktreeBranch
-		if branch == "" {
-			branch = gitworktree.BranchNameForUnit(threadID)
-		}
-
-		existing, ok := byThread[threadID]
-		if !ok {
-			byThread[threadID] = idleCandidate{
-				threadID:   threadID,
-				project:    e.Project,
-				path:       path,
-				branch:     branch,
-				mainCwd:    mainCwd,
-				last:       last,
-				onDisk:     pathOnDisk,
-				hasSession: true,
+	if b.sessions != nil {
+		for _, listed := range b.sessions.List() {
+			e := listed.Entry
+			threadID := listed.ThreadID
+			if !sessionHasWorktree(e) {
+				continue
 			}
-			continue
+
+			last := parseRFC3339(e.UpdatedAt)
+			mainCwd := e.MainCwd
+			if mainCwd == "" {
+				mainCwd, _ = b.resolveProjectRepo(e.Project, "")
+			}
+			// Prefer live dirs: session cwd if still present, else canonical worktrees root
+			// (covers dataDir renames like grok-discord → grokwork).
+			path, pathOnDisk := gitworktree.ResolveSessionWorktreePath(
+				wtRoot, e.Project, threadID, e.Cwd, mainCwd,
+			)
+			if pathOnDisk && e.Cwd != "" && e.Cwd != path {
+				// Heal stale absolute cwd left after a dataDir / host path rename.
+				b.healSessionWorktreeCwd(threadID, path)
+			}
+			branch := e.WorktreeBranch
+			if branch == "" {
+				branch = gitworktree.BranchNameForUnit(threadID)
+			}
+
+			existing, ok := byThread[threadID]
+			if !ok {
+				byThread[threadID] = idleCandidate{
+					threadID:   threadID,
+					project:    e.Project,
+					path:       path,
+					branch:     branch,
+					mainCwd:    mainCwd,
+					last:       last,
+					onDisk:     pathOnDisk,
+					hasSession: true,
+				}
+				continue
+			}
+			existing.hasSession = true
+			if e.Project != "" {
+				existing.project = e.Project
+			}
+			// Never replace a verified on-disk path with a stale session cwd.
+			if pathOnDisk {
+				existing.path = path
+				existing.onDisk = true
+			} else if existing.path == "" {
+				existing.path = path
+			}
+			if branch != "" {
+				existing.branch = branch
+			}
+			if mainCwd != "" {
+				existing.mainCwd = mainCwd
+			}
+			if !last.IsZero() {
+				existing.last = last
+			}
+			byThread[threadID] = existing
 		}
-		existing.hasSession = true
-		if e.Project != "" {
-			existing.project = e.Project
-		}
-		// Never replace a verified on-disk path with a stale session cwd.
-		if pathOnDisk {
-			existing.path = path
-			existing.onDisk = true
-		} else if existing.path == "" {
-			existing.path = path
-		}
-		if branch != "" {
-			existing.branch = branch
-		}
-		if mainCwd != "" {
-			existing.mainCwd = mainCwd
-		}
-		if !last.IsZero() {
-			existing.last = last
-		}
-		byThread[threadID] = existing
 	}
 
 	out := make([]idleCandidate, 0, len(byThread))

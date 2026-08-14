@@ -167,3 +167,41 @@ func TestFilterChildEnvAnthropicGateIsNarrow(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterChildEnvAgentToken(t *testing.T) {
+	base := []string{"PATH=/bin", AgentTokenEnv + "=secret", "GROK_WORK_X=no"}
+	env, dropped := FilterChildEnv(base, ChildEnvPolicy{})
+	for _, kv := range env {
+		if strings.HasPrefix(kv, AgentTokenEnv+"=") {
+			t.Fatalf("token leaked: %v dropped=%v", env, dropped)
+		}
+	}
+	env2, _ := FilterChildEnv(base, ChildEnvPolicy{IncludeAgentToken: true})
+	found := false
+	for _, kv := range env2 {
+		if kv == AgentTokenEnv+"=secret" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected re-admit: %v", env2)
+	}
+}
+
+func TestFilterChildEnvDropsClickUpAndLinear(t *testing.T) {
+	base := []string{
+		"PATH=/bin",
+		"CLICKUP_API_KEY_APP=pk_secret",
+		"LINEAR_API_KEY_APP=lin_secret",
+		"GH_TOKEN=gh",
+	}
+	env, dropped := FilterChildEnv(base, ChildEnvPolicy{IncludeGHToken: true, IncludeAgentToken: true})
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "CLICKUP_") || strings.HasPrefix(kv, "LINEAR_") {
+			t.Fatalf("ticket key leaked: %v dropped=%v", env, dropped)
+		}
+	}
+	if !strings.Contains(strings.Join(dropped, ","), "CLICKUP_API_KEY_APP") {
+		t.Fatalf("dropped=%v", dropped)
+	}
+}

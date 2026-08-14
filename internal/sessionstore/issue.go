@@ -40,6 +40,8 @@ type TrackedIssue struct {
 	CustomID    string `json:"customId,omitempty"`    // DEV-42
 	ListID      string `json:"listId,omitempty"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
+	// Description is a truncated ClickUp body snapshot from resolve (optional).
+	Description string `json:"description,omitempty"`
 }
 
 var (

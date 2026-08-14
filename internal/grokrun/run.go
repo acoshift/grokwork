@@ -46,6 +46,12 @@ type Options struct {
 	// Env, when non-nil, is used as the child process environment instead of os.Environ().
 	// Callers should pass a fully built env (Layer A filter, token omit, etc.).
 	Env []string
+	// MCPConfigPath, when set, is passed to claude as --mcp-config (and
+	// --strict-mcp-config so only that file's servers attach).
+	MCPConfigPath string
+	// AgentToken is re-admitted into the child env as GROKWORK_AGENT_TOKEN when
+	// IncludeAgentToken is set on ChildEnvPolicy (or appended by the caller).
+	AgentToken string
 
 	// OnTextDelta/OnThought enable streaming-json output.
 	OnTextDelta func(delta string)
@@ -62,7 +68,12 @@ type Options struct {
 // MCP meta-tools still attach unless denied separately.
 const toolsOffAllowlist = "ask_user_question"
 
-// toolFlags maps Options.Tools to CLI args. nil → no flag; "" → tools-off rewrite.
+// toolFlags maps Options.Tools to CLI args. nil → no flag (unrestricted built-ins
+// and MCP meta-tools may attach from user/repo config). Non-nil always denies
+// MCPTool: empty string is tools-off (pin a non-agentic built-in), and a
+// non-empty allowlist is investigate-style — without --deny MCPTool, Grok still
+// attaches MCP meta-tools and repo .grok/config.toml servers, which would be
+// RCE on "read-only" investigate runs.
 func toolFlags(tools *string) []string {
 	if tools == nil {
 		return nil
@@ -70,11 +81,10 @@ func toolFlags(tools *string) []string {
 	t := *tools
 	if t == "" {
 		// Empty allowlist is unrestricted in the CLI; pin a non-agentic tool
-		// and block MCP meta-tools so headless "tools-off" tasks cannot burn
-		// max-turns exploring the repo.
-		return []string{"--deny", "MCPTool", "--tools", toolsOffAllowlist}
+		// so headless "tools-off" tasks cannot burn max-turns exploring the repo.
+		t = toolsOffAllowlist
 	}
-	return []string{"--tools", t}
+	return []string{"--deny", "MCPTool", "--tools", t}
 }
 
 // MaxTurnsUserMessage is posted to Discord when the agent hits --max-turns.

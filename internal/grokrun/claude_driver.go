@@ -85,6 +85,10 @@ func (claudeDriver) args(in argInput) []string {
 		// path open on investigate runs.
 		args = append(args, "--tools", *opt.Tools, "--strict-mcp-config")
 	}
+	if mcp := strings.TrimSpace(opt.MCPConfigPath); mcp != "" {
+		// Only our MCP servers: --strict-mcp-config ignores ambient host MCP.
+		args = append(args, "--mcp-config", mcp, "--strict-mcp-config")
+	}
 	if deny := claudeDenyList(opt); deny != "" {
 		args = append(args, "--disallowedTools", deny)
 	}

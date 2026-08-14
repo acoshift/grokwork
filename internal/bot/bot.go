@@ -145,6 +145,9 @@ type Bot struct {
 	shipMu    sync.Mutex
 	shipLocks map[string]*sync.Mutex
 
+	// agent is the in-session MCP control plane (nil when DataDir unavailable).
+	agent *agentPlane
+
 	// Background workers (idle sweep, idle fetch, PR poller, board digest,
 	// gateway watch) share this context. Stop cancels it so they exit instead
 	// of racing a restarted process on the same worktrees.
@@ -198,6 +201,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) 
 		if err := os.RemoveAll(webStagingRoot(cfg.DataDir)); err != nil {
 			log.Printf("warn: clear web attachment staging: %v", err)
 		}
+		b.initAgentPlane()
 	}
 	if host, err := os.Hostname(); err == nil {
 		b.hostname = host
@@ -1270,6 +1274,7 @@ func remoteWorkPromptPrefixMode(branch string, direct bool, primary string) stri
 			"",
 		)
 	}
+	lines = append(lines, sessionLifecycleMarkerContract()...)
 	lines = append(lines,
 		"Filesystem scope (macOS privacy): stay inside this unit's cwd/worktree and the project repo.",
 		"Do NOT scan or search the user's home directory or protected folders — no find/ls/rg/glob over",
@@ -2013,14 +2018,26 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 
 	maxTurns := b.cfg.MaxTurnsValue()
 	timeout := time.Duration(b.cfg.TimeoutMsValue()) * time.Millisecond
-	envPol := b.childEnvPolicy(agentCLI.Agent, pol)
-	childEnv, droppedEnv := grokrun.FilterChildEnv(os.Environ(), envPol)
-	if len(droppedEnv) > 0 {
-		log.Printf("task: child env dropped names=%v includeGH=%v includeAnthropic=%v",
-			droppedEnv, envPol.IncludeGHToken, envPol.IncludeAnthropicEnv)
+	mcpPath, agentTok, mcpOK := b.prepareAgentMCP(threadID, proj.Name, actor.ID, agentCLI.Agent, pol)
+	if mcpOK {
+		prompt += agentMCPPromptContract()
+		defer b.revokeAgentThread(threadID)
 	}
-	log.Printf("task: running agent=%s bin=%s yolo=%v mode=%s allowPR=%v allowDirect=%v tools=%v maxTurns=%d timeout=%s cwd=%s stream=true",
-		agentCLI.Agent, agentCLI.Bin, pol.Yolo, pol.Mode, pol.AllowPR, pol.AllowDirectShip, pol.Tools != nil, maxTurns, timeout, runCwd)
+	envPol := b.childEnvPolicyWithAgentToken(agentCLI.Agent, pol, mcpOK)
+	baseEnv := os.Environ()
+	if mcpOK && agentTok != "" {
+		baseEnv = append(baseEnv, grokrun.AgentTokenEnv+"="+agentTok)
+		if sock := b.AgentSockPath(); sock != "" {
+			baseEnv = append(baseEnv, grokrun.AgentSockEnv+"="+sock)
+		}
+	}
+	childEnv, droppedEnv := grokrun.FilterChildEnv(baseEnv, envPol)
+	if len(droppedEnv) > 0 {
+		log.Printf("task: child env dropped names=%v includeGH=%v includeAnthropic=%v includeAgent=%v",
+			droppedEnv, envPol.IncludeGHToken, envPol.IncludeAnthropicEnv, envPol.IncludeAgentToken)
+	}
+	log.Printf("task: running agent=%s bin=%s yolo=%v mode=%s allowPR=%v allowDirect=%v tools=%v mcp=%v maxTurns=%d timeout=%s cwd=%s stream=true",
+		agentCLI.Agent, agentCLI.Bin, pol.Yolo, pol.Mode, pol.AllowPR, pol.AllowDirectShip, pol.Tools != nil, mcpOK, maxTurns, timeout, runCwd)
 
 	result := grokrun.Run(ctx, grokrun.Options{
 		Agent:           agentCLI.Agent,
@@ -2033,6 +2050,8 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		Tools:           pol.Tools,
 		NoSubagents:     pol.NoSubagents,
 		Env:             childEnv,
+		MCPConfigPath:   mcpPath,
+		AgentToken:      agentTok,
 		Model:           agentCLI.Model,
 		MaxTurns:        maxTurns,
 		Timeout:         timeout,
@@ -2135,8 +2154,20 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		}
 	}
 
+	// Lifecycle markers after session Set so ApplyAutoLabel cannot stomp a
+	// manual done/abandoned label the agent requested in the reply.
+	// Abandon also gates direct-ship below: shipDirectAfterTask would otherwise
+	// stamp Label=done and maybeRemoveDirectWorktree would delete the worktree.
+	markerReply := result.Text
+	if markerReply == "" {
+		markerReply = streamer.Text()
+	}
+	markerKind, _ := b.applySessionLifecycleMarkers(threadID, markerReply, actor.String())
+
 	header := fmt.Sprintf("Done · **%s** · %s", proj.Name, formatElapsed(elapsed))
 	switch {
+	case markerKind == sessionMarkerAbandon:
+		header = fmt.Sprintf("Abandoned by agent · **%s** · %s", proj.Name, formatElapsed(elapsed))
 	case result.Cancelled:
 		header = fmt.Sprintf("Cancelled · **%s** · %s", proj.Name, formatElapsed(elapsed))
 	case result.MaxTurnsReached:
@@ -2256,9 +2287,13 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			repoDir = proj.Cwd
 		}
 		shipped := false
-		if pol.AllowDirectIntegrate && direct && wtBranch != "" {
+		// SESSION_ABANDON: skip direct integrate and worktree removal so soft
+		// abandon stays non-destructive (and half-finished WIP never lands).
+		if pol.AllowDirectIntegrate && direct && wtBranch != "" && markerKind != sessionMarkerAbandon {
 			// No-PR path: bot-owned ff push to primary (uploads already ran above).
 			shipped = b.shipDirectAfterTask(s, present, threadID, proj, runCwd, wtBranch, result)
+		} else if markerKind == sessionMarkerAbandon && pol.AllowDirectIntegrate && direct {
+			log.Printf("ship: skip after SESSION_ABANDON thread=%s", threadID)
 		} else if pol.RefreshPR {
 			// Bind/discover PRs even when Discord is absent (web-native / soft-degrade).
 			b.refreshPRAfterTask(s, threadID, repoDir, wtBranch, replyText)

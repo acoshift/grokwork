@@ -93,6 +93,16 @@ func TestClaudeArgsToolsAllowlistAlsoDisablesMCP(t *testing.T) {
 	}
 }
 
+func TestClaudeArgsMCPConfigUsesStrict(t *testing.T) {
+	args := claudeArgs(Options{MCPConfigPath: "/tmp/mcp.json"})
+	if got := argValue(args, "--mcp-config"); got != "/tmp/mcp.json" {
+		t.Fatalf("mcp-config=%q args=%v", got, args)
+	}
+	if !slices.Contains(args, "--strict-mcp-config") {
+		t.Fatalf("mcp inject must set --strict-mcp-config: %v", args)
+	}
+}
+
 func TestClaudeArgsUnrestrictedToolsOmitsFlags(t *testing.T) {
 	args := claudeArgs(Options{})
 	for _, never := range []string{"--tools", "--strict-mcp-config"} {

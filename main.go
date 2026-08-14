@@ -22,6 +22,15 @@ import (
 )
 
 func main() {
+	// In-session MCP stdio child: talk to the host UDS bridge, no full boot.
+	if len(os.Args) > 1 && os.Args[1] == "agent-mcp-stdio" {
+		if err := runAgentMCPStdio(); err != nil {
+			fmt.Fprintf(os.Stderr, "agent-mcp-stdio: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	boot := time.Now()
 	phase := func(name string, start time.Time) {
 		log.Printf("startup: phase=%s elapsed=%s total=%s",
@@ -61,6 +70,7 @@ func main() {
 
 	t = time.Now()
 	b := bot.New(cfg, sessions, hist)
+	b.EnsureGrokworkMCPInstall()
 	b.SetIdentity(links)
 	// Gate claims until RecoverActiveRuns finishes so a crash re-drive cannot
 	// race a user (or web) task on the same thread. Browse/read paths stay open.

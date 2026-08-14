@@ -75,7 +75,9 @@ func (b *Bot) ApplyPRTerminalState(owner, repo string, number int, state string)
 		}
 		affected = append(affected, threadID)
 		// Capture for the goroutine; tryCleanupTerminalPR re-reads the store.
-		go b.tryCleanupTerminalPR(threadID)
+		// Join drainWG so Stop / test TempDir cleanup wait for the session write.
+		id := threadID
+		b.drainWG.Go(func() { b.tryCleanupTerminalPR(id) })
 	}
 	return affected
 }

@@ -1,6 +1,6 @@
 # ClickUp integration (L1 ticket bridge)
 
-Status: **L1 shipped** (revised after advisor scrutinize, then implemented). Mirrors Linear L1; defers webhooks / write-back / agent.
+Status: **L1 shipped** (revised after advisor scrutinize, then implemented). Mirrors Linear L1; defers webhooks / write-back. Agent lookup of a ClickUp ref is **grokwork MCP** (`clickup_get_task` on the in-session `grokwork` server) — the agent never receives the ClickUp API key and must not call ClickUp HTTP.
 
 ## Problem
 

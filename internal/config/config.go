@@ -145,6 +145,9 @@ type Config struct {
 	// AutoFixCI queues a CI fix task when the PR status poller sees failing checks.
 	// nil/omitted/false → digest only; user runs @Grok /fix-ci.
 	AutoFixCI *bool `json:"autoFixCI,omitempty"`
+	// AgentMCP enables in-session grokwork MCP inject for unrestricted runs (default true).
+	// Explicit false is the kill-switch.
+	AgentMCP *bool `json:"agentMCP,omitempty"`
 	// AutoFixCIMax is the max auto-queued fix attempts per thread session (default 2).
 	AutoFixCIMax int `json:"autoFixCIMax,omitempty"`
 	// BoardStaleDays is days without session activity before /board lists a thread as stale.
@@ -509,6 +512,19 @@ func (c *Config) AutoFixCIEnabled() bool {
 	return c.AutoFixCI != nil && *c.AutoFixCI
 }
 
+// AgentMCPEnabled is true unless agentMCP is explicitly false (default on).
+func (c *Config) AgentMCPEnabled() bool {
+	if c == nil {
+		return true
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.AgentMCP == nil {
+		return true
+	}
+	return *c.AgentMCP
+}
+
 // AutoFixCIMaxAttempts returns the auto-fix cap (default DefaultAutoFixCIMax).
 func (c *Config) AutoFixCIMaxAttempts() int {
 	if c == nil {
@@ -840,6 +856,7 @@ func (c *Config) saveLocked() error {
 		API                       *APIConfig           `json:"api,omitempty"`
 		RiskyPathGlobs            []string             `json:"riskyPathGlobs,omitempty"`
 		AutoFixCI                 *bool                `json:"autoFixCI,omitempty"`
+		AgentMCP                  *bool                `json:"agentMCP,omitempty"`
 		AutoFixCIMax              int                  `json:"autoFixCIMax,omitempty"`
 		BoardStaleDays            *int                 `json:"boardStaleDays,omitempty"`
 		BoardDigestChannel        string               `json:"boardDigestChannel,omitempty"`
@@ -887,6 +904,7 @@ func (c *Config) saveLocked() error {
 		API:                       cloneAPI(c.API),
 		RiskyPathGlobs:            slices.Clone(c.RiskyPathGlobs),
 		AutoFixCI:                 c.AutoFixCI,
+		AgentMCP:                  cloneBoolPtr(c.AgentMCP),
 		AutoFixCIMax:              c.AutoFixCIMax,
 		BoardStaleDays:            cloneIntPtr(c.BoardStaleDays),
 		BoardDigestChannel:        c.BoardDigestChannel,

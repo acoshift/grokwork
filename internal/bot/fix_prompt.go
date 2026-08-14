@@ -105,6 +105,6 @@ func BuildClickUpFixPrompt(actorDisplay, display, title, url, state, description
 		b.WriteString("(no description)\n")
 	}
 	b.WriteString("\nImplement the fix in this worktree, commit, push, and open/update a PR.\n")
-	fmt.Fprintf(&b, "Put %s in the PR title and body (Fixes %s). Do not call ClickUp APIs. Do not merge.\n", display, display)
+	fmt.Fprintf(&b, "Put %s in the PR title and body (Fixes %s). Use grokwork MCP clickup_get_task for more detail. Do not call ClickUp's HTTP API. Do not merge.\n", display, display)
 	return b.String()
 }

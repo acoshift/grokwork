@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -104,7 +105,13 @@ func newAuthFixture(t *testing.T, mutate func(*config.Config)) *authFixture {
 			"h-new":   {ID: 4242, Login: "bob"},
 		}},
 	}
-	f.srv = New(cfg, store, hist, bot.New(cfg, store, hist))
+	b := bot.New(cfg, store, hist)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		b.Stop(ctx)
+	})
+	f.srv = New(cfg, store, hist, b)
 	f.srv.oauth = f.discord
 	f.srv.oauthGoogle = f.google
 	f.srv.oauthGitHub = f.github

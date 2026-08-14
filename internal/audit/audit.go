@@ -88,6 +88,12 @@ const (
 	ActionConfigSetProjectStorage       = "config.set_project_storage"
 	ActionConfigSetGlobalStorage        = "config.set_global_storage"
 	ActionConfigSetProjectPrimaryBranch = "config.set_project_primary_branch"
+	// Agent control plane (markers + MCP). source=agent|agent-marker in detail.
+	ActionAgentSessionDone    = "agent.session.done"
+	ActionAgentSessionAbandon = "agent.session.abandon"
+	ActionAgentReviewRequest  = "agent.review.request"
+	ActionAgentStoragePut     = "agent.storage.put"
+	ActionAgentStorageDelete  = "agent.storage.delete"
 )
 
 // ActorAnonymous is used when web auth is off or no session is present.

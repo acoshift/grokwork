@@ -48,6 +48,11 @@ func issueBindingPromptMode(issues []sessionstore.TrackedIssue, direct bool) str
 			if t := strings.TrimSpace(iss.Title); t != "" {
 				b.WriteString("\n  Title: " + truncateRunes(t, 200))
 			}
+			if iss.IsClickUp() {
+				if d := strings.TrimSpace(iss.Description); d != "" {
+					b.WriteString("\n  Description: " + truncateRunes(d, 800))
+				}
+			}
 		}
 		if u := strings.TrimSpace(iss.URL); u != "" {
 			b.WriteString(" · " + u)
@@ -96,7 +101,7 @@ func issueBindingPromptMode(issues []sessionstore.TrackedIssue, direct bool) str
 	}
 	if hasClickUp {
 		b.WriteString(fmt.Sprintf("%d. Prefer branch names containing the ClickUp display id when you choose a new branch name.\n", n))
-		b.WriteString("Do not call ClickUp APIs. Do not invent other ticket ids.\n")
+		b.WriteString("Fetch extra ClickUp detail with grokwork MCP clickup_get_task. Do not call ClickUp's HTTP API or invent keys. Do not invent other ticket ids.\n")
 	}
 	b.WriteString("Do not invent other issue numbers. Do not merge the PR.\n\n")
 	return b.String()
@@ -337,9 +342,11 @@ func (b *Bot) resolveClickUpIssues(project string, issues []sessionstore.Tracked
 		if got.WorkspaceID != "" {
 			issues[i].WorkspaceID = got.WorkspaceID
 		}
+		if got.Description != "" {
+			issues[i].Description = truncateRunes(got.Description, 800)
+		}
 	}
 }
-
 
 // defaultIssueRepo returns owner, repo for bare issue numbers from session PRs.
 func defaultIssueRepo(e sessionstore.Entry) (owner, repo string) {

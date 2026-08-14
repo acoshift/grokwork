@@ -74,6 +74,13 @@ func (b *Bot) childEnvPolicy(agent grokrun.Agent, pol RunPolicy) grokrun.ChildEn
 	}
 }
 
+// childEnvPolicyWithAgentToken is childEnvPolicy plus optional agent token re-admit.
+func (b *Bot) childEnvPolicyWithAgentToken(agent grokrun.Agent, pol RunPolicy, includeToken bool) grokrun.ChildEnvPolicy {
+	p := b.childEnvPolicy(agent, pol)
+	p.IncludeAgentToken = includeToken
+	return p
+}
+
 // sameAgent reports whether a stored agent name refers to agent. An empty stored
 // name is pre-agent data, which was always grok.
 func sameAgent(stored string, agent grokrun.Agent) bool {
