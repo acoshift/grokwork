@@ -174,6 +174,7 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 	d.StorageBucket = eff.GCSBucket
 	d.StoragePrefix = eff.Prefix
 	d.StorageDriveFolderID = eff.DriveFolderID
+	d.StorageIsolation = eff.IsolationSegment
 
 	subPath := strings.TrimSpace(ctx.FormValue("path"))
 	subPath = strings.Trim(subPath, "/")
@@ -521,15 +522,15 @@ func (s *Server) setProjectStorage(ctx *hime.Context) error {
 					switch st.Backend {
 					case config.StorageBackendGCS:
 						if st.GCSBucket == g.GCSBucket && g.GCSBucket != "" {
-							if want, jerr := config.JoinStoragePrefix(g.Prefix, name); jerr == nil {
-								if st.Prefix != want && !strings.HasPrefix(st.Prefix, want+"/") {
-									msg += ". Warning: this project uses the same bucket as the global default without the isolated prefix " + want + ". Other projects may see the same objects."
+							op := strings.TrimSpace(st.Prefix)
+							gp := strings.TrimSpace(g.Prefix)
+							if op != "" && op != gp {
+								if want, jerr := config.JoinStoragePrefix(g.Prefix, name); jerr == nil {
+									if st.Prefix != want && !strings.HasPrefix(st.Prefix, want+"/") {
+										msg += ". Warning: this project uses the same bucket as the global default without the isolated prefix " + want + ". Other projects may see the same objects."
+									}
 								}
 							}
-						}
-					case config.StorageBackendGDrive:
-						if st.DriveFolderID == g.DriveFolderID && st.DriveFolderID != "" {
-							msg += ". Warning: this project uses the same Drive folder as the global default. Sibling isolation folders of inheriting projects may be visible."
 						}
 					}
 				}

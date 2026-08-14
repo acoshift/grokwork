@@ -802,6 +802,9 @@ type pageData struct {
 	StorageBucket        string
 	StoragePrefix        string
 	StorageDriveFolderID string
+	// StorageIsolation is the Drive child-folder name when the project shares
+	// the global folder (inherit or same-folder override). Empty otherwise.
+	StorageIsolation string
 	// StorageInheritCount is for the global /config/storage confirm (count only).
 	StorageInheritCount int
 	FilesPath           string

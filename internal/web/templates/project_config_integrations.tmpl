@@ -258,6 +258,8 @@
   <p class="sub" style="margin-top:0">
     <span class="badge">override</span>
     {{if eq $pBackend "gdrive"}}Custom Drive folder for this project.{{else}}Custom bucket for this project.{{end}}
+    {{if .ProjectItem.StorageEffectiveIsolation}} Isolated under <span class="mono">{{.ProjectItem.StorageEffectiveIsolation}}</span>.{{end}}
+    {{if and (eq $pBackend "gcs") .ProjectItem.StorageEffectivePrefix (ne .ProjectItem.StorageEffectivePrefix .ProjectItem.StoragePrefix)}} Effective prefix <span class="mono">{{.ProjectItem.StorageEffectivePrefix}}</span>.{{end}}
   </p>
   {{else}}
   <p class="sub" style="margin-top:0">No storage linked. Set a project override below{{if .Config.StorageConfigured}}, or it will inherit the global default once configured{{end}}.</p>
@@ -288,7 +290,7 @@
             placeholder="grokwork" class="mono" autocomplete="off">
         </div>
       </div>
-      <p class="sub" style="margin:0.35rem 0 0">If you reuse the company bucket, set a unique prefix (e.g. <span class="mono">grokwork/{{.ProjectItem.Name}}</span>) so this project does not share another project’s objects. The project name is <strong>not</strong> appended to an override prefix.</p>
+      <p class="sub" style="margin:0.35rem 0 0">If you reuse the company bucket, set a unique prefix (e.g. <span class="mono">grokwork/{{.ProjectItem.Name}}</span>). An empty prefix, or the same prefix as the global default, gets the project name appended so Files do not share another project’s objects.</p>
     </div>
     <div data-backend-fields="gdrive" {{if ne $pBackend "gdrive"}}hidden{{end}} style="margin-top:0.65rem">
       <div>
@@ -296,7 +298,7 @@
         <input id="project-storage-folder" type="text" name="driveFolderId" value="{{.ProjectItem.StorageDriveFolderID}}"
           placeholder="0ABcdEfghIjKlMnOp" class="mono" autocomplete="off">
       </div>
-      <p class="sub" style="margin:0.35rem 0 0">Override uses this folder as-is (no isolation segment). Prefer a dedicated folder, not the global root.</p>
+      <p class="sub" style="margin:0.35rem 0 0">A dedicated folder is used as-is. The same folder as the global default gets a child folder named after this project so Files do not mix with other projects.</p>
     </div>
     <div style="margin-top:0.65rem">
       <label for="project-storage-credentials">Credentials file <span data-backend-cred-label>(optional)</span></label>

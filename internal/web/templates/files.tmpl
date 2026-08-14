@@ -4,6 +4,7 @@
 {{if eq .StorageBackend "gdrive"}}
 <p class="sub">
   Drive · folder <span class="mono">{{.StorageDriveFolderID}}</span>
+  {{if .StorageIsolation}}· prefix <span class="mono">{{.StorageIsolation}}</span>{{end}}
   {{if .StorageInherited}}· <span class="muted">via global default</span>{{end}}
 </p>
 {{else if .StorageBucket}}

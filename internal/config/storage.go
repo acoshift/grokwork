@@ -40,9 +40,11 @@ type StorageConfig struct {
 	// Disabled is project-only (unchanged).
 	Disabled bool `json:"disabled,omitempty"`
 
-	// IsolationSegment is set only by EffectiveStorage when inheriting Drive.
+	// IsolationSegment is set only by EffectiveStorage when a Drive root is
+	// shared (inherit, or an override that reuses the global folder).
 	// Never persisted (json:"-"). The Drive adapter find-or-creates a child
-	// folder with this name under DriveFolderID. Empty on override / GCS.
+	// folder with this name under DriveFolderID. Empty on a dedicated
+	// override folder / GCS.
 	IsolationSegment string `json:"-"`
 }
 
@@ -398,7 +400,8 @@ func (c *Config) effectiveStorageLocked(name string) *StorageConfig {
 		return nil
 	}
 	if storageHasIdentity(raw) {
-		// Override identity as-is; IsolationSegment stays empty.
+		// Override identity as-is, except a shared global root is isolated
+		// the same way inherit is (project-named prefix / Drive child).
 		// Empty credentials inherit the global key so a project can name a
 		// bucket/folder without repeating the host SA path.
 		out := cloneStorage(raw)
@@ -407,30 +410,90 @@ func (c *Config) effectiveStorageLocked(name string) *StorageConfig {
 				out.CredentialsFile = creds
 			}
 		}
+		if sharesGlobalRoot(out, c.Storage) {
+			if err := isolateOntoProject(out, c.Storage, name); err != nil {
+				fmt.Fprintf(os.Stderr, "[warn] effective storage for project %q: %v\n", name, err)
+				return nil
+			}
+		}
 		return out
 	}
 	if !storageHasIdentity(c.Storage) {
 		return nil
 	}
 	out := cloneStorage(c.Storage)
-	switch strings.TrimSpace(strings.ToLower(out.Backend)) {
-	case StorageBackendGCS, "":
-		// Empty backend with bucket is the legacy defense path (storageHasIdentity).
-		prefix, err := JoinStoragePrefix(out.Prefix, name)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[warn] effective storage for project %q: %v\n", name, err)
-			return nil
-		}
-		out.Prefix = prefix
-	case StorageBackendGDrive:
-		seg := storageProjectSegment(name) // never empty
-		out.IsolationSegment = seg
-		// DriveFolderID stays the global parent root; Prefix stays empty.
-	default:
+	if err := isolateOntoProject(out, c.Storage, name); err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] effective storage for project %q: %v\n", name, err)
 		return nil
 	}
 	out.Disabled = false
 	return out
+}
+
+func storageBackendOf(s *StorageConfig) string {
+	if s == nil {
+		return ""
+	}
+	b := strings.TrimSpace(strings.ToLower(s.Backend))
+	if b != "" {
+		return b
+	}
+	if strings.TrimSpace(s.GCSBucket) != "" {
+		return StorageBackendGCS
+	}
+	return ""
+}
+
+// sharesGlobalRoot reports whether an override points at the same Drive folder
+// or the same GCS bucket with an empty / identical prefix — i.e. "using the
+// default config" rather than a dedicated namespace.
+func sharesGlobalRoot(override, global *StorageConfig) bool {
+	if !storageHasIdentity(override) || !storageHasIdentity(global) {
+		return false
+	}
+	if storageBackendOf(override) != storageBackendOf(global) {
+		return false
+	}
+	switch storageBackendOf(override) {
+	case StorageBackendGDrive:
+		return override.DriveFolderID != "" && override.DriveFolderID == global.DriveFolderID
+	case StorageBackendGCS, "":
+		if override.GCSBucket == "" || override.GCSBucket != global.GCSBucket {
+			return false
+		}
+		op := strings.TrimSpace(override.Prefix)
+		gp := strings.TrimSpace(global.Prefix)
+		return op == "" || op == gp
+	default:
+		return false
+	}
+}
+
+// isolateOntoProject appends the project segment to a shared root.
+// GCS uses global.Prefix as the base when the override left prefix empty so
+// the result matches inherit (`{globalPrefix}/{project}`).
+func isolateOntoProject(out, global *StorageConfig, project string) error {
+	if out == nil {
+		return fmt.Errorf("storage: nil block")
+	}
+	switch storageBackendOf(out) {
+	case StorageBackendGCS, "":
+		base := strings.TrimSpace(out.Prefix)
+		if base == "" && global != nil {
+			base = strings.TrimSpace(global.Prefix)
+		}
+		prefix, err := JoinStoragePrefix(base, project)
+		if err != nil {
+			return err
+		}
+		out.Prefix = prefix
+		return nil
+	case StorageBackendGDrive:
+		out.IsolationSegment = storageProjectSegment(project)
+		return nil
+	default:
+		return fmt.Errorf("storage: unknown backend %q", out.Backend)
+	}
 }
 
 func (c *Config) storageSourceLocked(name string) string {

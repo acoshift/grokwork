@@ -790,7 +790,7 @@ func TestEffectiveStorageDriveInherit(t *testing.T) {
 	if eff.GCSBucket != "" || eff.Prefix != "" {
 		t.Fatalf("gcs fields on drive inherit: %+v", eff)
 	}
-	// Override uses folder as-is, no isolation.
+	// Dedicated override folder is used as-is, no isolation.
 	if err := cfg.SetProjectStorageDrive("app", "1OverrideFolderID", "/etc/keys/drive.json"); err != nil {
 		t.Fatal(err)
 	}
@@ -963,5 +963,61 @@ func TestIsolationSegmentNeverPersisted(t *testing.T) {
 	}
 	if got.IsolationSegment != "" {
 		t.Fatalf("normalize left IsolationSegment = %q", got.IsolationSegment)
+	}
+}
+
+func TestEffectiveStorageIsolatesSharedGlobalRoot(t *testing.T) {
+	cfg, _ := storageTestConfig(t)
+	if err := cfg.SetGlobalStorageDrive("0ABcdEfghIjKlMnOp", "/etc/keys/drive.json"); err != nil {
+		t.Fatal(err)
+	}
+	// Same folder as global + empty creds is "default config" — isolate.
+	if err := cfg.SetProjectStorageDrive("app", "0ABcdEfghIjKlMnOp", ""); err != nil {
+		t.Fatal(err)
+	}
+	raw := cfg.ProjectStorage("app")
+	if raw == nil || raw.IsolationSegment != "" {
+		t.Fatalf("stored override must not persist isolation: %+v", raw)
+	}
+	eff := cfg.EffectiveStorage("app")
+	if eff == nil || eff.DriveFolderID != "0ABcdEfghIjKlMnOp" || eff.IsolationSegment != "app" {
+		t.Fatalf("same-folder override = %+v", eff)
+	}
+
+	// Inherit still isolates the project that has no override.
+	if got := cfg.EffectiveStorage("api"); got == nil || got.IsolationSegment != "api" {
+		t.Fatalf("inherit = %+v", got)
+	}
+
+	if err := cfg.SetGlobalStorageGCS("acme-company-files", "grokwork", "/etc/k.json"); err != nil {
+		t.Fatal(err)
+	}
+	// Same bucket, empty prefix → inherit-equivalent prefix.
+	if err := cfg.SetProjectStorageGCS("app", "acme-company-files", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveStorage("app"); got == nil || got.Prefix != "grokwork/app" {
+		t.Fatalf("empty prefix same bucket = %+v", got)
+	}
+	// Same bucket, same prefix as global → append project.
+	if err := cfg.SetProjectStorageGCS("app", "acme-company-files", "grokwork", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveStorage("app"); got == nil || got.Prefix != "grokwork/app" {
+		t.Fatalf("matching prefix = %+v", got)
+	}
+	// Distinct prefix is left alone.
+	if err := cfg.SetProjectStorageGCS("app", "acme-company-files", "other", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveStorage("app"); got == nil || got.Prefix != "other" {
+		t.Fatalf("custom prefix = %+v", got)
+	}
+	// Different bucket is left alone even with empty prefix.
+	if err := cfg.SetProjectStorageGCS("app", "acme-app-private", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveStorage("app"); got == nil || got.Prefix != "" || got.GCSBucket != "acme-app-private" {
+		t.Fatalf("private bucket = %+v", got)
 	}
 }

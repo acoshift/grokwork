@@ -598,6 +598,9 @@ func TestFilesPageInheritsDriveIsolation(t *testing.T) {
 	if !strings.Contains(body, "via global default") {
 		t.Fatal("inherited chrome missing")
 	}
+	if !strings.Contains(body, `prefix <span class="mono">proj</span>`) {
+		t.Fatal("inherited chrome must show the project prefix folder")
+	}
 	if len(fake.lists) != 1 {
 		t.Fatalf("want one list, got %d", len(fake.lists))
 	}
@@ -712,7 +715,7 @@ func TestSetProjectStorageDriveInheritsEmptyCredentials(t *testing.T) {
 	}
 }
 
-func TestSetProjectStorageDriveAndSameFolderWarning(t *testing.T) {
+func TestSetProjectStorageDriveSameFolderIsolates(t *testing.T) {
 	srv, cfg, _ := storageServer(t)
 	sid, csrf := adminLogin(t, srv)
 	if err := cfg.SetGlobalStorageDrive("0ABcdEfghIjKlMnOp", "/etc/keys/drive.json"); err != nil {
@@ -727,17 +730,20 @@ func TestSetProjectStorageDriveAndSameFolderWarning(t *testing.T) {
 	if !strings.Contains(loc, "ok=") {
 		t.Fatalf("Location = %q", loc)
 	}
-	// Warning is in the ok flash (URL-encoded).
-	if !strings.Contains(loc, "Warning") && !strings.Contains(loc, "same+Drive") && !strings.Contains(loc, "same Drive") {
-		// Accept either encoding of the warning fragment.
-		decoded, _ := url.QueryUnescape(loc)
-		if !strings.Contains(decoded, "same Drive folder") {
-			t.Fatalf("same-folder warning missing: %q", decoded)
-		}
+	decoded, _ := url.QueryUnescape(loc)
+	if strings.Contains(decoded, "Warning") || strings.Contains(decoded, "same Drive folder") {
+		t.Fatalf("same-folder override is isolated; must not warn: %q", decoded)
 	}
 	st := cfg.ProjectStorage("proj")
 	if st == nil || st.Backend != config.StorageBackendGDrive || st.DriveFolderID != "0ABcdEfghIjKlMnOp" {
 		t.Fatalf("project drive = %+v", st)
+	}
+	if st.IsolationSegment != "" {
+		t.Fatalf("raw must not persist isolation: %+v", st)
+	}
+	eff := cfg.EffectiveStorage("proj")
+	if eff == nil || eff.IsolationSegment != "proj" {
+		t.Fatalf("same-folder override must isolate: %+v", eff)
 	}
 }
 
