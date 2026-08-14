@@ -120,7 +120,7 @@ func TestIssueBindingPromptLinear(t *testing.T) {
 	p := issueBindingPrompt([]sessionstore.TrackedIssue{
 		{Provider: sessionstore.ProviderLinear, Identifier: "ENG-123", Keyword: sessionstore.IssueKeywordFixes, Title: "Auth timeout", State: "In Progress", URL: "https://linear.app/x/issue/ENG-123"},
 	})
-	for _, want := range []string{"ENG-123", "Fixes ENG-123", "In Progress", "Auth timeout", "eng-123"} {
+	for _, want := range []string{"ENG-123", "Fixes ENG-123", "In Progress", "Auth timeout", "eng-123", "linear_get_issue"} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("missing %q in:\n%s", want, p)
 		}

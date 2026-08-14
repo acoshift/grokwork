@@ -48,6 +48,12 @@ func TestVerifyRejectsForeignAndExpired(t *testing.T) {
 	}
 }
 
+func TestDefaultShipCapsIncludeLinearRead(t *testing.T) {
+	if !DefaultShipCaps().LinearRead {
+		t.Fatal("LinearRead")
+	}
+}
+
 func TestRevokeThread(t *testing.T) {
 	s := NewStore()
 	raw, _, err := s.Mint("t1", "app", "a", "", DefaultShipCaps(), time.Hour)

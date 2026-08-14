@@ -1,12 +1,14 @@
 package bot
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,7 +18,9 @@ import (
 	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/grokrun"
+	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/projstore"
+	"github.com/acoshift/grokwork/internal/reviewstore"
 )
 
 // agentPlane holds the in-session agent control plane (auth + API + UDS bridge).
@@ -71,6 +75,16 @@ func (b *Bot) initAgentPlane() {
 		ClickUpWorkspaceID: b.cfg.ProjectClickUpWorkspaceID,
 		ClickUpListID:      b.cfg.ProjectClickUpListID,
 		ClickUpNew:         clickup.New,
+		LinearEnabled:      b.cfg.ProjectLinearEnabled,
+		LinearAPIKey:       b.cfg.ProjectLinearAPIKey,
+		LinearTeamKey:      b.cfg.ProjectLinearTeamKey,
+		LinearNew:          linear.New,
+		ListEligibleReviewers: func(project string) []agentapi.ReviewerRow {
+			return b.listEligibleReviewers(project)
+		},
+		OnReviewRequested: func(req reviewstore.Request) {
+			b.NotifyTeamReviewRequested(req)
+		},
 	}
 	sock := agentmcp.ShortUnixPath(filepath.Join(b.cfg.DataDir, "agent.sock"))
 	b.agent = &agentPlane{Auth: auth, API: api, Storage: storage, Bridge: &agentmcp.Bridge{Service: api}, Sock: sock}
@@ -116,6 +130,60 @@ func (b *Bot) reviewerOnProject(project, userID string) bool {
 		}
 	}
 	return b.cfg.CanAccessProject(project, userID, config.WebRoleMember)
+}
+
+// listEligibleReviewers returns member ids that pass eligibleTeamReviewer.
+// Eligibility is checked on the stored snapshot id; the emitted id is the
+// same wire form Discord /review stores (identity.Canonical, Discord as a
+// bare snowflake) so ListForReviewer == matches the signed-in account.
+func (b *Bot) listEligibleReviewers(project string) []agentapi.ReviewerRow {
+	if b == nil || b.cfg == nil {
+		return nil
+	}
+	project = strings.TrimSpace(project)
+	if project == "" {
+		return nil
+	}
+	var members []string
+	for _, p := range b.cfg.Snapshot().Projects {
+		if strings.EqualFold(p.Name, project) {
+			members = p.MemberIDs
+			break
+		}
+	}
+	out := make([]agentapi.ReviewerRow, 0, len(members))
+	seen := map[string]struct{}{}
+	for _, raw := range members {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if !b.eligibleTeamReviewer(project, raw) {
+			continue
+		}
+		id := b.canonicalActorID(raw)
+		if config.IsDiscordActor(id) {
+			id = config.ActorSubject(id)
+		}
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		name := id
+		if b.agent != nil && b.agent.API != nil && b.agent.API.DisplayName != nil {
+			if n := strings.TrimSpace(b.agent.API.DisplayName(id)); n != "" {
+				name = n
+			}
+		}
+		out = append(out, agentapi.ReviewerRow{ID: id, Name: name})
+	}
+	slices.SortFunc(out, func(a, b agentapi.ReviewerRow) int {
+		return cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+	return out
 }
 
 // AgentAPI returns the agent control plane service (may be nil).
@@ -201,11 +269,13 @@ func (b *Bot) revokeAgentThread(threadID string) {
 func agentMCPPromptContract() string {
 	return strings.Join([]string{
 		"You have grokwork MCP tools (server \"grokwork\"): session_get, session_done, session_abandon,",
-		"prs_list, issues_list, review_request, storage_put, storage_get, storage_list, storage_delete,",
-		"clickup_get_task, clickup_list_tasks.",
+		"prs_list, issues_list, review_request, reviewers_list, storage_put, storage_get, storage_list, storage_delete,",
+		"clickup_get_task, clickup_list_tasks, linear_get_issue, linear_list_issues.",
 		"Use them for team workflow state; do not invent HTTP calls to the admin UI.",
 		"ClickUp refs (custom id, native id, or ClickUp URL) go to clickup_get_task — not issues_list, and not ClickUp's HTTP API.",
 		"Do not invent ClickUp API keys. Do not change ClickUp status.",
+		"Linear refs (TEAM-N or a Linear issue URL) go to linear_get_issue — not issues_list, and not Linear HTTP.",
+		"Do not invent Linear API keys. Do not call Linear issueUpdate.",
 		"When the task is complete you may call session_done (or session_abandon if giving up),",
 		"and/or end with SESSION_DONE: / SESSION_ABANDON: markers.",
 		"Project storage is shared across sessions in this project — use clear keys (e.g. reports/<case>/…).",

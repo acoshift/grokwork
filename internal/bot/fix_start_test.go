@@ -76,7 +76,7 @@ func TestBuildGitHubFixPromptContract(t *testing.T) {
 func TestBuildLinearFixPromptContract(t *testing.T) {
 	p := BuildLinearFixPrompt("Bob", "ENG-9", "Title", "https://linear.app/x/issue/ENG-9", "Todo", "desc")
 	for _, want := range []string{
-		"Bob", "ENG-9", "Title", "desc", "Fixes ENG-9", "Do not merge", "Do not call Linear issueUpdate",
+		"Bob", "ENG-9", "Title", "desc", "Fixes ENG-9", "Do not merge", "Do not call Linear issueUpdate", "linear_get_issue",
 	} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("missing %q in\n%s", want, p)

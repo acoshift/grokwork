@@ -22,9 +22,10 @@ type Caps struct {
 	StorageRead    bool
 	StorageWrite   bool
 	ClickUpRead    bool
+	LinearRead     bool
 }
 
-// DefaultShipCaps is the unrestricted ship/fix tool set (rev 2).
+// DefaultShipCaps is the unrestricted ship/fix tool set (rev 3).
 func DefaultShipCaps() Caps {
 	return Caps{
 		SessionRead:    true,
@@ -36,6 +37,7 @@ func DefaultShipCaps() Caps {
 		StorageRead:    true,
 		StorageWrite:   true,
 		ClickUpRead:    true,
+		LinearRead:     true,
 	}
 }
 

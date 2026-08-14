@@ -8,6 +8,7 @@ import (
 	"github.com/acoshift/grokwork/internal/agentauth"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/grokrun"
+	"github.com/acoshift/grokwork/internal/identity"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -80,6 +81,50 @@ func TestEligibleTeamReviewerBuilder(t *testing.T) {
 	}
 	if b.eligibleTeamReviewer("app", "admin-only") {
 		t.Fatal("admin without CanShip must not be eligible (must match web eligibleReviewer)")
+	}
+
+	rows := b.listEligibleReviewers("app")
+	ids := map[string]bool{}
+	for _, r := range rows {
+		ids[r.ID] = true
+		if r.Name == "" {
+			t.Fatalf("empty name on %+v", r)
+		}
+	}
+	// Snapshot MemberIDs are discord:eng-1; emit the wire form /review stores.
+	if !ids["eng-1"] {
+		t.Fatalf("builder missing (want wire form eng-1): %+v", rows)
+	}
+	if ids["discord:eng-1"] {
+		t.Fatalf("must not emit discord: prefix: %+v", rows)
+	}
+	if ids["discord:sup-1"] || ids["sup-1"] {
+		t.Fatalf("operator listed: %+v", rows)
+	}
+	if ids["discord:admin-only"] || ids["admin-only"] {
+		t.Fatalf("admin without CanShip listed: %+v", rows)
+	}
+}
+
+func TestListEligibleReviewersEmitsCanonicalAccount(t *testing.T) {
+	b, _ := testFixBot(t)
+	if err := b.cfg.SetProjectTeam("app", "eng", "Engineering", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.cfg.AddProjectTeamMember("app", "eng", "google:alice"); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := identity.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ids.Link("999888777666555444", "google:alice", ""); err != nil {
+		t.Fatal(err)
+	}
+	b.SetIdentity(ids)
+	rows := b.listEligibleReviewers("app")
+	if len(rows) != 1 || rows[0].ID != "google:alice" {
+		t.Fatalf("want google:alice account id, got %+v", rows)
 	}
 }
 

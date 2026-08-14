@@ -72,7 +72,7 @@ func BuildLinearFixPrompt(actorDisplay, identifier, title, url, state, descripti
 	}
 	b.WriteString("\nImplement the fix in this worktree, commit, push, and open/update a PR.\n")
 	fmt.Fprintf(&b, "Put %s in the PR title and body (Fixes %s) so Linear's\n", identifier, identifier)
-	b.WriteString("GitHub integration can move state. Do not call Linear issueUpdate. Do not merge.\n")
+	b.WriteString("GitHub integration can move state. Use grokwork MCP linear_get_issue for more detail. Do not call Linear's HTTP API. Do not call Linear issueUpdate. Do not merge.\n")
 	return b.String()
 }
 

@@ -25,6 +25,9 @@ const (
 	ToolStorageDelete  = "storage_delete"
 	ToolClickUpGetTask = "clickup_get_task"
 	ToolClickUpList    = "clickup_list_tasks"
+	ToolLinearGetIssue = "linear_get_issue"
+	ToolLinearList     = "linear_list_issues"
+	ToolReviewersList  = "reviewers_list"
 )
 
 // ToolDef is an MCP tools/list entry.
@@ -62,6 +65,9 @@ func ToolDefs() []ToolDef {
 		{Name: ToolStorageDelete, Description: "Delete a project storage object.", InputSchema: obj(map[string]any{"key": str}, "key")},
 		{Name: ToolClickUpGetTask, Description: "Get a ClickUp task by custom id, native id, or ClickUp URL. Uses the grokwork project key; do not call ClickUp HTTP.", InputSchema: obj(map[string]any{"ref": str}, "ref")},
 		{Name: ToolClickUpList, Description: "List recent ClickUp tasks on this project's configured list.", InputSchema: obj(map[string]any{"limit": num})},
+		{Name: ToolLinearGetIssue, Description: "Get one Linear issue by TEAM-N or a Linear issue URL. Uses this project's Linear key; do not call Linear HTTP.", InputSchema: obj(map[string]any{"ref": str}, "ref")},
+		{Name: ToolLinearList, Description: "List recent Linear issues on this project's configured team.", InputSchema: obj(map[string]any{"limit": num})},
+		{Name: ToolReviewersList, Description: "List team-review-eligible project members (canonical actor ids for review_request).", InputSchema: obj(nil)},
 	}
 }
 
@@ -105,6 +111,12 @@ func Call(ctx context.Context, svc *agentapi.Service, token, name string, args m
 		return svc.GetClickUpTask(ctx, token, strArg(args, "ref"))
 	case ToolClickUpList:
 		return svc.ListClickUpTasks(ctx, token, intArg(args, "limit"))
+	case ToolLinearGetIssue:
+		return svc.GetLinearIssue(ctx, token, strArg(args, "ref"))
+	case ToolLinearList:
+		return svc.ListLinearIssues(ctx, token, intArg(args, "limit"))
+	case ToolReviewersList:
+		return svc.ListReviewers(token)
 	default:
 		return nil, fmt.Errorf("unknown tool %q", name)
 	}

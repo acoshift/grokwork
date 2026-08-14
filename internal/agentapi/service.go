@@ -12,6 +12,7 @@ import (
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/projstore"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -33,8 +34,12 @@ type Service struct {
 	Audit    *audit.Logger
 	// EligibleReviewer mirrors web canRequestReviewer / eligibleReviewer.
 	EligibleReviewer func(project, reviewerID string) bool
+	// ListEligibleReviewers returns canonical member ids that pass EligibleReviewer.
+	ListEligibleReviewers func(project string) []ReviewerRow
 	// DisplayName resolves an actor id for review request attribution.
 	DisplayName func(actorID string) string
+	// OnReviewRequested is best-effort notify after a successful team review request.
+	OnReviewRequested func(req reviewstore.Request)
 	// RepoDir resolves a project checkout path for gh issue list.
 	RepoDir func(project string) string
 	// GH runner optional.
@@ -45,19 +50,40 @@ type Service struct {
 	ClickUpWorkspaceID func(project string) string
 	ClickUpListID      func(project string) string
 	ClickUpNew         func(apiKey string) *clickup.Client
+
+	LinearEnabled func(project string) bool
+	LinearAPIKey  func(project string) string
+	LinearTeamKey func(project string) string
+	LinearNew     func(apiKey string) *linear.Client
 }
 
 // SessionInfo is a compact self snapshot.
 type SessionInfo struct {
-	ThreadID string                      `json:"threadId"`
-	Project  string                      `json:"project"`
-	Goal     string                      `json:"goal,omitempty"`
-	Label    string                      `json:"label"`
-	Mode     string                      `json:"mode,omitempty"`
-	Phase    string                      `json:"phase,omitempty"`
-	Branch   string                      `json:"branch,omitempty"`
-	PRs      []sessionstore.TrackedPR    `json:"prs,omitempty"`
-	Issues   []sessionstore.TrackedIssue `json:"issues,omitempty"`
+	ThreadID      string                      `json:"threadId"`
+	Project       string                      `json:"project"`
+	Goal          string                      `json:"goal,omitempty"`
+	Label         string                      `json:"label"`
+	Mode          string                      `json:"mode,omitempty"`
+	Phase         string                      `json:"phase,omitempty"`
+	Branch        string                      `json:"branch,omitempty"`
+	CaseKey       string                      `json:"caseKey,omitempty"`
+	ShipMode      string                      `json:"shipMode,omitempty"`
+	OwnerID       string                      `json:"ownerId,omitempty"`
+	OwnerName     string                      `json:"ownerName,omitempty"`
+	EngineerID    string                      `json:"engineerId,omitempty"`
+	EngineerName  string                      `json:"engineerName,omitempty"`
+	Severity      string                      `json:"severity,omitempty"`
+	CustomerRef   string                      `json:"customerRef,omitempty"`
+	RelatedCases  []string                    `json:"relatedCases,omitempty"`
+	OpenQuestions []sessionstore.OpenQuestion `json:"openQuestions,omitempty"`
+	PRs           []sessionstore.TrackedPR    `json:"prs,omitempty"`
+	Issues        []sessionstore.TrackedIssue `json:"issues,omitempty"`
+}
+
+// ReviewerRow is one team-review-eligible project member.
+type ReviewerRow struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
 }
 
 // PRRow is a compact PR listing row.
@@ -128,15 +154,25 @@ func (s *Service) SessionGet(token string) (SessionInfo, error) {
 	}
 	ent.NormalizePRs()
 	return SessionInfo{
-		ThreadID: cred.ThreadID,
-		Project:  cred.Project,
-		Goal:     ent.Goal,
-		Label:    ent.EffectiveLabel(),
-		Mode:     ent.Mode,
-		Phase:    ent.Phase,
-		Branch:   ent.WorktreeBranch,
-		PRs:      ent.PRs,
-		Issues:   ent.Issues,
+		ThreadID:      cred.ThreadID,
+		Project:       cred.Project,
+		Goal:          ent.Goal,
+		Label:         ent.EffectiveLabel(),
+		Mode:          ent.Mode,
+		Phase:         ent.Phase,
+		Branch:        ent.WorktreeBranch,
+		CaseKey:       ent.CaseKey,
+		ShipMode:      ent.ShipMode,
+		OwnerID:       ent.OwnerID,
+		OwnerName:     ent.OwnerName,
+		EngineerID:    ent.EngineerID,
+		EngineerName:  ent.EngineerName,
+		Severity:      ent.Severity,
+		CustomerRef:   ent.CustomerRef,
+		RelatedCases:  ent.RelatedCaseKeys(),
+		OpenQuestions: ent.OpenQuestions,
+		PRs:           ent.PRs,
+		Issues:        ent.Issues,
 	}, nil
 }
 
@@ -337,7 +373,25 @@ func (s *Service) RequestTeamReview(token, owner, repo string, number int, revie
 	s.deny(cred, audit.ActionAgentReviewRequest, err, map[string]any{
 		"owner": owner, "repo": repo, "number": number, "reviewerId": reviewerID,
 	})
+	if err == nil && s.OnReviewRequested != nil {
+		s.OnReviewRequested(req)
+	}
 	return req, err
+}
+
+// ListReviewers lists team-review-eligible members of the bound project.
+func (s *Service) ListReviewers(token string) ([]ReviewerRow, error) {
+	cred, err := s.verify(token)
+	if err != nil {
+		return nil, err
+	}
+	if !cred.Caps.ReviewRequest {
+		return nil, fmt.Errorf("forbidden: review request")
+	}
+	if s.ListEligibleReviewers == nil {
+		return nil, nil
+	}
+	return s.ListEligibleReviewers(cred.Project), nil
 }
 
 // StoragePut writes a project blob.

@@ -2,6 +2,7 @@ package agentapi
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -196,6 +197,111 @@ func TestReviewRequestEligibility(t *testing.T) {
 	}
 	if !strings.Contains(req.RequesterName, "agent") {
 		t.Fatalf("requester name should note agent: %q", req.RequesterName)
+	}
+}
+
+func TestListReviewersUsesCanonicalMemberIDs(t *testing.T) {
+	svc, auth, _, _ := testService(t)
+	svc.ListEligibleReviewers = func(project string) []ReviewerRow {
+		if project != "app" {
+			t.Fatalf("project=%q", project)
+		}
+		return []ReviewerRow{{ID: "google:alice", Name: "google:alice"}, {ID: "eng-1", Name: "eng-1"}}
+	}
+	raw, _, err := auth.Mint("t1", "app", "a", "", agentauth.DefaultShipCaps(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := svc.ListReviewers(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].ID != "google:alice" || rows[1].ID != "eng-1" {
+		t.Fatalf("%+v", rows)
+	}
+	caps := agentauth.DefaultShipCaps()
+	caps.ReviewRequest = false
+	rawNo, _, err := auth.Mint("t1c", "app", "a", "", caps, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ListReviewers(rawNo); err == nil || !strings.Contains(err.Error(), "forbidden") {
+		t.Fatalf("cap: %v", err)
+	}
+}
+
+func TestRequestTeamReviewNotifies(t *testing.T) {
+	svc, auth, _, _ := testService(t)
+	var got reviewstore.Request
+	svc.OnReviewRequested = func(req reviewstore.Request) { got = req }
+	raw, _, err := auth.Mint("t1", "app", "actor", "", agentauth.DefaultShipCaps(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := svc.RequestTeamReview(raw, "o", "r", 3, "builder-1", "please", "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ReviewerID != "builder-1" || got.ID != req.ID {
+		t.Fatalf("notify=%+v req=%+v", got, req)
+	}
+	// Ineligible must not notify.
+	got = reviewstore.Request{}
+	if _, err := svc.RequestTeamReview(raw, "o", "r", 3, "nobody", "", ""); err == nil {
+		t.Fatal("expected ineligible")
+	}
+	if got.ReviewerID != "" {
+		t.Fatalf("notified ineligible: %+v", got)
+	}
+}
+
+func TestSessionGetHostFieldsOmitCustomerBlob(t *testing.T) {
+	svc, auth, sessions, _ := testService(t)
+	if err := sessions.Set("t1", sessionstore.Entry{
+		Project: "app", Goal: "fix", Cwd: "/secret/worktree",
+		CaseKey: "APP-4", ShipMode: "pr",
+		OwnerID: "own-1", OwnerName: "Owner",
+		EngineerID: "eng-1", EngineerName: "Eng",
+		Severity: "high", CustomerRef: "ZD-9",
+		RelatedCases: []string{"APP-1", "APP-1", "nope"},
+		OpenQuestions: []sessionstore.OpenQuestion{{ID: "q1", Text: "ship?"}},
+		Dossier:         &sessionstore.Dossier{Summary: "customer repro"},
+		CustomerUpdate:  "hi customer",
+		WatcherIDs:      []string{"w1"},
+		OpenedAt:        "2026-01-01T00:00:00Z",
+		FirstResponseAt: "2026-01-01T01:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _, err := auth.Mint("t1", "app", "a", "", agentauth.DefaultShipCaps(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := svc.SessionGet(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.CaseKey != "APP-4" || info.ShipMode != "pr" || info.OwnerID != "own-1" || info.EngineerID != "eng-1" {
+		t.Fatalf("%+v", info)
+	}
+	if info.Severity != "high" || info.CustomerRef != "ZD-9" || info.OwnerName != "Owner" || info.EngineerName != "Eng" {
+		t.Fatalf("%+v", info)
+	}
+	if len(info.RelatedCases) != 1 || info.RelatedCases[0] != "APP-1" {
+		t.Fatalf("related=%v", info.RelatedCases)
+	}
+	if len(info.OpenQuestions) != 1 || info.OpenQuestions[0].ID != "q1" {
+		t.Fatalf("questions=%+v", info.OpenQuestions)
+	}
+	enc, err := json.Marshal(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(enc)
+	for _, leak := range []string{"/secret/worktree", "customer repro", "hi customer", `"watcherIds"`, `"openedAt"`, `"firstResponseAt"`, `"cwd"`, `"dossier"`, `"customerUpdate"`} {
+		if strings.Contains(s, leak) {
+			t.Fatalf("leaked %q in %s", leak, s)
+		}
 	}
 }
 

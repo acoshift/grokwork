@@ -96,7 +96,7 @@ func issueBindingPromptMode(issues []sessionstore.TrackedIssue, direct bool) str
 	n := 3
 	if hasLinear {
 		b.WriteString(fmt.Sprintf("%d. Prefer branch names containing the Linear identifier (lowercase, e.g. eng-123-…) when you choose a new branch name.\n", n))
-		b.WriteString("Linear state is driven by its GitHub integration via the identifier in title/body — do not invent other ticket ids.\n")
+		b.WriteString("Fetch extra Linear detail with grokwork MCP linear_get_issue. Do not call Linear's HTTP API or invent keys. Linear state is driven by its GitHub integration via the identifier in title/body — do not invent other ticket ids.\n")
 		n++
 	}
 	if hasClickUp {

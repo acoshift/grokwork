@@ -14,7 +14,6 @@ import (
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
-	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 )
 
@@ -260,27 +259,7 @@ func (s *Server) postPRReviewRequest(ctx *hime.Context) error {
 	}
 
 	if s.bot != nil {
-		prURL := s.cfg.DiscordPRDisplayURL(owner, repo, n, "")
-		if threadID != "" && !gitworktree.IsWebUnitID(threadID) {
-			msg := fmt.Sprintf("<@%s> please review **%s/%s#%d**", reviewerID, owner, repo, n)
-			if note != "" {
-				msg += "\n> " + note
-			}
-			msg += "\n" + prURL
-			// Discord ping is best-effort after the request is durable.
-			go s.bot.NotifyThread(threadID, msg)
-		}
-		// A reviewer who signed in without Discord cannot be mentioned or DMed, and
-		// a web-native unit has no thread to mention them in — so the request used
-		// to reach them nowhere. Queue it either way; the thread mention above is
-		// ambient, this is addressed.
-		if !config.IsDiscordActor(reviewerID) || threadID == "" || gitworktree.IsWebUnitID(threadID) {
-			if err := s.bot.QueueInbox(reviewerID, "review.requested",
-				fmt.Sprintf("Review requested · %s/%s#%d", owner, repo, n),
-				note, prURL, threadID, project); err != nil {
-				log.Printf("warn: inbox review request reviewer=%s: %v", reviewerID, err)
-			}
-		}
+		s.bot.NotifyTeamReviewRequested(req)
 	}
 
 	return s.prRedirect(ctx, owner, repo, n, project, "Review requested", nil)
