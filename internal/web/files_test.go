@@ -866,8 +866,10 @@ func TestFilesPageDownloadAndPreviewMarkup(t *testing.T) {
 		`hx-boost="false"`,
 		// urlquery emits + for space; html/template then writes &#43; in href.
 		`href="/projects/proj/files/download?object=Report&#43;%5Bfinal%5D.pdf"`,
-		`href="/projects/proj/files/preview?object=Report&#43;%5Bfinal%5D.pdf"`,
+		`href="/projects/proj/files?preview=Report&#43;%5Bfinal%5D.pdf"`,
+		`data-src="/projects/proj/files/preview?object=Report&#43;%5Bfinal%5D.pdf"`,
 		`data-preview="pdf"`,
+		`>Preview</a>`,
 		`Google Doc — export as PDF to download`,
 		`notes [v2].txt`,
 	} {
@@ -878,8 +880,41 @@ func TestFilesPageDownloadAndPreviewMarkup(t *testing.T) {
 	if strings.Contains(body, `/files/download?object=Sheet`) {
 		t.Fatal("native Google file must not have a Download href")
 	}
-	if strings.Contains(body, `/files/preview?object=Sheet`) {
+	if strings.Contains(body, `preview=Sheet`) {
 		t.Fatal("native Google file must not have a Preview href")
+	}
+}
+
+func TestFilesPagePreviewQueryOpensModal(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	fake.listEntries = []filestore.Entry{
+		{Name: "Report [final].pdf", Size: 4096, ContentType: "application/pdf"},
+	}
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files?preview=Report+%5Bfinal%5D.pdf", sid)
+	if i := strings.Index(body, `id="page-project-files"`); i >= 0 {
+		body = body[i:]
+	}
+	for _, want := range []string{
+		`id="page-project-files"`,
+		`data-open="1"`,
+		`data-kind="pdf"`,
+		// QueryEscape uses +; html/template writes &#43; in the attribute.
+		`src="/projects/proj/files/preview?object=Report&#43;%5Bfinal%5D.pdf"`,
+		`>Report [final].pdf</h2>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q", want)
+		}
+	}
+	// The page itself is still the listing — bytes stay on /files/preview for the iframe.
+	if !strings.Contains(body, `id="files-preview-dialog"`) {
+		t.Fatal("dialog missing")
+	}
+
+	plain := getAuthed(t, srv, "/projects/proj/files?preview=notes.txt", sid)
+	if strings.Contains(plain, `data-open="1"`) {
+		t.Fatal("non-previewable ?preview= must not open the modal")
 	}
 }
 

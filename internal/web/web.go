@@ -813,6 +813,7 @@ type pageData struct {
 	FilesRows           []fileRow
 	FilesTotal          int
 	FilesClipped        bool
+	FilesPreview        *filesPreview
 	// CanStorageWrite is feature on + SafeOps. StorageFeatureOn is the flag alone
 	// so the page can explain why write controls are missing.
 	CanStorageWrite  bool

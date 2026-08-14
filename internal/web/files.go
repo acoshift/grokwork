@@ -51,6 +51,14 @@ type fileRow struct {
 	NativeGoogle bool
 }
 
+// filesPreview is the in-app lightbox opened from ?preview= on the Files page.
+type filesPreview struct {
+	Name     string
+	Kind     string // image | pdf
+	Src      string // byte-stream URL loaded inside the dialog
+	Download string
+}
+
 // fileCrumb is one breadcrumb segment on the Files page.
 type fileCrumb struct {
 	Label string
@@ -240,7 +248,35 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 		}
 		d.FilesRows = append(d.FilesRows, row)
 	}
+	d.FilesPreview = filesPreviewFromQuery(project, ctx.FormValue("preview"), d.FilesRows)
 	return s.viewPage(ctx, "files", d)
+}
+
+func filesPreviewFromQuery(project, raw string, rows []fileRow) *filesPreview {
+	object := strings.Trim(strings.TrimSpace(raw), "/")
+	if object == "" || filestore.ValidateObjectPath(object) != nil {
+		return nil
+	}
+	kind, name := "", path.Base(object)
+	for _, row := range rows {
+		if row.Object == object {
+			kind, name = row.PreviewKind, row.Name
+			break
+		}
+	}
+	if kind == "" {
+		kind = filePreviewKind(name, "")
+	}
+	if kind == "" {
+		return nil
+	}
+	q := url.QueryEscape(object)
+	return &filesPreview{
+		Name:     name,
+		Kind:     kind,
+		Src:      "/projects/" + url.PathEscape(project) + "/files/preview?object=" + q,
+		Download: "/projects/" + url.PathEscape(project) + "/files/download?object=" + q,
+	}
 }
 
 // postFileUpload is POST /projects/{project}/files/upload.

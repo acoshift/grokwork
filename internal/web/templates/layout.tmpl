@@ -2069,34 +2069,52 @@
     }
     .files-drop input[type="file"] { width: 100%; }
     .files-preview-dialog {
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius-lg);
+      border: 0;
+      border-radius: 0;
       padding: 0;
-      width: min(56rem, calc(100vw - 2rem));
-      max-height: calc(100vh - 2rem);
+      margin: 0;
+      inset: 0;
+      width: 100vw;
+      max-width: 100vw;
+      height: 100dvh;
+      max-height: 100dvh;
       background: var(--surface);
       color: var(--text);
       overflow: hidden;
-      box-shadow: var(--shadow-2), 0 24px 64px -28px hsl(var(--black) / 35%);
     }
     .files-preview-dialog::backdrop {
-      background: hsl(0 0% 0% / 42%);
-      backdrop-filter: blur(2px);
+      background: hsl(0 0% 0% / 55%);
     }
-    .files-preview-shell { margin: 0; padding: 1rem 1.15rem 0.95rem; }
+    .files-preview-shell {
+      margin: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 0.75rem 1rem 0.85rem;
+      gap: 0.7rem;
+      box-sizing: border-box;
+    }
+    .files-preview-head {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      flex-shrink: 0;
+    }
     .files-preview-title {
-      margin: 0 0 0.7rem;
+      margin: 0;
+      flex: 1;
+      min-width: 0;
       font-size: 1.02rem;
       font-weight: 600;
       letter-spacing: -0.02em;
       overflow-wrap: anywhere;
     }
     .files-preview-body {
+      flex: 1;
+      min-height: 0;
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      min-height: 12rem;
-      max-height: min(70vh, 40rem);
       overflow: auto;
       display: flex;
       align-items: center;
@@ -2104,36 +2122,14 @@
     }
     .files-preview-body img {
       max-width: 100%;
-      max-height: min(70vh, 40rem);
+      max-height: 100%;
       display: block;
     }
     .files-preview-body iframe {
       width: 100%;
-      height: min(70vh, 40rem);
+      height: 100%;
       border: 0;
       background: var(--surface);
-    }
-    .files-preview-foot {
-      display: flex;
-      justify-content: flex-end;
-      gap: 0.5rem;
-      margin-top: 0.85rem;
-    }
-    @media (max-width: 920px) {
-      .files-preview-dialog {
-        width: 100vw;
-        max-width: 100vw;
-        height: 100dvh;
-        max-height: 100dvh;
-        border-radius: 0;
-        border: 0;
-      }
-      .files-preview-body,
-      .files-preview-body img,
-      .files-preview-body iframe {
-        max-height: calc(100dvh - 8rem);
-        height: calc(100dvh - 8rem);
-      }
     }
 
     /* ── PR team review card ─────────────────────────────────────────── */
@@ -5683,33 +5679,62 @@
         close: document.getElementById("files-preview-close")
       };
     }
-    function closePreview() {
+    function listingURLWithoutPreview() {
+      try {
+        var u = new URL(window.location.href);
+        u.searchParams.delete("preview");
+        return u.pathname + u.search + u.hash;
+      } catch (err) {
+        return window.location.pathname;
+      }
+    }
+    function teardownPreview() {
       var el = previewEls();
-      if (!el.dlg || !el.dlg.open) return;
+      if (!el.dlg) return;
       if (el.img) { el.img.removeAttribute("src"); el.img.hidden = true; }
       if (el.frame) { el.frame.removeAttribute("src"); el.frame.hidden = true; }
-      el.dlg.close();
-    }
-    function openPreview(kind, name, href, download) {
-      var el = previewEls();
-      if (!el.dlg) {
-        window.location.href = href;
-        return;
+      el.dlg.removeAttribute("data-open");
+      if (window.history && window.history.replaceState && /[?&]preview=/.test(window.location.search)) {
+        window.history.replaceState(window.history.state, "", listingURLWithoutPreview());
       }
+    }
+    function closePreview() {
+      var el = previewEls();
+      teardownPreview();
+      if (el.dlg && el.dlg.open) el.dlg.close();
+    }
+    function fillPreview(kind, name, src, download) {
+      var el = previewEls();
+      if (!el.dlg) return false;
       if (el.title) el.title.textContent = name || "Preview";
-      if (el.dl) el.dl.href = download || href;
+      if (el.dl) el.dl.href = download || "#";
       if (el.img) { el.img.removeAttribute("src"); el.img.hidden = true; }
       if (el.frame) { el.frame.removeAttribute("src"); el.frame.hidden = true; }
       if (kind === "image" && el.img) {
         el.img.alt = name || "";
-        el.img.src = href;
+        el.img.src = src;
         el.img.hidden = false;
       } else if (el.frame) {
-        el.frame.src = href;
+        el.frame.src = src;
         el.frame.hidden = false;
       }
-      if (typeof el.dlg.showModal === "function") el.dlg.showModal();
-      else window.location.href = href;
+      return true;
+    }
+    function openPreview(kind, name, src, download, listingHref) {
+      if (!fillPreview(kind, name, src, download)) return;
+      var el = previewEls();
+      el.dlg.setAttribute("data-open", "1");
+      if (typeof el.dlg.showModal === "function") {
+        if (!el.dlg.open) el.dlg.showModal();
+      }
+      if (listingHref && window.history && window.history.replaceState) {
+        window.history.replaceState(window.history.state, "", listingHref);
+      }
+    }
+    function bootPreview() {
+      var el = previewEls();
+      if (!el.dlg || el.dlg.getAttribute("data-open") !== "1") return;
+      if (typeof el.dlg.showModal === "function" && !el.dlg.open) el.dlg.showModal();
     }
     document.body.addEventListener("click", function (e) {
       var closeBtn = e.target.closest && e.target.closest("#files-preview-close");
@@ -5720,24 +5745,31 @@
       }
       var a = e.target.closest && e.target.closest("#page-project-files a[data-preview]");
       if (!a) return;
+      var src = a.getAttribute("data-src");
+      if (!src) return;
       e.preventDefault();
       openPreview(
         a.getAttribute("data-preview"),
         a.getAttribute("data-name"),
-        a.getAttribute("href"),
-        a.getAttribute("data-download")
+        src,
+        a.getAttribute("data-download"),
+        a.getAttribute("href")
       );
     });
     document.body.addEventListener("click", function (e) {
       var dlg = document.getElementById("files-preview-dialog");
       if (dlg && e.target === dlg) closePreview();
     });
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") closePreview();
-    });
-    document.body.addEventListener("htmx:beforeRequest", function (e) {
-      if (e.detail && e.detail.boosted) closePreview();
-    });
+    document.body.addEventListener("close", function (e) {
+      if (e.target && e.target.id === "files-preview-dialog") teardownPreview();
+    }, true);
+    document.body.addEventListener("htmx:afterSettle", bootPreview);
+    document.body.addEventListener("htmx:historyRestore", bootPreview);
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", bootPreview);
+    } else {
+      bootPreview();
+    }
   })();
   (function () {
     var statusEl = document.getElementById("sse-status");

@@ -112,10 +112,10 @@
           {{if .IsDir}}
             <a href="/projects/{{$.Project}}/files?path={{urlquery .Path}}">{{.Name}}/</a>
           {{else if .PreviewKind}}
-            <a href="/projects/{{$.Project}}/files/preview?object={{urlquery .Object}}"
-               hx-boost="false"
+            <a href="/projects/{{$.Project}}/files?{{if $.FilesPath}}path={{urlquery $.FilesPath}}&amp;{{end}}preview={{urlquery .Object}}"
                data-preview="{{.PreviewKind}}"
                data-name="{{.Name}}"
+               data-src="/projects/{{$.Project}}/files/preview?object={{urlquery .Object}}"
                data-download="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}">{{.Name}}</a>
           {{else if .Downloadable}}
             <a href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false">{{.Name}}</a>
@@ -127,6 +127,13 @@
         <td class="muted">{{if .IsDir}}—{{else}}{{.SizeHuman}}{{end}}</td>
         <td class="muted">{{if .UpdatedText}}{{.UpdatedText}}{{else}}—{{end}}</td>
         <td style="white-space:nowrap;text-align:right">
+          {{if .PreviewKind}}
+            <a class="btn-secondary" href="/projects/{{$.Project}}/files?{{if $.FilesPath}}path={{urlquery $.FilesPath}}&amp;{{end}}preview={{urlquery .Object}}"
+               data-preview="{{.PreviewKind}}"
+               data-name="{{.Name}}"
+               data-src="/projects/{{$.Project}}/files/preview?object={{urlquery .Object}}"
+               data-download="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}">Preview</a>
+          {{end}}
           {{if .Downloadable}}
             <a class="btn-secondary" href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false">Download</a>
           {{end}}
@@ -151,16 +158,20 @@
   {{end}}
 </div>
 
-<dialog id="files-preview-dialog" class="files-preview-dialog" aria-labelledby="files-preview-title">
+<dialog id="files-preview-dialog" class="files-preview-dialog" aria-labelledby="files-preview-title"
+        {{if .FilesPreview}}data-open="1" data-kind="{{.FilesPreview.Kind}}"{{end}}>
   <div class="files-preview-shell">
-    <h2 id="files-preview-title" class="files-preview-title"></h2>
-    <div class="files-preview-body">
-      <img id="files-preview-img" alt="" hidden>
-      <iframe id="files-preview-frame" title="Preview" hidden></iframe>
-    </div>
-    <div class="files-preview-foot">
-      <a id="files-preview-download" class="btn-secondary" href="#" hx-boost="false">Download</a>
+    <div class="files-preview-head">
+      <h2 id="files-preview-title" class="files-preview-title">{{if .FilesPreview}}{{.FilesPreview.Name}}{{end}}</h2>
+      <a id="files-preview-download" class="btn-secondary" hx-boost="false"
+         href="{{if .FilesPreview}}{{.FilesPreview.Download}}{{else}}#{{end}}">Download</a>
       <button type="button" id="files-preview-close">Close</button>
+    </div>
+    <div class="files-preview-body">
+      <img id="files-preview-img" alt="{{if .FilesPreview}}{{.FilesPreview.Name}}{{end}}"
+           {{if and .FilesPreview (eq .FilesPreview.Kind "image")}}src="{{.FilesPreview.Src}}"{{else}}hidden{{end}}>
+      <iframe id="files-preview-frame" title="Preview"
+              {{if and .FilesPreview (eq .FilesPreview.Kind "pdf")}}src="{{.FilesPreview.Src}}"{{else}}hidden{{end}}></iframe>
     </div>
   </div>
 </dialog>
