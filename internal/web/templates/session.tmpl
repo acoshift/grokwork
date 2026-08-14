@@ -529,6 +529,7 @@
   <div class="turns" id="turns">
     {{/* Newest first: the live/latest turn sits at the top next to the page
          header, so long histories never bury it. #N stays chronological.
+         Within a turn the agent reply is above the user prompt.
          The docked composer is position-pinned, so it needs no scrolling. */}}
     {{if .RunBusy}}
     <article class="turn turn-live" id="turn-live">
@@ -537,12 +538,6 @@
         <span class="badge live">streaming</span>
         {{if .RunElapsed}}<span class="mono muted">{{.RunElapsed}}</span>{{end}}
       </header>
-      {{if .RunPrompt}}
-      <div class="bubble user">
-        <div class="bubble-label">User</div>
-        <div class="bubble-body md">{{markdown .RunPrompt}}</div>
-      </div>
-      {{end}}
       <div class="bubble assistant">
         <div class="bubble-label">{{.AgentLabel}} <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">(live)</span></div>
         {{if .RunLiveText}}
@@ -551,6 +546,12 @@
         <div class="bubble-body muted" id="live-stream-body">streaming…</div>
         {{end}}
       </div>
+      {{if .RunPrompt}}
+      <div class="bubble user">
+        <div class="bubble-label">User</div>
+        <div class="bubble-body md">{{markdown .RunPrompt}}</div>
+      </div>
+      {{end}}
     </article>
     {{end}}
     {{$turns := .Thread.Turns}}
@@ -564,10 +565,6 @@
         <span class="badge status-{{$t.Status}}">{{$t.Status}}</span>
         {{if $t.User}}<span>{{$t.User}}</span>{{end}}
       </header>
-      <div class="bubble user">
-        <div class="bubble-label">User</div>
-        <div class="bubble-body md">{{markdown $t.Prompt}}</div>
-      </div>
       <div class="bubble assistant">
         <div class="bubble-label">{{$.AgentLabel}}</div>
         {{if $t.Response}}
@@ -578,6 +575,10 @@
         {{else}}
         <div class="bubble-body muted">(no response text yet)</div>
         {{end}}
+      </div>
+      <div class="bubble user">
+        <div class="bubble-label">User</div>
+        <div class="bubble-body md">{{markdown $t.Prompt}}</div>
       </div>
     </article>
     {{end}}

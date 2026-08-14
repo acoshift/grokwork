@@ -1033,6 +1033,57 @@ func TestSessionDetailStreamsLiveTurn(t *testing.T) {
 	if strings.Contains(partial, "session-continue-form") {
 		t.Fatal("continue form must not be in live partial")
 	}
+	assertTurnAgentAboveUser(t, body)
+	assertTurnAgentAboveUser(t, partial)
+}
+
+// TestSessionTurnShowsAgentAboveUser pins the in-turn order on the session
+// page: reply first, prompt under it. The history turn log is a raw record
+// and keeps user-then-agent.
+func TestSessionTurnShowsAgentAboveUser(t *testing.T) {
+	srv, _, _ := testServer(t)
+	h := srv.Handler()
+	assertTurnAgentAboveUser(t, getBody(t, h, "/sessions/thread-99"))
+
+	// History turn log is a different page — leave its chronological order.
+	hist := getBody(t, h, "/history/thread-99")
+	user := strings.Index(hist, `class="bubble user"`)
+	asst := strings.Index(hist, `class="bubble assistant"`)
+	if user < 0 || asst < 0 || user > asst {
+		t.Fatalf("history turn log should stay user-then-agent; user=%d assistant=%d", user, asst)
+	}
+}
+
+func assertTurnAgentAboveUser(t *testing.T, body string) {
+	t.Helper()
+	const marker = `<article class="turn`
+	n := 0
+	rest := body
+	for {
+		i := strings.Index(rest, marker)
+		if i < 0 {
+			break
+		}
+		rest = rest[i+len(marker):]
+		end := strings.Index(rest, "</article>")
+		if end < 0 {
+			t.Fatal("turn article missing close tag")
+		}
+		art := rest[:end]
+		rest = rest[end:]
+		user := strings.Index(art, `class="bubble user"`)
+		asst := strings.Index(art, `class="bubble assistant"`)
+		if user < 0 || asst < 0 {
+			continue
+		}
+		n++
+		if asst > user {
+			t.Fatalf("turn %d: agent bubble must appear above the user bubble", n)
+		}
+	}
+	if n == 0 {
+		t.Fatal("no turn with both user and agent bubbles")
+	}
 }
 
 func TestNavBrandChrome(t *testing.T) {
