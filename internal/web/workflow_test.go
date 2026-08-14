@@ -1747,8 +1747,16 @@ func TestClickUpListAndDetail(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("list status=%d body=%s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "DEV-1") || !strings.Contains(w.Body.String(), "page-clickup-list") {
-		t.Fatalf("list body missing task: %s", w.Body.String()[:min(400, len(w.Body.String()))])
+	body := w.Body.String()
+	if !strings.Contains(body, "DEV-1") || !strings.Contains(body, "page-clickup-list") {
+		t.Fatalf("list body missing task: %s", body[:min(400, len(body))])
+	}
+	assertNavActive(t, body, "ClickUp")
+	if !strings.Contains(body, `data-icon="clickup" class="active">ClickUp</a>`) {
+		t.Fatal("ClickUp nav reused the issues icon")
+	}
+	if !strings.Contains(body, `#side-nav a[data-icon="clickup"]`) {
+		t.Fatal("missing clickup icon CSS")
 	}
 	req = httptest.NewRequest(http.MethodGet, "/projects/proj/clickup/DEV-1", nil)
 	req.AddCookie(&http.Cookie{Name: "gw_session", Value: sid})
