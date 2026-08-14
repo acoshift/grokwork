@@ -267,9 +267,10 @@ type ProjectItem struct {
 	StorageBucket        string
 	StoragePrefix        string
 	StorageDriveFolderID string
-	// StorageCredentialsFile is the service-account key path (empty = host
-	// gcloud auth). A local path — fine for the private web UI, never for
-	// Discord or audit details; the key contents never enter config at all.
+	// StorageCredentialsFile is the raw override key path (empty = inherit
+	// global, then host gcloud auth). A local path — fine for the private
+	// web UI, never for Discord or audit details; the key contents never
+	// enter config at all.
 	StorageCredentialsFile string
 	// StorageDisabled is true when the project block has disabled:true.
 	StorageDisabled bool

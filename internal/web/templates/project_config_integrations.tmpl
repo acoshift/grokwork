@@ -214,8 +214,8 @@
   <p class="sub" style="margin-top:0">
     The project’s <a href="/projects/{{.ProjectItem.Name}}/files">Files</a> page uses an override when set,
     otherwise the <a href="{{route "config.storage"}}">global default</a> under an isolated path
-    (GCS prefix or Drive child folder). An override replaces the global default entirely
-    (backend, identity, and credentials). Switching backend on save strips the other backend’s identity.
+    (GCS prefix or Drive child folder). An override replaces the global backend and identity;
+    leave credentials empty to keep using the global key. Switching backend on save strips the other backend’s identity.
   </p>
 
   {{$pBackend := .ProjectItem.StorageBackend}}
@@ -299,15 +299,11 @@
       <p class="sub" style="margin:0.35rem 0 0">Override uses this folder as-is (no isolation segment). Prefer a dedicated folder, not the global root.</p>
     </div>
     <div style="margin-top:0.65rem">
-      <label for="project-storage-credentials">Credentials file <span data-backend-cred-label>{{if eq $pBackend "gdrive"}}(required){{else}}(optional){{end}}</span></label>
+      <label for="project-storage-credentials">Credentials file <span data-backend-cred-label>(optional)</span></label>
       <input id="project-storage-credentials" type="text" name="credentialsFile" value="{{.ProjectItem.StorageCredentialsFile}}"
         placeholder="/etc/grokwork/sa-key.json" class="mono" autocomplete="off">
       <p class="sub" style="margin:0.35rem 0 0" data-backend-cred-help>
-        {{if eq $pBackend "gdrive"}}
-        Absolute path on the host to a service-account JSON key. Required for Drive.
-        {{else}}
-        Absolute path on the host to a service-account JSON key. Applied per invocation — the host’s global <span class="mono">gcloud</span> login is untouched. Empty uses that login/ADC.
-        {{end}}
+        Absolute path on the host to a service-account JSON key. Empty uses the global file-storage credentials. GCS with no key at either layer uses host <span class="mono">gcloud</span> login/ADC.
       </p>
     </div>
     <button type="submit" style="margin-top:0.65rem">{{if eq .ProjectItem.StorageSource "override"}}Save override{{else}}Link storage{{end}}</button>
@@ -360,7 +356,7 @@
     <div style="margin-top:0.65rem">
       <label for="project-storage-credentials-disabled">Credentials file <span data-backend-cred-label>(optional)</span></label>
       <input id="project-storage-credentials-disabled" type="text" name="credentialsFile" placeholder="/etc/grokwork/sa-key.json" class="mono" autocomplete="off">
-      <p class="sub" style="margin:0.35rem 0 0" data-backend-cred-help>Absolute path on the host to a service-account JSON key.</p>
+      <p class="sub" style="margin:0.35rem 0 0" data-backend-cred-help>Absolute path on the host to a service-account JSON key. Empty uses the global file-storage credentials.</p>
     </div>
     <button type="submit" style="margin-top:0.65rem">Set custom storage…</button>
   </form>
@@ -368,8 +364,6 @@
 </div>
 <script>
 (function () {
-  var gcsHelp = 'Absolute path on the host to a service-account JSON key. Applied per invocation — the host’s global gcloud login is untouched. Empty uses that login/ADC.';
-  var driveHelp = 'Absolute path on the host to a service-account JSON key. Required for Drive.';
   document.querySelectorAll('[data-storage-form]').forEach(function (form) {
     var sel = form.querySelector('[data-storage-backend-select]');
     if (!sel) return;
@@ -378,10 +372,6 @@
       form.querySelectorAll('[data-backend-fields]').forEach(function (el) {
         el.hidden = el.getAttribute('data-backend-fields') !== v;
       });
-      var label = form.querySelector('[data-backend-cred-label]');
-      if (label) label.textContent = v === 'gdrive' ? '(required)' : '(optional)';
-      var help = form.querySelector('[data-backend-cred-help]');
-      if (help) help.textContent = v === 'gdrive' ? driveHelp : gcsHelp;
     }
     sel.addEventListener('change', sync);
     sync();

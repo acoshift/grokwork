@@ -677,6 +677,41 @@ func TestSetGlobalStorageDrivePersistsAndClearIsIdentityBased(t *testing.T) {
 	}
 }
 
+func TestSetProjectStorageDriveInheritsEmptyCredentials(t *testing.T) {
+	srv, cfg, _ := storageServer(t)
+	sid, csrf := adminLogin(t, srv)
+	if err := cfg.SetGlobalStorageDrive("0ABcdEfghIjKlMnOp", "/etc/keys/drive.json"); err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/config/projects/storage", sid, csrf, url.Values{
+		"name": {"proj"}, "action": {"save"}, "backend": {"gdrive"},
+		"driveFolderId": {"1OverrideFolderID"},
+	})
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "ok=") {
+		t.Fatalf("Location = %q", loc)
+	}
+	st := cfg.ProjectStorage("proj")
+	if st == nil || st.Backend != config.StorageBackendGDrive || st.DriveFolderID != "1OverrideFolderID" {
+		t.Fatalf("project drive = %+v", st)
+	}
+	if st.CredentialsFile != "" {
+		t.Fatalf("stored credentials must stay empty, got %q", st.CredentialsFile)
+	}
+	eff := cfg.EffectiveStorage("proj")
+	if eff == nil || eff.CredentialsFile != "/etc/keys/drive.json" {
+		t.Fatalf("effective creds = %+v", eff)
+	}
+	// Integrations form still shows empty (raw), not the inherited path.
+	body := getAuthed(t, srv, "/config/projects/proj/integrations", sid)
+	if strings.Contains(body, "(required)") {
+		t.Fatal("project credentials must not be marked required")
+	}
+	if !strings.Contains(body, "Empty uses the global file-storage credentials") {
+		t.Fatal("project credentials help should mention global fallback")
+	}
+}
+
 func TestSetProjectStorageDriveAndSameFolderWarning(t *testing.T) {
 	srv, cfg, _ := storageServer(t)
 	sid, csrf := adminLogin(t, srv)

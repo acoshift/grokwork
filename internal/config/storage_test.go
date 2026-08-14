@@ -595,6 +595,23 @@ func TestNormalizeGDriveRequiresCredentials(t *testing.T) {
 	}
 }
 
+func TestNormalizeProjectGDriveAllowsEmptyCredentials(t *testing.T) {
+	in := &StorageConfig{
+		Backend:       StorageBackendGDrive,
+		DriveFolderID: "0ABcdEfghIjKlMnOp",
+	}
+	got, err := normalizeStorage(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Backend != StorageBackendGDrive || got.DriveFolderID != "0ABcdEfghIjKlMnOp" {
+		t.Fatalf("got = %+v", got)
+	}
+	if got.CredentialsFile != "" {
+		t.Fatalf("empty creds should stay empty on the stored block, got %q", got.CredentialsFile)
+	}
+}
+
 func TestNormalizeGDriveStripsGCSFields(t *testing.T) {
 	in := &StorageConfig{
 		Backend:         StorageBackendGDrive,
@@ -679,6 +696,76 @@ func TestStorageHasIdentity(t *testing.T) {
 	}
 	if storageHasIdentity(&StorageConfig{Backend: "other", GCSBucket: "bkt"}) {
 		t.Fatal("unknown backend")
+	}
+}
+
+func TestEffectiveStorageInheritsEmptyProjectCredentials(t *testing.T) {
+	cfg, path := storageTestConfig(t)
+	if err := cfg.SetGlobalStorageDrive("0ABcdEfghIjKlMnOp", "/etc/keys/drive.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectStorageDrive("app", "1OverrideFolderID", ""); err != nil {
+		t.Fatal(err)
+	}
+	raw := cfg.ProjectStorage("app")
+	if raw == nil || raw.CredentialsFile != "" {
+		t.Fatalf("stored override must keep credentials empty: %+v", raw)
+	}
+	eff := cfg.EffectiveStorage("app")
+	if eff == nil {
+		t.Fatal("nil effective")
+	}
+	if eff.DriveFolderID != "1OverrideFolderID" || eff.IsolationSegment != "" {
+		t.Fatalf("override identity = %+v", eff)
+	}
+	if eff.CredentialsFile != "/etc/keys/drive.json" {
+		t.Fatalf("effective creds = %q, want global path", eff.CredentialsFile)
+	}
+
+	// GCS override with empty creds also picks up the global key.
+	if err := cfg.SetProjectStorageGCS("api", "acme-app-private", "prod", ""); err != nil {
+		t.Fatal(err)
+	}
+	gcsEff := cfg.EffectiveStorage("api")
+	if gcsEff == nil || gcsEff.GCSBucket != "acme-app-private" || gcsEff.Prefix != "prod" {
+		t.Fatalf("gcs override = %+v", gcsEff)
+	}
+	if gcsEff.CredentialsFile != "/etc/keys/drive.json" {
+		t.Fatalf("gcs effective creds = %q, want global path", gcsEff.CredentialsFile)
+	}
+
+	// Explicit project key wins.
+	if err := cfg.SetProjectStorageDrive("app", "1OverrideFolderID", "/etc/keys/other.json"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveStorage("app"); got == nil || got.CredentialsFile != "/etc/keys/other.json" {
+		t.Fatalf("explicit project creds = %+v", got)
+	}
+
+	// Empty project + empty global stays empty (GCS ADC / Drive fails at use).
+	if err := cfg.SetGlobalStorageGCS("acme-company-files", "gw", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectStorageGCS("app", "acme-app-private", "prod", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveStorage("app"); got == nil || got.CredentialsFile != "" {
+		t.Fatalf("no global key should leave effective empty: %+v", got)
+	}
+
+	// Reload: empty project Drive + global Drive key still inherits.
+	if err := cfg.SetGlobalStorageDrive("0ABcdEfghIjKlMnOp", "/etc/keys/drive.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectStorageDrive("app", "1OverrideFolderID", ""); err != nil {
+		t.Fatal(err)
+	}
+	again := reloadConfig(t, path)
+	if got := again.ProjectStorage("app"); got == nil || got.CredentialsFile != "" {
+		t.Fatalf("reloaded raw creds = %+v", got)
+	}
+	if got := again.EffectiveStorage("app"); got == nil || got.CredentialsFile != "/etc/keys/drive.json" {
+		t.Fatalf("reloaded effective creds = %+v", got)
 	}
 }
 

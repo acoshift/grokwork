@@ -79,8 +79,9 @@ type ProjectConfig struct {
 	// nil means unset — no locks.
 	Actions *ProjectActionsConfig `json:"actions,omitempty"`
 	// Storage is a whole-block override of the host default (or disabled).
-	// nil means inherit GlobalStorage when set. Auth is host gcloud ADC unless
-	// CredentialsFile is set on the block.
+	// nil means inherit GlobalStorage when set. An override may omit
+	// CredentialsFile; EffectiveStorage then uses the global key (GCS with
+	// no key at either layer is host gcloud ADC).
 	Storage *StorageConfig `json:"storage,omitempty"`
 }
 

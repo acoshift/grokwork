@@ -32,7 +32,9 @@ type StorageConfig struct {
 	DriveFolderID string `json:"driveFolderId,omitempty"`
 
 	// CredentialsFile is an absolute path to a service-account JSON key.
-	// GCS: empty = host gcloud ADC. Drive: required.
+	// Global Drive requires it. A project override may leave it empty to use
+	// the global path (EffectiveStorage fills that in). Empty on GCS with no
+	// global key means host gcloud ADC.
 	CredentialsFile string `json:"credentialsFile,omitempty"`
 
 	// Disabled is project-only (unchanged).
@@ -172,7 +174,7 @@ func normalizeStorage(s *StorageConfig, projectContext bool) (*StorageConfig, er
 		if !driveFolderIDRe.MatchString(s.DriveFolderID) {
 			return nil, fmt.Errorf("invalid driveFolderId %q", s.DriveFolderID)
 		}
-		if s.CredentialsFile == "" {
+		if s.CredentialsFile == "" && !projectContext {
 			return nil, fmt.Errorf("credentialsFile is required when backend is gdrive")
 		}
 		if err := validateStorageCredentialsFile(s.CredentialsFile); err != nil {
@@ -396,8 +398,16 @@ func (c *Config) effectiveStorageLocked(name string) *StorageConfig {
 		return nil
 	}
 	if storageHasIdentity(raw) {
-		// Override as-is; IsolationSegment stays empty.
-		return cloneStorage(raw)
+		// Override identity as-is; IsolationSegment stays empty.
+		// Empty credentials inherit the global key so a project can name a
+		// bucket/folder without repeating the host SA path.
+		out := cloneStorage(raw)
+		if out.CredentialsFile == "" && c.Storage != nil {
+			if creds := strings.TrimSpace(c.Storage.CredentialsFile); creds != "" {
+				out.CredentialsFile = creds
+			}
+		}
+		return out
 	}
 	if !storageHasIdentity(c.Storage) {
 		return nil
