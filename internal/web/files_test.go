@@ -154,6 +154,13 @@ func TestFileBreadcrumbs(t *testing.T) {
 	if !slices.Equal(root, []fileCrumb{{Label: "Files", Path: "", Last: true}}) {
 		t.Fatalf("root = %#v", root)
 	}
+	slash := fileBreadcrumbs("Docs%2FCustomer")
+	if !slices.Equal(slash, []fileCrumb{
+		{Label: "Files", Path: ""},
+		{Label: "Docs/Customer", Path: "Docs%2FCustomer", Last: true},
+	}) {
+		t.Fatalf("slash folder crumb = %#v", slash)
+	}
 }
 
 func TestFilesPageBreadcrumbIsInlineTrail(t *testing.T) {
@@ -526,9 +533,10 @@ func TestSetGlobalStoragePersistsAndRedirects(t *testing.T) {
 
 // fakeFilesBackend records List/Upload/Delete/Describe/Download for Drive tests.
 type fakeFilesBackend struct {
-	mu      sync.Mutex
-	lists   []filestore.Target
-	uploads []struct {
+	mu        sync.Mutex
+	lists     []filestore.Target
+	listPaths []string
+	uploads   []struct {
 		t         filestore.Target
 		object    string
 		overwrite bool
@@ -544,10 +552,11 @@ type fakeFilesBackend struct {
 	downloadBody   []byte
 }
 
-func (f *fakeFilesBackend) List(_ context.Context, t filestore.Target, _ string) ([]filestore.Entry, error) {
+func (f *fakeFilesBackend) List(_ context.Context, t filestore.Target, subPath string) ([]filestore.Entry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.lists = append(f.lists, t)
+	f.listPaths = append(f.listPaths, subPath)
 	return slices.Clone(f.listEntries), nil
 }
 func (f *fakeFilesBackend) Describe(_ context.Context, _ filestore.Target, object string) (filestore.Entry, bool, error) {
@@ -605,6 +614,31 @@ func driveStorageServer(t *testing.T) (*Server, *config.Config, *fakeFilesBacken
 		return fake, nil
 	}
 	return srv, cfg, fake
+}
+
+func TestFilesPageSlashFolderHrefAndList(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	fake.listEntries = []filestore.Entry{{Name: "Docs/Customer", IsDir: true}}
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	if i := strings.Index(body, `id="page-project-files"`); i >= 0 {
+		body = body[i:]
+	}
+	if !strings.Contains(body, `>Docs/Customer/</a>`) {
+		t.Fatal("slash folder display name missing")
+	}
+	// AppendName encodes / as %2F; urlquery then writes %252F in the href.
+	if !strings.Contains(body, `path=Docs%252FCustomer`) {
+		t.Fatalf("slash folder must be one encoded hop, body missing path=Docs%%252FCustomer")
+	}
+	fake.listPaths = nil
+	inner := getAuthed(t, srv, "/projects/proj/files?path=Docs%252FCustomer", sid)
+	if strings.Contains(inner, "invalid path") {
+		t.Fatal("encoded slash folder path must list, not fail validation")
+	}
+	if len(fake.listPaths) != 1 || fake.listPaths[0] != "Docs%2FCustomer" {
+		t.Fatalf("List path = %v, want [Docs%%2FCustomer]", fake.listPaths)
+	}
 }
 
 func TestFilesPageListsDrive(t *testing.T) {

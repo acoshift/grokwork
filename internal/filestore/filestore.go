@@ -55,6 +55,7 @@ type Backend interface {
 // control characters. Empty is allowed so callers can treat "" as the root.
 // Wildcard characters (*?[]) are allowed here — Drive display names use them.
 // GCS still refuses them at the gcloud argv boundary (internal/gcs).
+// A hop may contain '/' when encoded as %2F (one Drive/GCS display name).
 func ValidateObjectPath(p string) error {
 	if p == "" {
 		return nil
@@ -65,14 +66,16 @@ func ValidateObjectPath(p string) error {
 	if len(p) > maxObjectPathBytes {
 		return fmt.Errorf("object path exceeds %d bytes", maxObjectPathBytes)
 	}
-	for _, r := range p {
-		if r < 0x20 || r == 0x7f || unicode.IsControl(r) {
-			return fmt.Errorf("object path must not contain control characters")
-		}
+	segs, err := SplitPath(p)
+	if err != nil {
+		return err
 	}
-	for part := range strings.SplitSeq(p, "/") {
-		if part == "" || part == "." || part == ".." {
-			return fmt.Errorf("object path has an empty or '.'/'..' segment")
+	if len(segs) == 0 {
+		return fmt.Errorf("object path has an empty or '.'/'..' segment")
+	}
+	for _, name := range segs {
+		if err := validDecodedName(name); err != nil {
+			return err
 		}
 	}
 	return nil

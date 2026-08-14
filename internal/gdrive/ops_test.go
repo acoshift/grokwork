@@ -392,6 +392,26 @@ func testClient(f *fakeDrive) *Client {
 	}
 }
 
+func TestListFolderNameContainingSlash(t *testing.T) {
+	f := newFakeDrive()
+	f.addFile("root1", "d1", fileMeta{Name: "a/b", MimeType: folderMIME}, nil)
+	f.addFile("d1", "f1", fileMeta{Name: "inside.txt", MimeType: "text/plain", Size: "1"}, []byte("x"))
+	c := testClient(f)
+	// Encoded hop: one folder whose name is a/b.
+	entries, err := c.List(t.Context(), Target{FolderID: "root1"}, "a%2Fb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name != "inside.txt" {
+		t.Fatalf("encoded slash folder entries = %+v", entries)
+	}
+	// Naive split would look for folder "a" then "b" and miss.
+	_, err = c.List(t.Context(), Target{FolderID: "root1"}, "a/b")
+	if err == nil || !strings.Contains(err.Error(), "parent folder") {
+		t.Fatalf("unencoded a/b must not walk into a%%2Fb: %v", err)
+	}
+}
+
 func TestListOneLevel(t *testing.T) {
 	f := newFakeDrive()
 	f.addFile("root1", "f1", fileMeta{Name: "readme.txt", MimeType: "text/plain", Size: "12", ModifiedTime: "2026-08-01T12:00:00.000Z"}, []byte("hello world!"))

@@ -228,17 +228,15 @@ func (c *Client) Delete(ctx context.Context, t Target, object string) error {
 }
 
 // resolveDirPath walks every segment of relPath as folders (no create).
+// Hops are URL-unescaped so a%2Fb is one folder named "a/b".
 func (c *Client) resolveDirPath(ctx context.Context, rootID, relPath string) (string, error) {
-	relPath = strings.Trim(strings.TrimSpace(relPath), "/")
-	if relPath == "" {
-		return rootID, nil
+	segs, err := wireSegments(relPath)
+	if err != nil {
+		return "", err
 	}
 	cur := rootID
-	for part := range strings.SplitSeq(relPath, "/") {
-		if part == "" {
-			continue
-		}
-		child, ok, err := c.findChildByName(ctx, cur, part, true)
+	for _, name := range segs {
+		child, ok, err := c.findChildByName(ctx, cur, name, true)
 		if err != nil {
 			return "", err
 		}
@@ -252,18 +250,20 @@ func (c *Client) resolveDirPath(ctx context.Context, rootID, relPath string) (st
 
 // resolveParentAndLeaf walks all but the last segment; optionally creates intermediate folders.
 func (c *Client) resolveParentAndLeaf(ctx context.Context, rootID, relPath string, createParents bool) (parentID, leaf string, err error) {
-	relPath = strings.Trim(strings.TrimSpace(relPath), "/")
-	if relPath == "" {
+	segs, err := wireSegments(relPath)
+	if err != nil {
+		return "", "", err
+	}
+	if len(segs) == 0 {
 		return "", "", fmt.Errorf("drive: object path is required")
 	}
-	parts := strings.Split(relPath, "/")
-	leaf = parts[len(parts)-1]
+	leaf = segs[len(segs)-1]
 	cur := rootID
-	for _, part := range parts[:len(parts)-1] {
-		if part == "" || part == "." || part == ".." {
+	for _, name := range segs[:len(segs)-1] {
+		if name == "." || name == ".." {
 			return "", "", fmt.Errorf("drive: invalid path segment")
 		}
-		child, ok, err := c.findChildByName(ctx, cur, part, true)
+		child, ok, err := c.findChildByName(ctx, cur, name, true)
 		if err != nil {
 			return "", "", err
 		}
@@ -271,7 +271,7 @@ func (c *Client) resolveParentAndLeaf(ctx context.Context, rootID, relPath strin
 			if !createParents {
 				return "", "", fmt.Errorf("drive: parent folder does not exist")
 			}
-			created, err := c.createFolder(ctx, cur, part)
+			created, err := c.createFolder(ctx, cur, name)
 			if err != nil {
 				return "", "", err
 			}
@@ -281,6 +281,29 @@ func (c *Client) resolveParentAndLeaf(ctx context.Context, rootID, relPath strin
 		cur = child.ID
 	}
 	return cur, leaf, nil
+}
+
+// wireSegments splits a Files-page wire path. a%2Fb is one hop named "a/b".
+func wireSegments(p string) ([]string, error) {
+	p = strings.Trim(strings.TrimSpace(p), "/")
+	if p == "" {
+		return nil, nil
+	}
+	var out []string
+	for part := range strings.SplitSeq(p, "/") {
+		if part == "" {
+			return nil, fmt.Errorf("drive: invalid path segment")
+		}
+		name, err := url.PathUnescape(part)
+		if err != nil {
+			return nil, fmt.Errorf("drive: invalid path segment")
+		}
+		if name == "" || name == "." || name == ".." {
+			return nil, fmt.Errorf("drive: invalid path segment")
+		}
+		out = append(out, name)
+	}
+	return out, nil
 }
 
 func (c *Client) createFileMultipart(ctx context.Context, parentID, name, localPath, contentType string) error {

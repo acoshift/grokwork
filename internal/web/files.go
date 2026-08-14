@@ -238,9 +238,9 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 			row.UpdatedText = e.Updated.UTC().Format("2006-01-02 15:04")
 		}
 		if e.IsDir {
-			row.Path = joinFilesPath(subPath, e.Name)
+			row.Path = filestore.AppendName(subPath, e.Name)
 		} else {
-			row.Object = joinFilesPath(subPath, e.Name)
+			row.Object = filestore.AppendName(subPath, e.Name)
 			row.Downloadable = !row.NativeGoogle
 			if row.Downloadable {
 				row.PreviewKind = filePreviewKind(e.Name, e.ContentType)
@@ -257,7 +257,10 @@ func filesPreviewFromQuery(project, raw string, rows []fileRow) *filesPreview {
 	if object == "" || filestore.ValidateObjectPath(object) != nil {
 		return nil
 	}
-	kind, name := "", path.Base(object)
+	kind, name := "", ""
+	if segs, err := filestore.SplitPath(object); err == nil && len(segs) > 0 {
+		name = segs[len(segs)-1]
+	}
 	for _, row := range rows {
 		if row.Object == object {
 			kind, name = row.PreviewKind, row.Name
@@ -319,7 +322,7 @@ func (s *Server) postFileUpload(ctx *hime.Context) error {
 	var uploaded []string
 	for i, fh := range fhs {
 		leaf := filestore.SanitizeFilename(fh.Filename)
-		object := joinFilesPath(subPath, leaf)
+		object := filestore.AppendName(subPath, leaf)
 		if err := filestore.ValidateObjectPath(object); err != nil {
 			return s.uploadPartialRedirect(ctx, project, subPath, uploaded, leaf, err)
 		}
@@ -743,31 +746,17 @@ func (s *Server) filesRedirect(ctx *hime.Context, project, subPath, okMsg string
 	return ctx.Redirect(u)
 }
 
-func joinFilesPath(parts ...string) string {
-	var segs []string
-	for _, p := range parts {
-		p = strings.Trim(p, "/")
-		if p != "" {
-			segs = append(segs, p)
-		}
-	}
-	return path.Join(segs...)
-}
-
 func fileBreadcrumbs(subPath string) []fileCrumb {
-	subPath = strings.Trim(subPath, "/")
 	out := []fileCrumb{{Label: "Files", Path: ""}}
-	if subPath == "" {
+	segs, err := filestore.SplitPath(subPath)
+	if err != nil || len(segs) == 0 {
 		out[0].Last = true
 		return out
 	}
-	var cur string
-	for part := range strings.SplitSeq(subPath, "/") {
-		if part == "" {
-			continue
-		}
-		cur = joinFilesPath(cur, part)
-		out = append(out, fileCrumb{Label: part, Path: cur})
+	var names []string
+	for _, name := range segs {
+		names = append(names, name)
+		out = append(out, fileCrumb{Label: name, Path: filestore.JoinNames(names...)})
 	}
 	out[len(out)-1].Last = true
 	return out
