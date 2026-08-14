@@ -66,7 +66,7 @@
      hx-trigger="sse:dashboard, sse:history"
      hx-target="this"
      hx-select="unset"
-     hx-swap="innerHTML"
+     hx-swap="innerHTML show:none focus-scroll:false"
      hx-sync="this:queue last">
   {{template "session_live" .}}
 </div>

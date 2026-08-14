@@ -340,6 +340,11 @@ func TestPagesRender(t *testing.T) {
 				// must not pin-to-bottom when the tall table arrives.
 				`_pageScrollY`,
 				`pageMax > 0`,
+				// Large innerHTML (session turns) clamps a single scrollTo to 0;
+				// re-assert after layout and force show:none on the swap.
+				`applyWindowScrollY`,
+				`livePageScroll`,
+				`show:none focus-scroll:false`,
 				// Mid-session SSE reconnect catch-up (rev compare → partial refresh).
 				`lastLiveRevs`,
 				`applyLiveRevs`,
@@ -718,6 +723,7 @@ func TestSessionsHub(t *testing.T) {
 		`id="page-session"`,
 		`id="live-session"`,
 		`hx-trigger="sse:dashboard, sse:history"`,
+		`hx-swap="innerHTML show:none focus-scroll:false"`,
 		`/partials/sessions/thread-99`,
 		"thread-99",
 		"Grok Work",

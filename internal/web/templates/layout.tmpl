@@ -5884,6 +5884,46 @@
 
     // How close to the page bottom counts as "following" growing content.
     var PAGE_PIN_PX = 48;
+    // Backup of the in-flight live-region window Y. Properties on the
+    // element can be lost if the swap is outerHTML; afterSwap also sees
+    // detail.elt (the source) which is not always the region.
+    var livePageScroll = null;
+    // Re-assert after layout. A large innerHTML swap (session turns) first
+    // collapses document height, so one scrollTo is clamped to 0 and stays
+    // there once the new markup is measured.
+    function applyWindowScrollY(y) {
+      if (typeof y !== "number") return;
+      window.scrollTo(0, y);
+      requestAnimationFrame(function () {
+        window.scrollTo(0, y);
+        requestAnimationFrame(function () {
+          window.scrollTo(0, y);
+        });
+      });
+    }
+    function pinWindowBottom() {
+      function go() { window.scrollTo(0, document.documentElement.scrollHeight); }
+      go();
+      requestAnimationFrame(function () {
+        go();
+        requestAnimationFrame(go);
+      });
+    }
+    function liveRegionFromEvent(e) {
+      var d = e.detail || {};
+      var elt = d.target || d.elt || e.target;
+      if (!elt || !elt.classList) return null;
+      if (elt.classList.contains("live-region")) return elt;
+      return elt.closest ? elt.closest(".live-region") : null;
+    }
+    function restoreLivePageScroll(elt) {
+      var pin = (elt && elt._pagePinBottom) || (livePageScroll && livePageScroll.pin);
+      var y = (elt && typeof elt._pageScrollY === "number")
+        ? elt._pageScrollY
+        : (livePageScroll && livePageScroll.y);
+      if (pin) pinWindowBottom();
+      else applyWindowScrollY(y);
+    }
 
     // ── iOS-style page transitions (phone only) ───────────────────────
     // Arms a View Transition for a navigation and tells the <style> block
@@ -6030,6 +6070,13 @@
         var pageY = window.scrollY || 0;
         target._pageScrollY = pageY;
         target._pagePinBottom = pageMax > 0 && (pageMax - pageY) <= PAGE_PIN_PX;
+        livePageScroll = { y: pageY, pin: target._pagePinBottom };
+        // htmx default swap has no show:, but inherit/boost can still force
+        // show:top and yank the session page to the live-region (the header).
+        var swap = target.getAttribute("hx-swap") || "innerHTML";
+        if (swap.indexOf("show:") === -1) {
+          d.swapOverride = swap + " show:none focus-scroll:false";
+        }
       }
       if (!d.boosted) return;
       var html = d.serverResponse || "";
@@ -6057,8 +6104,8 @@
         location.reload();
         return;
       }
-      var elt = e.detail && e.detail.elt;
-      if (elt && elt.classList && elt.classList.contains("live-region")) {
+      var elt = liveRegionFromEvent(e);
+      if (elt) {
         // Desktop shows the clock; mobile setStatus strips it to "live".
         setStatus("live · " + new Date().toLocaleTimeString(), "ok");
         // Restore table horizontal scroll saved in beforeSwap.
@@ -6071,15 +6118,21 @@
           delete elt._tableScrollX;
         }
         // Keep window Y stable when streamed content grows; follow the page
-        // tail only if the user was already at the bottom.
-        if (elt._pagePinBottom) {
-          window.scrollTo(0, document.documentElement.scrollHeight);
-        } else if (typeof elt._pageScrollY === "number") {
-          window.scrollTo(0, elt._pageScrollY);
-        }
+        // tail only if the user was already at the bottom. Re-applied in
+        // afterSettle once the new turns have a real height.
+        restoreLivePageScroll(elt);
+      }
+    });
+    document.body.addEventListener("htmx:afterSettle", function (e) {
+      if (e.detail && e.detail.boosted) return;
+      var elt = liveRegionFromEvent(e);
+      if (!elt && !livePageScroll) return;
+      restoreLivePageScroll(elt);
+      if (elt) {
         delete elt._pageScrollY;
         delete elt._pagePinBottom;
       }
+      livePageScroll = null;
     });
     document.body.addEventListener("htmx:responseError", function (e) {
       var elt = e.detail && e.detail.elt;
@@ -6333,16 +6386,7 @@
       return location.pathname + location.search;
     }
     function applyBoostScrollY(y) {
-      if (typeof y !== "number") return;
-      window.scrollTo(0, y);
-      // View Transitions + settleDelay can re-clamp the window to the old
-      // (list) offset after the first scrollTo; re-assert after layout.
-      requestAnimationFrame(function () {
-        window.scrollTo(0, y);
-        requestAnimationFrame(function () {
-          window.scrollTo(0, y);
-        });
-      });
+      applyWindowScrollY(y);
     }
     document.body.addEventListener("htmx:beforeRequest", function (e) {
       var d = e.detail;
