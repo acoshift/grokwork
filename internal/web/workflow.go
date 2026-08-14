@@ -159,8 +159,6 @@ func (s *Server) issuesPageShell(ctx *hime.Context) (pageData, error) {
 	d.IsIssues = true
 	d.Project = project
 	d.RepoCatalog = catalog
-	d.LinearEnabled = s.cfg.ProjectLinearEnabled(project)
-	d.ClickUpEnabled = s.cfg.ProjectClickUpEnabled(project)
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	d.CanCreateIssue = s.canCreateIssue(d, project)
 	// Bulk Fix is a ship task; the confirm modal's Default names the task model.
@@ -352,8 +350,6 @@ func (s *Server) issueDetail(ctx *hime.Context) error {
 	d.ActiveOwner = active.Owner
 	d.ActiveRepo = active.Repo
 	d.Issue = info
-	d.LinearEnabled = s.cfg.ProjectLinearEnabled(project)
-	d.ClickUpEnabled = s.cfg.ProjectClickUpEnabled(project)
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
 		d.Error = e

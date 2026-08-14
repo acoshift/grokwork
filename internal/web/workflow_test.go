@@ -216,6 +216,9 @@ func ioNopCloser(r *strings.Reader) *nopCloser { return &nopCloser{r} }
 
 func TestIssuesListAndDetail(t *testing.T) {
 	srv := workflowServer(t)
+	if err := srv.cfg.SetProjectClickUp("proj", true, "123", "155", "DEV", "cu-key", false); err != nil {
+		t.Fatal(err)
+	}
 	h := srv.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/projects/proj/issues?owner=acme&repo=api", nil)
@@ -236,6 +239,14 @@ func TestIssuesListAndDetail(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list shell missing %q in %s", want, body)
+		}
+	}
+	for _, extra := range []string{
+		` · <a href="/projects/proj/linear">Linear</a>`,
+		` · <a href="/projects/proj/clickup">ClickUp</a>`,
+	} {
+		if strings.Contains(body, extra) {
+			t.Fatalf("issues title must not include %q", extra)
 		}
 	}
 	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api", nil)
@@ -1750,6 +1761,14 @@ func TestClickUpListAndDetail(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "DEV-1") || !strings.Contains(body, "page-clickup-list") {
 		t.Fatalf("list body missing task: %s", body[:min(400, len(body))])
+	}
+	for _, extra := range []string{
+		` · <a href="/projects/proj/issues">GitHub issues</a>`,
+		` · <a href="/projects/proj">Overview</a>`,
+	} {
+		if strings.Contains(body, extra) {
+			t.Fatalf("clickup title must not include %q", extra)
+		}
 	}
 	assertNavActive(t, body, "ClickUp")
 	if !strings.Contains(body, `data-icon="clickup" class="active">ClickUp</a>`) {

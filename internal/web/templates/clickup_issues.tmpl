@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1 id="page-clickup-list">ClickUp · {{.Project}}</h1>
-<p class="sub">List <span class="mono">{{.ClickUpListID}}</span> · <a href="/projects/{{.Project}}/issues">GitHub issues</a> · <a href="/projects/{{.Project}}">Overview</a></p>
+<p class="sub">List <span class="mono">{{.ClickUpListID}}</span></p>
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 <div class="section">
   {{if .ClickUpTasks}}

@@ -9,7 +9,6 @@
 </div>
 <p class="sub">
   Repo: <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span>
-  {{if .LinearEnabled}} · <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}{{if .ClickUpEnabled}} · <a href="/projects/{{.Project}}/clickup">ClickUp</a>{{end}}
 </p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
