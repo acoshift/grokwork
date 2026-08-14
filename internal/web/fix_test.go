@@ -42,6 +42,9 @@ func fixEnabledServer(t *testing.T) (*Server, *config.Config, *bot.Bot) {
 	cfg.TimeoutMs = 5000
 	// Isolation off for simpler runs
 	cfg.WorktreeIsolation = new(false)
+	// Title summarize is async and shares the fake CLI with the task run;
+	// leave it off so start-form tests are not racing a Goal rename.
+	cfg.SummarizeThreadTitle = new(false)
 
 	// Bot.threadAPI is unexported, so the thread-create path is driven through the
 	// exported SetThreadAPIForTest seam rather than a real gateway.
@@ -81,7 +84,21 @@ func writeWebFakeGrok(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fake-grok")
+	// Streaming runs use streaming-json line events; tools-off helpers like
+	// SummarizeTitle use --output-format json and need a single object.
 	script := `#!/bin/sh
+fmt=streaming-json
+prev=
+for a in "$@"; do
+  if [ "$prev" = "--output-format" ]; then
+    fmt=$a
+  fi
+  prev=$a
+done
+if [ "$fmt" = "json" ]; then
+  printf '%s\n' '{"text":"web fix ok","sessionId":"sess-web","num_turns":1,"usage":{"total_tokens":3}}'
+  exit 0
+fi
 printf '%s\n' '{"type":"text","data":"web fix ok"}'
 printf '%s\n' '{"type":"end","sessionId":"sess-web","stopReason":"EndTurn","num_turns":1,"usage":{"total_tokens":3}}'
 exit 0

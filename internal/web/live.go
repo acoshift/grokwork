@@ -146,8 +146,11 @@ func (s *Server) fpHistory() string {
 	threads = mergeSessionRows(threads, s.sessions.List())
 	var b strings.Builder
 	for _, t := range threads {
-		fmt.Fprintf(&b, "%s|%s|%d|%s|%s|%s\n",
-			t.ThreadID, t.Project, t.TurnCount, t.UpdatedAt, t.LastUser, t.LastStatus)
+		// Goal is patched without stamping UpdatedAt (title summarize, /goal).
+		// The session live region listens on history, so omitting it would leave
+		// the generated title invisible until the next navigation.
+		fmt.Fprintf(&b, "%s|%s|%d|%s|%s|%s|%s\n",
+			t.ThreadID, t.Project, t.TurnCount, t.UpdatedAt, t.LastUser, t.LastStatus, t.Goal)
 	}
 	return hashFingerprint(b.String())
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/grokrun"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 func TestWebTaskKindMapping(t *testing.T) {
@@ -190,8 +191,8 @@ func TestStartWebTaskEmptyPrompt(t *testing.T) {
 	}
 }
 
-// Blank Title → sticky Goal is the same short local name Discord uses for a
-// thread title (threadNameFromPrompt), not the full prompt and not a model call.
+// Blank Title seeds Goal from threadNameFromPrompt immediately (summarize off
+// in testFixBot). The async model path is TestStartWebTaskAutoGoalFromSummarize.
 func TestStartWebTaskBlankTitleUsesLocalShortGoal(t *testing.T) {
 	b, _ := testFixBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
@@ -244,6 +245,96 @@ func TestStartWebTaskExplicitTitleIsGoal(t *testing.T) {
 	}
 	if e.Goal != "keep this goal" {
 		t.Fatalf("goal=%q want keep this goal", e.Goal)
+	}
+}
+
+// Blank Title seeds Goal from the local short name immediately, then
+// SummarizeTitle replaces it asynchronously (same off-path call Discord uses).
+func TestStartWebTaskAutoGoalFromSummarize(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	// Fake CLI returns a fixed "hello from fake" text; SummarizeTitle cleans it
+	// into the sticky Goal.
+	b.cfg.SummarizeThreadTitle = new(true)
+	b.cfg.SummarizeTimeoutMs = 5000
+	SetThreadAPIForTest(b, &fakeThreadAPI{nextMsg: "m1", nextTh: "th-autogoal"})
+
+	prompt := "please add rate limiting to the login endpoint and cover it with tests"
+	res, err := b.StartWebTask(StartWebTaskOpts{
+		Project: "app",
+		Prompt:  prompt,
+		Actor:   Actor{ID: "u1", DisplayName: "Alice"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Provisional Goal is the local short name so the sessions list is never blank.
+	e, ok := b.sessions.Get(res.ThreadID)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if e.Goal != threadNameFromPrompt(prompt, "Alice") {
+		t.Fatalf("provisional goal=%q", e.Goal)
+	}
+	want := "hello from fake"
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		e, _ = b.sessions.Get(res.ThreadID)
+		if strings.TrimSpace(e.Goal) == want {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("goal never improved: got %q want %q", e.Goal, want)
+}
+
+// An explicit Title is the Goal; summarize must not overwrite it.
+func TestStartWebTaskTitleNotOverwrittenBySummarize(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	b.cfg.SummarizeThreadTitle = new(true)
+	b.cfg.SummarizeTimeoutMs = 5000
+	SetThreadAPIForTest(b, &fakeThreadAPI{nextMsg: "m1", nextTh: "th-title-keep"})
+
+	res, err := b.StartWebTask(StartWebTaskOpts{
+		Project: "app",
+		Prompt:  "a long task body that would otherwise be summarized",
+		Title:   "keep this goal",
+		Actor:   Actor{ID: "u1", DisplayName: "Alice"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Give any accidental async path a beat to race; it must not run for Title.
+	time.Sleep(200 * time.Millisecond)
+	e, ok := b.sessions.Get(res.ThreadID)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if e.Goal != "keep this goal" {
+		t.Fatalf("goal=%q want keep this goal", e.Goal)
+	}
+}
+
+// improveWebTaskGoal refuses to clobber a Goal the user edited after start.
+func TestImproveWebTaskGoalSkipsEditedGoal(t *testing.T) {
+	b, _ := testFixBot(t)
+	b.cfg.SummarizeThreadTitle = new(true)
+	b.cfg.SummarizeTimeoutMs = 5000
+	threadID := "w_edit-goal-1"
+	provisional := "please implement feature X carefully"
+	if err := b.sessions.Set(threadID, sessionstore.Entry{
+		Project: "app", Origin: SourceWeb, Goal: "user edited goal",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.improveWebTaskGoal(threadID, provisional, "alice", t.TempDir(), provisional)
+	e, ok := b.sessions.Get(threadID)
+	if !ok {
+		t.Fatal("missing")
+	}
+	if e.Goal != "user edited goal" {
+		t.Fatalf("goal=%q was overwritten", e.Goal)
 	}
 }
 

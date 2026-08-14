@@ -1628,29 +1628,39 @@ func (b *Bot) handleTaskOrigin(
 	b.drainTaskQueue(ctx, cancel, item, job)
 }
 
-// improveThreadTitle runs SummarizeTitle off the critical path and renames the thread if useful.
-func (b *Bot) improveThreadTitle(s *discordgo.Session, threadID, titlePrompt, username, cwd string, issues []sessionstore.TrackedIssue) {
-	if b == nil || s == nil || threadID == "" || b.cfg == nil {
-		return
+// summarizeTitleOnce is the shared tools-off title call used by Discord thread
+// rename and web-start Goal improve. Returns ("", false) when skipped or failed.
+func (b *Bot) summarizeTitleOnce(threadID, titlePrompt, cwd string) (string, bool) {
+	if b == nil || b.cfg == nil || strings.TrimSpace(threadID) == "" {
+		return "", false
 	}
 	if b.stopping.Load() {
-		return
+		return "", false
 	}
 	timeout := time.Duration(b.cfg.SummarizeTimeoutMs) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 45 * time.Second
 	}
-	log.Printf("task: summarizing title async thread=%s…", threadID)
 	sumCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cli := b.threadSummarizeCLI(threadID).CLI()
 	log.Printf("task: summarize agent=%s model=%q thread=%s", cli.Agent, cli.Model, threadID)
 	t, ok := grokrun.SummarizeTitle(sumCtx, cli, titlePrompt, cwd, timeout)
-	if !ok {
-		log.Printf("task: async summarize failed thread=%s (keeping local title)", threadID)
+	if !ok || b.stopping.Load() {
+		return "", false
+	}
+	return t, true
+}
+
+// improveThreadTitle runs SummarizeTitle off the critical path and renames the thread if useful.
+func (b *Bot) improveThreadTitle(s *discordgo.Session, threadID, titlePrompt, username, cwd string, issues []sessionstore.TrackedIssue) {
+	if b == nil || s == nil || threadID == "" || b.cfg == nil {
 		return
 	}
-	if b.stopping.Load() {
+	log.Printf("task: summarizing title async thread=%s…", threadID)
+	t, ok := b.summarizeTitleOnce(threadID, titlePrompt, cwd)
+	if !ok {
+		log.Printf("task: async summarize failed thread=%s (keeping local title)", threadID)
 		return
 	}
 	name := prefixThreadTitleWithIssues(threadNameFromPrompt(t, username), issues)
