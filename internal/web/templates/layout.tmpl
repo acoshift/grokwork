@@ -406,15 +406,15 @@
     }
     /* Provider marks, keyed off data-provider the way #side-nav keys off
        data-icon. Single-path monochrome SVG, painted with currentColor by the
-       ::before mask below. */
+       shared icon-mask longhands below. */
     a.btn.login-cta[data-provider="discord"] {
-      --icon-provider: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.0766.0766 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c1.8483 1.3568 3.6396 2.1806 5.3979 2.7266a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.761-.5459 3.5523-1.3698 5.4006-2.7266a.0755.0755 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z'/%3E%3C/svg%3E");
+      --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.0766.0766 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c1.8483 1.3568 3.6396 2.1806 5.3979 2.7266a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.761-.5459 3.5523-1.3698 5.4006-2.7266a.0755.0755 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z'/%3E%3C/svg%3E");
     }
     a.btn.login-cta[data-provider="google"] {
-      --icon-provider: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M12.24 10.285V14.4h6.806c-.275 1.765-2.056 5.174-6.806 5.174-4.095 0-7.439-3.389-7.439-7.574s3.344-7.574 7.439-7.574c2.33 0 3.891.989 4.785 1.849l3.254-3.138C18.189 1.186 15.479 0 12.24 0c-6.635 0-12 5.365-12 12s5.365 12 12 12c6.926 0 11.52-4.869 11.52-11.726 0-.788-.085-1.39-.189-1.989H12.24z'/%3E%3C/svg%3E");
+      --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M12.24 10.285V14.4h6.806c-.275 1.765-2.056 5.174-6.806 5.174-4.095 0-7.439-3.389-7.439-7.574s3.344-7.574 7.439-7.574c2.33 0 3.891.989 4.785 1.849l3.254-3.138C18.189 1.186 15.479 0 12.24 0c-6.635 0-12 5.365-12 12s5.365 12 12 12c6.926 0 11.52-4.869 11.52-11.726 0-.788-.085-1.39-.189-1.989H12.24z'/%3E%3C/svg%3E");
     }
     a.btn.login-cta[data-provider="github"] {
-      --icon-provider: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='black'%3E%3Cpath d='M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0016 8c0-4.42-3.58-8-8-8z'/%3E%3C/svg%3E");
+      --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='black'%3E%3Cpath d='M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0016 8c0-4.42-3.58-8-8-8z'/%3E%3C/svg%3E");
     }
     a.btn.login-cta:hover {
       background: var(--button-hover);
@@ -456,8 +456,6 @@
       width: 1.1rem;
       height: 1.1rem;
       background: currentColor;
-      -webkit-mask: var(--icon-provider) center / contain no-repeat;
-      mask: var(--icon-provider) center / contain no-repeat;
     }
     /* Misconfiguration notice: same overflow reasoning as .login-flash — the
        gate clips its overflow, so long config keys must be allowed to wrap. */
@@ -562,16 +560,44 @@
       font-weight: 500;
       transition: background 0.12s ease, color 0.12s ease;
     }
+    /* Safari 27: the mask shorthand also assigns -webkit-mask-box-image,
+       which paints the SVG as a frame around the glyph (intermittent —
+       depends on compositing). Longhands + an explicit none keep just
+       the alpha cutout. mask-size:100% skips contain's intrinsic-size
+       path, which Safari 27 changed for viewBox-only SVG data URIs.
+       Dim via background, not opacity: opacity promotes a layer that
+       sometimes fails to apply the mask. */
+    .nav-links > a[data-icon]::before,
+    .tabbar > a[data-icon]::before,
+    a.btn.login-cta::before,
+    .ws-start::before,
+    .rail-fab-chev {
+      -webkit-mask-image: var(--icon);
+      -webkit-mask-position: center;
+      -webkit-mask-size: 100%;
+      -webkit-mask-repeat: no-repeat;
+      -webkit-mask-box-image: none;
+      -webkit-mask-source-type: alpha;
+      mask-image: var(--icon);
+      mask-position: center;
+      mask-size: 100%;
+      mask-repeat: no-repeat;
+      mask-mode: alpha;
+      mask-border: none;
+    }
     .nav-links > a[data-icon]::before,
     .tabbar > a[data-icon]::before {
       content: "";
       flex-shrink: 0;
       width: 1.02rem;
       height: 1.02rem;
-      background: currentColor;
-      opacity: 0.75;
-      -webkit-mask: var(--icon) center / contain no-repeat;
-      mask: var(--icon) center / contain no-repeat;
+      background: color-mix(in srgb, currentColor 75%, transparent);
+    }
+    .ws-start::before {
+      --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'%3E%3Cline x1='12' y1='5' x2='12' y2='19'/%3E%3Cline x1='5' y1='12' x2='19' y2='12'/%3E%3C/svg%3E");
+    }
+    .rail-fab-chev {
+      --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 15 6-6 6 6'/%3E%3C/svg%3E");
     }
     /* Phone tab bar & mobile list rows: desktop renders neither (the sidebar
        and tables are the desktop UI); the 920px block below turns them on.
@@ -686,7 +712,7 @@
       border-color: var(--border);
       box-shadow: var(--shadow-1);
     }
-    .nav-links > a.active::before { opacity: 1; }
+    .nav-links > a.active::before { background: currentColor; }
 
     /* Sidebar section caption (global shell: cross-project lead views). */
     .nav-label {
@@ -4111,8 +4137,6 @@
         width: 0.85rem;
         height: 0.85rem;
         background: currentColor;
-        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'%3E%3Cline x1='12' y1='5' x2='12' y2='19'/%3E%3Cline x1='5' y1='12' x2='19' y2='12'/%3E%3C/svg%3E") center / contain no-repeat;
-        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round'%3E%3Cline x1='12' y1='5' x2='12' y2='19'/%3E%3Cline x1='5' y1='12' x2='19' y2='12'/%3E%3C/svg%3E") center / contain no-repeat;
       }
       /* One auto margin per row: in a workspace the + button owns the free
          space so the status cluster hugs it (global keeps side-foot's own). */
@@ -4152,10 +4176,10 @@
       .tabbar > a[data-icon]::before {
         width: 1.42rem;
         height: 1.42rem;
-        opacity: 0.85;
+        background: color-mix(in srgb, currentColor 85%, transparent);
       }
       .tabbar > a.active { color: var(--text); }
-      .tabbar > a.active::before { opacity: 1; }
+      .tabbar > a.active::before { background: currentColor; }
       .side-foot {
         margin-top: 0;
         margin-left: auto;
@@ -4371,8 +4395,6 @@
         height: 0.85rem;
         flex-shrink: 0;
         background: currentColor;
-        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 15 6-6 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
-        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 15 6-6 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
       }
       /* Sits between the composer (z 90) and the sheet (z 96) — and therefore
          has to live in the same stacking context as both, i.e. inside

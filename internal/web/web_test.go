@@ -1199,6 +1199,37 @@ func TestNavBrandChrome(t *testing.T) {
 	}
 }
 
+// TestIconMaskUsesLonghands pins the Safari 27 workaround: the mask
+// shorthand also sets -webkit-mask-box-image and frames each nav glyph
+// in a box. Icon cutouts must be longhands plus an explicit none.
+func TestIconMaskUsesLonghands(t *testing.T) {
+	raw, err := os.ReadFile("templates/layout.tmpl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(raw)
+	for _, ban := range []string{
+		"mask: var(--icon)",
+		"mask: var(--icon-provider)",
+		"-webkit-mask: var(--icon)",
+		"-webkit-mask: var(--icon-provider)",
+	} {
+		if strings.Contains(css, ban) {
+			t.Fatalf("icon mask must not use the shorthand %q (Safari 27 paints mask-box-image as a frame)", ban)
+		}
+	}
+	for _, want := range []string{
+		"mask-image: var(--icon)",
+		"-webkit-mask-image: var(--icon)",
+		"mask-border: none",
+		"-webkit-mask-box-image: none",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("icon mask missing %q", want)
+		}
+	}
+}
+
 // TestOverviewMobileBrowseListsWorkspaceSections pins the phone-only Browse
 // block on the project overview: every workspace section that is not a bottom
 // tab (or the Start-task top-bar chip) must appear here, or mobile users have
