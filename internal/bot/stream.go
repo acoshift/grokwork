@@ -560,6 +560,7 @@ const (
 	laneShip        phaseLaneKind = "ship"
 	laneInvestigate phaseLaneKind = "investigate"
 	laneExplain     phaseLaneKind = "explain"
+	lanePlan        phaseLaneKind = "plan"
 	laneNone        phaseLaneKind = "none"
 )
 
@@ -591,6 +592,8 @@ func phaseLaneFor(prefixKind string, direct bool) phaseLane {
 		return phaseLane{kind: laneInvestigate, labels: []string{"read", "dig", "report"}}
 	case "explain":
 		return phaseLane{kind: laneExplain, labels: []string{"draft"}}
+	case "plan":
+		return phaseLane{kind: lanePlan, labels: []string{"read", "draft", "file"}}
 	case "none":
 		return phaseLane{kind: laneNone, labels: nil}
 	default:
@@ -716,7 +719,7 @@ func (t *thoughtTracker) classify(line string) int {
 	switch t.lane.kind {
 	case laneShip:
 		return classifyShipPhase(line)
-	case laneInvestigate:
+	case laneInvestigate, lanePlan:
 		return classifyInvestigatePhase(line)
 	default:
 		return -1

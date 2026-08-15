@@ -382,6 +382,31 @@ func TestStartContinueNoCreate(t *testing.T) {
 	}
 }
 
+func TestStartContinuePlanOmitsDoNotMerge(t *testing.T) {
+	b, _ := testAddressBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	if err := b.sessions.Set("plan-cont", sessionstore.Entry{
+		Project: "app", Origin: SourceWeb, Mode: ModePlan,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := b.StartContinue(ContinueOpts{
+		ThreadID: "plan-cont", Prompt: "use the API package",
+		Actor: Actor{ID: "u", DisplayName: "U"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created {
+		t.Fatal("continue must not create")
+	}
+	waitHistory(t, b, "plan-cont", 1)
+	th, _ := b.history.Get("plan-cont")
+	if strings.Contains(strings.ToLower(th.Turns[0].Prompt), "do not merge") {
+		t.Fatalf("plan continue must not mention merge: %q", th.Turns[0].Prompt)
+	}
+}
+
 func TestStartContinueUnknownThread(t *testing.T) {
 	b, _ := testAddressBot(t)
 	_, err := b.StartContinue(ContinueOpts{ThreadID: "missing", Prompt: "x", Actor: Actor{ID: "u"}})

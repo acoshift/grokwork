@@ -21,6 +21,7 @@ func TestWebTaskKindMapping(t *testing.T) {
 		" investigate ": KindStartInvestigate,
 		"investigate":   KindStartInvestigate,
 		"explain":       KindStartExplain,
+		"plan":          KindStartPlan,
 		"nonsense":      KindTask,
 	}
 	for in, want := range cases {
@@ -380,6 +381,15 @@ func TestStartWebTaskInvestigatorDeniedFixMode(t *testing.T) {
 	})
 	if errors.Is(err, ErrCannotStartFix) {
 		t.Fatal("investigate must not hard-block as fix")
+	}
+	_, err = b.StartWebTask(StartWebTaskOpts{
+		Project: "app",
+		Prompt:  "write a plan",
+		Actor:   Actor{ID: "inv1", DisplayName: "Inv"},
+		Mode:    ModePlan,
+	})
+	if !errors.Is(err, ErrCannotStartPlan) {
+		t.Fatalf("plan: err=%v want ErrCannotStartPlan", err)
 	}
 }
 

@@ -150,3 +150,36 @@ func TestInvestigatePromptDoesNotRequireScrutinizeShip(t *testing.T) {
 		t.Fatalf("investigate mode must not inject pre-ship scrutinize:\n%s", p)
 	}
 }
+
+func TestPlanPromptPrefixContract(t *testing.T) {
+	p := planPromptPrefix("grokwork/1")
+	for _, want := range []string{
+		"Mode: PLAN",
+		"DECISION:",
+		"SCRUTINIZE_VERDICT:",
+		"PLAN_ISSUE:",
+		"<!-- grokwork:tasklist -->",
+		"do not push",
+		"file-inspection",
+	} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("missing %q in:\n%s", want, p)
+		}
+	}
+	for _, bad := range []string{
+		"gh pr create",
+		"Pre-ship review (MANDATORY",
+		"Open a pull request",
+	} {
+		if strings.Contains(p, bad) {
+			t.Fatalf("plan prefix must not contain %q:\n%s", bad, p)
+		}
+	}
+	// Examples are indented so quoting the contract cannot file or mark ship.
+	if _, _, ok := parsePlanIssue(p); ok {
+		t.Fatal("plan prefix must not parse as a PLAN_ISSUE block")
+	}
+	if parseScrutinizeVerdict(p) == "ship" {
+		t.Fatal("plan prefix must not parse as SCRUTINIZE_VERDICT: ship")
+	}
+}

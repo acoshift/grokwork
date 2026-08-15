@@ -237,6 +237,7 @@ func TestStartPageShowsFormForMember(t *testing.T) {
 		`name="images"`,
 		`value="investigate"`,
 		`value="explain"`,
+		`value="plan"`,
 		// proj default is fix → the empty option is the fix label and the ship copy
 		// reads "When a run ships:".
 		`Fix &amp; ship (default)`,
@@ -342,6 +343,9 @@ func TestStartInvestigatorHidesFixAndBlocksPOST(t *testing.T) {
 	if strings.Contains(body, `value="fix"`) || strings.Contains(body, `Fix &amp; ship (default)`) {
 		t.Fatalf("investigator must not see Fix & ship mode option: %s", body[:min(1200, len(body))])
 	}
+	if strings.Contains(body, `value="plan"`) {
+		t.Fatal("investigator must not see Plan mode option")
+	}
 	if !strings.Contains(body, `value="investigate"`) {
 		t.Fatal("investigate option required")
 	}
@@ -376,6 +380,16 @@ func TestStartInvestigatorHidesFixAndBlocksPOST(t *testing.T) {
 	}
 	if loc3 := w3.Header().Get("Location"); !strings.HasPrefix(loc3, "/sessions/") {
 		t.Fatalf("investigate Location=%q", loc3)
+	}
+	w4 := postFix(t, srv, "/projects/proj/start", sid, csrf, url.Values{
+		"prompt": {"write a plan"},
+		"mode":   {"plan"},
+	})
+	if w4.Code != http.StatusFound && w4.Code != http.StatusSeeOther {
+		t.Fatalf("plan status=%d body=%s", w4.Code, w4.Body.String())
+	}
+	if loc4 := w4.Header().Get("Location"); !strings.HasPrefix(loc4, "/projects/proj/start") || !strings.Contains(loc4, "err=") {
+		t.Fatalf("plan Location=%q want start page with err", loc4)
 	}
 }
 

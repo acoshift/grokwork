@@ -39,6 +39,18 @@ func TestParseStartAndQueueCommands(t *testing.T) {
 	if p.Kind != KindStartInvestigate {
 		t.Fatalf("kind=%d", p.Kind)
 	}
+	p = ParseMessage("<@1> /start plan add plan mode", "1")
+	if p.Kind != KindStartPlan || !strings.Contains(p.Prompt, "add plan mode") {
+		t.Fatalf("start plan: kind=%d prompt=%q", p.Kind, p.Prompt)
+	}
+	p = ParseMessage("<@1> /plan file a plan issue", "1")
+	if p.Kind != KindStartPlan || !strings.Contains(p.Prompt, "file a plan issue") {
+		t.Fatalf("/plan: kind=%d prompt=%q", p.Kind, p.Prompt)
+	}
+	p = ParseMessage("<@1> plan the refactor", "1")
+	if p.Kind != KindTask {
+		t.Fatalf("freeform plan should be task, kind=%d", p.Kind)
+	}
 	p = ParseMessage("<@1> /queue", "1")
 	if p.Kind != KindQueue {
 		t.Fatalf("kind=%d", p.Kind)

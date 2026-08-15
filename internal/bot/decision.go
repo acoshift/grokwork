@@ -88,16 +88,16 @@ func sanitizeDecisionID(s string) string {
 	return out
 }
 
-// postDecisionCards posts Discord buttons for each decision and stores OpenQuestions.
-func (b *Bot) postDecisionCards(s *discordgo.Session, threadID string, specs []decisionSpec) {
-	if s == nil || len(specs) == 0 {
-		return
+// storeOpenQuestions persists DECISION specs on the session. Safe for web-native
+// units (no Discord). Returns how many were stored.
+func (b *Bot) storeOpenQuestions(threadID string, specs []decisionSpec) int {
+	if b == nil || b.sessions == nil || threadID == "" || len(specs) == 0 {
+		return 0
 	}
+	stored := 0
 	for _, d := range specs {
-		// Cap open questions
 		if e, ok := b.sessions.Get(threadID); ok && len(e.OpenQuestions) >= sessionstore.MaxOpenQuestions {
-			sendChunks(s, threadID, "Too many open questions — answer or dismiss some before new decisions.")
-			return
+			return stored
 		}
 		q := sessionstore.OpenQuestion{
 			ID:      d.ID,
@@ -107,7 +107,6 @@ func (b *Bot) postDecisionCards(s *discordgo.Session, threadID string, specs []d
 			Options: append([]string(nil), d.Options...),
 		}
 		_, _, err := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
-			// replace same id if re-asked
 			found := false
 			for i := range ent.OpenQuestions {
 				if ent.OpenQuestions[i].ID == q.ID {
@@ -126,6 +125,40 @@ func (b *Bot) postDecisionCards(s *discordgo.Session, threadID string, specs []d
 		})
 		if err != nil {
 			log.Printf("decision: patch: %v", err)
+			continue
+		}
+		stored++
+	}
+	return stored
+}
+
+// postDecisionCards posts Discord buttons for each decision and stores OpenQuestions.
+func (b *Bot) postDecisionCards(s *discordgo.Session, threadID string, specs []decisionSpec) {
+	if len(specs) == 0 {
+		return
+	}
+	stored := b.storeOpenQuestions(threadID, specs)
+	if s == nil {
+		return
+	}
+	if stored < len(specs) {
+		sendChunks(s, threadID, "Too many open questions — answer or dismiss some before new decisions.")
+	}
+	if stored == 0 {
+		return
+	}
+	e, ok := b.sessions.Get(threadID)
+	if !ok {
+		return
+	}
+	byID := make(map[string]struct{}, len(e.OpenQuestions))
+	for _, q := range e.OpenQuestions {
+		if q.Status == "open" {
+			byID[q.ID] = struct{}{}
+		}
+	}
+	for _, d := range specs {
+		if _, ok := byID[d.ID]; !ok {
 			continue
 		}
 		content := fmt.Sprintf("**Decision** `%s`\n%s", d.ID, d.Prompt)

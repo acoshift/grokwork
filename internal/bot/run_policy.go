@@ -14,6 +14,7 @@ const (
 	ModeInvestigate = "investigate"
 	ModeExplain     = "explain"
 	ModeFix         = "fix"
+	ModePlan        = "plan"
 	// ModeCase is Wave 3; recognized for freeform inherit if set later.
 	ModeCase = "case"
 )
@@ -23,6 +24,7 @@ const (
 	RunKindFix         = "fix"
 	RunKindInvestigate = "investigate"
 	RunKindExplain     = "explain"
+	RunKindPlan        = "plan"
 	RunKindFixCI       = "fix_ci"
 	RunKindAddress     = "address"
 	RunKindPreset      = "preset"
@@ -39,7 +41,7 @@ type RunPolicy struct {
 	Tools                *string // nil unrestricted; non-nil → allowlist / tools-off
 	NoSubagents          bool
 	IncludeGHToken       bool
-	PrefixKind           string // "remote" | "investigate" | "explain" | "none"
+	PrefixKind           string // "remote" | "investigate" | "explain" | "plan" | "none"
 	RefreshPR            bool
 	RefreshPRWarnOnly    bool
 	PostCompletion       string // "eng" | "dossier" | "none"
@@ -113,7 +115,7 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 	// D2: without GithubWrites cannot ship (never half-fix).
 	// Keep Mode=case when already a case (K17); only drop to ModeInvestigate for non-case.
 	coerced := false
-	if !in.ForceInvestigate && mode != ModeInvestigate && mode != ModeExplain && !in.Caps.GithubWrites {
+	if !in.ForceInvestigate && mode != ModeInvestigate && mode != ModeExplain && mode != ModePlan && !in.Caps.GithubWrites {
 		wantShip := mode == "" || mode == ModeFix || mode == ModeCase
 		if wantShip {
 			if mode == ModeCase {
@@ -136,6 +138,8 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 			rk = RunKindInvestigate
 		case ModeExplain:
 			rk = RunKindExplain
+		case ModePlan:
+			rk = RunKindPlan
 		default:
 			rk = RunKindFix
 		}
@@ -153,6 +157,30 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 			PrefixKind: "none", PostCompletion: "none",
 			RefreshPR: false, RefreshBrief: false, AllowUpload: false,
 			DirtyTreeWarn: false, Coerced: coerced,
+		}
+	}
+
+	if mode == ModePlan {
+		toolsCopy := in.Agent.InvestigateTools(false)
+		return RunPolicy{
+			Mode:                 ModePlan,
+			Phase:                phase,
+			RunKind:              RunKindPlan,
+			AllowPR:              false,
+			AllowDirectShip:      false,
+			Yolo:                 false,
+			Tools:                &toolsCopy,
+			NoSubagents:          true,
+			IncludeGHToken:       false,
+			PrefixKind:           "plan",
+			RefreshPR:            false,
+			RefreshPRWarnOnly:    true,
+			PostCompletion:       "none",
+			RefreshBrief:         false,
+			AllowUpload:          false,
+			AllowDirectIntegrate: false,
+			DirtyTreeWarn:        true,
+			Coerced:              coerced,
 		}
 	}
 
@@ -369,6 +397,55 @@ func explainPromptPrefix() string {
 		"End with a CUSTOMER_UPDATE: block of plain language (no file paths, no SHAs, no secrets).",
 		"",
 	}, "\n")
+}
+
+// planPromptPrefix is the plan-mode contract: read the repo, write a plan, stop.
+// The host files the GitHub issue; the agent must not run gh or edit files.
+func planPromptPrefix(branch string) string {
+	lines := []string{
+		"You are planning work on a shared workflow unit (Discord thread and/or web session).",
+		"Mode: PLAN — produce an implementation plan only. Do NOT implement, commit, push, open a pull request, or modify the remote.",
+		"Do NOT create or edit GitHub issues yourself. The host files the issue from your PLAN_ISSUE block.",
+		"Do NOT merge. Do NOT edit application source or config.",
+		"You have file-inspection tools only (no shell). Read the repo; do not invent files you have not seen.",
+		"",
+		"If you are unsure about a product or design choice, emit a DECISION block and stop. Do not invent a choice. Do not emit PLAN_ISSUE or SESSION_DONE while questions are open.",
+		"Format (examples indented so quoting this contract does not trigger the host):",
+		"  DECISION:",
+		"  id: q1",
+		"  prompt: <one question>",
+		"  options: A|B|Need more data",
+		"",
+		"Before you finish, load the `scrutinize` skill (`/scrutinize`) when available and review the plan against the real seams in this repo (packages, entry points, existing tests). If the skill is unavailable, still: (1) intent — is there a simpler approach; (2) trace the proposed flow against code you read; (3) verify claims and edge cases; (4) report findings with evidence.",
+		"Only treat the plan as ready when the verdict is ship (or after you revised to reach ship).",
+		"In your final reply include exactly one unindented line of the form SCRUTINIZE_VERDICT: followed by ship, fix-then-ship, rework, or reject — plus 2–5 lines of evidence. A bare LGTM does not count.",
+		"",
+		"Only after a ship verdict, emit an unindented PLAN_ISSUE block (the host files it; do not run gh):",
+		"  PLAN_ISSUE:",
+		"  title: <short title, no leading #>",
+		"",
+		"  <plan markdown: context, approach, risks>",
+		"",
+		"  ## Breakdown",
+		"  <!-- grokwork:tasklist -->",
+		"  - [ ] first implementable sub-task",
+		"  - [ ] second sub-task",
+		"",
+		"Keep each Breakdown item one line, self-contained, implementable by one agent session. Typical size: 3–8 items.",
+		"End with an unindented SESSION_DONE: only when the verdict is ship, PLAN_ISSUE is present, and you asked no DECISION questions.",
+		"",
+		"Filesystem scope: stay inside this unit's cwd/worktree and the project repo for code inspection.",
+		"Do NOT scan the user's home directory or protected folders for secrets.",
+		"",
+	}
+	if branch != "" {
+		lines = append([]string{
+			"Isolated git worktree for this workflow unit / thread.",
+			"Branch: " + branch + " (do not push).",
+			"",
+		}, lines...)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // AttributionInput is pure input for ship attribution (no I/O).

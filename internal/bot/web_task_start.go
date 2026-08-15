@@ -23,7 +23,7 @@ type StartWebTaskOpts struct {
 	// same local short name Discord uses for a new thread, then SummarizeTitle
 	// may replace it asynchronously. An explicit Title is never overwritten.
 	Title string
-	Mode  string // "" | "fix" | "investigate" | "explain"
+	Mode  string // "" | "fix" | "investigate" | "explain" | "plan"
 	// Model names the model this session should run on, stamping the agent that
 	// owns it. Empty means "whatever config says", which stays unstamped so the
 	// existing resolve-at-run-start path applies. Requires builder-class caps.
@@ -76,9 +76,14 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 		goal = clampGoal(threadNameFromPrompt(prompt, opts.Actor.DisplayName))
 	}
 	kind := webTaskKind(opts.Mode)
-	// Hard-block Fix & ship without builder-class caps (no silent coerce).
+	// Hard-block Fix & ship / Plan without builder-class caps (no silent coerce).
 	if wantsFixStartMode(opts.Mode, b.cfg.ProjectDefaultMode(project)) {
 		if err := b.requireCanStartFix(project, opts.Actor.ID); err != nil {
+			return FixStartResult{}, err
+		}
+	}
+	if WantsPlanStartMode(opts.Mode) {
+		if err := b.requireCanStartPlan(project, opts.Actor.ID); err != nil {
 			return FixStartResult{}, err
 		}
 	}
@@ -246,9 +251,17 @@ func webTaskKind(mode string) Kind {
 		return KindStartInvestigate
 	case ModeExplain:
 		return KindStartExplain
+	case ModePlan:
+		return KindStartPlan
 	default:
 		return KindTask
 	}
+}
+
+// WantsPlanStartMode reports whether a start mode requests Plan (new GitHub
+// issue, no ship). Empty mode is never plan — plan is not a project default.
+func WantsPlanStartMode(mode string) bool {
+	return strings.ToLower(strings.TrimSpace(mode)) == ModePlan
 }
 
 // WantsFixStartMode reports whether a start mode (or project default when
@@ -285,6 +298,30 @@ func (b *Bot) requireCanStartFix(project, userID string) error {
 		return ErrCannotStartFix
 	}
 	return nil
+}
+
+// requireCanStartPlan is the same CanShip gate as fix, with a plan-specific error.
+func (b *Bot) requireCanStartPlan(project, userID string) error {
+	if err := b.requireCanStartFix(project, userID); err != nil {
+		return ErrCannotStartPlan
+	}
+	return nil
+}
+
+// refusePlanOnExistingMode fails when the unit already has a Mode other than plan.
+func (b *Bot) refusePlanOnExistingMode(threadID string) error {
+	if b == nil || b.sessions == nil {
+		return nil
+	}
+	e, ok := b.sessions.Get(threadID)
+	if !ok {
+		return nil
+	}
+	mode := strings.TrimSpace(e.Mode)
+	if mode == "" || mode == ModePlan {
+		return nil
+	}
+	return fmt.Errorf("%w (mode=%s)", ErrPlanModeConflict, mode)
 }
 
 // bindWebStartedSession stamps workflow metadata + owner onto a web-started unit.

@@ -404,6 +404,12 @@ func (s *Server) apiStartSession(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, err)
 		return
 	}
+	if bot.WantsPlanStartMode(body.Mode) && !effective.CanShip() {
+		err := errAPI(http.StatusForbidden, "forbidden", "plan requires ship-class effective caps")
+		s.auditAPI(&rec, audit.ActionSessionStart, err, map[string]any{"project": project, "mode": body.Mode})
+		writeAPIError(w, err)
+		return
+	}
 	if strings.TrimSpace(body.Model) != "" && !effective.CanShip() {
 		err := errAPI(http.StatusForbidden, "forbidden", "model selection requires ship-class effective caps")
 		s.auditAPI(&rec, audit.ActionSessionStart, err, map[string]any{"project": project})

@@ -121,14 +121,15 @@ func (b *Bot) StartContinue(opts ContinueOpts) (FixStartResult, error) {
 	if prompt == "" {
 		return FixStartResult{}, ErrEmptyPrompt
 	}
-	// Soft prefix so model keeps contract on follow-ups from web.
-	if !strings.Contains(strings.ToLower(prompt), "do not merge") {
-		prompt = prompt + "\n\n(When you open or update a PR: do not merge.)"
-	}
 
 	e, ok := b.sessions.Get(threadID)
 	if !ok {
 		return FixStartResult{}, ErrUnknownThread
+	}
+	// Soft prefix so model keeps contract on follow-ups from web. Plan sessions
+	// never open a PR — do not tell the continue prompt otherwise.
+	if e.Mode != ModePlan && !strings.Contains(strings.ToLower(prompt), "do not merge") {
+		prompt = prompt + "\n\n(When you open or update a PR: do not merge.)"
 	}
 	project := strings.TrimSpace(opts.Project)
 	if project == "" {

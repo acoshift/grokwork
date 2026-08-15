@@ -31,15 +31,16 @@
           <option value="fix">Fix &amp; ship</option>{{end}}
           <option value="investigate">Investigate</option>
           <option value="explain">Explain</option>
+          <option value="plan">Plan</option>
         {{else}}
           <option value="investigate" selected>Investigate</option>
           <option value="explain">Explain</option>
         {{end}}
       </select>
       {{if .CanStartFixMode}}
-      <p class="rail-note" style="margin-top:0.4rem">Investigate never opens PRs or ships.</p>
+      <p class="rail-note" style="margin-top:0.4rem">Investigate never opens PRs or ships. Plan reads the repo, asks if needed, then opens a GitHub issue labelled <span class="mono">plan</span> — no code edits, no PR.</p>
       {{else}}
-      <p class="rail-note" style="margin-top:0.4rem">Fix &amp; ship requires builder-class project caps (<span class="mono">startSessions</span> + <span class="mono">githubWrites</span>). Investigate never opens PRs or ships.</p>
+      <p class="rail-note" style="margin-top:0.4rem">Fix &amp; ship and Plan require builder-class project caps (<span class="mono">startSessions</span> + <span class="mono">githubWrites</span>). Investigate never opens PRs or ships.</p>
       {{end}}
     </div>
     {{if .CanSelectModel}}

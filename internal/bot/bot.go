@@ -941,7 +941,7 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleWatch(s, m)
 	case KindUnwatch:
 		b.handleUnwatch(s, m)
-	case KindStartInvestigate, KindStartFix, KindStartExplain, KindTask:
+	case KindStartInvestigate, KindStartFix, KindStartExplain, KindStartPlan, KindTask:
 		log.Printf("task: starting async for msg=%s kind=%d", m.ID, parsed.Kind)
 		// Immediate typing indicator while we open the thread / claim the queue.
 		go func() {
@@ -1487,11 +1487,14 @@ func (b *Bot) handleTaskOrigin(
 	}
 
 	// Start commands: ensure prompt body is the task text.
-	if parsed.Kind == KindStartInvestigate || parsed.Kind == KindStartFix || parsed.Kind == KindStartExplain {
+	if parsed.Kind == KindStartInvestigate || parsed.Kind == KindStartFix || parsed.Kind == KindStartExplain || parsed.Kind == KindStartPlan {
 		if strings.TrimSpace(parsed.Prompt) == "" {
 			parsed.Prompt = "Investigate the codebase for the issue described in this thread."
 			if parsed.Kind == KindStartFix {
 				parsed.Prompt = "Continue the task for this thread."
+			}
+			if parsed.Kind == KindStartPlan {
+				parsed.Prompt = "Plan the work described in this thread."
 			}
 		}
 	}
@@ -1552,6 +1555,20 @@ func (b *Bot) handleTaskOrigin(
 		switch parsed.Kind {
 		case KindStartInvestigate, KindStartExplain:
 			// Allow when allowlisted; investigate/explain never ship.
+		case KindStartPlan:
+			if !caps.CanShip() {
+				deny("You're not allowed to start plan tasks on this project (need startSessions and githubWrites).")
+				return
+			}
+			if err := b.refusePlanOnExistingMode(threadID); err != nil {
+				b.auditCmd(audit.ActionSessionStart, item.actor, threadID, proj.Name, err,
+					startDetail(nil))
+				b.postOrEditThreadStatus(s, threadID, statusMsgID, err.Error(), actionBarDone(threadID, b.sessionWebURL(threadID)))
+				if b.runs != nil {
+					b.runs.RemoveTaskFiles(threadID, taskID)
+				}
+				return
+			}
 		case KindStartFix:
 			// Mode=case: /start fix is escalate (FileEscalation or builder-class).
 			// Non-case: hard-require CanShip — no silent coerce to investigate.
@@ -1979,6 +1996,8 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		prefix = investigatePromptPrefix(wtBranch, pol.InvestigateShell)
 	case "explain":
 		prefix = explainPromptPrefix()
+	case "plan":
+		prefix = planPromptPrefix(wtBranch)
 	case "none":
 		// Should not reach here (bail above); refuse remote prefix.
 		prefix = investigatePromptPrefix(wtBranch, pol.InvestigateShell)
@@ -2168,11 +2187,26 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	// manual done/abandoned label the agent requested in the reply.
 	// Abandon also gates direct-ship below: shipDirectAfterTask would otherwise
 	// stamp Label=done and maybeRemoveDirectWorktree would delete the worktree.
+	// Plan mode defers SESSION_DONE until the host has filed the issue (and
+	// persisted any DECISION questions). Abandon still applies immediately.
 	markerReply := result.Text
 	if markerReply == "" {
 		markerReply = streamer.Text()
 	}
-	markerKind, _ := b.applySessionLifecycleMarkers(threadID, markerReply, actor.String())
+	markerSrc := markerReply
+	if pol.PrefixKind == "plan" {
+		if _, rem, ok := parsePlanIssue(markerReply); ok {
+			markerSrc = rem
+		}
+	}
+	var markerKind sessionMarker
+	if pol.PrefixKind == "plan" {
+		if kind, _ := parseSessionLifecycleMarker(markerSrc); kind == sessionMarkerAbandon {
+			markerKind, _ = b.applySessionLifecycleMarkers(threadID, markerSrc, actor.String())
+		}
+	} else {
+		markerKind, _ = b.applySessionLifecycleMarkers(threadID, markerReply, actor.String())
+	}
 
 	header := fmt.Sprintf("Done · **%s** · %s", proj.Name, formatElapsed(elapsed))
 	switch {
@@ -2273,7 +2307,13 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			}
 		}
 		// Wave 2 decision cards from DECISION: blocks
-		if specs := parseDecisionBlocks(replyText); len(specs) > 0 {
+		decisionText := replyText
+		if pol.PrefixKind == "plan" {
+			if _, rem, ok := parsePlanIssue(replyText); ok {
+				decisionText = rem
+			}
+		}
+		if specs := parseDecisionBlocks(decisionText); len(specs) > 0 {
 			for _, sp := range specs {
 				text := sp.Prompt
 				if len(sp.Options) > 0 {
@@ -2281,9 +2321,30 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 				}
 				b.appendTimeline(threadID, timeline.KindDecision, timeline.Notice{Text: text})
 			}
-			// Buttons are Discord-only; the questions themselves are not.
+			// Buttons are Discord-only; questions persist on web-native too.
 			if present {
 				b.postDecisionCards(s, threadID, specs)
+			} else {
+				b.storeOpenQuestions(threadID, specs)
+			}
+		}
+		if pol.PrefixKind == "plan" {
+			out := b.maybeFilePlanIssue(threadID, proj.Name, proj.Cwd, actor, replyText,
+				result.Cancelled, result.MaxTurnsReached, result.Code)
+			if out.Note != "" && !out.Filed {
+				b.appendTimeline(threadID, timeline.KindNotice, timeline.Notice{Level: "info", Text: out.Note})
+				if present {
+					sendChunks(s, threadID, out.Note)
+				}
+			} else if out.Filed && present && out.Note != "" {
+				sendChunks(s, threadID, out.Note)
+			}
+			if planSessionDoneAllowed(out) {
+				if kind, _ := parseSessionLifecycleMarker(markerSrc); kind == sessionMarkerDone {
+					if note := b.applySessionDoneMarker(threadID, actor.String()); note != "" && present {
+						sendChunks(s, threadID, note)
+					}
+				}
 			}
 		}
 		// Case shipping: first open PR → phase shipping
@@ -2482,6 +2543,9 @@ func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode
 	case KindStartExplain:
 		forceInv = false
 		reqMode = ModeExplain
+	case KindStartPlan:
+		forceInv = false
+		reqMode = ModePlan
 	case KindStartFix:
 		reqMode = ModeFix
 	}
@@ -2614,6 +2678,10 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string) {
 			forceInv = false
 			reqRunKind = RunKindExplain
 		}
+	case KindStartPlan:
+		reqMode = ModePlan
+		reqRunKind = RunKindPlan
+		forceInv = false
 	case KindStartFix:
 		if sessionMode == ModeCase {
 			// Same as /escalate (K17): require escalate caps; never silently promote.

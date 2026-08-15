@@ -105,6 +105,36 @@ func TestBuildRunPolicySafeTeamUnmappedInvestigator(t *testing.T) {
 	}
 }
 
+func TestBuildRunPolicyPlanNonShipFileOnly(t *testing.T) {
+	pol := BuildRunPolicy(PolicyInput{
+		RequestedMode: ModePlan,
+		Caps:          config.BuiltinCapabilityTemplates["builder"],
+		ConfigYolo:    true,
+		ShipMode:      sessionstore.ShipModeDirect,
+	})
+	if pol.Mode != ModePlan || pol.RunKind != RunKindPlan {
+		t.Fatalf("mode=%q runKind=%q", pol.Mode, pol.RunKind)
+	}
+	if pol.AllowPR || pol.AllowDirectShip || pol.AllowDirectIntegrate {
+		t.Fatalf("plan must not ship: %+v", pol)
+	}
+	if pol.Yolo || pol.IncludeGHToken {
+		t.Fatalf("plan yolo/token: yolo=%v token=%v", pol.Yolo, pol.IncludeGHToken)
+	}
+	if pol.Tools == nil || *pol.Tools == "" {
+		t.Fatal("plan Tools must be file-only allowlist")
+	}
+	if pol.InvestigateShell {
+		t.Fatal("plan must not grant shell")
+	}
+	if pol.PrefixKind != "plan" {
+		t.Fatalf("PrefixKind=%q", pol.PrefixKind)
+	}
+	if strings.Contains(*pol.Tools, "run_terminal_command") || strings.Contains(*pol.Tools, "Bash") {
+		t.Fatalf("plan tools must not include shell: %s", *pol.Tools)
+	}
+}
+
 func TestInvestigatePromptNoPR(t *testing.T) {
 	p := investigatePromptPrefix("grok/discord/1", false)
 	for _, bad := range []string{"gh pr create` (or", "Open a pull request with"} {

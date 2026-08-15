@@ -512,6 +512,7 @@ func TestPhaseLaneFor(t *testing.T) {
 		{"", false, "read → edit → test → PR"},
 		{"investigate", false, "read → dig → report"},
 		{"explain", false, "draft"},
+		{"plan", false, "read → draft → file"},
 		{"none", false, ""},
 	}
 	for _, tc := range cases {

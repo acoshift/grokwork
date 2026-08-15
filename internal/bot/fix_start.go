@@ -22,6 +22,12 @@ var (
 	// ErrCannotStartFix is returned when the actor lacks builder-class ship caps
 	// (startSessions + githubWrites) for an explicit fix / Fix-with-Grok start.
 	ErrCannotStartFix = errors.New("you're not allowed to start fix tasks on this project (need startSessions and githubWrites)")
+	// ErrCannotStartPlan is the same gate as fix: filing a GitHub plan issue is a write.
+	ErrCannotStartPlan = errors.New("you're not allowed to start plan tasks on this project (need startSessions and githubWrites)")
+	// ErrPlanModeConflict is /start plan (or mode=plan) on a unit already stamped
+	// with another Mode. ensureSessionMode is first-writer-wins, so allowing the
+	// run would plan once then let the next KindTask follow-up ship.
+	ErrPlanModeConflict = errors.New("this session is already in another mode — start a new session to plan")
 	// ErrCannotSelectModel is returned when the actor names a model without
 	// builder-class caps. Choosing the model chooses the spend, so it sits behind
 	// the same gate as shipping rather than plain startSessions.

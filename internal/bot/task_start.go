@@ -143,12 +143,12 @@ func createWorkflowThread(api threadAPI, channelID, title, starterContent string
 // StartTaskOpts starts a Grok run on an existing thread (Discord or web-created).
 // Presentation is optional: nil DG → no Discord posts (still runs Grok + history).
 type StartTaskOpts struct {
-	ThreadID        string
-	Proj            projectRef
-	Prompt          string
-	Actor           Actor
-	Source string // SourceDiscord | SourceWeb
-	DG     *discordgo.Session
+	ThreadID string
+	Proj     projectRef
+	Prompt   string
+	Actor    Actor
+	Source   string // SourceDiscord | SourceWeb
+	DG       *discordgo.Session
 	// AttachmentPaths are local files for the model prompt (Discord downloads or
 	// web staging). StartTask takes ownership: sources staged under
 	// <DataDir>/attachments/web are deleted once copied into the run-journal tree;
@@ -159,8 +159,8 @@ type StartTaskOpts struct {
 	CreatedByName   string
 	DiscordURL      string
 	// Kind selects the task Kind for policy snapshotting (zero value → KindTask).
-	// Web starts map their mode select onto KindStartInvestigate/KindStartExplain
-	// exactly as Discord "/start investigate|explain" does.
+	// Web starts map their mode select onto KindStartInvestigate/KindStartExplain/KindStartPlan
+	// exactly as Discord "/start investigate|explain|plan" does.
 	Kind Kind
 }
 
@@ -227,9 +227,23 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 			return 0, fmt.Errorf("case is closed — use /reopen first")
 		}
 	}
-	// Defense in depth: explicit KindStartFix requires CanShip (web /start fix parity).
+	// Defense in depth: explicit KindStartFix/Plan requires CanShip (web /start parity).
 	if kind == KindStartFix {
 		if err := b.requireCanStartFix(opts.Proj.Name, opts.Actor.ID); err != nil {
+			if b.runs != nil {
+				b.runs.RemoveTaskFiles(threadID, taskID)
+			}
+			return 0, err
+		}
+	}
+	if kind == KindStartPlan {
+		if err := b.requireCanStartPlan(opts.Proj.Name, opts.Actor.ID); err != nil {
+			if b.runs != nil {
+				b.runs.RemoveTaskFiles(threadID, taskID)
+			}
+			return 0, err
+		}
+		if err := b.refusePlanOnExistingMode(threadID); err != nil {
 			if b.runs != nil {
 				b.runs.RemoveTaskFiles(threadID, taskID)
 			}
