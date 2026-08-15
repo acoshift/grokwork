@@ -49,6 +49,12 @@ type fileRow struct {
 	PreviewKind  string // "", "image", "pdf"
 	Downloadable bool
 	NativeGoogle bool
+	// Icon picks the row glyph (files.tmpl "fileIcon"): folder, image, pdf,
+	// gdoc, gsheet, gslides, text, code, archive, video, audio, file.
+	Icon string
+	// KindLabel is the short human type shown in the viewer meta line
+	// ("PNG image", "PDF", "Google Sheet").
+	KindLabel string
 }
 
 // filesPreview is the in-app lightbox opened from ?preview= on the Files page.
@@ -57,6 +63,9 @@ type filesPreview struct {
 	Kind     string // image | pdf
 	Src      string // byte-stream URL loaded inside the dialog
 	Download string
+	// Meta is the viewer's one-line description ("PDF · 4.0 KiB · 2026-08-01
+	// 10:00"); empty when the object was not in the listing.
+	Meta string
 }
 
 // fileCrumb is one breadcrumb segment on the Files page.
@@ -239,15 +248,20 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 		}
 		if e.IsDir {
 			row.Path = filestore.AppendName(subPath, e.Name)
+			d.FilesDirCount++
 		} else {
 			row.Object = filestore.AppendName(subPath, e.Name)
 			row.Downloadable = !row.NativeGoogle
 			if row.Downloadable {
 				row.PreviewKind = filePreviewKind(e.Name, e.ContentType)
 			}
+			d.FilesFileCount++
+			d.FilesBytes += e.Size
 		}
+		row.Icon, row.KindLabel = fileIconKind(e.Name, e.ContentType, e.IsDir)
 		d.FilesRows = append(d.FilesRows, row)
 	}
+	d.FilesBytesHuman = formatFileBytes(d.FilesBytes)
 	d.FilesPreview = filesPreviewFromQuery(project, ctx.FormValue("preview"), d.FilesRows)
 	return s.viewPage(ctx, "files", d)
 }
@@ -257,13 +271,13 @@ func filesPreviewFromQuery(project, raw string, rows []fileRow) *filesPreview {
 	if object == "" || filestore.ValidateObjectPath(object) != nil {
 		return nil
 	}
-	kind, name := "", ""
+	kind, name, meta := "", "", ""
 	if segs, err := filestore.SplitPath(object); err == nil && len(segs) > 0 {
 		name = segs[len(segs)-1]
 	}
 	for _, row := range rows {
 		if row.Object == object {
-			kind, name = row.PreviewKind, row.Name
+			kind, name, meta = row.PreviewKind, row.Name, row.MetaLine()
 			break
 		}
 	}
@@ -279,7 +293,86 @@ func filesPreviewFromQuery(project, raw string, rows []fileRow) *filesPreview {
 		Kind:     kind,
 		Src:      "/projects/" + url.PathEscape(project) + "/files/preview?object=" + q,
 		Download: "/projects/" + url.PathEscape(project) + "/files/download?object=" + q,
+		Meta:     meta,
 	}
+}
+
+// MetaLine is the "PDF · 4.0 KiB · 2026-08-01 10:00" strip under a file's
+// name — the row's mobile subtitle and the viewer's header both print it, so
+// the two cannot phrase the same file differently.
+func (r fileRow) MetaLine() string {
+	var parts []string
+	if r.KindLabel != "" && !r.IsDir {
+		parts = append(parts, r.KindLabel)
+	}
+	if !r.IsDir {
+		parts = append(parts, r.SizeHuman)
+	}
+	if r.UpdatedText != "" {
+		parts = append(parts, r.UpdatedText)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// fileIconKind maps a listing entry onto a row glyph and a short type label.
+// Icons come from a closed set the template knows how to draw; anything
+// unrecognised is a plain "file", never an empty glyph.
+func fileIconKind(name, ctype string, isDir bool) (icon, label string) {
+	if isDir {
+		return "folder", "Folder"
+	}
+	ct := strings.ToLower(strings.TrimSpace(ctype))
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
+	}
+	switch ct {
+	case "application/vnd.google-apps.document":
+		return "gdoc", "Google Doc"
+	case "application/vnd.google-apps.spreadsheet":
+		return "gsheet", "Google Sheet"
+	case "application/vnd.google-apps.presentation":
+		return "gslides", "Google Slides"
+	}
+	if isGoogleNativeMIME(ct) {
+		return "gdoc", "Google file"
+	}
+	ext := strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))
+	upper := strings.ToUpper(ext)
+	switch {
+	case ct == "application/pdf" || ext == "pdf":
+		return "pdf", "PDF"
+	case strings.HasPrefix(ct, "image/"), ext == "png", ext == "jpg", ext == "jpeg", ext == "gif", ext == "webp", ext == "svg", ext == "heic", ext == "bmp", ext == "tiff", ext == "tif":
+		if upper == "" {
+			return "image", "Image"
+		}
+		return "image", upper + " image"
+	case strings.HasPrefix(ct, "video/"), ext == "mp4", ext == "mov", ext == "webm", ext == "mkv":
+		return "video", "Video"
+	case strings.HasPrefix(ct, "audio/"), ext == "mp3", ext == "wav", ext == "m4a", ext == "ogg", ext == "flac":
+		return "audio", "Audio"
+	case ext == "zip", ext == "gz", ext == "tgz", ext == "tar", ext == "7z", ext == "rar", ext == "bz2", ext == "xz",
+		ct == "application/zip", ct == "application/gzip", ct == "application/x-tar":
+		return "archive", "Archive"
+	case ext == "go", ext == "js", ext == "ts", ext == "tsx", ext == "jsx", ext == "py", ext == "rb", ext == "rs",
+		ext == "java", ext == "kt", ext == "swift", ext == "c", ext == "h", ext == "cpp", ext == "cs", ext == "sh",
+		ext == "sql", ext == "html", ext == "css", ext == "json", ext == "yaml", ext == "yml", ext == "toml", ext == "xml":
+		return "code", upper
+	case strings.HasPrefix(ct, "text/"), ext == "txt", ext == "md", ext == "csv", ext == "log", ext == "rtf":
+		if upper == "" {
+			return "text", "Text"
+		}
+		return "text", upper
+	case ext == "doc", ext == "docx", ext == "odt", ext == "pages":
+		return "text", upper
+	case ext == "xls", ext == "xlsx", ext == "ods", ext == "numbers":
+		return "gsheet", upper
+	case ext == "ppt", ext == "pptx", ext == "odp", ext == "key":
+		return "gslides", upper
+	}
+	if upper != "" && len(upper) <= 6 {
+		return "file", upper
+	}
+	return "file", "File"
 }
 
 // postFileUpload is POST /projects/{project}/files/upload.

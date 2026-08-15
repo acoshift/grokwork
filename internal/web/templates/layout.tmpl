@@ -2053,18 +2053,220 @@
       .gw-confirm-modal[open]::backdrop { animation: none; }
     }
 
-    /* ── Files preview + drop zone ───────────────────────────────────── */
+    /* ── Files: uploader, listing panel, viewer ──────────────────────
+       A file manager in the app's own vocabulary: the listing is a card
+       whose header is the location (crumb + folder name + counts), rows
+       carry a hairline glyph per file kind, and the uploader is one dashed
+       strip that is itself the <label> — click or drop anywhere on it. The
+       viewer is a full-screen dialog with a dotted stage so transparent
+       images still read, and prev/next across the folder. Everything is
+       drawn from the monochrome ramp; the only accent is the link colour
+       the rest of the app already uses. */
+    .files-src { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.45rem; }
+    .files-src-tag {
+      font-size: 0.62rem;
+      font-weight: 650;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: var(--surface-l2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.08rem 0.5rem;
+      line-height: 1.5;
+    }
+    .fico {
+      width: 1.15rem;
+      height: 1.15rem;
+      flex-shrink: 0;
+      color: var(--muted);
+      vertical-align: -0.28em;
+    }
+    .fico-folder { color: var(--text); }
+    /* Uploader */
+    .files-upload { padding: 0.8rem 0.85rem 0.85rem; }
     .files-drop {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.85rem 1rem;
       border: 1px dashed var(--border-strong);
       border-radius: var(--radius);
-      padding: 0.7rem 0.85rem;
-      background: var(--bg);
+      background: var(--bg-secondary);
+      cursor: pointer;
+      position: relative;
+      transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+    }
+    .files-drop:hover { border-color: var(--hover-border); background: var(--surface-l1); }
+    .files-drop:focus-within {
+      border-style: solid;
+      border-color: var(--focus-border);
+      box-shadow: 0 0 0 3px var(--ring);
     }
     .files-drop.is-drag {
+      border-style: solid;
       border-color: var(--text);
-      box-shadow: inset 0 0 0 1px var(--text);
+      background: var(--surface);
+      box-shadow: inset 0 0 0 1px var(--text), 0 0 0 4px var(--ring);
     }
-    .files-drop input[type="file"] { width: 100%; }
+    .files-drop.is-drag .files-drop-glyph { transform: translateY(-2px); color: var(--text); }
+    .files-drop-glyph {
+      flex-shrink: 0;
+      width: 2.35rem;
+      height: 2.35rem;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      transition: transform 0.15s ease, color 0.15s ease;
+    }
+    .files-drop-glyph svg { width: 1.2rem; height: 1.2rem; }
+    .files-drop-text { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; }
+    .files-drop-t { font-size: 0.93rem; color: var(--text); letter-spacing: -0.01em; }
+    .files-drop-t strong { font-weight: 600; }
+    .files-drop-browse { color: var(--accent); font-weight: 550; text-decoration: underline; text-underline-offset: 2px; }
+    .files-drop-s { font-size: 0.76rem; color: var(--muted); overflow-wrap: anywhere; }
+    .files-drop-s .mono { font-size: 0.72rem; }
+    /* The native control stays in the tab order and keeps its validation
+       anchor; it just is not the thing you look at. */
+    .files-drop-input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+      /* The label already forwards clicks; the input must not double-open. */
+      pointer-events: none;
+    }
+    .files-chips { margin: 0.6rem 0.15rem 0; }
+    .files-upload-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-top: 0.7rem;
+    }
+    .files-upload-foot .check { margin: 0; }
+    /* Listing panel */
+    .files-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-1);
+      overflow: hidden;
+    }
+    .files-panel-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 0.35rem 1rem;
+      padding: 0.85rem 1rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+    }
+    .files-loc { min-width: 0; }
+    .files-loc .pr-crumb { margin: 0 0 0.2rem; font-size: 0.78rem; }
+    .files-loc h2 {
+      margin: 0;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      overflow-wrap: anywhere;
+    }
+    .files-loc h2 .fico { width: 1.2rem; height: 1.2rem; }
+    .files-count {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .files-count .muted-soft { color: var(--muted-soft); }
+    .files-clip { margin: 0; padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.8rem; }
+    /* The table inside the panel drops its own card chrome — the panel is the card. */
+    .files-panel .table-scroll { border: 0; border-radius: 0; box-shadow: none; }
+    .files-panel .m-rows { border: 0; border-radius: 0; box-shadow: none; }
+    .files-panel tr:last-child td { border-bottom: none; }
+    /* Buttons are taller than a text line; middle keeps a row's name, size
+       and actions on one optical line. */
+    .files-table td { vertical-align: middle; }
+    td.files-name { position: relative; }
+    td.files-name .fico { margin-right: 0.45rem; }
+    td.files-name .files-note {
+      display: block;
+      margin: 0.1rem 0 0 1.6rem;
+      font-family: var(--font);
+      font-size: 0.74rem;
+      font-weight: 400;
+      color: var(--muted);
+      white-space: normal;
+    }
+    /* Kind labels are for the eye, not the scan: they sit inline after the
+       name and surface on the hovered row, so a list of forty PDFs is not
+       forty repeated words. Opacity, not display — the column must not
+       re-measure on hover. */
+    td.files-name .files-note-kind {
+      display: inline;
+      margin: 0 0 0 0.55rem;
+      color: var(--muted-soft);
+      opacity: 0;
+      transition: opacity 0.12s ease;
+    }
+    tbody tr:hover td.files-name .files-note-kind { opacity: 1; }
+    td.files-size { text-align: right; }
+    .files-table th:nth-child(2) { text-align: right; }
+    .files-actions .btn-compact + .btn-compact,
+    .files-actions .btn-compact + form,
+    .files-actions form + form { margin-left: 0.35rem; }
+    .files-del {
+      display: inline-grid;
+      place-items: center;
+      width: 1.85rem;
+      height: 1.85rem;
+      padding: 0;
+    }
+    .files-del svg { width: 0.95rem; height: 0.95rem; }
+    /* Phone rows: whole row is the hit target via an absolutely positioned
+       link (the visible name/meta stack stays plain text so it clamps and
+       wraps like every other m-row); the delete button floats above it via
+       .m-row-act's own z-index. */
+    .files-mrow { position: relative; }
+    .files-mrow-hit { position: absolute; inset: 0; z-index: 0; border-radius: 0; }
+    .files-mrow-hit:focus-visible { outline: 2px solid var(--focus-border); outline-offset: -2px; }
+    .files-mrow:has(.files-mrow-hit):hover { background: var(--surface-l1); }
+    .files-mrows .m-row-act .files-del { width: 2rem; height: 2rem; }
+    /* Tap affordance: folders get a.m-row's chevron; a file row is a <div>
+       (its hit target is the overlay link), so it draws its own — chevron
+       for "opens the viewer", a down-arrow for "downloads". */
+    .files-mrow-chev {
+      flex-shrink: 0;
+      width: 0.55rem;
+      height: 0.55rem;
+      border-right: 2px solid var(--muted-soft);
+      border-top: 2px solid var(--muted-soft);
+      transform: rotate(45deg);
+      margin: 0 0.15rem 0 -0.1rem;
+    }
+    .files-mrow-dl { flex-shrink: 0; width: 1rem; height: 1rem; color: var(--muted-soft); line-height: 0; }
+    .files-mrow-dl svg { width: 1rem; height: 1rem; }
+    .files-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.25rem;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 2.4rem 1.25rem;
+    }
+    .files-empty-glyph .fico { width: 1.7rem; height: 1.7rem; color: var(--muted-soft); margin-bottom: 0.35rem; }
+    .files-empty-hint { font-size: 0.8rem; color: var(--muted-soft); }
+    /* Viewer */
     .files-preview-dialog {
       border: 0;
       border-radius: 0;
@@ -2075,58 +2277,188 @@
       max-width: 100vw;
       height: 100dvh;
       max-height: 100dvh;
-      background: var(--surface);
+      background: var(--bg);
       color: var(--text);
       overflow: hidden;
     }
-    .files-preview-dialog::backdrop {
-      background: hsl(0 0% 0% / 55%);
-    }
+    .files-preview-dialog::backdrop { background: hsl(0 0% 0% / 55%); }
+    .files-preview-dialog[open] { animation: fpIn 0.16s ease-out; }
+    @keyframes fpIn { from { opacity: 0; } to { opacity: 1; } }
     .files-preview-shell {
       margin: 0;
       height: 100%;
       display: flex;
       flex-direction: column;
-      padding: 0.75rem 1rem 0.85rem;
-      gap: 0.7rem;
+      padding: 0.6rem 0.85rem 0.6rem;
+      gap: 0.6rem;
       box-sizing: border-box;
     }
     .files-preview-head {
       display: flex;
       align-items: center;
-      gap: 0.55rem;
+      gap: 0.5rem;
       flex-shrink: 0;
+      min-height: 2.4rem;
     }
+    .files-preview-glyph {
+      flex-shrink: 0;
+      width: 2.1rem;
+      height: 2.1rem;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .files-preview-glyph .fp-g { display: none; line-height: 0; }
+    .files-preview-glyph[data-kind="image"] .fp-g-image,
+    .files-preview-glyph[data-kind="pdf"] .fp-g-pdf { display: block; }
+    .files-preview-glyph .fico { color: var(--text); width: 1.2rem; height: 1.2rem; vertical-align: 0; }
+    .files-preview-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0; }
     .files-preview-title {
       margin: 0;
-      flex: 1;
-      min-width: 0;
-      font-size: 1.02rem;
+      font-size: 0.98rem;
       font-weight: 600;
       letter-spacing: -0.02em;
-      overflow-wrap: anywhere;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
+    .files-preview-meta {
+      font-size: 0.74rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .files-preview-meta:empty { display: none; }
+    .files-preview-count {
+      flex-shrink: 0;
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      padding: 0 0.35rem;
+    }
+    .files-preview-act { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .files-preview-act svg { width: 0.95rem; height: 0.95rem; flex-shrink: 0; }
+    .files-preview-x {
+      flex-shrink: 0;
+      width: 2.1rem;
+      height: 2.1rem;
+      min-width: 0;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid transparent;
+    }
+    .files-preview-x:hover { background: var(--surface-l2); color: var(--text); border-color: var(--border); }
+    .files-preview-x svg { width: 1.1rem; height: 1.1rem; }
     .files-preview-body {
       flex: 1;
       min-height: 0;
-      background: var(--bg);
+      position: relative;
+      background-color: var(--surface);
+      /* Dot lattice: a transparent PNG still shows its edges, and a stage
+         that is not flat white stops a white PDF page from dissolving into
+         the chrome. */
+      background-image: radial-gradient(hsl(var(--black) / 9%) 1px, transparent 1.2px);
+      background-size: 18px 18px;
+      background-position: 9px 9px;
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: auto;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    .files-preview-body img {
-      max-width: 100%;
-      max-height: 100%;
-      display: block;
+    @media (prefers-color-scheme: dark) {
+      .files-preview-body { background-image: radial-gradient(hsl(0 0% 100% / 8%) 1px, transparent 1.2px); }
     }
+    .files-preview-body img {
+      max-width: calc(100% - 1.5rem);
+      max-height: calc(100% - 1.5rem);
+      object-fit: contain;
+      display: block;
+      border-radius: 4px;
+      box-shadow: var(--shadow-2);
+      opacity: 0;
+      transition: opacity 0.18s ease;
+    }
+    .files-preview-body img.is-loaded { opacity: 1; }
     .files-preview-body iframe {
       width: 100%;
       height: 100%;
       border: 0;
       background: var(--surface);
+    }
+    /* display:block above would beat the UA [hidden] rule, and an src-less
+       <img> with alt text then still lays out its alt inline (invisible at
+       opacity 0, but wide enough to push the iframe off-centre). */
+    .files-preview-body img[hidden],
+    .files-preview-body iframe[hidden] { display: none; }
+    .files-preview-loading {
+      position: absolute;
+      inset: 50% auto auto 50%;
+      transform: translate(-50%, -50%);
+      font-size: 0.8rem;
+      color: var(--muted);
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      pointer-events: none;
+    }
+    .files-preview-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 2;
+      width: 2.4rem;
+      height: 2.4rem;
+      min-width: 0;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-2);
+      opacity: 0.75;
+      transition: opacity 0.12s ease, transform 0.12s ease;
+    }
+    .files-preview-nav:hover { opacity: 1; background: var(--surface); }
+    .files-preview-nav:disabled { opacity: 0.25; cursor: default; }
+    .files-preview-nav svg { width: 1.15rem; height: 1.15rem; }
+    .files-preview-prev { left: 0.6rem; }
+    .files-preview-next { right: 0.6rem; }
+    .files-preview-foot {
+      margin: 0;
+      flex-shrink: 0;
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--muted-soft);
+    }
+    .files-preview-foot kbd {
+      font-family: var(--mono);
+      font-size: 0.66rem;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      padding: 0 0.3rem;
+      background: var(--surface);
+      color: var(--muted);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .files-preview-dialog[open] { animation: none; }
+      .files-preview-body img { transition: none; }
     }
 
     /* ── PR team review card ─────────────────────────────────────────── */
@@ -4234,6 +4566,15 @@
       .m-hide { display: none !important; }
       .m-only { display: block; }
       .m-rows { display: block; }
+      /* Files: no "Open in tab" or key hints on a phone; the sheet-height
+         viewer keeps its stage inside the safe area. */
+      .files-preview-foot { display: none; }
+      .files-preview-act { width: 2.1rem; padding: 0; justify-content: center; }
+      .files-preview-act span { display: none; }
+      .files-preview-shell { padding: 0.5rem 0.55rem calc(0.5rem + env(safe-area-inset-bottom)); }
+      .files-preview-nav { width: 2.1rem; height: 2.1rem; }
+      .files-count { white-space: normal; }
+      .files-drop { padding: 0.75rem 0.8rem; }
       /* ── Session detail: Messages-style composer replaces the tab bar
          (native detail screens push the tab bar away; back-nav stays via
          the pill strip / crumb). Keyed off the composer itself — read-only
@@ -5660,18 +6001,51 @@
       var input = document.getElementById("files-file");
       if (!input || !e.dataTransfer || !e.dataTransfer.files.length) return;
       input.files = e.dataTransfer.files;
+      // Programmatic assignment fires no change event; the attach-chip
+      // binder listens for one to render the picked files.
+      input.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
     function previewEls() {
       return {
         dlg: document.getElementById("files-preview-dialog"),
         title: document.getElementById("files-preview-title"),
+        meta: document.getElementById("files-preview-meta"),
+        glyph: document.getElementById("files-preview-glyph"),
+        count: document.getElementById("files-preview-count"),
         img: document.getElementById("files-preview-img"),
         frame: document.getElementById("files-preview-frame"),
+        loading: document.getElementById("files-preview-loading"),
         dl: document.getElementById("files-preview-download"),
+        open: document.getElementById("files-preview-open"),
+        prev: document.getElementById("files-preview-prev"),
+        next: document.getElementById("files-preview-next"),
+        foot: document.getElementById("files-preview-foot"),
         close: document.getElementById("files-preview-close")
       };
     }
+    // Every previewable file on the page, in listing order, one entry per
+    // object (the name link, the Preview button and the phone row all point
+    // at the same src).
+    function previewItems() {
+      var seen = {}, out = [];
+      var list = document.querySelectorAll("#page-project-files a[data-preview][data-src]");
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i], src = a.getAttribute("data-src");
+        if (!src || seen[src]) continue;
+        seen[src] = true;
+        out.push({
+          kind: a.getAttribute("data-preview"),
+          name: a.getAttribute("data-name"),
+          meta: a.getAttribute("data-meta"),
+          src: src,
+          download: a.getAttribute("data-download"),
+          href: a.getAttribute("href")
+        });
+      }
+      return out;
+    }
+    var currentSrc = "";
     function listingURLWithoutPreview() {
       try {
         var u = new URL(window.location.href);
@@ -5681,12 +6055,20 @@
         return window.location.pathname;
       }
     }
+    function setLoading(on) {
+      var el = previewEls();
+      if (!el.loading) return;
+      if (on) el.loading.textContent = "Loading…";
+      el.loading.hidden = !on;
+    }
     function teardownPreview() {
       var el = previewEls();
       if (!el.dlg) return;
-      if (el.img) { el.img.removeAttribute("src"); el.img.hidden = true; }
+      if (el.img) { el.img.removeAttribute("src"); el.img.hidden = true; el.img.classList.remove("is-loaded"); }
       if (el.frame) { el.frame.removeAttribute("src"); el.frame.hidden = true; }
+      setLoading(false);
       el.dlg.removeAttribute("data-open");
+      currentSrc = "";
       if (window.history && window.history.replaceState && /[?&]preview=/.test(window.location.search)) {
         window.history.replaceState(window.history.state, "", listingURLWithoutPreview());
       }
@@ -5696,13 +6078,31 @@
       teardownPreview();
       if (el.dlg && el.dlg.open) el.dlg.close();
     }
-    function fillPreview(kind, name, src, download) {
+    function syncNav() {
+      var el = previewEls();
+      if (!el.dlg) return;
+      var items = previewItems(), idx = -1;
+      for (var i = 0; i < items.length; i++) if (items[i].src === currentSrc) { idx = i; break; }
+      var many = items.length > 1 && idx >= 0;
+      if (el.prev) { el.prev.hidden = !many; el.prev.disabled = idx <= 0; }
+      if (el.next) { el.next.hidden = !many; el.next.disabled = idx < 0 || idx >= items.length - 1; }
+      if (el.count) {
+        el.count.hidden = !many;
+        el.count.textContent = many ? (idx + 1) + " / " + items.length : "";
+      }
+      if (el.foot) el.foot.hidden = !many;
+    }
+    function fillPreview(kind, name, src, download, meta) {
       var el = previewEls();
       if (!el.dlg) return false;
       if (el.title) el.title.textContent = name || "Preview";
+      if (el.meta) el.meta.textContent = meta || "";
+      if (el.glyph) el.glyph.setAttribute("data-kind", kind || "");
       if (el.dl) el.dl.href = download || "#";
-      if (el.img) { el.img.removeAttribute("src"); el.img.hidden = true; }
+      if (el.open) el.open.href = src || "#";
+      if (el.img) { el.img.removeAttribute("src"); el.img.hidden = true; el.img.classList.remove("is-loaded"); }
       if (el.frame) { el.frame.removeAttribute("src"); el.frame.hidden = true; }
+      setLoading(true);
       if (kind === "image" && el.img) {
         el.img.alt = name || "";
         el.img.src = src;
@@ -5711,10 +6111,12 @@
         el.frame.src = src;
         el.frame.hidden = false;
       }
+      currentSrc = src || "";
+      syncNav();
       return true;
     }
-    function openPreview(kind, name, src, download, listingHref) {
-      if (!fillPreview(kind, name, src, download)) return;
+    function openPreview(kind, name, src, download, listingHref, meta) {
+      if (!fillPreview(kind, name, src, download, meta)) return;
       var el = previewEls();
       el.dlg.setAttribute("data-open", "1");
       if (typeof el.dlg.showModal === "function") {
@@ -5724,16 +6126,57 @@
         window.history.replaceState(window.history.state, "", listingHref);
       }
     }
+    function stepPreview(delta) {
+      var items = previewItems(), idx = -1;
+      for (var i = 0; i < items.length; i++) if (items[i].src === currentSrc) { idx = i; break; }
+      if (idx < 0) return;
+      var n = idx + delta;
+      if (n < 0 || n >= items.length) return;
+      var it = items[n];
+      openPreview(it.kind, it.name, it.src, it.download, it.href, it.meta);
+    }
     function bootPreview() {
       var el = previewEls();
       if (!el.dlg || el.dlg.getAttribute("data-open") !== "1") return;
+      // Server-filled open (?preview=): the src is already on the img/iframe.
+      var src = (el.img && !el.img.hidden && el.img.getAttribute("src")) ||
+                (el.frame && !el.frame.hidden && el.frame.getAttribute("src")) || "";
+      if (src) {
+        currentSrc = src;
+        if (el.img && !el.img.hidden) {
+          // A cached image may have finished before this script ran; its
+          // load event is gone, so read the state instead of waiting for it.
+          if (el.img.complete && el.img.naturalWidth > 0) el.img.classList.add("is-loaded");
+          else if (!el.img.complete) setLoading(true);
+        }
+        syncNav();
+      }
       if (typeof el.dlg.showModal === "function" && !el.dlg.open) el.dlg.showModal();
     }
+    document.body.addEventListener("load", function (e) {
+      var t = e.target;
+      if (!t || !t.id) return;
+      if (t.id === "files-preview-img") { t.classList.add("is-loaded"); setLoading(false); }
+      if (t.id === "files-preview-frame") setLoading(false);
+    }, true);
+    document.body.addEventListener("error", function (e) {
+      var t = e.target;
+      if (!t || (t.id !== "files-preview-img" && t.id !== "files-preview-frame")) return;
+      // A stage with nothing on it looks like a slow load; say what happened.
+      var el = previewEls();
+      if (el.loading) { el.loading.textContent = "Could not load this file."; el.loading.hidden = false; }
+    }, true);
     document.body.addEventListener("click", function (e) {
       var closeBtn = e.target.closest && e.target.closest("#files-preview-close");
       if (closeBtn) {
         e.preventDefault();
         closePreview();
+        return;
+      }
+      var nav = e.target.closest && e.target.closest("#files-preview-prev, #files-preview-next");
+      if (nav) {
+        e.preventDefault();
+        stepPreview(nav.id === "files-preview-next" ? 1 : -1);
         return;
       }
       var a = e.target.closest && e.target.closest("#page-project-files a[data-preview]");
@@ -5746,12 +6189,19 @@
         a.getAttribute("data-name"),
         src,
         a.getAttribute("data-download"),
-        a.getAttribute("href")
+        a.getAttribute("href"),
+        a.getAttribute("data-meta")
       );
     });
     document.body.addEventListener("click", function (e) {
       var dlg = document.getElementById("files-preview-dialog");
       if (dlg && e.target === dlg) closePreview();
+    });
+    document.addEventListener("keydown", function (e) {
+      var dlg = document.getElementById("files-preview-dialog");
+      if (!dlg || !dlg.open) return;
+      if (e.key === "ArrowRight") { e.preventDefault(); stepPreview(1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); stepPreview(-1); }
     });
     document.body.addEventListener("close", function (e) {
       if (e.target && e.target.id === "files-preview-dialog") teardownPreview();

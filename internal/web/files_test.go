@@ -1093,3 +1093,148 @@ func TestFilesUploadMultiple(t *testing.T) {
 		t.Fatalf("Location = %q", loc)
 	}
 }
+
+func TestFileIconKind(t *testing.T) {
+	cases := []struct {
+		name, ctype string
+		dir         bool
+		icon, label string
+	}{
+		{"docs", "", true, "folder", "Folder"},
+		{"report.pdf", "application/pdf", false, "pdf", "PDF"},
+		{"scan", "application/pdf; charset=binary", false, "pdf", "PDF"},
+		{"photo.png", "image/png", false, "image", "PNG image"},
+		{"photo.jpeg", "", false, "image", "JPEG image"},
+		{"Sheet", "application/vnd.google-apps.spreadsheet", false, "gsheet", "Google Sheet"},
+		{"Doc", "application/vnd.google-apps.document", false, "gdoc", "Google Doc"},
+		{"Deck", "application/vnd.google-apps.presentation", false, "gslides", "Google Slides"},
+		{"Form", "application/vnd.google-apps.form", false, "gdoc", "Google file"},
+		{"notes.txt", "text/plain", false, "text", "TXT"},
+		{"README", "text/markdown", false, "text", "Text"},
+		{"main.go", "", false, "code", "GO"},
+		{"bundle.tar.gz", "application/gzip", false, "archive", "Archive"},
+		{"clip.mp4", "video/mp4", false, "video", "Video"},
+		{"song.mp3", "", false, "audio", "Audio"},
+		{"budget.xlsx", "", false, "gsheet", "XLSX"},
+		{"blob.bin", "application/octet-stream", false, "file", "BIN"},
+		{"noext", "", false, "file", "File"},
+		{"weird.verylongext", "", false, "file", "File"},
+	}
+	for _, tc := range cases {
+		icon, label := fileIconKind(tc.name, tc.ctype, tc.dir)
+		if icon != tc.icon || label != tc.label {
+			t.Errorf("fileIconKind(%q,%q,%v) = (%q,%q), want (%q,%q)", tc.name, tc.ctype, tc.dir, icon, label, tc.icon, tc.label)
+		}
+	}
+}
+
+func TestFileRowMetaLine(t *testing.T) {
+	file := fileRow{KindLabel: "PDF", SizeHuman: "4.0 KiB", UpdatedText: "2026-08-01 10:00"}
+	if got := file.MetaLine(); got != "PDF · 4.0 KiB · 2026-08-01 10:00" {
+		t.Fatalf("file meta = %q", got)
+	}
+	// A folder reports neither kind nor size — only when it was last touched.
+	dir := fileRow{IsDir: true, KindLabel: "Folder", SizeHuman: "0 B", UpdatedText: "2026-08-01 10:00"}
+	if got := dir.MetaLine(); got != "2026-08-01 10:00" {
+		t.Fatalf("dir meta = %q", got)
+	}
+	if got := (fileRow{IsDir: true}).MetaLine(); got != "" {
+		t.Fatalf("stampless dir meta = %q, want empty", got)
+	}
+}
+
+// The listing panel renders a desktop table and a phone .m-rows twin from the
+// same rows, prints what the folder holds, and every preview anchor is
+// unboosted: htmx never checks defaultPrevented, so a boosted click would
+// re-render the listing behind the dialog on every open.
+func TestFilesPagePanelAndPhoneTwin(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	fake.listEntries = []filestore.Entry{
+		{Name: "docs", IsDir: true},
+		{Name: "brief.pdf", Size: 4096, ContentType: "application/pdf", Updated: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)},
+		{Name: "shot.png", Size: 1024, ContentType: "image/png"},
+		{Name: "notes.txt", Size: 12, ContentType: "text/plain"},
+	}
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	if i := strings.Index(body, `id="page-project-files"`); i >= 0 {
+		body = body[i:]
+	}
+	for _, want := range []string{
+		`class="section files-panel"`,
+		`>All files</h2>`,
+		`1 folder`,
+		`3 files <span class="muted-soft">(5.0 KiB)</span>`,
+		`class="m-rows files-mrows"`,
+		`class="table-scroll m-hide files-table"`,
+		`class="fico fico-folder"`,
+		`class="fico fico-pdf"`,
+		`class="fico fico-image"`,
+		`class="fico fico-text"`,
+		`data-meta="PDF · 4.0 KiB · 2026-08-01 10:00"`,
+		`class="files-mrow-hit" href="/projects/proj/files?preview=brief.pdf"`,
+		`aria-label="Preview brief.pdf"`,
+		`aria-label="Download notes.txt"`,
+		`aria-label="Delete brief.pdf"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q", want)
+		}
+	}
+	// Every preview anchor (name link, Preview button, phone row) is unboosted.
+	n := strings.Count(body, `data-preview="`)
+	if n == 0 {
+		t.Fatal("no preview anchors rendered")
+	}
+	if got := strings.Count(body, `hx-boost="false" data-preview="`); got != n {
+		t.Fatalf("preview anchors unboosted = %d of %d", got, n)
+	}
+	// Root listing: no one-segment crumb; the panel says where you are.
+	if strings.Contains(body, `class="pr-crumb"`) {
+		t.Fatal("root listing must not render a crumb")
+	}
+	// Directories carry no delete form and no meta beyond a stamp.
+	if strings.Contains(body, `aria-label="Delete docs"`) {
+		t.Fatal("folders must not offer delete")
+	}
+	// The listing summary is not printed for an empty folder; the empty state is.
+	fake.listEntries = nil
+	empty := getAuthed(t, srv, "/projects/proj/files?path=docs", sid)
+	if !strings.Contains(empty, `This folder is empty.`) || !strings.Contains(empty, `Drop files above to add the first one.`) {
+		t.Fatal("empty state missing")
+	}
+	if !strings.Contains(empty, `>docs</h2>`) {
+		t.Fatal("nested panel must title the current folder")
+	}
+}
+
+// The viewer header carries the file's meta line when ?preview= names a
+// listed object, and the header actions keep their labels for script.
+func TestFilesPagePreviewQueryFillsMeta(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	fake.listEntries = []filestore.Entry{
+		{Name: "brief.pdf", Size: 4096, ContentType: "application/pdf", Updated: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)},
+	}
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files?preview=brief.pdf", sid)
+	for _, want := range []string{
+		`id="files-preview-meta" class="files-preview-meta">PDF · 4.0 KiB · 2026-08-01 10:00</span>`,
+		`id="files-preview-glyph" data-kind="pdf"`,
+		`id="files-preview-open" class="btn-secondary btn-compact files-preview-act" target="_blank" rel="noopener"`,
+		`href="/projects/proj/files/preview?object=brief.pdf"`,
+		`id="files-preview-prev"`,
+		`id="files-preview-next"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q", want)
+		}
+	}
+	// An object outside the listing still opens by extension, with no meta.
+	other := getAuthed(t, srv, "/projects/proj/files?preview=elsewhere.pdf", sid)
+	if !strings.Contains(other, `data-open="1"`) {
+		t.Fatal("unlisted previewable object must still open")
+	}
+	if !strings.Contains(other, `id="files-preview-meta" class="files-preview-meta"></span>`) {
+		t.Fatal("unlisted object must render an empty meta line, not a guess")
+	}
+}

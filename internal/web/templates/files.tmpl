@@ -1,17 +1,50 @@
+{{/* fileIcon draws the row glyph for a fileRow.Icon kind. One closed set,
+     drawn inline (no CSS masks — Safari 27 boxes them); every branch falls
+     through to the plain document outline so an unknown kind still gets a
+     glyph. Folder is filled softly so it reads as a container at a glance;
+     PDF and Google kinds carry a small letter tag inside the sheet. */}}
+{{define "fileIcon"}}<svg class="fico fico-{{.}}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+{{- if eq . "folder" -}}
+<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4.1c.6 0 1.2.24 1.6.66l1.4 1.44c.4.42 1 .66 1.6.66h4.3A2.5 2.5 0 0 1 21 10.26V17a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17V7.5Z" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+{{- else if eq . "image" -}}
+<rect x="3.5" y="4.5" width="17" height="15" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.7" fill="currentColor"/><path d="M4.5 18.5l4.6-4.9a1.4 1.4 0 0 1 2 0l2.1 2.2 2-2.1a1.4 1.4 0 0 1 2 0l3.3 3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+{{- else if eq . "pdf" -}}
+<path d="M6.5 3.5h7l4.5 4.5v11.5a1 1 0 0 1-1 1h-10.5a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13.5 3.5V8H18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8.2 17.4c1.9-.7 4.5-4.9 4.1-7.1-.3-1.6-1.6-.9-1.4.5.3 1.9 2.7 4.7 4.6 4.6 1.5-.1 1-1.5-.5-1.3-2.4.3-5.5 1.9-6.8 3.3Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+{{- else if or (eq . "gdoc") (eq . "text") -}}
+<path d="M6.5 3.5h7l4.5 4.5v11.5a1 1 0 0 1-1 1h-10.5a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13.5 3.5V8H18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8.5 12h7M8.5 15h7M8.5 18h4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+{{- else if eq . "gsheet" -}}
+<path d="M6.5 3.5h7l4.5 4.5v11.5a1 1 0 0 1-1 1h-10.5a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13.5 3.5V8H18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8.5 11.5h7v6.5h-7zM8.5 14.75h7M12 11.5V18" fill="none" stroke="currentColor" stroke-width="1.3"/>
+{{- else if eq . "gslides" -}}
+<path d="M6.5 3.5h7l4.5 4.5v11.5a1 1 0 0 1-1 1h-10.5a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13.5 3.5V8H18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><rect x="8.5" y="12" width="7" height="5" rx=".8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+{{- else if eq . "code" -}}
+<path d="M6.5 3.5h7l4.5 4.5v11.5a1 1 0 0 1-1 1h-10.5a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13.5 3.5V8H18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m10 12.5-2 2.25 2 2.25M14 12.5l2 2.25-2 2.25" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+{{- else if eq . "archive" -}}
+<rect x="4" y="5" width="16" height="4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 9v9.5a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 12.5h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+{{- else if eq . "video" -}}
+<rect x="3.5" y="5.5" width="17" height="13" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 9.2v5.6l4.6-2.8L10 9.2Z" fill="currentColor"/>
+{{- else if eq . "audio" -}}
+<path d="M9 17.5V7l10-2v10.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="6.5" cy="17.5" r="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16.5" cy="15.5" r="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+{{- else -}}
+<path d="M6.5 3.5h7l4.5 4.5v11.5a1 1 0 0 1-1 1h-10.5a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13.5 3.5V8H18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+{{- end -}}
+</svg>{{end}}
+
 {{define "content"}}
 <div id="page-project-files">
 <h1>{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· files</span></h1>
 {{if eq .StorageBackend "gdrive"}}
-<p class="sub">
-  Drive · folder <span class="mono">{{.StorageDriveFolderID}}</span>
-  {{if .StorageIsolation}}· prefix <span class="mono">{{.StorageIsolation}}</span>{{end}}
-  {{if .StorageInherited}}· <span class="muted">via global default</span>{{end}}
+<p class="sub files-src">
+  <span class="files-src-tag">Drive</span>
+  folder <span class="mono">{{.StorageDriveFolderID}}</span>
+  {{if .StorageIsolation}}<span class="crumb-sep">·</span> prefix <span class="mono">{{.StorageIsolation}}</span>{{end}}
+  {{if .StorageInherited}}<span class="crumb-sep">·</span> <span class="muted">via global default</span>{{end}}
 </p>
 {{else if .StorageBucket}}
-<p class="sub">
+<p class="sub files-src">
+  <span class="files-src-tag">GCS</span>
   Bucket <span class="mono">{{.StorageBucket}}</span>
-  {{if .StoragePrefix}}· prefix <span class="mono">{{.StoragePrefix}}</span>{{end}}
-  {{if .StorageInherited}}· <span class="muted">via global default</span>{{end}}
+  {{if .StoragePrefix}}<span class="crumb-sep">·</span> prefix <span class="mono">{{.StoragePrefix}}</span>{{end}}
+  {{if .StorageInherited}}<span class="crumb-sep">·</span> <span class="muted">via global default</span>{{end}}
 </p>
 {{end}}
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
@@ -50,52 +83,122 @@
 </div>
 {{else}}
 
-{{if gt (len .FilesCrumbs) 1}}
-<p class="pr-crumb" aria-label="Current folder">
-  {{range $i, $c := .FilesCrumbs}}
-    {{if $i}}<span class="crumb-sep">/</span>{{end}}
-    {{if $c.Last}}
-      <span>{{$c.Label}}</span>
-    {{else if eq $c.Path ""}}
-      <a href="/projects/{{$.Project}}/files">{{$c.Label}}</a>
-    {{else}}
-      <a href="/projects/{{$.Project}}/files?path={{urlquery $c.Path}}">{{$c.Label}}</a>
-    {{end}}
-  {{end}}
-</p>
-{{end}}
-
 {{if .CanStorageWrite}}
-<div class="section card" id="files-upload">
-  <h2>Upload</h2>
-  <form method="post" action="/projects/{{.Project}}/files/upload" enctype="multipart/form-data" hx-boost="false">
-    {{template "csrf" $}}
-    <input type="hidden" name="path" value="{{.FilesPath}}">
-    <div id="files-drop" class="files-drop">
-      <label for="files-file">Files</label>
-      <input id="files-file" type="file" name="file" multiple required>
-      <p class="sub" style="margin:0.35rem 0 0">Drop files here or choose. Uploads into this folder.</p>
-    </div>
-    <div class="inline" style="grid-template-columns: 1fr auto; align-items:end; margin-top:0.75rem">
-      <label class="check">
-        <input type="checkbox" name="overwrite" value="1"> Overwrite if exists
-      </label>
-      <button type="submit">Upload</button>
-    </div>
-    <p class="sub" style="margin:0.5rem 0 0">Max 50 MiB per file, 64 MiB per request. Filename is sanitized before upload.</p>
-  </form>
-</div>
+{{/* Uploader: the whole dashed zone is the <label>, so a click anywhere opens
+     the picker and a drop anywhere lands in the input (layout.tmpl's #files-drop
+     handler). The native control is visually hidden but stays focusable, so
+     keyboard users tab to it and the required-file validation bubble still has
+     an anchor. Picked files render as attach chips (data-attach-chips, shared
+     with the composer) with per-file remove. Scripting off: the label still
+     opens the picker, chips just never appear, and the form posts as before. */}}
+<form class="section card files-upload" id="files-upload" method="post" action="/projects/{{.Project}}/files/upload" enctype="multipart/form-data" hx-boost="false">
+  {{template "csrf" $}}
+  <input type="hidden" name="path" value="{{.FilesPath}}">
+  <label id="files-drop" class="files-drop" for="files-file">
+    <span class="files-drop-glyph" aria-hidden="true">
+      <svg viewBox="0 0 24 24" focusable="false"><path d="M12 16V5.5M7.5 10 12 5.5l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 15.5v2A2.5 2.5 0 0 0 7 20h10a2.5 2.5 0 0 0 2.5-2.5v-2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+    </span>
+    <span class="files-drop-text">
+      <span class="files-drop-t"><strong>Drop files here</strong> or <span class="files-drop-browse">browse</span></span>
+      <span class="files-drop-s">Uploads into {{if gt (len .FilesCrumbs) 1}}<span class="mono">{{(index .FilesCrumbs (sub (len .FilesCrumbs) 1)).Label}}</span>{{else}}the root folder{{end}} · max 50 MiB per file, 64 MiB per request · names are sanitized</span>
+    </span>
+    <input id="files-file" class="files-drop-input" type="file" name="file" multiple required data-attach-chips="files-chips">
+  </label>
+  <div id="files-chips" class="attach-chips files-chips" hidden></div>
+  <div class="files-upload-foot">
+    <label class="check">
+      <input type="checkbox" name="overwrite" value="1"> Overwrite if exists
+    </label>
+    <button type="submit">Upload</button>
+  </div>
+</form>
 {{else if .StorageFeatureOn}}
 <p class="sub">You can browse and download files. Upload and delete need an investigator-or-above capability template (or an explicit <span class="mono">safeOps</span> grant).</p>
 {{end}}
 
-<div class="section">
-  <h2>Contents</h2>
+{{/* Listing panel. The header is the location: the crumb trail when nested
+     (root has no one-segment trail — the h1 already says where you are),
+     plus what is in this folder. Desktop below is a table, phones get the
+     .m-rows twin (the table's actions column sat off-screen behind a
+     horizontal scroll). Both render from the same rows. */}}
+<div class="section files-panel">
+  <div class="files-panel-head">
+    <div class="files-loc">
+      {{if gt (len .FilesCrumbs) 1}}
+      <p class="pr-crumb" aria-label="Current folder">
+        {{range $i, $c := .FilesCrumbs}}
+          {{if $i}}<span class="crumb-sep">/</span>{{end}}
+          {{if $c.Last}}
+            <span>{{$c.Label}}</span>
+          {{else if eq $c.Path ""}}
+            <a href="/projects/{{$.Project}}/files">{{$c.Label}}</a>
+          {{else}}
+            <a href="/projects/{{$.Project}}/files?path={{urlquery $c.Path}}">{{$c.Label}}</a>
+          {{end}}
+        {{end}}
+      </p>
+      <h2>{{template "fileIcon" "folder"}}{{(index .FilesCrumbs (sub (len .FilesCrumbs) 1)).Label}}</h2>
+      {{else}}
+      <h2>{{template "fileIcon" "folder"}}All files</h2>
+      {{end}}
+    </div>
+    <p class="files-count">
+      {{if .FilesRows}}
+        {{if .FilesDirCount}}{{.FilesDirCount}} folder{{if ne .FilesDirCount 1}}s{{end}}{{end}}
+        {{if and .FilesDirCount .FilesFileCount}}<span class="crumb-sep">·</span>{{end}}
+        {{if .FilesFileCount}}{{.FilesFileCount}} file{{if ne .FilesFileCount 1}}s{{end}} <span class="muted-soft">({{.FilesBytesHuman}})</span>{{end}}
+      {{else if not .Error}}Empty{{end}}
+    </p>
+  </div>
   {{if .FilesClipped}}
-  <p class="sub">Showing {{len .FilesRows}} of {{.FilesTotal}} entries (capped at 200).</p>
+  <p class="sub files-clip">Showing {{len .FilesRows}} of {{.FilesTotal}} entries (capped at 200).</p>
   {{end}}
   {{if .FilesRows}}
-  <div class="table-scroll">
+  <div class="m-rows files-mrows">
+    {{range .FilesRows}}
+      {{if .IsDir}}
+      <a class="m-row" href="/projects/{{$.Project}}/files?path={{urlquery .Path}}">
+        {{template "fileIcon" .Icon}}
+        <span class="m-row-main">
+          <span class="m-row-t mono">{{.Name}}/</span>
+          <span class="m-row-s">Folder{{if .UpdatedText}} · {{.UpdatedText}}{{end}}</span>
+        </span>
+      </a>
+      {{else}}
+      <div class="m-row files-mrow">
+        {{if .PreviewKind}}
+        <a class="files-mrow-hit" href="/projects/{{$.Project}}/files?{{if $.FilesPath}}path={{urlquery $.FilesPath}}&amp;{{end}}preview={{urlquery .Object}}"
+           hx-boost="false" data-preview="{{.PreviewKind}}"
+           data-name="{{.Name}}"
+           data-meta="{{.MetaLine}}"
+           data-src="/projects/{{$.Project}}/files/preview?object={{urlquery .Object}}"
+           data-download="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" aria-label="Preview {{.Name}}"></a>
+        {{else if .Downloadable}}
+        <a class="files-mrow-hit" href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false" aria-label="Download {{.Name}}"></a>
+        {{end}}
+        {{template "fileIcon" .Icon}}
+        <span class="m-row-main">
+          <span class="m-row-t mono">{{.Name}}</span>
+          <span class="m-row-s">{{if .NativeGoogle}}Google Doc — export as PDF to download{{else}}{{.MetaLine}}{{end}}</span>
+        </span>
+        {{if .PreviewKind}}<span class="files-mrow-chev" aria-hidden="true"></span>{{else if .Downloadable}}<span class="files-mrow-dl" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 4.5V15M7.5 10.5 12 15l4.5-4.5M4.5 16v1.5A2 2 0 0 0 6.5 19.5h11a2 2 0 0 0 2-2V16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{{end}}
+        {{if $.CanStorageWrite}}
+        <form class="m-row-act" method="post" action="/projects/{{$.Project}}/files/delete"
+              data-confirm="Delete {{.Name}}? This cannot be undone."
+              data-confirm-title="Delete file" data-confirm-ok="Delete" data-confirm-danger>
+          {{template "csrf" $}}
+          <input type="hidden" name="object" value="{{.Object}}">
+          <input type="hidden" name="path" value="{{$.FilesPath}}">
+          <button type="submit" class="btn-danger files-del" aria-label="Delete {{.Name}}" title="Delete">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 7h14M10 11v6M14 11v6M6.5 7l.8 12.1a1 1 0 0 0 1 .9h7.4a1 1 0 0 0 1-.9L17.5 7M9.5 7V4.8a.8.8 0 0 1 .8-.8h3.4a.8.8 0 0 1 .8.8V7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </form>
+        {{end}}
+      </div>
+      {{end}}
+    {{end}}
+  </div>
+  <div class="table-scroll m-hide files-table">
   <table>
     <thead>
       <tr>
@@ -108,43 +211,48 @@
     <tbody>
     {{range .FilesRows}}
       <tr>
-        <td class="mono">
+        <td class="mono files-name">
+          {{template "fileIcon" .Icon}}
           {{if .IsDir}}
             <a href="/projects/{{$.Project}}/files?path={{urlquery .Path}}">{{.Name}}/</a>
           {{else if .PreviewKind}}
             <a href="/projects/{{$.Project}}/files?{{if $.FilesPath}}path={{urlquery $.FilesPath}}&amp;{{end}}preview={{urlquery .Object}}"
-               data-preview="{{.PreviewKind}}"
+               hx-boost="false" data-preview="{{.PreviewKind}}"
                data-name="{{.Name}}"
+               data-meta="{{.MetaLine}}"
                data-src="/projects/{{$.Project}}/files/preview?object={{urlquery .Object}}"
                data-download="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}">{{.Name}}</a>
           {{else if .Downloadable}}
             <a href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false">{{.Name}}</a>
           {{else}}
-            {{.Name}}
-            {{if .NativeGoogle}}<div class="muted" style="font-family:var(--sans);font-size:0.78rem;font-weight:400">Google Doc — export as PDF to download</div>{{end}}
+            <span>{{.Name}}</span>
           {{end}}
+          {{if .NativeGoogle}}<span class="files-note">Google Doc — export as PDF to download</span>{{else if not .IsDir}}<span class="files-note files-note-kind">{{.KindLabel}}</span>{{end}}
         </td>
-        <td class="muted">{{if .IsDir}}—{{else}}{{.SizeHuman}}{{end}}</td>
-        <td class="muted">{{if .UpdatedText}}{{.UpdatedText}}{{else}}—{{end}}</td>
-        <td style="white-space:nowrap;text-align:right">
+        <td class="mono muted files-size">{{if .IsDir}}—{{else}}{{.SizeHuman}}{{end}}</td>
+        <td class="mono muted">{{if .UpdatedText}}{{.UpdatedText}}{{else}}—{{end}}</td>
+        <td class="row-actions files-actions">
           {{if .PreviewKind}}
-            <a class="btn-secondary" href="/projects/{{$.Project}}/files?{{if $.FilesPath}}path={{urlquery $.FilesPath}}&amp;{{end}}preview={{urlquery .Object}}"
-               data-preview="{{.PreviewKind}}"
+            <a class="btn-secondary btn-compact" href="/projects/{{$.Project}}/files?{{if $.FilesPath}}path={{urlquery $.FilesPath}}&amp;{{end}}preview={{urlquery .Object}}"
+               hx-boost="false" data-preview="{{.PreviewKind}}"
                data-name="{{.Name}}"
+               data-meta="{{.MetaLine}}"
                data-src="/projects/{{$.Project}}/files/preview?object={{urlquery .Object}}"
                data-download="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}">Preview</a>
           {{end}}
           {{if .Downloadable}}
-            <a class="btn-secondary" href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false">Download</a>
+            <a class="btn-secondary btn-compact" href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false">Download</a>
           {{end}}
           {{if and (not .IsDir) $.CanStorageWrite}}
-            <form method="post" action="/projects/{{$.Project}}/files/delete" style="display:inline"
+            <form method="post" action="/projects/{{$.Project}}/files/delete"
                   data-confirm="Delete {{.Name}}? This cannot be undone."
                   data-confirm-title="Delete file" data-confirm-ok="Delete" data-confirm-danger>
               {{template "csrf" $}}
               <input type="hidden" name="object" value="{{.Object}}">
               <input type="hidden" name="path" value="{{$.FilesPath}}">
-              <button type="submit" class="btn-danger">Delete</button>
+              <button type="submit" class="btn-danger files-del" aria-label="Delete {{.Name}}" title="Delete">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 7h14M10 11v6M14 11v6M6.5 7l.8 12.1a1 1 0 0 0 1 .9h7.4a1 1 0 0 0 1-.9L17.5 7M9.5 7V4.8a.8.8 0 0 1 .8-.8h3.4a.8.8 0 0 1 .8.8V7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
             </form>
           {{end}}
         </td>
@@ -154,25 +262,58 @@
   </table>
   </div>
   {{else if not .Error}}
-  <div class="empty">No files at this path.</div>
+  <div class="empty files-empty">
+    <span class="files-empty-glyph" aria-hidden="true">{{template "fileIcon" "folder"}}</span>
+    <span>This folder is empty.</span>
+    {{if .CanStorageWrite}}<span class="files-empty-hint">Drop files above to add the first one.</span>{{end}}
+  </div>
   {{end}}
 </div>
 
+{{/* Viewer. One dialog per page, filled by script from the clicked row's
+     data-* (or server-filled from ?preview= so a shared link opens straight
+     into it). Prev/next walk every previewable row on the page in listing
+     order — arrow keys too — so a folder of screenshots reads like a deck.
+     Bytes still stream from /files/preview inside the img/iframe. Every
+     preview anchor carries hx-boost="false": htmx never checks
+     defaultPrevented, so a boosted click would re-render the whole listing
+     behind the dialog on every open; unboosted, script owns the click and
+     a no-script visitor still lands on the server-rendered ?preview= page. */}}
 <dialog id="files-preview-dialog" class="files-preview-dialog" aria-labelledby="files-preview-title"
         {{if .FilesPreview}}data-open="1" data-kind="{{.FilesPreview.Kind}}"{{end}}>
   <div class="files-preview-shell">
     <div class="files-preview-head">
-      <h2 id="files-preview-title" class="files-preview-title">{{if .FilesPreview}}{{.FilesPreview.Name}}{{end}}</h2>
-      <a id="files-preview-download" class="btn-secondary" hx-boost="false"
-         href="{{if .FilesPreview}}{{.FilesPreview.Download}}{{else}}#{{end}}">Download</a>
-      <button type="button" id="files-preview-close">Close</button>
+      <span class="files-preview-glyph" id="files-preview-glyph" data-kind="{{if .FilesPreview}}{{.FilesPreview.Kind}}{{end}}" aria-hidden="true">
+        <span class="fp-g fp-g-image">{{template "fileIcon" "image"}}</span>
+        <span class="fp-g fp-g-pdf">{{template "fileIcon" "pdf"}}</span>
+      </span>
+      <div class="files-preview-titles">
+        <h2 id="files-preview-title" class="files-preview-title">{{if .FilesPreview}}{{.FilesPreview.Name}}{{end}}</h2>
+        <span id="files-preview-meta" class="files-preview-meta">{{if .FilesPreview}}{{.FilesPreview.Meta}}{{end}}</span>
+      </div>
+      <span id="files-preview-count" class="files-preview-count" hidden></span>
+      <a id="files-preview-open" class="btn-secondary btn-compact files-preview-act" target="_blank" rel="noopener" title="Open in a new tab" aria-label="Open in a new tab"
+         href="{{if .FilesPreview}}{{.FilesPreview.Src}}{{else}}#{{end}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 4.5h5.5V10M19.5 4.5 11 13M10 6H6.5A2 2 0 0 0 4.5 8v9.5a2 2 0 0 0 2 2H16a2 2 0 0 0 2-2V14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Open</span></a>
+      <a id="files-preview-download" class="btn-secondary btn-compact files-preview-act" hx-boost="false" title="Download" aria-label="Download"
+         href="{{if .FilesPreview}}{{.FilesPreview.Download}}{{else}}#{{end}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4.5V15M7.5 10.5 12 15l4.5-4.5M4.5 16v1.5A2 2 0 0 0 6.5 19.5h11a2 2 0 0 0 2-2V16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Download</span></a>
+      <button type="button" id="files-preview-close" class="files-preview-x" aria-label="Close preview" title="Close (Esc)">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
     </div>
-    <div class="files-preview-body">
+    <div class="files-preview-body" id="files-preview-body">
+      <button type="button" class="files-preview-nav files-preview-prev" id="files-preview-prev" aria-label="Previous file" title="Previous (←)" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m14.5 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <span class="files-preview-loading" id="files-preview-loading" hidden>Loading…</span>
       <img id="files-preview-img" alt="{{if .FilesPreview}}{{.FilesPreview.Name}}{{end}}"
            {{if and .FilesPreview (eq .FilesPreview.Kind "image")}}src="{{.FilesPreview.Src}}"{{else}}hidden{{end}}>
       <iframe id="files-preview-frame" title="Preview"
               {{if and .FilesPreview (eq .FilesPreview.Kind "pdf")}}src="{{.FilesPreview.Src}}"{{else}}hidden{{end}}></iframe>
+      <button type="button" class="files-preview-nav files-preview-next" id="files-preview-next" aria-label="Next file" title="Next (→)" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9.5 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
     </div>
+    <p class="files-preview-foot" id="files-preview-foot" hidden><kbd>←</kbd> <kbd>→</kbd> next file <span class="crumb-sep">·</span> <kbd>Esc</kbd> close</p>
   </div>
 </dialog>
 {{end}}

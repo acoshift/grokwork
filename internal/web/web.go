@@ -814,6 +814,12 @@ type pageData struct {
 	FilesTotal          int
 	FilesClipped        bool
 	FilesPreview        *filesPreview
+	// Listing summary for the panel header: counts over the rows shown, and
+	// the byte total of those files (folders report no size).
+	FilesDirCount   int
+	FilesFileCount  int
+	FilesBytes      int64
+	FilesBytesHuman string
 	// CanStorageWrite is feature on + SafeOps. StorageFeatureOn is the flag alone
 	// so the page can explain why write controls are missing.
 	CanStorageWrite  bool
