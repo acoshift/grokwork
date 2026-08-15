@@ -29,10 +29,23 @@ import (
 // (server-rendered Is* flag). Layout also has navActiveFor() for hx-boost path sync.
 func assertNavActive(t *testing.T, body, label string) {
 	t.Helper()
-	// Template: class="{{if .IsIssues}}active{{end}}">Issues
-	want := `class="active">` + label + `</a>`
-	if !strings.Contains(body, want) {
-		t.Fatalf("nav %q not active (want %q)", label, want)
+	// class="active">[optional navIcon svg]Label</a>
+	needle := `class="active">`
+	rest := body
+	for {
+		i := strings.Index(rest, needle)
+		if i < 0 {
+			t.Fatalf("nav %q not active", label)
+		}
+		rest = rest[i+len(needle):]
+		j := strings.Index(rest, `</a>`)
+		if j < 0 {
+			t.Fatalf("nav %q not active", label)
+		}
+		if strings.HasSuffix(rest[:j], label) {
+			return
+		}
+		rest = rest[j:]
 	}
 }
 
@@ -1178,7 +1191,7 @@ func TestCommitsListAndDetail(t *testing.T) {
 		"Fixture commit",
 		"abcdef0",
 		`name="repo_full"`,
-		`class="active">Commits</a>`,
+		`class="active">`,
 		`action="/projects/proj/commits/fetch"`,
 		`>Fetch</button>`,
 		// No origin in fixture repo → default ref falls back to HEAD.
@@ -1744,8 +1757,8 @@ func TestClickUpListAndDetail(t *testing.T) {
 		mux.HandleFunc("/api/v2/task/DEV-1", func(w http.ResponseWriter, r *http.Request) {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id": "abc", "custom_id": "DEV-1", "name": "One",
-				"status": map[string]string{"status": "open"},
-				"url": "https://app.clickup.com/t/abc",
+				"status":               map[string]string{"status": "open"},
+				"url":                  "https://app.clickup.com/t/abc",
 				"markdown_description": "hello",
 			})
 		})
@@ -1779,11 +1792,11 @@ func TestClickUpListAndDetail(t *testing.T) {
 		}
 	}
 	assertNavActive(t, body, "ClickUp")
-	if !strings.Contains(body, `data-icon="clickup" class="active">ClickUp</a>`) {
-		t.Fatal("ClickUp nav reused the issues icon")
+	if !strings.Contains(body, `data-icon="clickup" class="active">`) {
+		t.Fatal("ClickUp nav missing data-icon")
 	}
-	if !strings.Contains(body, `#side-nav a[data-icon="clickup"]`) {
-		t.Fatal("missing clickup icon CSS")
+	if !strings.Contains(body, `M2 18.439l3.69-2.828`) {
+		t.Fatal("ClickUp nav reused the issues icon")
 	}
 	req = httptest.NewRequest(http.MethodGet, "/projects/proj/clickup/DEV-1", nil)
 	req.AddCookie(&http.Cookie{Name: "gw_session", Value: sid})

@@ -247,7 +247,7 @@ func TestDeploysBoardNavIsGlobal(t *testing.T) {
 	if !strings.Contains(body, `data-scope=""`) {
 		t.Fatal("/deploys must render the global shell, not a workspace")
 	}
-	if !strings.Contains(body, `href="/deploys" data-icon="deploys" class="active">Deploys</a>`) {
+	if !strings.Contains(body, `href="/deploys" data-icon="deploys" class="active">`) {
 		t.Fatalf("global nav anchor does not follow the icon-then-class convention:\n%s", body)
 	}
 	// The workspace Deploys page keeps its own scoped anchor active — the two

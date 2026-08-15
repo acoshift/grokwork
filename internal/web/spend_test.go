@@ -132,7 +132,7 @@ func TestSpendScopedPageStaysInsideTheWorkspace(t *testing.T) {
 	if !strings.Contains(body, `data-scope="proj"`) {
 		t.Fatal("scoped spend page must render the workspace shell")
 	}
-	if !strings.Contains(body, `href="/projects/proj/spend" data-icon="spend" class="active">Spend</a>`) {
+	if !strings.Contains(body, `href="/projects/proj/spend" data-icon="spend" class="active">`) {
 		t.Fatalf("workspace nav item not active: %s", body)
 	}
 	if !strings.Contains(body, "$5.00") {

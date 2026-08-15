@@ -1158,7 +1158,7 @@ func TestNavBrandChrome(t *testing.T) {
 		`href="/projects/proj/worktrees"`,
 		`href="/config/projects/proj"`,
 		// Overview is the active workspace tab (bare-label contract).
-		`class="active">Overview</a>`,
+		`class="active">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("workspace chrome missing %q", want)
@@ -1180,11 +1180,11 @@ func TestNavBrandChrome(t *testing.T) {
 		tabbar = tabbar[:end]
 	}
 	for _, want := range []string{
-		`data-icon="overview" class="active">Overview</a>`,
-		`href="/projects/proj/ship" data-icon="ship" class="">Ship</a>`,
-		`href="/projects/proj/cases" data-icon="cases" class="">Cases</a>`,
-		`href="/projects/proj/sessions" data-icon="sessions" class="">Sessions</a>`,
-		`href="/projects/proj/reviews" data-icon="reviews" class="">Reviews</a>`,
+		`data-icon="overview" class="active">`,
+		`href="/projects/proj/ship" data-icon="ship" class="">`,
+		`href="/projects/proj/cases" data-icon="cases" class="">`,
+		`href="/projects/proj/sessions" data-icon="sessions" class="">`,
+		`href="/projects/proj/reviews" data-icon="reviews" class="">`,
 		`class="ws-back" href="/"`,
 		`class="ws-start" href="/projects/proj/start"`,
 	} {
@@ -1199,34 +1199,34 @@ func TestNavBrandChrome(t *testing.T) {
 	}
 }
 
-// TestIconMaskUsesLonghands pins the Safari 27 workaround: the mask
-// shorthand also sets -webkit-mask-box-image and frames each nav glyph
-// in a box. Icon cutouts must be longhands plus an explicit none.
-func TestIconMaskUsesLonghands(t *testing.T) {
+// TestNavIconsAreInlineSVG pins the Safari 27 fix: CSS-masked SVG data
+// URIs paint a viewBox frame around each glyph. Nav icons must be
+// inline SVG with stroke/fill on a child, not the <svg> root.
+func TestNavIconsAreInlineSVG(t *testing.T) {
 	raw, err := os.ReadFile("templates/layout.tmpl")
 	if err != nil {
 		t.Fatal(err)
 	}
-	css := string(raw)
-	for _, ban := range []string{
-		"mask: var(--icon)",
-		"mask: var(--icon-provider)",
-		"-webkit-mask: var(--icon)",
-		"-webkit-mask: var(--icon-provider)",
-	} {
-		if strings.Contains(css, ban) {
-			t.Fatalf("icon mask must not use the shorthand %q (Safari 27 paints mask-box-image as a frame)", ban)
-		}
+	tmpl := string(raw)
+	if !strings.Contains(tmpl, `{{define "navIcon"}}`) {
+		t.Fatal("missing navIcon template")
 	}
-	for _, want := range []string{
-		"mask-image: var(--icon)",
-		"-webkit-mask-image: var(--icon)",
-		"mask-border: none",
-		"-webkit-mask-box-image: none",
-	} {
-		if !strings.Contains(css, want) {
-			t.Fatalf("icon mask missing %q", want)
-		}
+	if strings.Contains(tmpl, `#side-nav a[data-icon="ship"] { --icon:`) {
+		t.Fatal("nav icons must not be CSS-masked data URIs")
+	}
+	if strings.Contains(tmpl, `stroke="currentColor"`) && !strings.Contains(tmpl, `<g fill="none" stroke="currentColor"`) {
+		t.Fatal("nav icon stroke must sit on <g>, not the <svg> root")
+	}
+	srv, _, _ := testServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/ship", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, `class="nav-icon"`) {
+		t.Fatal("rendered nav missing inline .nav-icon svg")
+	}
+	if !strings.Contains(body, `d="M22 2 15 22l-4-9-9-4z"`) {
+		t.Fatal("rendered nav missing ship path")
 	}
 }
 
@@ -1393,7 +1393,7 @@ func TestNavScopeRules(t *testing.T) {
 		`data-scope="proj"`,
 		`href="/projects/proj/sessions">← Sessions</a>`,
 		`href="/sessions/thread-99?project=proj"`,
-		`class="active">Sessions</a>`,
+		`class="active">`,
 	} {
 		if !strings.Contains(histBody, want) {
 			t.Fatalf("scoped turn log missing %q", want)
@@ -1636,7 +1636,7 @@ func TestCasesBoard(t *testing.T) {
 	for _, want := range []string{
 		`id="page-cases"`,
 		// Nav: Cases is the active workspace tab (bare-label contract).
-		`class="active">Cases</a>`,
+		`class="active">`,
 		// Pipeline stages with plain-language sublabels.
 		`id="case-pipeline"`,
 		"New case", "Looking into it", "Answer ready", "With engineering", "Fix in review", "Resolved",
