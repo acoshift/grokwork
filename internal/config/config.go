@@ -221,6 +221,23 @@ type ProjectItem struct {
 	ClickUpCustomIdPrefix string
 	ClickUpAPIKeySet      bool
 	ClickUpEnvHint        string // e.g. CLICKUP_API_KEY_APP
+	GCPErrorsEnabled      bool
+	GCPProjectID          string
+	GCPProjectNumber      string
+	GCPService            string
+	GCPCredentialsFile    string // path only; never key contents
+	SentryEnabled         bool
+	SentryOrg             string
+	SentryProject         string
+	SentryBaseURL         string
+	SentryAuthTokenSet    bool
+	SentryEnvHint         string // SENTRY_AUTH_TOKEN_<SUFFIX>
+	DeploysErrorsEnabled  bool
+	DeploysErrorsProject  string
+	DeploysErrorsLocation string
+	DeploysErrorsName     string
+	DeploysAPITokenSet    bool
+	DeploysEnvHint        string // DEPLOYS_API_TOKEN_<SUFFIX> — not DEPLOYS_TOKEN
 	DiscordChannelID      string
 	DiscordGuildID        string
 	GitHubReposText       string   // "owner/repo" lines for config form
@@ -1416,6 +1433,50 @@ func (c *Config) Snapshot() Snapshot {
 			item.ClickUpAPIKeySet = strings.TrimSpace(pc.ClickUp.APIKey) != "" || clickupAPIKeyFromEnv(n) != ""
 		} else if clickupAPIKeyFromEnv(n) != "" {
 			item.ClickUpAPIKeySet = true
+		}
+		item.SentryEnvHint = "SENTRY_AUTH_TOKEN_" + ProjectEnvKeySuffix(n)
+		item.DeploysEnvHint = "DEPLOYS_API_TOKEN_" + ProjectEnvKeySuffix(n) + " — not DEPLOYS_TOKEN"
+		if pc.Errors != nil {
+			if pc.Errors.GCP != nil {
+				item.GCPErrorsEnabled = pc.Errors.GCP.Enabled
+				item.GCPProjectID = strings.TrimSpace(pc.Errors.GCP.ProjectID)
+				item.GCPProjectNumber = strings.TrimSpace(pc.Errors.GCP.ProjectNumber)
+				item.GCPService = strings.TrimSpace(pc.Errors.GCP.Service)
+				item.GCPCredentialsFile = strings.TrimSpace(pc.Errors.GCP.CredentialsFile)
+			}
+			if pc.Errors.Sentry != nil {
+				item.SentryEnabled = pc.Errors.Sentry.Enabled
+				item.SentryOrg = strings.TrimSpace(pc.Errors.Sentry.Org)
+				item.SentryProject = strings.TrimSpace(pc.Errors.Sentry.Project)
+				item.SentryBaseURL = strings.TrimSpace(pc.Errors.Sentry.BaseURL)
+				item.SentryAuthTokenSet = strings.TrimSpace(pc.Errors.Sentry.AuthToken) != "" || sentryAuthTokenFromEnv(n) != ""
+			} else if sentryAuthTokenFromEnv(n) != "" {
+				item.SentryAuthTokenSet = true
+			}
+			if pc.Errors.Deploys != nil {
+				item.DeploysErrorsEnabled = pc.Errors.Deploys.Enabled
+				item.DeploysErrorsProject = strings.TrimSpace(pc.Errors.Deploys.Project)
+				item.DeploysErrorsLocation = strings.TrimSpace(pc.Errors.Deploys.Location)
+				item.DeploysErrorsName = strings.TrimSpace(pc.Errors.Deploys.Deployment)
+				item.DeploysAPITokenSet = strings.TrimSpace(pc.Errors.Deploys.APIToken) != "" || deploysAPITokenFromEnv(n) != ""
+				u, p := deploysBasicFromEnv(n)
+				if u != "" && p != "" {
+					item.DeploysAPITokenSet = true
+				}
+			} else if deploysAPITokenFromEnv(n) != "" {
+				item.DeploysAPITokenSet = true
+			} else if u, p := deploysBasicFromEnv(n); u != "" && p != "" {
+				item.DeploysAPITokenSet = true
+			}
+		} else {
+			if sentryAuthTokenFromEnv(n) != "" {
+				item.SentryAuthTokenSet = true
+			}
+			if deploysAPITokenFromEnv(n) != "" {
+				item.DeploysAPITokenSet = true
+			} else if u, p := deploysBasicFromEnv(n); u != "" && p != "" {
+				item.DeploysAPITokenSet = true
+			}
 		}
 		if repos := pc.GitHub.NormalizedRepos(); len(repos) > 0 {
 			lines := make([]string, 0, len(repos))

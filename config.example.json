@@ -47,6 +47,29 @@
         "listId": "",
         "customIdPrefix": ""
       },
+      "errors": {
+        "gcp": {
+          "enabled": false,
+          "projectId": "",
+          "projectNumber": "",
+          "credentialsFile": "",
+          "service": ""
+        },
+        "sentry": {
+          "enabled": false,
+          "org": "",
+          "project": "",
+          "authToken": "",
+          "baseURL": ""
+        },
+        "deploys": {
+          "enabled": false,
+          "project": "",
+          "location": "",
+          "deployment": "",
+          "apiToken": ""
+        }
+      },
       "deploy": {
         "enabled": false,
         "environments": {

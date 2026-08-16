@@ -17,6 +17,9 @@ import (
 	"github.com/acoshift/grokwork/internal/agentmcp"
 	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/errsrc/deploys"
+	"github.com/acoshift/grokwork/internal/errsrc/gcperr"
+	"github.com/acoshift/grokwork/internal/errsrc/sentry"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/projstore"
@@ -69,16 +72,102 @@ func (b *Bot) initAgentPlane() {
 			}
 			return path
 		},
-		GH:                 b.ghRunner,
-		ClickUpEnabled:     b.cfg.ProjectClickUpEnabled,
-		ClickUpAPIKey:      b.cfg.ProjectClickUpAPIKey,
-		ClickUpWorkspaceID: b.cfg.ProjectClickUpWorkspaceID,
-		ClickUpListID:      b.cfg.ProjectClickUpListID,
-		ClickUpNew:         clickup.New,
-		LinearEnabled:      b.cfg.ProjectLinearEnabled,
-		LinearAPIKey:       b.cfg.ProjectLinearAPIKey,
-		LinearTeamKey:      b.cfg.ProjectLinearTeamKey,
-		LinearNew:          linear.New,
+		GH:                   b.ghRunner,
+		ClickUpEnabled:       b.cfg.ProjectClickUpEnabled,
+		ClickUpAPIKey:        b.cfg.ProjectClickUpAPIKey,
+		ClickUpWorkspaceID:   b.cfg.ProjectClickUpWorkspaceID,
+		ClickUpListID:        b.cfg.ProjectClickUpListID,
+		ClickUpNew:           clickup.New,
+		LinearEnabled:        b.cfg.ProjectLinearEnabled,
+		LinearAPIKey:         b.cfg.ProjectLinearAPIKey,
+		LinearTeamKey:        b.cfg.ProjectLinearTeamKey,
+		LinearNew:            linear.New,
+		DeploysErrorsEnabled: b.cfg.ProjectDeploysErrorsEnabled,
+		DeploysAPIToken:      b.cfg.ProjectDeploysAPIToken,
+		DeploysBasicUser: func(project string) string {
+			u, _ := b.cfg.ProjectDeploysBasicAuth(project)
+			return u
+		},
+		DeploysBasicPass: func(project string) string {
+			_, p := b.cfg.ProjectDeploysBasicAuth(project)
+			return p
+		},
+		DeploysProject: func(project string) string {
+			if d := b.cfg.ProjectDeploysErrors(project); d != nil {
+				return d.Project
+			}
+			return ""
+		},
+		DeploysLocation: func(project string) string {
+			if d := b.cfg.ProjectDeploysErrors(project); d != nil {
+				return d.Location
+			}
+			return ""
+		},
+		DeploysDeployment: func(project string) string {
+			if d := b.cfg.ProjectDeploysErrors(project); d != nil {
+				return d.Deployment
+			}
+			return ""
+		},
+		DeploysNew:      deploys.New,
+		SentryEnabled:   b.cfg.ProjectSentryEnabled,
+		SentryAuthToken: b.cfg.ProjectSentryAuthToken,
+		SentryOrg: func(project string) string {
+			if c := b.cfg.ProjectSentry(project); c != nil {
+				return c.Org
+			}
+			return ""
+		},
+		SentryProject: func(project string) string {
+			if c := b.cfg.ProjectSentry(project); c != nil {
+				return c.Project
+			}
+			return ""
+		},
+		SentryBaseURL: func(project string) string {
+			if c := b.cfg.ProjectSentry(project); c != nil {
+				return c.BaseURL
+			}
+			return ""
+		},
+		SentryNew:        sentry.New,
+		GCPErrorsEnabled: b.cfg.ProjectGCPErrorsEnabled,
+		GCPProjectID: func(project string) string {
+			if c := b.cfg.ProjectGCPErrors(project); c != nil {
+				return c.ProjectID
+			}
+			return ""
+		},
+		GCPProjectNumber: func(project string) string {
+			if c := b.cfg.ProjectGCPErrors(project); c != nil {
+				return c.ProjectNumber
+			}
+			return ""
+		},
+		GCPService: func(project string) string {
+			if c := b.cfg.ProjectGCPErrors(project); c != nil {
+				return c.Service
+			}
+			return ""
+		},
+		GCPCredentialsFile: func(project string) string {
+			if c := b.cfg.ProjectGCPErrors(project); c != nil {
+				return c.CredentialsFile
+			}
+			return ""
+		},
+		GCPNew: func(project string) *gcperr.Client {
+			c := b.cfg.ProjectGCPErrors(project)
+			if c == nil {
+				return &gcperr.Client{}
+			}
+			return &gcperr.Client{
+				ProjectID: c.ProjectID,
+				Service:   c.Service,
+				Tokens:    gcperr.TokenSourceFor(c.CredentialsFile),
+			}
+		},
 		ListEligibleReviewers: func(project string) []agentapi.ReviewerRow {
 			return b.listEligibleReviewers(project)
 		},
@@ -223,6 +312,17 @@ func (b *Bot) prepareAgentMCP(threadID, project, actorID string, agent grokrun.A
 	if !attach {
 		return "", "", false
 	}
+	// Error-source catalog filter. Linear/ClickUp stay on the Default* set
+	// (call still errors "not enabled") — do not change that in L1.
+	if !b.cfg.ProjectGCPErrorsEnabled(project) {
+		caps.GCPErrorsRead = false
+	}
+	if !b.cfg.ProjectSentryEnabled(project) {
+		caps.SentryRead = false
+	}
+	if !b.cfg.ProjectDeploysErrorsEnabled(project) {
+		caps.DeploysErrorsRead = false
+	}
 	if strings.TrimSpace(threadID) == "" || strings.TrimSpace(project) == "" {
 		return "", "", false
 	}
@@ -317,6 +417,27 @@ func agentMCPPromptContract(caps agentauth.Caps) string {
 		lines = append(lines,
 			"Linear refs (TEAM-N or a Linear issue URL) go to linear_get_issue — not issues_list, and not Linear HTTP.",
 			"Do not invent Linear API keys. Do not call Linear issueUpdate.",
+		)
+	}
+	if caps.DeploysErrorsRead {
+		lines = append(lines,
+			"deploys.app error refs (id, location/name/id, or console URL) go to deploys_errors_get — not deploys.app HTTP.",
+			"Do not invent deploys.app tokens. Do not resolve, mute, or assign.",
+			"Do not paste full stacks or request payloads into Discord; summarize.",
+		)
+	}
+	if caps.SentryRead {
+		lines = append(lines,
+			"Sentry refs (numeric id, short id, or Sentry URL) go to sentry_get_issue — not Sentry HTTP.",
+			"Do not invent Sentry tokens or DSNs. Do not resolve, mute, or assign.",
+			"Do not paste full stacks or request payloads into Discord; summarize.",
+		)
+	}
+	if caps.GCPErrorsRead {
+		lines = append(lines,
+			"GCP Error Reporting refs (group id or Cloud Console URL) go to gcp_errors_get — not GCP HTTP.",
+			"Do not invent GCP credentials. Do not resolve groups.",
+			"Do not paste full stacks or request payloads into Discord; summarize.",
 		)
 	}
 	if caps.SessionDone || caps.SessionAbandon {

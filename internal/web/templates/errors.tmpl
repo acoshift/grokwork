@@ -1,0 +1,57 @@
+{{define "content"}}
+<div id="page-project-errors">
+<h1>{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· errors</span></h1>
+<p class="sub">Production error groups from configured sources. Stacks stay on this page — they are never posted to Discord.</p>
+{{if .ErrorTabs}}
+<p class="sub">
+  {{range .ErrorTabs}}
+  <a class="btn btn-compact{{if .Active}} btn-primary{{end}}" href="/projects/{{$.Project}}/errors?src={{.Src}}">{{.Label}}</a>
+  {{end}}
+</p>
+{{end}}
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if not .ErrorTabs}}
+<div class="section card">
+  <h2>No error source enabled</h2>
+  <p class="sub" style="margin-top:0">
+    Turn on deploys.app, Sentry, or GCP Error Reporting on the project’s Integrations settings to list production errors here.
+  </p>
+  {{if .IsAdmin}}
+  <p class="sub"><a href="/config/projects/{{.Project}}/integrations">Open Integrations settings →</a></p>
+  {{else}}
+  <p class="sub">Ask an admin to enable an error source under project Integrations.</p>
+  {{end}}
+</div>
+{{else if .ErrorGroups}}
+<div class="section">
+  {{if .ErrorClipped}}<p class="sub">Showing {{len .ErrorGroups}} (list capped{{if .ErrorNextCursor}}; more remain{{end}}).</p>{{end}}
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Error</th><th>Status</th><th>Count</th><th>Last seen</th><th>Where</th></tr></thead>
+    <tbody>
+    {{range .ErrorGroups}}
+      {{$href := printf "/projects/%s/errors/%s/%s" $.Project .Provider .ID}}
+      {{if and .Location .Resource}}{{$href = printf "%s?location=%s&name=%s" $href (urlquery .Location) (urlquery .Resource)}}{{end}}
+      <tr>
+        <td><a class="pr-title" href="{{$href}}">{{if .Title}}{{.Title}}{{else}}{{.ID}}{{end}}</a>
+          <div class="muted mono">{{.ID}}</div></td>
+        <td>{{if .Status}}<span class="badge">{{.Status}}</span>{{end}}</td>
+        <td class="mono">{{if .Count}}{{.Count}}×{{end}}</td>
+        <td class="mono">{{if not .LastSeen.IsZero}}{{.LastSeen.UTC.Format "2006-01-02 15:04"}} UTC{{end}}</td>
+        <td class="mono">{{if .Location}}{{.Location}}{{end}}{{if .Resource}} / {{.Resource}}{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{if .ErrorNextCursor}}
+  <p class="sub"><a href="/projects/{{.Project}}/errors?src={{.ErrorSrc}}&cursor={{urlquery .ErrorNextCursor}}{{if .ErrorStatus}}&status={{urlquery .ErrorStatus}}{{end}}{{if .ErrorSort}}&sort={{urlquery .ErrorSort}}{{end}}">Next page →</a></p>
+  {{end}}
+</div>
+{{else if not .Error}}
+<div class="empty">No errors in this view.</div>
+{{end}}
+</div>
+{{end}}

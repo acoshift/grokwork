@@ -79,6 +79,56 @@ func TestMCPCapsForRun(t *testing.T) {
 	}
 }
 
+func TestPrepareAgentMCPStripsDisabledErrorCaps(t *testing.T) {
+	b, _ := testFixBot(t)
+	if err := b.ensureAgentPlaneForTest(); err != nil {
+		t.Fatal(err)
+	}
+	path, tok, ok := b.prepareAgentMCP("t-strip", "app", "actor", grokrun.AgentClaude, RunPolicy{})
+	if !ok || path == "" || tok == "" {
+		t.Fatal("expected mint")
+	}
+	cred, err := b.agent.Auth.Verify(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred.Caps.DeploysErrorsRead || cred.Caps.SentryRead || cred.Caps.GCPErrorsRead {
+		t.Fatalf("disabled providers must be stripped: %+v", cred.Caps)
+	}
+	if !cred.Caps.LinearRead || !cred.Caps.ClickUpRead {
+		t.Fatalf("must not strip Linear/ClickUp: %+v", cred.Caps)
+	}
+	if err := b.cfg.SetProjectErrorsDeploys("app", true, "acme", "loc", "api", "tok", false); err != nil {
+		t.Fatal(err)
+	}
+	_, tok2, ok := b.prepareAgentMCP("t-strip2", "app", "actor", grokrun.AgentClaude, RunPolicy{})
+	if !ok {
+		t.Fatal("expected mint")
+	}
+	cred2, err := b.agent.Auth.Verify(tok2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cred2.Caps.DeploysErrorsRead {
+		t.Fatal("enabled deploys must keep DeploysErrorsRead")
+	}
+	if cred2.Caps.SentryRead || cred2.Caps.GCPErrorsRead {
+		t.Fatalf("other error caps still on: %+v", cred2.Caps)
+	}
+	b.revokeAgentThread("t-strip")
+	b.revokeAgentThread("t-strip2")
+}
+
+func TestAgentMCPPromptContractDeploys(t *testing.T) {
+	t.Parallel()
+	p := agentMCPPromptContract(agentauth.DefaultShipCaps())
+	for _, want := range []string{"deploys_errors_get", "not deploys.app HTTP", "Do not invent deploys.app tokens", "Do not resolve, mute"} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("missing %q in\n%s", want, p)
+		}
+	}
+}
+
 func TestAgentMCPPromptContractInvestigateOmitsWrites(t *testing.T) {
 	t.Parallel()
 	p := agentMCPPromptContract(agentauth.DefaultInvestigateCaps())

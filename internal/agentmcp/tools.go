@@ -14,21 +14,27 @@ import (
 
 // Tool names exposed to the coding CLI.
 const (
-	ToolSessionGet     = "session_get"
-	ToolSessionDone    = "session_done"
-	ToolSessionAbandon = "session_abandon"
-	ToolPRsList        = "prs_list"
-	ToolIssuesList     = "issues_list"
-	ToolReviewRequest  = "review_request"
-	ToolStoragePut     = "storage_put"
-	ToolStorageGet     = "storage_get"
-	ToolStorageList    = "storage_list"
-	ToolStorageDelete  = "storage_delete"
-	ToolClickUpGetTask = "clickup_get_task"
-	ToolClickUpList    = "clickup_list_tasks"
-	ToolLinearGetIssue = "linear_get_issue"
-	ToolLinearList     = "linear_list_issues"
-	ToolReviewersList  = "reviewers_list"
+	ToolSessionGet        = "session_get"
+	ToolSessionDone       = "session_done"
+	ToolSessionAbandon    = "session_abandon"
+	ToolPRsList           = "prs_list"
+	ToolIssuesList        = "issues_list"
+	ToolReviewRequest     = "review_request"
+	ToolStoragePut        = "storage_put"
+	ToolStorageGet        = "storage_get"
+	ToolStorageList       = "storage_list"
+	ToolStorageDelete     = "storage_delete"
+	ToolClickUpGetTask    = "clickup_get_task"
+	ToolClickUpList       = "clickup_list_tasks"
+	ToolLinearGetIssue    = "linear_get_issue"
+	ToolLinearList        = "linear_list_issues"
+	ToolDeploysErrorsList = "deploys_errors_list"
+	ToolDeploysErrorsGet  = "deploys_errors_get"
+	ToolSentryListIssues  = "sentry_list_issues"
+	ToolSentryGetIssue    = "sentry_get_issue"
+	ToolGCPErrorsList     = "gcp_errors_list"
+	ToolGCPErrorsGet      = "gcp_errors_get"
+	ToolReviewersList     = "reviewers_list"
 )
 
 // ToolDef is an MCP tools/list entry.
@@ -68,6 +74,14 @@ func ToolDefs() []ToolDef {
 		{Name: ToolClickUpList, Description: "List recent ClickUp tasks on this project's configured list.", InputSchema: obj(map[string]any{"limit": num})},
 		{Name: ToolLinearGetIssue, Description: "Get one Linear issue by TEAM-N or a Linear issue URL. Uses this project's Linear key; do not call Linear HTTP.", InputSchema: obj(map[string]any{"ref": str}, "ref")},
 		{Name: ToolLinearList, Description: "List recent Linear issues on this project's configured team.", InputSchema: obj(map[string]any{"limit": num})},
+		{Name: ToolDeploysErrorsList, Description: "List deploys.app error groups for this project's configured deploys.app project. Optional location/name narrow the list; do not call deploys.app HTTP.", InputSchema: obj(map[string]any{
+			"status": str, "sort": str, "limit": num, "cursor": str, "location": str, "name": str,
+		})},
+		{Name: ToolDeploysErrorsGet, Description: "Get one deploys.app error by id, location/name/id, or console URL. Uses this project's deploys.app key; do not call deploys.app HTTP.", InputSchema: obj(map[string]any{"ref": str}, "ref")},
+		{Name: ToolSentryListIssues, Description: "List Sentry issues for this project's configured org/project. Do not call Sentry HTTP.", InputSchema: obj(map[string]any{"query": str, "sort": str, "limit": num, "cursor": str})},
+		{Name: ToolSentryGetIssue, Description: "Get one Sentry issue by numeric id, short id, or Sentry URL. Uses this project's org; do not call Sentry HTTP.", InputSchema: obj(map[string]any{"ref": str}, "ref")},
+		{Name: ToolGCPErrorsList, Description: "List Google Cloud Error Reporting groups for this project's configured GCP project. Do not call GCP HTTP.", InputSchema: obj(map[string]any{"period": str, "sort": str, "limit": num, "cursor": str, "service": str})},
+		{Name: ToolGCPErrorsGet, Description: "Get one GCP error group by id or Cloud Console URL. Do not call GCP HTTP.", InputSchema: obj(map[string]any{"ref": str, "period": str}, "ref")},
 		{Name: ToolReviewersList, Description: "List team-review-eligible project members (canonical actor ids for review_request).", InputSchema: obj(nil)},
 	}
 }
@@ -94,6 +108,12 @@ func toolAllowed(name string, c agentauth.Caps) bool {
 		return c.ClickUpRead
 	case ToolLinearGetIssue, ToolLinearList:
 		return c.LinearRead
+	case ToolDeploysErrorsList, ToolDeploysErrorsGet:
+		return c.DeploysErrorsRead
+	case ToolSentryListIssues, ToolSentryGetIssue:
+		return c.SentryRead
+	case ToolGCPErrorsList, ToolGCPErrorsGet:
+		return c.GCPErrorsRead
 	default:
 		return false
 	}
@@ -167,6 +187,29 @@ func Call(ctx context.Context, svc *agentapi.Service, token, name string, args m
 		return svc.GetLinearIssue(ctx, token, strArg(args, "ref"))
 	case ToolLinearList:
 		return svc.ListLinearIssues(ctx, token, intArg(args, "limit"))
+	case ToolDeploysErrorsList:
+		return svc.ListDeploysErrors(ctx, token, strArg(args, "status"), intArg(args, "limit"),
+			strArg(args, "cursor"), strArg(args, "sort"), strArg(args, "location"), strArg(args, "name"))
+	case ToolDeploysErrorsGet:
+		return svc.GetDeploysError(ctx, token, strArg(args, "ref"))
+	case ToolSentryListIssues:
+		rows, cursor, err := svc.ListSentryIssues(ctx, token, strArg(args, "query"), intArg(args, "limit"),
+			strArg(args, "cursor"), strArg(args, "sort"))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"issues": rows, "nextCursor": cursor}, nil
+	case ToolSentryGetIssue:
+		return svc.GetSentryIssue(ctx, token, strArg(args, "ref"))
+	case ToolGCPErrorsList:
+		rows, cursor, err := svc.ListGCPErrors(ctx, token, strArg(args, "period"), strArg(args, "sort"),
+			intArg(args, "limit"), strArg(args, "cursor"), strArg(args, "service"))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"issues": rows, "nextCursor": cursor}, nil
+	case ToolGCPErrorsGet:
+		return svc.GetGCPError(ctx, token, strArg(args, "ref"), strArg(args, "period"))
 	case ToolReviewersList:
 		return svc.ListReviewers(token)
 	default:

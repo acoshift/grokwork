@@ -72,6 +72,9 @@ type ProjectConfig struct {
 	GitHub         *ProjectGitHubConfig `json:"github,omitempty"`
 	Linear         *ProjectLinearConfig  `json:"linear,omitempty"`
 	ClickUp        *ProjectClickUpConfig `json:"clickup,omitempty"`
+	// Errors is per-provider production error-source opt-in (GCP / Sentry / deploys.app).
+	// nil means none configured. This is not grokwork's own deploy pipeline.
+	Errors *ProjectErrorsConfig `json:"errors,omitempty"`
 	// Deploy is per-project deploy policy and credentials. The pipeline itself
 	// lives in the repo at .grokwork/deploy.yaml (see internal/deploy).
 	Deploy *ProjectDeployConfig `json:"deploy,omitempty"`
@@ -182,6 +185,11 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 		}
 		pc.Deploy = normalizeProjectDeploy(pc.Deploy)
 		pc.Actions = normalizeProjectActions(pc.Actions)
+		errs, err := normalizeProjectErrors(pc.Errors)
+		if err != nil {
+			return fmt.Errorf("projects[%q]: errors: %w", name, err)
+		}
+		pc.Errors = errs
 		st, err := normalizeStorage(pc.Storage, true)
 		if err != nil {
 			return fmt.Errorf("projects[%q]: storage: %w", name, err)
@@ -219,6 +227,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		GitHub                   *ProjectGitHubConfig    `json:"github,omitempty"`
 		Linear                   *ProjectLinearConfig    `json:"linear,omitempty"`
 		ClickUp                  *ProjectClickUpConfig   `json:"clickup,omitempty"`
+		Errors                   *ProjectErrorsConfig    `json:"errors,omitempty"`
 		Deploy                   *ProjectDeployConfig    `json:"deploy,omitempty"`
 		Actions                  *ProjectActionsConfig   `json:"actions,omitempty"`
 		Storage                  *StorageConfig          `json:"storage,omitempty"`
@@ -246,6 +255,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			GitHub:                   cloneProjectGitHub(pc.GitHub),
 			Linear:                   cloneProjectLinear(pc.Linear),
 			ClickUp:                  cloneProjectClickUp(pc.ClickUp),
+			Errors:                   cloneProjectErrors(pc.Errors),
 			Deploy:                   cloneProjectDeploy(pc.Deploy),
 			Actions:                  cloneProjectActions(pc.Actions),
 			Storage:                  cloneStorage(pc.Storage),
@@ -304,6 +314,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			GitHub:                   cloneProjectGitHub(v.GitHub),
 			Linear:                   cloneProjectLinear(v.Linear),
 			ClickUp:                  cloneProjectClickUp(v.ClickUp),
+			Errors:                   cloneProjectErrors(v.Errors),
 			Deploy:                   cloneProjectDeploy(v.Deploy),
 			Actions:                  cloneProjectActions(v.Actions),
 			Storage:                  cloneStorage(v.Storage),

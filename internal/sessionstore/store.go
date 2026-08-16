@@ -59,6 +59,10 @@ type Entry struct {
 	// Used for PR body Fixes/Refs lines and title prefixes.
 	Issues []TrackedIssue `json:"issues,omitempty"`
 
+	// Errors tracks production error groups (GCP / Sentry / deploys.app).
+	// Not tickets — no Fixes/Refs, no shared max with Issues. Never stores a stack.
+	Errors []TrackedError `json:"errors,omitempty"`
+
 	// PRs tracks one or more GitHub pull requests for this thread (multi-repo / multi-PR).
 	// Preferred source of truth; legacy single-PR fields below are kept in sync for older data.
 	PRs []TrackedPR `json:"prs,omitempty"`

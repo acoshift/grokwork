@@ -13,31 +13,37 @@ import (
 
 // Caps are snapshotted at mint time.
 type Caps struct {
-	SessionRead    bool
-	SessionDone    bool
-	SessionAbandon bool
-	PRsList        bool
-	IssuesList     bool
-	ReviewRequest  bool
-	StorageRead    bool
-	StorageWrite   bool
-	ClickUpRead    bool
-	LinearRead     bool
+	SessionRead       bool
+	SessionDone       bool
+	SessionAbandon    bool
+	PRsList           bool
+	IssuesList        bool
+	ReviewRequest     bool
+	StorageRead       bool
+	StorageWrite      bool
+	ClickUpRead       bool
+	LinearRead        bool
+	GCPErrorsRead     bool
+	SentryRead        bool
+	DeploysErrorsRead bool
 }
 
 // DefaultShipCaps is the unrestricted ship/fix tool set (rev 3).
 func DefaultShipCaps() Caps {
 	return Caps{
-		SessionRead:    true,
-		SessionDone:    true,
-		SessionAbandon: true,
-		PRsList:        true,
-		IssuesList:     true,
-		ReviewRequest:  true,
-		StorageRead:    true,
-		StorageWrite:   true,
-		ClickUpRead:    true,
-		LinearRead:     true,
+		SessionRead:       true,
+		SessionDone:       true,
+		SessionAbandon:    true,
+		PRsList:           true,
+		IssuesList:        true,
+		ReviewRequest:     true,
+		StorageRead:       true,
+		StorageWrite:      true,
+		ClickUpRead:       true,
+		LinearRead:        true,
+		GCPErrorsRead:     true,
+		SentryRead:        true,
+		DeploysErrorsRead: true,
 	}
 }
 
@@ -46,12 +52,15 @@ func DefaultShipCaps() Caps {
 // board or mutate project storage.
 func DefaultInvestigateCaps() Caps {
 	return Caps{
-		SessionRead: true,
-		PRsList:     true,
-		IssuesList:  true,
-		StorageRead: true,
-		ClickUpRead: true,
-		LinearRead:  true,
+		SessionRead:       true,
+		PRsList:           true,
+		IssuesList:        true,
+		StorageRead:       true,
+		ClickUpRead:       true,
+		LinearRead:        true,
+		GCPErrorsRead:     true,
+		SentryRead:        true,
+		DeploysErrorsRead: true,
 	}
 }
 

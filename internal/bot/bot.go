@@ -122,9 +122,10 @@ type Bot struct {
 	bootGen   uint64
 	hostname  string
 
-	discordMu sync.RWMutex
-	discord   *discordgo.Session // gateway session after Register
-	threadAPI threadAPI          // tests inject; nil → wrap discord
+	discordMu     sync.RWMutex
+	discord       *discordgo.Session  // gateway session after Register
+	threadAPI     threadAPI           // tests inject; nil → wrap discord
+	startTaskHook func(StartTaskOpts) // tests observe Kind / opts
 	// ghRunner is optional; nil → ghpr defaultRunner. Web installs its injectable
 	// runner so checklist annotation edits go through the same path as other
 	// issue writes (and tests can assert body-file content without a real gh).

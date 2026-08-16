@@ -698,6 +698,7 @@ func preservePRFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	preserveBriefFields(next, prev)
 	preserveLabelFields(next, prev)
 	preserveIssueFields(next, prev)
+	preserveErrorFields(next, prev)
 	preserveWorkflowFields(next, prev)
 	preserveShipFields(next, prev)
 	preserveModeFields(next, prev)

@@ -27,7 +27,7 @@ import "slices"
 // trading away the invariant.
 //
 // Nested element types are flat by design — TrackedPR, TrackedIssue,
-// CheckpointMeta, LastVerify and DiscordRef hold only scalars, so slices.Clone
+// TrackedError, CheckpointMeta, LastVerify and DiscordRef hold only scalars, so slices.Clone
 // fully detaches them. The two exceptions carry slices of their own and need
 // per-element work: OpenQuestion.Options and every slice on Dossier. Adding a
 // slice or pointer field to any of those types means extending this function —
@@ -37,6 +37,7 @@ func (e Entry) clone() Entry {
 
 	out.CoOwnerIDs = slices.Clone(e.CoOwnerIDs)
 	out.Issues = slices.Clone(e.Issues)
+	out.Errors = slices.Clone(e.Errors)
 	out.PRs = slices.Clone(e.PRs)
 	out.RelatedCases = slices.Clone(e.RelatedCases)
 	out.Checkpoints = slices.Clone(e.Checkpoints)

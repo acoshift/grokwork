@@ -185,6 +185,11 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 	if kind == KindEmpty {
 		kind = KindTask
 	}
+	if b.startTaskHook != nil {
+		hooked := opts
+		hooked.Kind = kind
+		b.startTaskHook(hooked)
+	}
 	taskID := runjournal.NewTaskID()
 	matCtx, matCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	paths, _, copied, matErr := b.materializeTaskFiles(matCtx, threadID, taskID, nil, opts.AttachmentPaths, nil)

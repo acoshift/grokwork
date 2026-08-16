@@ -806,6 +806,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 		}
 		cwd, _ := s.resolveSessionDiffCwd(ent, threadID)
 		d.HasWorktree = cwd != ""
+		s.attachSessionErrorBanner(&d, ent, threadID)
 	}
 	d.AgentLabel = s.agentLabel(threadID)
 	// Live run chips + streaming reply from bot snapshot.

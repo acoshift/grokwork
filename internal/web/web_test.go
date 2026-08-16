@@ -178,6 +178,7 @@ func TestPagesRender(t *testing.T) {
 		{"/projects/proj/deploys", `id="page-deploys"`},
 		// Files same contract: page chrome with no bucket configured.
 		{"/projects/proj/files", `id="page-project-files"`},
+		{"/projects/proj/errors", `id="page-project-errors"`},
 		// Actions same contract: page chrome even when gh/catalog is unavailable.
 		{"/projects/proj/actions", `id="page-actions"`},
 		// Config hub: grouped drill-in rows; sections live on focused pages.

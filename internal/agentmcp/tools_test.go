@@ -3,6 +3,7 @@ package agentmcp
 import (
 	"context"
 	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,7 +128,7 @@ func TestToolDefsForInvestigateOmitsWrites(t *testing.T) {
 	for _, d := range defs {
 		got[d.Name] = true
 	}
-	for _, name := range []string{ToolSessionGet, ToolPRsList, ToolIssuesList, ToolStorageGet, ToolStorageList, ToolClickUpGetTask, ToolLinearGetIssue} {
+	for _, name := range []string{ToolSessionGet, ToolPRsList, ToolIssuesList, ToolStorageGet, ToolStorageList, ToolClickUpGetTask, ToolLinearGetIssue, ToolDeploysErrorsGet, ToolDeploysErrorsList} {
 		if !got[name] {
 			t.Fatalf("missing read tool %s: %+v", name, defs)
 		}
@@ -178,5 +179,41 @@ func TestCallSessionDoneForbiddenOnInvestigateCaps(t *testing.T) {
 	}
 	if _, err := Call(t.Context(), svc, raw, ToolSessionDone, nil); err == nil {
 		t.Fatal("session_done must be forbidden")
+	}
+}
+
+func TestToolDefsForWithoutDeploysErrorsReadOmitsDeploys(t *testing.T) {
+	t.Parallel()
+	caps := agentauth.Caps{SentryRead: true, SessionRead: true}
+	defs := ToolDefsFor(caps)
+	for _, d := range defs {
+		if d.Name == ToolDeploysErrorsList || d.Name == ToolDeploysErrorsGet {
+			t.Fatalf("deploys tool listed without cap: %+v", defs)
+		}
+		if strings.HasPrefix(d.Name, "gcp_errors") {
+			t.Fatalf("gcp tool listed without cap: %s", d.Name)
+		}
+	}
+	stripped := agentauth.DefaultShipCaps()
+	stripped.DeploysErrorsRead = false
+	for _, d := range ToolDefsFor(stripped) {
+		if d.Name == ToolDeploysErrorsList || d.Name == ToolDeploysErrorsGet {
+			t.Fatalf("deploys tool listed when cap stripped: %s", d.Name)
+		}
+	}
+}
+
+func TestToolDefsForSentryAndGCPCaps(t *testing.T) {
+	t.Parallel()
+	onlySentry := agentauth.Caps{SentryRead: true}
+	names := map[string]bool{}
+	for _, d := range ToolDefsFor(onlySentry) {
+		names[d.Name] = true
+	}
+	if !names[ToolSentryGetIssue] || !names[ToolSentryListIssues] {
+		t.Fatal("sentry tools missing")
+	}
+	if names[ToolGCPErrorsGet] || names[ToolDeploysErrorsGet] {
+		t.Fatal("other providers leaked")
 	}
 }

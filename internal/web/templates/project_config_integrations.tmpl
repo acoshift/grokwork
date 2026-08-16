@@ -151,6 +151,131 @@
   </form>
 </div>
 
+<div class="section card" id="project-errors-gcp">
+  <h2>GCP Error Reporting</h2>
+  <p class="sub" style="margin-top:0">
+    Read-only list/get of Cloud Error Reporting groups. Credentials are a <strong>path</strong> to a service-account JSON key, never the key contents.
+    Empty path uses host ADC (<span class="mono">gcloud auth application-default login</span> or metadata).
+  </p>
+  <form method="post" action="{{route "config.setProjectErrorsGCP"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div class="inline" style="grid-template-columns: auto 1fr 1fr; margin-bottom:0.65rem;">
+      <label class="check">
+        <input type="checkbox" name="enabled" value="1" {{if .ProjectItem.GCPErrorsEnabled}}checked{{end}}>
+        Enabled
+      </label>
+      <div>
+        <label for="project-gcp-id">GCP project id</label>
+        <input id="project-gcp-id" type="text" name="projectId" value="{{.ProjectItem.GCPProjectID}}" placeholder="acme-prod" class="mono" autocomplete="off">
+      </div>
+      <div>
+        <label for="project-gcp-num">Project number (optional)</label>
+        <input id="project-gcp-num" type="text" name="projectNumber" value="{{.ProjectItem.GCPProjectNumber}}" placeholder="console ?project= number" class="mono" autocomplete="off">
+      </div>
+    </div>
+    <div class="inline" style="grid-template-columns: 1fr 1fr; margin-bottom:0.65rem;">
+      <div>
+        <label for="project-gcp-service">Service filter (optional)</label>
+        <input id="project-gcp-service" type="text" name="service" value="{{.ProjectItem.GCPService}}" placeholder="api" class="mono" autocomplete="off">
+      </div>
+      <div>
+        <label for="project-gcp-creds">Credentials file (absolute path)</label>
+        <input id="project-gcp-creds" type="text" name="credentialsFile" value="{{.ProjectItem.GCPCredentialsFile}}" placeholder="/etc/grokwork/gcp-errors.json" class="mono" autocomplete="off">
+      </div>
+    </div>
+    <p class="sub" style="margin:0 0 0.65rem">Paste the project id, or fill project number, so console URLs that only name the number are accepted. Existence of the key file is not checked on save.</p>
+    <div class="form-actions"><button type="submit">Save GCP Error Reporting</button></div>
+  </form>
+</div>
+
+<div class="section card" id="project-errors-sentry">
+  <h2>Sentry</h2>
+  <p class="sub" style="margin-top:0">
+    Read-only issue list/get. Use an org or user token with <span class="mono">event:read</span> and <span class="mono">project:read</span> — not a DSN.
+    {{if .ProjectItem.SentryAuthTokenSet}}<span class="badge status-done">token set</span>{{else}}<span class="badge">no token</span>{{end}}
+    · env alternative: <span class="mono">{{.ProjectItem.SentryEnvHint}}</span>
+  </p>
+  <form method="post" action="{{route "config.setProjectErrorsSentry"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div class="inline" style="grid-template-columns: auto 1fr 1fr; margin-bottom:0.65rem;">
+      <label class="check">
+        <input type="checkbox" name="enabled" value="1" {{if .ProjectItem.SentryEnabled}}checked{{end}}>
+        Enabled
+      </label>
+      <div>
+        <label for="project-sentry-org">Org slug</label>
+        <input id="project-sentry-org" type="text" name="org" value="{{.ProjectItem.SentryOrg}}" placeholder="acme" class="mono" autocomplete="off">
+      </div>
+      <div>
+        <label for="project-sentry-project">Project slug</label>
+        <input id="project-sentry-project" type="text" name="project" value="{{.ProjectItem.SentryProject}}" placeholder="app" class="mono" autocomplete="off">
+      </div>
+    </div>
+    <div class="inline" style="grid-template-columns: 1fr 1fr; margin-bottom:0.65rem;">
+      <div>
+        <label for="project-sentry-token">Auth token</label>
+        <input id="project-sentry-token" type="password" name="authToken" placeholder="leave blank to keep" autocomplete="off">
+      </div>
+      <div>
+        <label for="project-sentry-base">Base URL (optional)</label>
+        <input id="project-sentry-base" type="text" name="baseURL" value="{{.ProjectItem.SentryBaseURL}}" placeholder="https://sentry.io" class="mono" autocomplete="off">
+      </div>
+    </div>
+    <label class="check">
+      <input type="checkbox" name="clearAuthToken" value="1"> Clear stored token
+    </label>
+    <div class="form-actions"><button type="submit">Save Sentry</button></div>
+  </form>
+</div>
+
+<div class="section card" id="project-errors-deploys">
+  <h2>deploys.app errors</h2>
+  <p class="sub" style="margin-top:0">
+    Read-only <span class="mono">error.list</span> / <span class="mono">error.get</span> on a deploys.app project. This is not grokwork’s own Deploy pipeline.
+    {{if .ProjectItem.DeploysAPITokenSet}}<span class="badge status-done">credentials set</span>{{else}}<span class="badge">no credentials</span>{{end}}
+    · env alternative: <span class="mono">{{.ProjectItem.DeploysEnvHint}}</span>
+  </p>
+  <p class="sub">
+    Prefer a service account granted only <span class="mono">error.list</span> + <span class="mono">error.get</span>, then set
+    <span class="mono">DEPLOYS_AUTH_USER_&lt;PROJECT&gt;</span> + <span class="mono">DEPLOYS_AUTH_PASS_&lt;PROJECT&gt;</span> (HTTP Basic).
+    A Bearer token from <span class="mono">deploys auth token</span> lasts 7 days — use the suffixed env, not the CLI’s unsuffixed <span class="mono">DEPLOYS_TOKEN</span>.
+  </p>
+  <form method="post" action="{{route "config.setProjectErrorsDeploys"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div class="inline" style="grid-template-columns: auto 1fr 1fr; margin-bottom:0.65rem;">
+      <label class="check">
+        <input type="checkbox" name="enabled" value="1" {{if .ProjectItem.DeploysErrorsEnabled}}checked{{end}}>
+        Enabled
+      </label>
+      <div>
+        <label for="project-deploys-proj">deploys.app project</label>
+        <input id="project-deploys-proj" type="text" name="project" value="{{.ProjectItem.DeploysErrorsProject}}" placeholder="acme" class="mono" autocomplete="off">
+      </div>
+      <div>
+        <label for="project-deploys-loc">Default location (MCP only)</label>
+        <input id="project-deploys-loc" type="text" name="location" value="{{.ProjectItem.DeploysErrorsLocation}}" placeholder="gke.cluster-rcf2" class="mono" autocomplete="off">
+      </div>
+    </div>
+    <div class="inline" style="grid-template-columns: 1fr 1fr; margin-bottom:0.65rem;">
+      <div>
+        <label for="project-deploys-name">Default deployment (MCP only)</label>
+        <input id="project-deploys-name" type="text" name="deployment" value="{{.ProjectItem.DeploysErrorsName}}" placeholder="api" class="mono" autocomplete="off">
+      </div>
+      <div>
+        <label for="project-deploys-token">API token (Bearer)</label>
+        <input id="project-deploys-token" type="password" name="apiToken" placeholder="leave blank to keep" autocomplete="off">
+      </div>
+    </div>
+    <label class="check">
+      <input type="checkbox" name="clearApiToken" value="1"> Clear stored token
+    </label>
+    <div class="form-actions"><button type="submit">Save deploys.app errors</button></div>
+  </form>
+</div>
+
 
 <div class="section card" id="project-actions">
   <h2>GitHub Actions</h2>

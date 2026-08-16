@@ -66,6 +66,14 @@ func SetThreadAPIForTest(b *Bot, api threadAPI) {
 	b.threadAPI = api
 }
 
+// SetStartTaskHookForTest observes StartTaskOpts (Kind) from StartError tests.
+func SetStartTaskHookForTest(b *Bot, fn func(StartTaskOpts)) {
+	if b == nil {
+		return
+	}
+	b.startTaskHook = fn
+}
+
 // SeedActiveRunForTest claims an active job and publishes prompt/live stream fields
 // for web session-detail streaming tests.
 func SeedActiveRunForTest(b *Bot, threadID, project, prompt, liveText string) error {

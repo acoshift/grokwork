@@ -1,0 +1,149 @@
+{{define "content"}}
+<p class="pr-crumb">
+  <a href="/projects/{{.Project}}/errors{{if .ErrorSrc}}?src={{.ErrorSrc}}{{end}}">← Errors</a>
+  <span class="crumb-sep">/</span>
+  <span class="mono">{{if .ErrorDetail.ID}}{{.ErrorDetail.ID}}{{else}}{{.ErrorSrc}}{{end}}</span>
+</p>
+<div class="pr-title-row">
+  <h1 id="page-project-error">{{if .ErrorDetail.Title}}{{.ErrorDetail.Title}}{{else if .ErrorDetail.ID}}{{.ErrorDetail.ID}}{{else}}Error{{end}}</h1>
+  <div class="pr-head-links">
+    {{if .ErrorDetail.URL}}<a class="btn btn-compact" href="{{.ErrorDetail.URL}}" target="_blank" rel="noopener">Console ↗</a>{{end}}
+  </div>
+</div>
+<div class="pr-meta">
+  {{if .ErrorDetail.Status}}<span class="badge">{{.ErrorDetail.Status}}</span>{{end}}
+  {{if .ErrorDetail.Count}}<span class="mono">{{.ErrorDetail.Count}}×</span>{{end}}
+  {{if not .ErrorDetail.LastSeen.IsZero}}<span class="mono">last {{.ErrorDetail.LastSeen.UTC.Format "2006-01-02 15:04"}} UTC</span>{{end}}
+  {{if .ErrorDetail.Culprit}}<span class="mono">{{.ErrorDetail.Culprit}}</span>{{end}}
+  {{if .ErrorDetail.Location}}<span class="mono">{{.ErrorDetail.Location}}{{if .ErrorDetail.Resource}} / {{.ErrorDetail.Resource}}{{end}}</span>{{end}}
+</div>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+<div class="pr-cols">
+<div class="pr-main">
+
+{{if .ErrorDetail.Sample}}
+<div class="section card">
+  <h2>Sample stack</h2>
+  <pre class="mono" id="error-sample">{{.ErrorDetail.Sample}}</pre>
+</div>
+{{end}}
+
+{{if .ErrorDetail.Recent}}
+<div class="section card">
+  <h2>Recent events</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>When</th><th>Pod</th><th></th></tr></thead>
+    <tbody>
+    {{range .ErrorDetail.Recent}}
+      <tr>
+        <td class="mono">{{if not .Timestamp.IsZero}}{{.Timestamp.UTC.Format "2006-01-02 15:04:05"}}{{end}}</td>
+        <td class="mono">{{.Culprit}}</td>
+        <td class="mono muted">{{.Extra}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+
+{{if .IssueSessions}}
+<div class="section card">
+  <h2>Sessions</h2>
+  {{range .IssueSessions}}
+  <p><a class="mono" href="/sessions/{{.ThreadID}}{{if $.Project}}?project={{urlquery $.Project}}{{end}}">{{.ThreadID}}</a>
+    {{if .Goal}} · {{.Goal}}{{end}}
+    {{if .Label}} <span class="badge">{{.Label}}</span>{{end}}</p>
+  {{end}}
+</div>
+{{end}}
+
+</div>{{/* /pr-main */}}
+
+{{template "rail_scrim" $}}
+<aside class="pr-rail" id="page-rail">
+{{template "rail_sheet_head" $}}
+
+{{if .CanStartSession}}
+<div class="rail-group" id="error-dispatch">
+  <div class="rail-group-title">Agent</div>
+  {{if .ShowFixPicker}}
+  <p class="rail-note">Multiple sessions bind this error — continue one:</p>
+  {{range .FixHits}}
+  <div class="grok-pick">
+    <div class="grok-pick-head">
+      <span class="badge">{{.Label}}</span>
+      {{if .Busy}}<span class="badge live">busy</span>{{end}}
+      <a class="tid mono" href="/sessions/{{.ThreadID}}{{if $.Project}}?project={{urlquery $.Project}}{{end}}">{{.ThreadID}}</a>
+    </div>
+    {{if .Goal}}<div class="grok-pick-goal">{{.Goal}}</div>{{end}}
+    {{if $.CanStartFixMode}}
+    <form method="post" action="/projects/{{$.Project}}/errors/{{$.ErrorSrc}}/{{$.ErrorDetail.ID}}/fix" class="grok-pick-actions">
+      {{template "csrf" $}}
+      <input type="hidden" name="thread_id" value="{{.ThreadID}}">
+      {{if $.ErrorLocation}}<input type="hidden" name="location" value="{{$.ErrorLocation}}">{{end}}
+      {{if $.ErrorName}}<input type="hidden" name="name" value="{{$.ErrorName}}">{{end}}
+      <button type="submit" class="btn-secondary btn-compact">Continue fix</button>
+    </form>
+    {{end}}
+    <form method="post" action="/projects/{{$.Project}}/errors/{{$.ErrorSrc}}/{{$.ErrorDetail.ID}}/investigate" class="grok-pick-actions">
+      {{template "csrf" $}}
+      <input type="hidden" name="thread_id" value="{{.ThreadID}}">
+      {{if $.ErrorLocation}}<input type="hidden" name="location" value="{{$.ErrorLocation}}">{{end}}
+      {{if $.ErrorName}}<input type="hidden" name="name" value="{{$.ErrorName}}">{{end}}
+      <button type="submit" class="btn-secondary btn-compact">Continue investigate</button>
+    </form>
+  </div>
+  {{else}}
+  <p class="rail-note">No sessions available to continue.</p>
+  {{end}}
+  <p class="rail-note">Or start a new session:</p>
+  {{end}}
+
+  {{if .CanStartFixMode}}
+  <form method="post" action="/projects/{{.Project}}/errors/{{.ErrorSrc}}/{{.ErrorDetail.ID}}/fix" class="grok-dispatch">
+    {{template "csrf" $}}
+    {{if .ShowFixPicker}}
+    <input type="hidden" name="force_new" value="1">
+    {{else}}
+    <label class="check"><input type="checkbox" name="force_new" value="1"> Always start a new session</label>
+    {{end}}
+    {{if .ErrorLocation}}<input type="hidden" name="location" value="{{.ErrorLocation}}">{{end}}
+    {{if .ErrorName}}<input type="hidden" name="name" value="{{.ErrorName}}">{{end}}
+    {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
+    <div class="form-actions">
+      <button type="submit" id="btn-fix-error"
+        {{- if .CanSelectModel}} data-confirm="Starts or reuses a session for this error. Opens or updates a PR; it never merges." data-confirm-title="Fix with Grok" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Fix with Grok</button>
+    </div>
+  </form>
+  {{end}}
+
+  <form method="post" action="/projects/{{.Project}}/errors/{{.ErrorSrc}}/{{.ErrorDetail.ID}}/investigate" class="grok-dispatch">
+    {{template "csrf" $}}
+    {{if .ShowFixPicker}}<input type="hidden" name="force_new" value="1">{{end}}
+    {{if .ErrorLocation}}<input type="hidden" name="location" value="{{.ErrorLocation}}">{{end}}
+    {{if .ErrorName}}<input type="hidden" name="name" value="{{.ErrorName}}">{{end}}
+    {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
+    <div class="form-actions">
+      <button type="submit" id="btn-investigate-error" class="btn-secondary"
+        {{- if .CanSelectModel}} data-confirm="Starts or reuses a session to diagnose this error. It does not open a PR." data-confirm-title="Investigate" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Investigate</button>
+    </div>
+  </form>
+  {{if .ErrorGrokBanner}}
+  <p class="rail-note" id="error-grok-banner">{{.ErrorGrokBannerCopy}}</p>
+  {{end}}
+  <p class="rail-note">Fix is the primary action and attaches grokwork MCP. Investigate does not embed the stack.</p>
+</div>
+{{else}}
+<div class="rail-group">
+  <div class="rail-group-title">Actions</div>
+  <p class="rail-note">Read-only access — starting a session needs a member role with web features enabled.</p>
+</div>
+{{end}}
+
+</aside>
+</div>{{/* /pr-cols */}}
+{{end}}

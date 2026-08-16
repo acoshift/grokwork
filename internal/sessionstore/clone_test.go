@@ -88,6 +88,7 @@ func cloneFixture() Entry {
 		AnsweredAt:      "2026-07-27T11:00:00Z",
 		CoOwnerIDs:      []string{"a", "b"},
 		Issues:          []TrackedIssue{{Number: 1, Owner: "o", Repo: "r"}},
+		Errors:          []TrackedError{{Provider: ErrorProviderSentry, ID: "9", ShortID: "APP-1A", Title: "boom"}},
 		PRs:             []TrackedPR{{Number: 2, Owner: "o", Repo: "r"}},
 		RelatedCases:    []string{"WEBAPP-1"},
 		Checkpoints:     []CheckpointMeta{{ID: "c1", Ref: "refs/x", SHA: "abc"}},

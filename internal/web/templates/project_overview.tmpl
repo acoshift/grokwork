@@ -7,7 +7,7 @@
   </div>
   {{end}}
 </div>
-<p class="sub">Browse <a href="/projects/{{.Project}}/issues">issues</a>{{if .NavLinearEnabled}}, <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}{{if .NavClickUpEnabled}}, <a href="/projects/{{.Project}}/clickup">ClickUp</a>{{end}}
+<p class="sub">Browse <a href="/projects/{{.Project}}/issues">issues</a>{{if .NavLinearEnabled}}, <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}{{if .NavClickUpEnabled}}, <a href="/projects/{{.Project}}/clickup">ClickUp</a>{{end}}{{if .NavErrorsEnabled}}, <a href="/projects/{{.Project}}/errors">errors</a>{{end}}
   or <a href="/projects/{{.Project}}/commits">commits</a> to start from existing work.</p>
 
 {{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
@@ -39,6 +39,11 @@
     {{if .NavClickUpEnabled}}
     <a class="m-row" href="/projects/{{.Project}}/clickup">
       <span class="m-row-main"><span class="m-row-t">ClickUp</span><span class="m-row-s">assigned ClickUp tasks</span></span>
+    </a>
+    {{end}}
+    {{if .NavErrorsEnabled}}
+    <a class="m-row" href="/projects/{{.Project}}/errors">
+      <span class="m-row-main"><span class="m-row-t">Errors</span><span class="m-row-s">production error groups · investigate or fix</span></span>
     </a>
     {{end}}
     <a class="m-row" href="/projects/{{.Project}}/commits">

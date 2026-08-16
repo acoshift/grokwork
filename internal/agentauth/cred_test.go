@@ -54,9 +54,17 @@ func TestDefaultShipCapsIncludeLinearRead(t *testing.T) {
 	}
 }
 
+func TestDefaultShipCapsIncludeDeploysErrorsRead(t *testing.T) {
+	c := DefaultShipCaps()
+	if !c.DeploysErrorsRead || !c.SentryRead || !c.GCPErrorsRead {
+		t.Fatalf("%+v", c)
+	}
+}
+
 func TestDefaultInvestigateCapsAreReadOnly(t *testing.T) {
 	c := DefaultInvestigateCaps()
-	if !c.SessionRead || !c.PRsList || !c.IssuesList || !c.StorageRead || !c.ClickUpRead || !c.LinearRead {
+	if !c.SessionRead || !c.PRsList || !c.IssuesList || !c.StorageRead || !c.ClickUpRead || !c.LinearRead ||
+		!c.GCPErrorsRead || !c.SentryRead || !c.DeploysErrorsRead {
 		t.Fatalf("missing reads: %+v", c)
 	}
 	if c.SessionDone || c.SessionAbandon || c.ReviewRequest || c.StorageWrite {

@@ -11,6 +11,9 @@ import (
 	"github.com/acoshift/grokwork/internal/agentauth"
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/clickup"
+	"github.com/acoshift/grokwork/internal/errsrc/deploys"
+	"github.com/acoshift/grokwork/internal/errsrc/gcperr"
+	"github.com/acoshift/grokwork/internal/errsrc/sentry"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/projstore"
@@ -55,6 +58,29 @@ type Service struct {
 	LinearAPIKey  func(project string) string
 	LinearTeamKey func(project string) string
 	LinearNew     func(apiKey string) *linear.Client
+
+	DeploysErrorsEnabled func(project string) bool
+	DeploysAPIToken      func(project string) string
+	DeploysBasicUser     func(project string) string
+	DeploysBasicPass     func(project string) string
+	DeploysProject       func(project string) string
+	DeploysLocation      func(project string) string
+	DeploysDeployment    func(project string) string
+	DeploysNew           func(opts deploys.Options) *deploys.Client
+
+	SentryEnabled   func(project string) bool
+	SentryAuthToken func(project string) string
+	SentryOrg       func(project string) string
+	SentryProject   func(project string) string
+	SentryBaseURL   func(project string) string
+	SentryNew       func(token, org, project, baseURL string) *sentry.Client
+
+	GCPErrorsEnabled   func(project string) bool
+	GCPProjectID       func(project string) string
+	GCPProjectNumber   func(project string) string
+	GCPService         func(project string) string
+	GCPCredentialsFile func(project string) string
+	GCPNew             func(project string) *gcperr.Client
 }
 
 // SessionInfo is a compact self snapshot.
@@ -78,6 +104,7 @@ type SessionInfo struct {
 	OpenQuestions []sessionstore.OpenQuestion `json:"openQuestions,omitempty"`
 	PRs           []sessionstore.TrackedPR    `json:"prs,omitempty"`
 	Issues        []sessionstore.TrackedIssue `json:"issues,omitempty"`
+	Errors        []sessionstore.TrackedError `json:"errors,omitempty"`
 }
 
 // ReviewerRow is one team-review-eligible project member.
@@ -173,6 +200,7 @@ func (s *Service) SessionGet(token string) (SessionInfo, error) {
 		OpenQuestions: ent.OpenQuestions,
 		PRs:           ent.PRs,
 		Issues:        ent.Issues,
+		Errors:        ent.Errors,
 	}, nil
 }
 
