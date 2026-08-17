@@ -3,7 +3,6 @@ package web
 import (
 	"bytes"
 	"context"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -59,16 +58,6 @@ func TestGitHubImageURLAllowed(t *testing.T) {
 		if githubImageURLAllowed(u) {
 			t.Fatalf("denied: %s", u)
 		}
-	}
-}
-
-func TestPublicIP(t *testing.T) {
-	if publicIP(net.ParseIP("10.0.0.1")) || publicIP(net.ParseIP("127.0.0.1")) ||
-		publicIP(net.ParseIP("169.254.169.254")) || publicIP(net.ParseIP("::1")) {
-		t.Fatal("private/loopback/link-local must fail")
-	}
-	if !publicIP(net.ParseIP("1.1.1.1")) {
-		t.Fatal("public v4 must pass")
 	}
 }
 

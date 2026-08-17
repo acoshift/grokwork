@@ -186,17 +186,18 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 				issueURL = fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, n)
 			}
 			res, startErr := s.bot.StartFix(bot.FixStartOpts{
-				Kind:     bot.FixKindGitHub,
-				Project:  project,
-				Actor:    actor,
-				ForceNew: true,
-				Owner:    owner,
-				Repo:     repo,
-				Number:   n,
-				Title:    title,
-				URL:      issueURL,
-				Body:     body,
-				Model:    model,
+				Kind:      bot.FixKindGitHub,
+				Project:   project,
+				Actor:     actor,
+				ForceNew:  true,
+				Owner:     owner,
+				Repo:      repo,
+				Number:    n,
+				Title:     title,
+				URL:       issueURL,
+				Body:      body,
+				ImageText: githubIssueImageText(info),
+				Model:     model,
 			})
 			out[i] = bulkOne{n: n, res: res, err: startErr}
 			detail := map[string]any{
@@ -353,18 +354,19 @@ func (s *Server) postIssueFix(ctx *hime.Context) error {
 	actor := s.fixActor(ctx)
 	model := strings.TrimSpace(ctx.PostFormValue("model"))
 	res, startErr := s.bot.StartFix(bot.FixStartOpts{
-		Kind:     bot.FixKindGitHub,
-		Project:  project,
-		Actor:    actor,
-		ForceNew: forceNew,
-		ThreadID: pickThread,
-		Owner:    owner,
-		Repo:     repo,
-		Number:   n,
-		Title:    title,
-		URL:      issueURL,
-		Body:     body,
-		Model:    model,
+		Kind:      bot.FixKindGitHub,
+		Project:   project,
+		Actor:     actor,
+		ForceNew:  forceNew,
+		ThreadID:  pickThread,
+		Owner:     owner,
+		Repo:      repo,
+		Number:    n,
+		Title:     title,
+		URL:       issueURL,
+		Body:      body,
+		ImageText: githubIssueImageText(info),
+		Model:     model,
 	})
 	return s.handleFixResult(ctx, startErr, res, fixRedirectContext{
 		Kind: "github", Project: project, Owner: owner, Repo: repo, Number: n, Model: model,

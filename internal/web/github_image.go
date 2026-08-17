@@ -2,25 +2,21 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html/template"
-	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/moonrhythm/hime"
 
+	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/markdown"
 )
-
-const maxGitHubImageBytes = 20 << 20
 
 // githubImage is GET /projects/{project}/github-images?u=.
 // Private GitHub attachments 404 in the browser (SameSite cookies never ride
@@ -32,19 +28,16 @@ func (s *Server) githubImage(ctx *hime.Context) error {
 		return forbiddenProject(ctx, err)
 	}
 	raw := strings.TrimSpace(ctx.FormValue("u"))
-	if !githubImageURLAllowed(raw) {
+	if !ghpr.UserAssetURLAllowed(raw) {
 		return ctx.Status(http.StatusBadRequest).Error("unsupported image url")
 	}
 	ctype, body, err := s.fetchGitHubImage(ctx.Context(), raw)
 	if err != nil {
+		if errors.Is(err, ghpr.ErrNotImage) {
+			return ctx.Status(http.StatusUnsupportedMediaType).Error("not an image")
+		}
 		fmt.Fprintf(os.Stderr, "web: github image fetch failed: %v\n", err)
 		return ctx.Status(http.StatusBadGateway).Error("image fetch failed")
-	}
-	if !allowedImageType(ctype) {
-		ctype = sniffImageType(body)
-	}
-	if !allowedImageType(ctype) {
-		return ctx.Status(http.StatusUnsupportedMediaType).Error("not an image")
 	}
 	w := ctx.ResponseWriter()
 	h := w.Header()
@@ -60,7 +53,7 @@ func (s *Server) githubImage(ctx *hime.Context) error {
 func (s *Server) githubMarkdown(project, src string) template.HTML {
 	project = strings.TrimSpace(project)
 	return markdown.RenderRewriting(src, func(img string) string {
-		if project == "" || !githubImageURLAllowed(img) {
+		if project == "" || !ghpr.UserAssetURLAllowed(img) {
 			return img
 		}
 		return "/projects/" + url.PathEscape(project) + "/github-images?u=" + url.QueryEscape(img)
@@ -68,43 +61,29 @@ func (s *Server) githubMarkdown(project, src string) template.HTML {
 }
 
 func (s *Server) fetchGitHubImage(ctx context.Context, rawURL string) (string, []byte, error) {
+	var ctype string
+	var body []byte
+	var err error
 	if s != nil && s.githubImageGet != nil {
-		return s.githubImageGet(ctx, rawURL)
+		ctype, body, err = s.githubImageGet(ctx, rawURL)
+	} else {
+		var token string
+		token, err = s.githubAuthToken(ctx)
+		if err != nil {
+			return "", nil, err
+		}
+		ctype, body, err = ghpr.FetchUserAsset(ctx, token, rawURL)
 	}
-	token, err := s.githubAuthToken(ctx)
 	if err != nil {
 		return "", nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return "", nil, err
+	if !ghpr.AllowedImageType(ctype) {
+		ctype = ghpr.SniffImageType(body)
 	}
-	req.Header.Set("User-Agent", "grokwork")
-	req.Header.Set("Accept", "image/*,*/*;q=0.8")
-	if githubImageNeedsAuth(req.URL) {
-		req.Header.Set("Authorization", "Bearer "+token)
+	if !ghpr.AllowedImageType(ctype) {
+		return "", nil, ghpr.ErrNotImage
 	}
-	resp, err := githubImageHTTPClient.Do(req)
-	if err != nil {
-		return "", nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return "", nil, fmt.Errorf("github image: HTTP %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxGitHubImageBytes+1))
-	if err != nil {
-		return "", nil, err
-	}
-	if len(body) > maxGitHubImageBytes {
-		return "", nil, fmt.Errorf("github image: too large")
-	}
-	ctype := resp.Header.Get("Content-Type")
-	if i := strings.IndexByte(ctype, ';'); i >= 0 {
-		ctype = ctype[:i]
-	}
-	return strings.TrimSpace(strings.ToLower(ctype)), body, nil
+	return ctype, body, nil
 }
 
 func (s *Server) githubAuthToken(ctx context.Context) (string, error) {
@@ -116,225 +95,25 @@ func (s *Server) githubAuthToken(ctx context.Context) (string, error) {
 	if s.ghToken != "" && time.Now().Before(s.ghTokenUntil) {
 		return s.ghToken, nil
 	}
-	var raw []byte
-	var err error
-	if run := s.ghRun(); run != nil {
-		raw, err = run(ctx, "", "gh", "auth", "token")
-	} else {
-		raw, err = exec.CommandContext(ctx, "gh", "auth", "token").Output()
-	}
-	tok := strings.TrimSpace(string(raw))
+	tok, err := ghpr.AuthToken(ctx, s.ghRun())
 	if err != nil {
-		return "", fmt.Errorf("gh auth token: failed")
-	}
-	if tok == "" {
-		return "", fmt.Errorf("gh auth token: empty")
+		return "", err
 	}
 	s.ghToken = tok
 	s.ghTokenUntil = time.Now().Add(2 * time.Minute)
 	return tok, nil
 }
 
-func githubImageNeedsAuth(u *url.URL) bool {
-	if u == nil {
-		return false
-	}
-	switch strings.TrimSuffix(strings.ToLower(u.Hostname()), ".") {
-	case "github.com", "www.github.com":
-		return true
-	default:
-		return false
-	}
-}
-
 func githubImageURLAllowed(raw string) bool {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || strings.ContainsAny(raw, "\r\n\x00") {
-		return false
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return false
-	}
-	if u.User != nil || u.Opaque != "" {
-		return false
-	}
-	if strings.ToLower(u.Scheme) != "https" {
-		return false
-	}
-	if u.Port() != "" {
-		return false
-	}
-	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
-	path := u.EscapedPath()
-	if path == "" {
-		path = u.Path
-	}
-	if strings.Contains(path, "..") || strings.Contains(path, "//") || strings.Contains(path, "@") {
-		return false
-	}
-	switch host {
-	case "github.com", "www.github.com":
-		return githubAttachmentPath(path)
-	case "user-images.githubusercontent.com",
-		"private-user-images.githubusercontent.com",
-		"objects.githubusercontent.com",
-		"objects-origin.githubusercontent.com":
-		return len(path) > 1 && strings.HasPrefix(path, "/")
-	default:
-		// Authed /user-attachments/assets/* 302s to GitHub's user-asset
-		// S3 bucket (not githubusercontent). Only that bucket family.
-		return githubUserAssetS3Host(host) && len(path) > 1 && strings.HasPrefix(path, "/")
-	}
+	return ghpr.UserAssetURLAllowed(raw)
 }
 
-func githubUserAssetS3Host(host string) bool {
-	const prefix = "github-production-user-asset-"
-	if !strings.HasPrefix(host, prefix) {
-		return false
+func githubIssueImageText(info ghpr.IssueInfo) string {
+	var b strings.Builder
+	b.WriteString(info.Body)
+	for _, c := range info.Comments {
+		b.WriteByte('\n')
+		b.WriteString(c.Body)
 	}
-	rest := host[len(prefix):]
-	id, rest, ok := strings.Cut(rest, ".")
-	if !ok || id == "" {
-		return false
-	}
-	for _, c := range id {
-		if (c < 'a' || c > 'f') && (c < '0' || c > '9') {
-			return false
-		}
-	}
-	if rest == "s3.amazonaws.com" {
-		return true
-	}
-	if !strings.HasPrefix(rest, "s3.") || !strings.HasSuffix(rest, ".amazonaws.com") {
-		return false
-	}
-	region := strings.TrimSuffix(strings.TrimPrefix(rest, "s3."), ".amazonaws.com")
-	if region == "" || strings.ContainsAny(region, "/:@") {
-		return false
-	}
-	for _, c := range region {
-		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
-			return false
-		}
-	}
-	return true
-}
-
-func githubAttachmentPath(path string) bool {
-	path = strings.TrimSuffix(path, "/")
-	const assets = "/user-attachments/assets/"
-	if rest, ok := strings.CutPrefix(path, assets); ok {
-		return rest != "" && !strings.Contains(rest, "/") && githubAssetID(rest)
-	}
-	const files = "/user-attachments/files/"
-	if rest, ok := strings.CutPrefix(path, files); ok {
-		id, name, ok := strings.Cut(rest, "/")
-		if !ok || !githubAssetID(id) || name == "" || strings.Contains(name, "/") {
-			return false
-		}
-		return imageFileExt(name)
-	}
-	return false
-}
-
-func githubAssetID(s string) bool {
-	if s == "" || len(s) > 80 {
-		return false
-	}
-	for _, c := range s {
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' && c != '.' {
-			return false
-		}
-	}
-	return true
-}
-
-func imageFileExt(name string) bool {
-	i := strings.LastIndexByte(name, '.')
-	if i < 0 {
-		return false
-	}
-	switch strings.ToLower(name[i+1:]) {
-	case "png", "jpg", "jpeg", "gif", "webp":
-		return true
-	default:
-		return false
-	}
-}
-
-func allowedImageType(ctype string) bool {
-	switch strings.ToLower(strings.TrimSpace(ctype)) {
-	case "image/png", "image/jpeg", "image/gif", "image/webp":
-		return true
-	default:
-		return false
-	}
-}
-
-func sniffImageType(body []byte) string {
-	switch {
-	case len(body) >= 8 && string(body[:8]) == "\x89PNG\r\n\x1a\n":
-		return "image/png"
-	case len(body) >= 3 && string(body[:3]) == "\xff\xd8\xff":
-		return "image/jpeg"
-	case len(body) >= 6 && (string(body[:6]) == "GIF87a" || string(body[:6]) == "GIF89a"):
-		return "image/gif"
-	case len(body) >= 12 && string(body[:4]) == "RIFF" && string(body[8:12]) == "WEBP":
-		return "image/webp"
-	default:
-		return ""
-	}
-}
-
-func publicIP(ip net.IP) bool {
-	if ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() ||
-		ip.IsLinkLocalUnicast() || ip.IsMulticast() {
-		return false
-	}
-	return true
-}
-
-var githubImageHTTPClient = &http.Client{
-	Timeout: 20 * time.Second,
-	Transport: &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout: 10 * time.Second,
-			Control: func(_, address string, _ syscall.RawConn) error {
-				host, _, err := net.SplitHostPort(address)
-				if err != nil {
-					return err
-				}
-				ip := net.ParseIP(host)
-				if !publicIP(ip) {
-					return fmt.Errorf("blocked address")
-				}
-				return nil
-			},
-		}).DialContext,
-		ForceAttemptHTTP2:   true,
-		TLSHandshakeTimeout: 10 * time.Second,
-	},
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return fmt.Errorf("too many redirects")
-		}
-		if req.URL == nil || !githubImageURLAllowed(req.URL.String()) {
-			host := ""
-			if req.URL != nil {
-				host = req.URL.Hostname()
-			}
-			return fmt.Errorf("redirect off allowlist (%s)", host)
-		}
-		// Do not forward the PAT off github.com. githubusercontent hops
-		// carry a jwt on the URL; Authorization is only for the first hop.
-		req.Header.Del("Authorization")
-		if githubImageNeedsAuth(req.URL) && len(via) > 0 {
-			if tok := via[0].Header.Get("Authorization"); tok != "" {
-				req.Header.Set("Authorization", tok)
-			}
-		}
-		return nil
-	},
+	return b.String()
 }

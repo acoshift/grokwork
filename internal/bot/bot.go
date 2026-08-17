@@ -129,8 +129,10 @@ type Bot struct {
 	// ghRunner is optional; nil → ghpr defaultRunner. Web installs its injectable
 	// runner so checklist annotation edits go through the same path as other
 	// issue writes (and tests can assert body-file content without a real gh).
-	ghRunner    ghpr.Runner
-	reconnectMu sync.Mutex // serializes forced gateway reconnects
+	ghRunner ghpr.Runner
+	// githubAssetGet, when set, replaces ghpr.FetchUserAsset (Fix issue images).
+	githubAssetGet func(ctx context.Context, rawURL string) (contentType string, body []byte, err error)
+	reconnectMu    sync.Mutex // serializes forced gateway reconnects
 
 	// Catch-up sweep state (catchup.go).
 	coverageMs      atomic.Int64 // unix ms of last moment gateway coverage was believed complete

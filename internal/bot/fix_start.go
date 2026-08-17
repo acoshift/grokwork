@@ -67,7 +67,10 @@ type FixStartOpts struct {
 	Title string
 	URL   string
 	Body  string // GitHub body or Linear description
-	State string
+	// ImageText is scanned for GitHub attachment URLs (body + comments).
+	// Empty → Body only.
+	ImageText string
+	State     string
 	// Model applies only when this dispatch creates a session; a reused session
 	// keeps the agent it was stamped with. Empty takes the configured task model
 	// at run start. Requires builder-class caps when non-empty.
@@ -157,7 +160,9 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 
 	// Explicit picker selection → reuse only.
 	if tid := strings.TrimSpace(opts.ThreadID); tid != "" && !opts.ForceNew {
-		return b.startFixReuse(tid, project, cwd, tracked, prompt, opts.Actor)
+		return b.withFixImages(opts, func(paths []string) (FixStartResult, error) {
+			return b.startFixReuse(tid, project, cwd, tracked, prompt, opts.Actor, paths)
+		})
 	}
 
 	if !opts.ForceNew {
@@ -174,13 +179,17 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 		case 0:
 			// fall through to create
 		case 1:
-			return b.startFixReuse(hits[0].ThreadID, project, cwd, tracked, prompt, opts.Actor)
+			return b.withFixImages(opts, func(paths []string) (FixStartResult, error) {
+				return b.startFixReuse(hits[0].ThreadID, project, cwd, tracked, prompt, opts.Actor, paths)
+			})
 		default:
 			return FixStartResult{Status: FixStatusPicker, Hits: hits}, ErrPickerRequired
 		}
 	}
 
-	return b.startFixCreate(project, cwd, tracked, prompt, opts, cli, model != "")
+	return b.withFixImages(opts, func(paths []string) (FixStartResult, error) {
+		return b.startFixCreate(project, cwd, tracked, prompt, opts, cli, model != "", paths)
+	})
 }
 
 func fixTrackedIssue(opts FixStartOpts) sessionstore.TrackedIssue {
@@ -241,7 +250,7 @@ func fixPromptFor(opts FixStartOpts) string {
 	}
 }
 
-func (b *Bot) startFixReuse(threadID, project, cwd string, tracked sessionstore.TrackedIssue, prompt string, actor Actor) (FixStartResult, error) {
+func (b *Bot) startFixReuse(threadID, project, cwd string, tracked sessionstore.TrackedIssue, prompt string, actor Actor, attachmentPaths []string) (FixStartResult, error) {
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
 		return FixStartResult{}, fmt.Errorf("empty thread id")
@@ -259,16 +268,17 @@ func (b *Bot) startFixReuse(threadID, project, cwd string, tracked sessionstore.
 	}
 	offline := !b.DiscordReady()
 	pos, err := b.StartTask(StartTaskOpts{
-		ThreadID:      threadID,
-		Proj:          projectRef{Name: project, Cwd: cwd},
-		Prompt:        prompt,
-		Actor:         actor,
-		Source:        SourceWeb,
-		Origin:        SourceWeb,
-		CreatedBy:     actor.ID,
-		CreatedByName: actor.DisplayName,
-		DiscordURL:    discordURL,
-		DG:            b.Discord(),
+		ThreadID:        threadID,
+		Proj:            projectRef{Name: project, Cwd: cwd},
+		Prompt:          prompt,
+		Actor:           actor,
+		Source:          SourceWeb,
+		Origin:          SourceWeb,
+		CreatedBy:       actor.ID,
+		CreatedByName:   actor.DisplayName,
+		DiscordURL:      discordURL,
+		DG:              b.Discord(),
+		AttachmentPaths: attachmentPaths,
 	})
 	if err != nil {
 		return FixStartResult{}, err
@@ -287,7 +297,7 @@ func (b *Bot) startFixReuse(threadID, project, cwd string, tracked sessionstore.
 	}, nil
 }
 
-func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIssue, prompt string, opts FixStartOpts, cli config.AgentCLI, stampCLI bool) (FixStartResult, error) {
+func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIssue, prompt string, opts FixStartOpts, cli config.AgentCLI, stampCLI bool, attachmentPaths []string) (FixStartResult, error) {
 	bind := func(unitID, discordURL string) error {
 		if err := b.bindFixIssue(unitID, project, tracked, opts.Actor, discordURL, true); err != nil {
 			return err
@@ -305,7 +315,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		if errors.Is(err, config.ErrNoDiscordChannel) {
 			// A project with no mapped channel is a normal state, not a failure:
 			// go web-native, matching StartWebTask and StartCase.
-			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, nil, func(unitID string) error {
+			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, attachmentPaths, func(unitID string) error {
 				return bind(unitID, "")
 			})
 		}
@@ -319,7 +329,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
 		if err != nil {
 			log.Printf("fix: create Discord thread failed project=%s: %v — web-native fallback", project, err)
-			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, nil, func(unitID string) error {
+			return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, attachmentPaths, func(unitID string) error {
 				return bind(unitID, "")
 			})
 		}
@@ -327,10 +337,10 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		if err := bind(threadID, discordURL); err != nil {
 			return FixStartResult{}, err
 		}
-		return b.startWebTask(threadID, project, cwd, prompt, KindTask, opts.Actor, discordURL, nil, true)
+		return b.startWebTask(threadID, project, cwd, prompt, KindTask, opts.Actor, discordURL, attachmentPaths, true)
 	}
 	// No gateway/threadAPI: web-native unit (no createWorkflowThread).
-	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, nil, func(unitID string) error {
+	return b.startWebNativeUnit(project, cwd, prompt, KindTask, opts.Actor, attachmentPaths, func(unitID string) error {
 		return bind(unitID, "")
 	})
 }
