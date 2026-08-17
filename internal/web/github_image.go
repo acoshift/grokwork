@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -36,6 +37,7 @@ func (s *Server) githubImage(ctx *hime.Context) error {
 	}
 	ctype, body, err := s.fetchGitHubImage(ctx.Context(), raw)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "web: github image fetch failed: %v\n", err)
 		return ctx.Status(http.StatusBadGateway).Error("image fetch failed")
 	}
 	if !allowedImageType(ctype) {
@@ -180,8 +182,43 @@ func githubImageURLAllowed(raw string) bool {
 		"objects-origin.githubusercontent.com":
 		return len(path) > 1 && strings.HasPrefix(path, "/")
 	default:
+		// Authed /user-attachments/assets/* 302s to GitHub's user-asset
+		// S3 bucket (not githubusercontent). Only that bucket family.
+		return githubUserAssetS3Host(host) && len(path) > 1 && strings.HasPrefix(path, "/")
+	}
+}
+
+func githubUserAssetS3Host(host string) bool {
+	const prefix = "github-production-user-asset-"
+	if !strings.HasPrefix(host, prefix) {
 		return false
 	}
+	rest := host[len(prefix):]
+	id, rest, ok := strings.Cut(rest, ".")
+	if !ok || id == "" {
+		return false
+	}
+	for _, c := range id {
+		if (c < 'a' || c > 'f') && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	if rest == "s3.amazonaws.com" {
+		return true
+	}
+	if !strings.HasPrefix(rest, "s3.") || !strings.HasSuffix(rest, ".amazonaws.com") {
+		return false
+	}
+	region := strings.TrimSuffix(strings.TrimPrefix(rest, "s3."), ".amazonaws.com")
+	if region == "" || strings.ContainsAny(region, "/:@") {
+		return false
+	}
+	for _, c := range region {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func githubAttachmentPath(path string) bool {
@@ -284,7 +321,11 @@ var githubImageHTTPClient = &http.Client{
 			return fmt.Errorf("too many redirects")
 		}
 		if req.URL == nil || !githubImageURLAllowed(req.URL.String()) {
-			return fmt.Errorf("redirect off allowlist")
+			host := ""
+			if req.URL != nil {
+				host = req.URL.Hostname()
+			}
+			return fmt.Errorf("redirect off allowlist (%s)", host)
 		}
 		// Do not forward the PAT off github.com. githubusercontent hops
 		// carry a jwt on the URL; Authorization is only for the first hop.

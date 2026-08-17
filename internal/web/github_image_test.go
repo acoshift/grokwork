@@ -28,6 +28,8 @@ func TestGitHubImageURLAllowed(t *testing.T) {
 		"https://user-images.githubusercontent.com/1/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png",
 		"https://private-user-images.githubusercontent.com/1/x.png?jwt=abc",
 		"https://objects.githubusercontent.com/github-production-user-asset-6210df/1/2",
+		"https://github-production-user-asset-6210df.s3.amazonaws.com/110723939/636911705-c44c50cd.png",
+		"https://github-production-user-asset-6210df.s3.us-east-1.amazonaws.com/1/x.png?X-Amz-Algorithm=AWS4-HMAC-SHA256",
 	}
 	for _, u := range ok {
 		if !githubImageURLAllowed(u) {
@@ -48,6 +50,10 @@ func TestGitHubImageURLAllowed(t *testing.T) {
 		"https://raw.githubusercontent.com/acme/app/main/a.png",
 		"https://169.254.169.254/latest/meta-data",
 		"https://user:pass@github.com/user-attachments/assets/abcd",
+		"https://evil-bucket.s3.amazonaws.com/secret.png",
+		"https://github-production-release-asset-6210df.s3.amazonaws.com/1/x.png",
+		"https://github-production-user-asset-6210df.s3.amazonaws.com.evil.com/x.png",
+		"https://github-production-user-asset-NOTHEX.s3.amazonaws.com/x.png",
 	}
 	for _, u := range deny {
 		if githubImageURLAllowed(u) {
