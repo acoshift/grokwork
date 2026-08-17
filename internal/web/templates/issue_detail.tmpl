@@ -31,7 +31,7 @@
 
 <div class="section card">
   <h2>Description</h2>
-  {{if .Issue.Body}}<div class="md">{{markdown .Issue.Body}}</div>{{else}}<p class="muted" style="margin:0">No description.</p>{{end}}
+  {{if .Issue.Body}}<div class="md">{{githubMarkdown .Project .Issue.Body}}</div>{{else}}<p class="muted" style="margin:0">No description.</p>{{end}}
 </div>
 
 {{if .Issue.LinkedPRs}}
@@ -156,7 +156,7 @@
   {{range .Issue.Comments}}
   <div class="card" style="margin-bottom:0.75rem;">
     <div class="muted mono" style="font-size:0.85rem;">{{.Author}}</div>
-    {{if .Body}}<div class="md" style="margin-top:0.5rem">{{markdown .Body}}</div>{{end}}
+    {{if .Body}}<div class="md" style="margin-top:0.5rem">{{githubMarkdown $.Project .Body}}</div>{{end}}
   </div>
   {{else}}
   <div class="empty">No comments.</div>

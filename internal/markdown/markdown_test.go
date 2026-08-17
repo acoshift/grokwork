@@ -90,6 +90,24 @@ func TestRenderDropsUnsafeImageURL(t *testing.T) {
 	}
 }
 
+func TestRenderRewriting(t *testing.T) {
+	got := string(RenderRewriting(
+		"![x](https://github.com/user-attachments/assets/abcd)\n\n![y](https://example.com/a.png)",
+		func(u string) string {
+			if strings.Contains(u, "github.com") {
+				return "/projects/p/github-images?u=" + u
+			}
+			return u
+		},
+	))
+	if !strings.Contains(got, `src="/projects/p/github-images?u=https://github.com/user-attachments/assets/abcd"`) {
+		t.Fatalf("github url must rewrite: %s", got)
+	}
+	if !strings.Contains(got, `src="https://example.com/a.png"`) {
+		t.Fatalf("non-github url must stay: %s", got)
+	}
+}
+
 func TestRenderImageInCodeFenceStaysText(t *testing.T) {
 	got := string(Render("```\n<img src=\"https://example.com/a.png\">\n```"))
 	if strings.Contains(got, "<img src=") {

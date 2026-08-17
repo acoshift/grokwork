@@ -328,7 +328,7 @@ func TestIssueDetailRendersBodyImages(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		`id="page-issue-detail"`,
-		`src="https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"`,
+		`src="/projects/proj/github-images?u=https%3A%2F%2Fgithub.com%2Fuser-attachments%2Fassets%2Faaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"`,
 		`alt="repro"`,
 		`src="https://example.com/c.png"`,
 		`alt="also"`,

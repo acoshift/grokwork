@@ -33,6 +33,12 @@ var (
 
 // Render converts markdown to sanitized HTML for direct template embedding.
 func Render(src string) template.HTML {
+	return RenderRewriting(src, nil)
+}
+
+// RenderRewriting is Render, then rewrite each emitted image URL. rewrite is
+// called only with an already-allowlisted http(s) URL; empty keeps the original.
+func RenderRewriting(src string, rewrite func(string) string) template.HTML {
 	src = strings.TrimSpace(src)
 	if src == "" {
 		return ""
@@ -43,7 +49,7 @@ func Render(src string) template.HTML {
 		// Never emit unescaped source.
 		return template.HTML("<pre>" + template.HTMLEscapeString(src) + "</pre>")
 	}
-	return template.HTML(rewriteImages(buf.String()))
+	return template.HTML(rewriteImages(buf.String(), rewrite))
 }
 
 func liftHTMLImages(src string) string {
@@ -109,13 +115,19 @@ func safeImageURL(raw string) (string, bool) {
 	return s, true
 }
 
-func rewriteImages(s string) string {
+func rewriteImages(s string, rewrite func(string) string) string {
 	return htmlImgTag.ReplaceAllStringFunc(s, func(tag string) string {
 		img, ok := parseSafeImg(tag)
 		if !ok {
 			return ""
 		}
-		return `<img src="` + template.HTMLEscapeString(img.src) +
+		src := img.src
+		if rewrite != nil {
+			if next := strings.TrimSpace(rewrite(src)); next != "" {
+				src = next
+			}
+		}
+		return `<img src="` + template.HTMLEscapeString(src) +
 			`" alt="` + template.HTMLEscapeString(img.alt) +
 			`" referrerpolicy="no-referrer" loading="lazy">`
 	})

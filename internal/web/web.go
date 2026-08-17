@@ -67,6 +67,11 @@ type Server struct {
 	// Test injectables (nil → production defaults).
 	ghRunner  ghpr.Runner
 	gcsRunner gcs.Runner
+	// githubImageGet, when set, replaces the authenticated GitHub image GET.
+	githubImageGet func(ctx context.Context, rawURL string) (contentType string, body []byte, err error)
+	ghTokenMu      sync.Mutex
+	ghToken        string
+	ghTokenUntil   time.Time
 	// Drive Files injectables (nil → production JWT + default HTTP clients).
 	driveHTTP *http.Client
 	driveAuth gdrive.TokenSource
@@ -267,6 +272,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// Millisecond durations as compact unit-suffixed text (config form + hub).
 	app.TemplateFunc("msDur", formatMsDur)
 	app.TemplateFunc("markdown", markdown.Render)
+	app.TemplateFunc("githubMarkdown", s.githubMarkdown)
 	// shortTime formats a time.Time or RFC3339 string as "2006-01-02 15:04"
 	// (same layout as the commits list Date column).
 	app.TemplateFunc("shortTime", shortTime)
@@ -428,6 +434,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// keep the order obvious so a future catch-all cannot swallow the form.
 	mux.Handle("GET /projects/{project}/issues/new", s.requireAuth(hime.Handler(s.issueNewPage)))
 	mux.Handle("GET /projects/{project}/issues/{n}", s.requireAuth(hime.Handler(s.issueDetail)))
+	mux.Handle("GET /projects/{project}/github-images", s.requireAuth(hime.Handler(s.githubImage)))
 	mux.Handle("GET /projects/{project}/linear", s.requireAuth(hime.Handler(s.linearList)))
 	mux.Handle("GET /projects/{project}/linear/{identifier}", s.requireAuth(hime.Handler(s.linearDetail)))
 	mux.Handle("GET /projects/{project}/clickup", s.requireAuth(hime.Handler(s.clickupList)))
