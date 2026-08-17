@@ -762,6 +762,30 @@ func TestSessionsHub(t *testing.T) {
 	}
 }
 
+func TestSessionTurnProxiesGitHubImages(t *testing.T) {
+	srv, _, _ := testServer(t)
+	const asset = "https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	if err := srv.history.Append("thread-99", history.Turn{
+		User: "alice#0", Prompt: "see\n\n<img src=\"" + asset + "\" alt=\"repro\">\n",
+		Response: "ok", Status: "done", Project: "proj",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `/projects/proj/github-images?u=https%3A%2F%2Fgithub.com%2Fuser-attachments%2Fassets%2Faaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee`) {
+		t.Fatalf("session turn must proxy github images")
+	}
+	if strings.Contains(body, `src="https://github.com/user-attachments`) {
+		t.Fatal("raw github image src must not reach the session page")
+	}
+}
+
 func TestSessionsFilter(t *testing.T) {
 	srv, _, _ := testServer(t)
 	h := srv.Handler()
