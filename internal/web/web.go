@@ -280,6 +280,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	app.TemplateFunc("shortTime", shortTime)
 	// runBucketBadge maps ghpr.RunBucket → layout badge CSS class.
 	app.TemplateFunc("runBucketBadge", runBucketBadge)
+	// Bound-issue list on the session page (GitHub / Linear / ClickUp).
+	app.TemplateFunc("trackedIssueHref", trackedIssueHref)
 	// Spend report formatting. cost/models take a whole row rather than a number
 	// because an unpriced row must render "—" and not "$0.00" — the decision needs
 	// the row's Priced/Unpriced counts, so it cannot live in the template.

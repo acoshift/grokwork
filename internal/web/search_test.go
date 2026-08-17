@@ -630,3 +630,35 @@ func TestSearchCommitRepoCannotEscapeTheNamedProject(t *testing.T) {
 		t.Fatalf("commits browser read the hidden project\n%s", body)
 	}
 }
+
+func TestTrackedIssueHref(t *testing.T) {
+	t.Parallel()
+	gh := sessionstore.TrackedIssue{Number: 7, Owner: "acme", Repo: "app"}
+	if got := trackedIssueHref("proj", gh); got != "/projects/proj/issues/7?owner=acme&repo=app" {
+		t.Fatalf("github=%q", got)
+	}
+	bare := sessionstore.TrackedIssue{Number: 7}
+	if got := trackedIssueHref("proj", bare); got != "/projects/proj/issues/7" {
+		t.Fatalf("bare=%q", got)
+	}
+	lin := sessionstore.TrackedIssue{Provider: sessionstore.ProviderLinear, Identifier: "ENG-9"}
+	if got := trackedIssueHref("proj", lin); got != "/projects/proj/linear/ENG-9" {
+		t.Fatalf("linear=%q", got)
+	}
+	cu := sessionstore.TrackedIssue{Provider: sessionstore.ProviderClickUp, CustomID: "dev-42", ClickUpID: "9hx"}
+	if got := trackedIssueHref("proj", cu); got != "/projects/proj/clickup/DEV-42" {
+		t.Fatalf("clickup custom=%q", got)
+	}
+	cuNative := sessionstore.TrackedIssue{Provider: sessionstore.ProviderClickUp, ClickUpID: "9hx"}
+	if got := trackedIssueHref("proj", cuNative); got != "/projects/proj/clickup/9hx" {
+		t.Fatalf("clickup native=%q", got)
+	}
+	if got := trackedIssueHref("", gh); got != "" {
+		t.Fatalf("empty project=%q", got)
+	}
+	urlOnly := sessionstore.TrackedIssue{URL: "https://github.com/acme/app/issues/7"}
+	href, ext := trackedIssueWebLink("proj", urlOnly)
+	if href != urlOnly.URL || !ext {
+		t.Fatalf("url-only href=%q ext=%v", href, ext)
+	}
+}

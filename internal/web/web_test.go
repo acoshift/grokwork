@@ -762,6 +762,48 @@ func TestSessionsHub(t *testing.T) {
 	}
 }
 
+func TestSessionBoundIssueLinks(t *testing.T) {
+	srv, _, _ := testServer(t)
+	if err := srv.sessions.Set("thread-99", sessionstore.Entry{
+		SessionID: "sess-99", Project: "proj",
+		Goal: "fix bound tickets",
+		Issues: []sessionstore.TrackedIssue{
+			{
+				Number: 7, Owner: "acme", Repo: "app", Keyword: sessionstore.IssueKeywordFixes,
+				URL: "https://github.com/acme/app/issues/7",
+			},
+			{
+				Provider: sessionstore.ProviderLinear, Identifier: "ENG-9",
+				Keyword: sessionstore.IssueKeywordRefs,
+			},
+			{
+				Provider: sessionstore.ProviderClickUp, CustomID: "DEV-42",
+				Keyword: sessionstore.IssueKeywordRefs,
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99?project=proj", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"Bound issues",
+		`href="/projects/proj/issues/7?owner=acme&amp;repo=app">acme/app#7</a>`,
+		`(Fixes)`,
+		`href="/projects/proj/linear/ENG-9">ENG-9</a>`,
+		`href="/projects/proj/clickup/DEV-42">DEV-42</a>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("session bound issues missing %q\n%s", want, body)
+		}
+	}
+}
+
 func TestSessionTurnProxiesGitHubImages(t *testing.T) {
 	srv, _, _ := testServer(t)
 	const asset = "https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"

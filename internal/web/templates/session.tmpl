@@ -511,7 +511,17 @@
   <p style="margin:0.85rem 0 0.25rem"><span class="bubble-label" style="display:block">Bound issues</span></p>
   <ul style="margin:0;padding-left:1.25rem">
     {{range .SessionEntry.Issues}}
-    <li class="mono">{{.DisplayRef}} ({{.EffectiveKeyword}})</li>
+    <li class="mono">
+      {{$href := trackedIssueHref $.Project .}}
+      {{if $href}}
+      <a href="{{$href}}">{{.DisplayRef}}</a>
+      {{else if .URL}}
+      <a href="{{.URL}}" target="_blank" rel="noopener">{{.DisplayRef}}</a>
+      {{else}}
+      {{.DisplayRef}}
+      {{end}}
+      ({{.EffectiveKeyword}})
+    </li>
     {{end}}
   </ul>
   {{end}}

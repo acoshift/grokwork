@@ -576,21 +576,11 @@ func issueSearchHits(e sessionstore.Entry, needle string) []searchHit {
 			if title == "" {
 				title = hit.Mono
 			}
-			if e.Project != "" && hit.Mono != "" {
-				hit.Href = "/projects/" + url.PathEscape(e.Project) + "/clickup/" + url.PathEscape(hit.Mono)
-			} else if u := strings.TrimSpace(iss.URL); u != "" {
-				hit.Href, hit.External = u, true
-			}
 		case iss.IsLinear():
 			hit.Badge = "Linear"
 			hit.Mono = strings.TrimSpace(iss.Identifier)
 			if title == "" {
 				title = hit.Mono
-			}
-			if e.Project != "" && hit.Mono != "" {
-				hit.Href = "/projects/" + url.PathEscape(e.Project) + "/linear/" + url.PathEscape(hit.Mono)
-			} else if u := strings.TrimSpace(iss.URL); u != "" {
-				hit.Href, hit.External = u, true
 			}
 		default:
 			hit.Badge = "issue"
@@ -598,16 +588,12 @@ func issueSearchHits(e sessionstore.Entry, needle string) []searchHit {
 			if title == "" {
 				title = "Issue #" + num
 			}
-			switch {
-			case e.Project != "" && iss.Number > 0:
-				hit.Href = issueSearchHref(e.Project, iss.Number, iss.Owner, iss.Repo)
-			case strings.TrimSpace(iss.URL) != "":
-				hit.Href, hit.External = iss.URL, true
-			}
 		}
-		if hit.Href == "" {
+		href, ext := trackedIssueWebLink(e.Project, iss)
+		if href == "" {
 			continue
 		}
+		hit.Href, hit.External = href, ext
 		hit.Title = title
 		out = append(out, hit)
 	}
@@ -801,6 +787,48 @@ func issueSearchHref(project string, number int, owner, repo string) string {
 		return out
 	}
 	return out + "?" + v.Encode()
+}
+
+// trackedIssueHref is the in-app detail URL for a bound issue. Empty when
+// there is no local page to open (template then falls back to the provider URL).
+func trackedIssueHref(project string, iss sessionstore.TrackedIssue) string {
+	project = strings.TrimSpace(project)
+	if project == "" {
+		return ""
+	}
+	switch {
+	case iss.IsClickUp():
+		ref := sessionstore.NormalizeClickUpCustomID(iss.CustomID)
+		if ref == "" {
+			ref = strings.TrimSpace(iss.ClickUpID)
+		}
+		if ref == "" {
+			return ""
+		}
+		return "/projects/" + url.PathEscape(project) + "/clickup/" + url.PathEscape(ref)
+	case iss.IsLinear():
+		id := strings.TrimSpace(iss.Identifier)
+		if id == "" {
+			return ""
+		}
+		return "/projects/" + url.PathEscape(project) + "/linear/" + url.PathEscape(id)
+	default:
+		if iss.Number <= 0 {
+			return ""
+		}
+		return issueSearchHref(project, iss.Number, iss.Owner, iss.Repo)
+	}
+}
+
+// trackedIssueWebLink prefers the in-app page and falls back to the provider URL.
+func trackedIssueWebLink(project string, iss sessionstore.TrackedIssue) (href string, external bool) {
+	if href := trackedIssueHref(project, iss); href != "" {
+		return href, false
+	}
+	if u := strings.TrimSpace(iss.URL); u != "" {
+		return u, true
+	}
+	return "", false
 }
 
 func commitSearchHref(project, sha, owner, repo string) string {
