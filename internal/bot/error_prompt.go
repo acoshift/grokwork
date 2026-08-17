@@ -10,16 +10,16 @@ import (
 
 // BuildErrorFixPrompt is the Fix-from-error task body. The sample stack is not
 // embedded — the agent re-gets it via MCP.
-func BuildErrorFixPrompt(actorDisplay string, tracked sessionstore.TrackedError) string {
-	return buildErrorPrompt(actorDisplay, tracked, true)
+func BuildErrorFixPrompt(actorDisplay string, tracked sessionstore.TrackedError, direct bool) string {
+	return buildErrorPrompt(actorDisplay, tracked, true, direct)
 }
 
 // BuildErrorInvestigatePrompt is the Investigate-from-error task body (no PR contract).
 func BuildErrorInvestigatePrompt(actorDisplay string, tracked sessionstore.TrackedError) string {
-	return buildErrorPrompt(actorDisplay, tracked, false)
+	return buildErrorPrompt(actorDisplay, tracked, false, false)
 }
 
-func buildErrorPrompt(actorDisplay string, tracked sessionstore.TrackedError, fix bool) string {
+func buildErrorPrompt(actorDisplay string, tracked sessionstore.TrackedError, fix, direct bool) string {
 	actorDisplay = strings.TrimSpace(actorDisplay)
 	if actorDisplay == "" {
 		actorDisplay = "web user"
@@ -51,8 +51,7 @@ func buildErrorPrompt(actorDisplay string, tracked sessionstore.TrackedError, fi
 	b.WriteString("Do not invent tokens. Do not resolve, mute, or assign.\n")
 	b.WriteString("Do not paste full stacks, request payloads, or PII into Discord — summarize.\n")
 	if fix {
-		b.WriteString("Implement the fix in this worktree, commit, push, and open/update a PR.\n")
-		b.WriteString("Do not merge.\n")
+		b.WriteString(fixPromptShipSteps(direct, ""))
 	}
 	return b.String()
 }

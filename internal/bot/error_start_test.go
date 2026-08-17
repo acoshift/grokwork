@@ -201,7 +201,7 @@ func TestBuildErrorPromptHasNoStackAndNamesMCP(t *testing.T) {
 		ID:       "iss1", Title: "nil map", URL: "https://console.deploys.app/deployment/errors?project=acme&location=l&name=n&id=iss1",
 		Status: "open", Count: 3, Location: "l", Resource: "n",
 	}
-	fix := BuildErrorFixPrompt("Ada", tracked)
+	fix := BuildErrorFixPrompt("Ada", tracked, false)
 	inv := BuildErrorInvestigatePrompt("Ada", tracked)
 	stack := "panic: assignment to entry in nil map"
 	for _, p := range []string{fix, inv} {

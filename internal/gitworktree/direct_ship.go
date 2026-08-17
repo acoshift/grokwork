@@ -167,6 +167,44 @@ func DirectShipFF(ctx context.Context, mainRepo, worktreePath, sessionBranch, pr
 	return out, nil
 }
 
+// IsNonFastForward reports whether err is a real non-ff: the ancestor pre-check
+// or git's "(non-fast-forward)" rejection. The push wrapper text says
+// "non-fast-forward or protected" for every push failure — that string alone
+// must not trigger a catch-up merge (a branch-protection refusal is not
+// something merge-and-retry can fix).
+func IsNonFastForward(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "is not an ancestor of session HEAD") ||
+		strings.Contains(msg, "(non-fast-forward)")
+}
+
+// DirectShipFFCatchUp is DirectShipFF, then on a non-fast-forward it merges
+// origin/<primary> into the session worktree and retries once. Concurrent
+// direct-mode sessions (or a human push) advancing primary is the common
+// case — reset-and-redo is the wrong recovery when the session commits still
+// apply. A merge conflict aborts so the worktree is not left dirty.
+func DirectShipFFCatchUp(ctx context.Context, mainRepo, worktreePath, sessionBranch, primary string) (DirectShipResult, error) {
+	res, err := DirectShipFF(ctx, mainRepo, worktreePath, sessionBranch, primary)
+	if err == nil || !IsNonFastForward(err) {
+		return res, err
+	}
+	base := strings.TrimSpace(res.PrimaryBranch)
+	if base == "" {
+		base = strings.TrimSpace(primary)
+	}
+	if base == "" {
+		return res, err
+	}
+	if merr := MergeOriginBase(ctx, worktreePath, base); merr != nil {
+		_ = AbortMerge(ctx, worktreePath)
+		return res, fmt.Errorf("%w; catch-up merge of origin/%s failed: %v", err, base, merr)
+	}
+	return DirectShipFF(ctx, mainRepo, worktreePath, sessionBranch, base)
+}
+
 // hasTrackedDirt reports staged or unstaged changes to tracked files.
 // Untracked files are ignored.
 func hasTrackedDirt(ctx context.Context, dir string) (bool, error) {

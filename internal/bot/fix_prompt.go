@@ -9,8 +9,9 @@ const fixPromptBodyMaxRunes = 12_000
 
 // BuildGitHubFixPrompt is the Fix-with-Grok task body for a GitHub issue (web).
 // Callers still prepend remoteWorkPromptPrefix + issueBindingPrompt at execute time;
-// this fragment carries the user-facing fix task and do-not-merge contract.
-func BuildGitHubFixPrompt(actorDisplay, owner, repo string, number int, title, url, body string) string {
+// this fragment carries the user-facing fix task and ship contract.
+// direct selects No-PR wording (commit + host ship) vs open/update a PR.
+func BuildGitHubFixPrompt(actorDisplay, owner, repo string, number int, title, url, body string, direct bool) string {
 	actorDisplay = strings.TrimSpace(actorDisplay)
 	if actorDisplay == "" {
 		actorDisplay = "web user"
@@ -37,13 +38,12 @@ func BuildGitHubFixPrompt(actorDisplay, owner, repo string, number int, title, u
 	} else {
 		b.WriteString("(no body)\n")
 	}
-	b.WriteString("\nImplement the fix in this worktree, commit, push, and open/update a PR.\n")
-	fmt.Fprintf(&b, "Use Fixes %s/%s#%d in the PR body. Do not merge.\n", owner, repo, number)
+	b.WriteString(fixPromptShipSteps(direct, fmt.Sprintf("Fixes %s/%s#%d", owner, repo, number)))
 	return b.String()
 }
 
 // BuildLinearFixPrompt is the Fix-with-Grok task body for a Linear issue (web).
-func BuildLinearFixPrompt(actorDisplay, identifier, title, url, state, description string) string {
+func BuildLinearFixPrompt(actorDisplay, identifier, title, url, state, description string, direct bool) string {
 	actorDisplay = strings.TrimSpace(actorDisplay)
 	if actorDisplay == "" {
 		actorDisplay = "web user"
@@ -70,14 +70,16 @@ func BuildLinearFixPrompt(actorDisplay, identifier, title, url, state, descripti
 	} else {
 		b.WriteString("(no description)\n")
 	}
-	b.WriteString("\nImplement the fix in this worktree, commit, push, and open/update a PR.\n")
-	fmt.Fprintf(&b, "Put %s in the PR title and body (Fixes %s) so Linear's\n", identifier, identifier)
-	b.WriteString("GitHub integration can move state. Use grokwork MCP linear_get_issue for more detail. Do not call Linear's HTTP API. Do not call Linear issueUpdate. Do not merge.\n")
+	b.WriteString(fixPromptShipSteps(direct, "Fixes "+identifier))
+	b.WriteString("Use grokwork MCP linear_get_issue for more detail. Do not call Linear's HTTP API. Do not call Linear issueUpdate.\n")
+	if !direct {
+		b.WriteString("Put the identifier in the PR title so Linear's GitHub integration can move state.\n")
+	}
 	return b.String()
 }
 
 // BuildClickUpFixPrompt is the Fix-with-Grok task body for a ClickUp task (web).
-func BuildClickUpFixPrompt(actorDisplay, display, title, url, state, description string) string {
+func BuildClickUpFixPrompt(actorDisplay, display, title, url, state, description string, direct bool) string {
 	actorDisplay = strings.TrimSpace(actorDisplay)
 	if actorDisplay == "" {
 		actorDisplay = "web user"
@@ -104,7 +106,31 @@ func BuildClickUpFixPrompt(actorDisplay, display, title, url, state, description
 	} else {
 		b.WriteString("(no description)\n")
 	}
+	b.WriteString(fixPromptShipSteps(direct, "Fixes "+display))
+	b.WriteString("Use grokwork MCP clickup_get_task for more detail. Do not call ClickUp's HTTP API.\n")
+	return b.String()
+}
+
+func fixPromptShipSteps(direct bool, fixesLine string) string {
+	fixesLine = strings.TrimSpace(fixesLine)
+	if direct {
+		var b strings.Builder
+		b.WriteString("\nImplement the fix in this worktree and commit on this branch. Do not open a PR for this project — the host bot ships to primary after a successful run.\n")
+		if fixesLine != "" {
+			b.WriteString("Put this exact line in the commit message body: ")
+			b.WriteString(fixesLine)
+			b.WriteString("\n")
+		}
+		return b.String()
+	}
+	var b strings.Builder
 	b.WriteString("\nImplement the fix in this worktree, commit, push, and open/update a PR.\n")
-	fmt.Fprintf(&b, "Put %s in the PR title and body (Fixes %s). Use grokwork MCP clickup_get_task for more detail. Do not call ClickUp's HTTP API. Do not merge.\n", display, display)
+	if fixesLine != "" {
+		b.WriteString("Use ")
+		b.WriteString(fixesLine)
+		b.WriteString(" in the PR body. Do not merge.\n")
+	} else {
+		b.WriteString("Do not merge.\n")
+	}
 	return b.String()
 }

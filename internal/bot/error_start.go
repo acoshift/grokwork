@@ -96,11 +96,10 @@ func (b *Bot) StartError(opts ErrorStartOpts) (FixStartResult, error) {
 	}
 
 	tracked := errorTracked(opts)
-	prompt := errorPromptFor(opts, tracked)
 	kind := errorKind(intent)
 
 	if tid := strings.TrimSpace(opts.ThreadID); tid != "" && !opts.ForceNew {
-		return b.startErrorReuse(tid, project, cwd, tracked, prompt, kind, opts.Actor)
+		return b.startErrorReuse(tid, project, cwd, tracked, errorPromptFor(opts, tracked, b.sessionOrProjectDirect(project, tid)), kind, opts.Actor)
 	}
 
 	if !opts.ForceNew {
@@ -108,13 +107,14 @@ func (b *Bot) StartError(opts ErrorStartOpts) (FixStartResult, error) {
 		switch len(hits) {
 		case 0:
 		case 1:
-			return b.startErrorReuse(hits[0].ThreadID, project, cwd, tracked, prompt, kind, opts.Actor)
+			tid := hits[0].ThreadID
+			return b.startErrorReuse(tid, project, cwd, tracked, errorPromptFor(opts, tracked, b.sessionOrProjectDirect(project, tid)), kind, opts.Actor)
 		default:
 			return FixStartResult{Status: FixStatusPicker, Hits: hits}, ErrPickerRequired
 		}
 	}
 
-	return b.startErrorCreate(project, cwd, tracked, prompt, kind, opts, cli, model != "")
+	return b.startErrorCreate(project, cwd, tracked, errorPromptFor(opts, tracked, b.sessionOrProjectDirect(project, "")), kind, opts, cli, model != "")
 }
 
 func (b *Bot) requireErrorProvider(project, provider string) error {
@@ -167,9 +167,9 @@ func errorTracked(opts ErrorStartOpts) sessionstore.TrackedError {
 	}
 }
 
-func errorPromptFor(opts ErrorStartOpts, tracked sessionstore.TrackedError) string {
+func errorPromptFor(opts ErrorStartOpts, tracked sessionstore.TrackedError, direct bool) string {
 	if opts.Intent == ErrorIntentFix {
-		return BuildErrorFixPrompt(opts.Actor.DisplayName, tracked)
+		return BuildErrorFixPrompt(opts.Actor.DisplayName, tracked, direct)
 	}
 	return BuildErrorInvestigatePrompt(opts.Actor.DisplayName, tracked)
 }

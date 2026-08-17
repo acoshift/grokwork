@@ -84,7 +84,8 @@ func TestRemoteWorkPromptPrefixDirect(t *testing.T) {
 		"direct-to-primary",
 		"Branch: grok/discord/123",
 		"Do NOT open a pull request",
-		"Do NOT push to main/master",
+		"HEAD:main",
+		"do not refuse",
 		"fast-forward integrate",
 		"Pre-ship review (MANDATORY",
 		"SCRUTINIZE_VERDICT:",
@@ -124,17 +125,18 @@ func TestRemoteWorkPromptConfiguredPrimary(t *testing.T) {
 	d := remoteWorkPromptPrefixMode("grokwork/1", true, "prod")
 	for _, want := range []string{
 		"Project primary branch: prod",
-		"never commit to prod yourself",
-		"Do NOT push to prod",
+		"never check out or commit on prod yourself",
 		"HEAD:prod",
 		"onto prod",
+		"do not refuse",
+		"merge origin/prod",
 	} {
 		if !strings.Contains(d, want) {
 			t.Fatalf("direct missing %q in:\n%s", want, d)
 		}
 	}
-	if strings.Contains(d, "Do NOT push to main/master") {
-		t.Fatalf("configured primary should replace main/master forbid:\n%s", d)
+	if strings.Contains(d, "HEAD:main") {
+		t.Fatalf("configured primary should replace main push dest:\n%s", d)
 	}
 	// Empty primary keeps default PR wording without --base
 	empty := remoteWorkPromptPrefixMode("grokwork/1", false, "")

@@ -167,7 +167,7 @@ func (b *Bot) shipDirectAfterTask(s *discordgo.Session, present bool, threadID s
 		}
 		primaryArg = name
 	}
-	res, err := gitworktree.DirectShipFF(ctx, mainRepo, worktree, wtBranch, primaryArg)
+	res, err := gitworktree.DirectShipFFCatchUp(ctx, mainRepo, worktree, wtBranch, primaryArg)
 	if err != nil {
 		log.Printf("ship: failed thread=%s: %v", threadID, err)
 		if present && s != nil {
@@ -178,10 +178,10 @@ func (b *Bot) shipDirectAfterTask(s *discordgo.Session, present bool, threadID s
 			msg := fmt.Sprintf(
 				"Could not ship to **%s** (%s).\n"+
 					"Commits remain on `%s` in this thread's worktree.\n"+
-					"Primary may have advanced (another session or human push).\n"+
-					"Use `@Grok /reset` then re-run so a fresh worktree starts from the current primary tip.\n"+
-					"(Web: Prune worktree, then re-run.)",
-				primary, err.Error(), wtBranch,
+					"Primary may have advanced and a catch-up merge could not land cleanly.\n"+
+					"Continue in this session to merge `origin/%s` and resolve conflicts, then re-run.\n"+
+					"Or `@Grok /sync` then re-run. `/reset` only if you want to discard this branch.",
+				primary, err.Error(), wtBranch, primary,
 			)
 			if _, sendErr := s.ChannelMessageSend(threadID, msg); sendErr != nil {
 				log.Printf("ship: notify fail: %v", sendErr)

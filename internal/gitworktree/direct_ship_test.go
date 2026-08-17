@@ -2,6 +2,7 @@ package gitworktree
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -158,6 +159,134 @@ func TestDirectShipFFNonFastForward(t *testing.T) {
 	if !strings.Contains(err.Error(), "non-fast-forward") && !strings.Contains(err.Error(), "rejected") {
 		t.Fatalf("unexpected err: %v", err)
 	}
+	if !IsNonFastForward(err) {
+		t.Fatalf("IsNonFastForward(%v)=false", err)
+	}
+}
+
+func TestIsNonFastForward(t *testing.T) {
+	if IsNonFastForward(nil) {
+		t.Fatal("nil")
+	}
+	if IsNonFastForward(fmt.Errorf("push to main rejected (non-fast-forward or protected): hook declined")) {
+		t.Fatal("wrapper text alone must not match")
+	}
+	if IsNonFastForward(fmt.Errorf("worktree has uncommitted changes to tracked files")) {
+		t.Fatal("dirty is not non-ff")
+	}
+	if !IsNonFastForward(fmt.Errorf("non-fast-forward: origin/main is not an ancestor of session HEAD (primary may have advanced)")) {
+		t.Fatal("pre-check")
+	}
+	if !IsNonFastForward(fmt.Errorf("push to main rejected (non-fast-forward or protected): ! [rejected] abc -> main (non-fast-forward)")) {
+		t.Fatal("git rejected")
+	}
+}
+
+func TestDirectShipFFCatchUpMergesThenShips(t *testing.T) {
+	ctx := t.Context()
+	remote, main, worktree, branch := setupDirectShipFixture(t)
+
+	if err := os.WriteFile(filepath.Join(worktree, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, worktree, "add", "a.txt")
+	runGitTest(t, worktree, "commit", "-m", "a")
+
+	// Divergent commit on remote main (different file — merge is clean).
+	advanceRemoteMain(t, remote, "b.txt", "b\n", "b")
+
+	res, err := DirectShipFFCatchUp(ctx, main, worktree, branch, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Noop || res.PrimaryBranch != "main" {
+		t.Fatalf("res=%+v", res)
+	}
+
+	remoteMain, err := gitOutput(ctx, remote, "rev-parse", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(remoteMain) != res.ToSHA {
+		t.Fatalf("remote main=%s want %s", remoteMain, res.ToSHA)
+	}
+	// Both sides' files landed.
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if _, err := os.Stat(filepath.Join(worktree, name)); err != nil {
+			t.Fatalf("missing %s after catch-up: %v", name, err)
+		}
+	}
+}
+
+func TestDirectShipFFCatchUpConflictAbortsClean(t *testing.T) {
+	ctx := t.Context()
+	remote, main, worktree, branch := setupDirectShipFixture(t)
+
+	if err := os.WriteFile(filepath.Join(worktree, "same.txt"), []byte("session\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, worktree, "add", "same.txt")
+	runGitTest(t, worktree, "commit", "-m", "session")
+
+	advanceRemoteMain(t, remote, "same.txt", "primary\n", "primary")
+
+	before, err := gitOutput(ctx, worktree, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before = strings.TrimSpace(before)
+
+	_, err = DirectShipFFCatchUp(ctx, main, worktree, branch, "main")
+	if err == nil {
+		t.Fatal("want catch-up merge conflict")
+	}
+	if !strings.Contains(err.Error(), "catch-up merge") {
+		t.Fatalf("err: %v", err)
+	}
+
+	after, err := gitOutput(ctx, worktree, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(after) != before {
+		t.Fatalf("HEAD moved after aborted merge: %s → %s", before, after)
+	}
+	dirty, err := hasTrackedDirt(ctx, worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dirty {
+		t.Fatal("worktree left dirty after conflict abort")
+	}
+	// Remote main must still be the primary-side commit, not the session.
+	sessionHead := before
+	remoteMain, err := gitOutput(ctx, remote, "rev-parse", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(remoteMain) == sessionHead {
+		t.Fatal("conflict must not push session HEAD")
+	}
+}
+
+func advanceRemoteMain(t *testing.T, remote, file, contents, msg string) {
+	t.Helper()
+	cloneDir := filepath.Join(t.TempDir(), "clone")
+	cmd := exec.Command("git", "clone", remote, cloneDir)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v\n%s", err, out)
+	}
+	runGitTest(t, cloneDir, "checkout", "-B", "main", "origin/main")
+	if err := os.WriteFile(filepath.Join(cloneDir, file), []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, cloneDir, "add", file)
+	runGitTest(t, cloneDir, "commit", "-m", msg)
+	runGitTest(t, cloneDir, "push", "origin", "HEAD:main")
 }
 
 // setupDirectShipFixture returns bare remote, main checkout, managed worktree path, branch.

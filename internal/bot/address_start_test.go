@@ -382,6 +382,34 @@ func TestStartContinueNoCreate(t *testing.T) {
 	}
 }
 
+func TestStartContinueDirectOmitsDoNotMerge(t *testing.T) {
+	b, _ := testAddressBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	if err := b.sessions.Set("direct-cont", sessionstore.Entry{
+		Project: "app", Origin: SourceWeb, ShipMode: sessionstore.ShipModeDirect,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := b.StartContinue(ContinueOpts{
+		ThreadID: "direct-cont", Prompt: "push to main",
+		Actor: Actor{ID: "u", DisplayName: "U"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created {
+		t.Fatal("continue must not create")
+	}
+	waitHistory(t, b, "direct-cont", 1)
+	th, _ := b.history.Get("direct-cont")
+	if !strings.Contains(th.Turns[0].Prompt, "push to main") {
+		t.Fatalf("%q", th.Turns[0].Prompt)
+	}
+	if strings.Contains(strings.ToLower(th.Turns[0].Prompt), "do not merge") {
+		t.Fatalf("direct continue must not mention merge: %q", th.Turns[0].Prompt)
+	}
+}
+
 func TestStartContinuePlanOmitsDoNotMerge(t *testing.T) {
 	b, _ := testAddressBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })

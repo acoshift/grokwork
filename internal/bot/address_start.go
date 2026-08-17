@@ -126,9 +126,11 @@ func (b *Bot) StartContinue(opts ContinueOpts) (FixStartResult, error) {
 	if !ok {
 		return FixStartResult{}, ErrUnknownThread
 	}
-	// Soft prefix so model keeps contract on follow-ups from web. Plan sessions
-	// never open a PR — do not tell the continue prompt otherwise.
-	if e.Mode != ModePlan && !strings.Contains(strings.ToLower(prompt), "do not merge") {
+	// Soft prefix so model keeps contract on follow-ups from web. Plan and
+	// direct-to-primary sessions never open a PR — do not tell the continue
+	// prompt otherwise (a "push to main" follow-up plus "do not merge" is
+	// what makes the agent refuse a land-on-primary request).
+	if e.Mode != ModePlan && !e.IsDirectShip() && !strings.Contains(strings.ToLower(prompt), "do not merge") {
 		prompt = prompt + "\n\n(When you open or update a PR: do not merge.)"
 	}
 	project := strings.TrimSpace(opts.Project)

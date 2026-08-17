@@ -156,12 +156,11 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 	}
 
 	tracked := fixTrackedIssue(opts)
-	prompt := fixPromptFor(opts)
 
 	// Explicit picker selection → reuse only.
 	if tid := strings.TrimSpace(opts.ThreadID); tid != "" && !opts.ForceNew {
 		return b.withFixImages(opts, func(paths []string) (FixStartResult, error) {
-			return b.startFixReuse(tid, project, cwd, tracked, prompt, opts.Actor, paths)
+			return b.startFixReuse(tid, project, cwd, tracked, fixPromptFor(opts, b.sessionOrProjectDirect(project, tid)), opts.Actor, paths)
 		})
 	}
 
@@ -180,7 +179,8 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 			// fall through to create
 		case 1:
 			return b.withFixImages(opts, func(paths []string) (FixStartResult, error) {
-				return b.startFixReuse(hits[0].ThreadID, project, cwd, tracked, prompt, opts.Actor, paths)
+				tid := hits[0].ThreadID
+				return b.startFixReuse(tid, project, cwd, tracked, fixPromptFor(opts, b.sessionOrProjectDirect(project, tid)), opts.Actor, paths)
 			})
 		default:
 			return FixStartResult{Status: FixStatusPicker, Hits: hits}, ErrPickerRequired
@@ -188,7 +188,7 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 	}
 
 	return b.withFixImages(opts, func(paths []string) (FixStartResult, error) {
-		return b.startFixCreate(project, cwd, tracked, prompt, opts, cli, model != "", paths)
+		return b.startFixCreate(project, cwd, tracked, fixPromptFor(opts, b.sessionOrProjectDirect(project, "")), opts, cli, model != "", paths)
 	})
 }
 
@@ -232,10 +232,10 @@ func fixTrackedIssue(opts FixStartOpts) sessionstore.TrackedIssue {
 	}
 }
 
-func fixPromptFor(opts FixStartOpts) string {
+func fixPromptFor(opts FixStartOpts, direct bool) string {
 	switch opts.Kind {
 	case FixKindLinear:
-		return BuildLinearFixPrompt(opts.Actor.DisplayName, opts.Identifier, opts.Title, opts.URL, opts.State, opts.Body)
+		return BuildLinearFixPrompt(opts.Actor.DisplayName, opts.Identifier, opts.Title, opts.URL, opts.State, opts.Body, direct)
 	case FixKindClickUp:
 		display := strings.TrimSpace(opts.CustomID)
 		if display == "" {
@@ -244,10 +244,24 @@ func fixPromptFor(opts FixStartOpts) string {
 		if display == "" {
 			display = strings.TrimSpace(opts.ClickUpID)
 		}
-		return BuildClickUpFixPrompt(opts.Actor.DisplayName, display, opts.Title, opts.URL, opts.State, opts.Body)
+		return BuildClickUpFixPrompt(opts.Actor.DisplayName, display, opts.Title, opts.URL, opts.State, opts.Body, direct)
 	default:
-		return BuildGitHubFixPrompt(opts.Actor.DisplayName, opts.Owner, opts.Repo, opts.Number, opts.Title, opts.URL, opts.Body)
+		return BuildGitHubFixPrompt(opts.Actor.DisplayName, opts.Owner, opts.Repo, opts.Number, opts.Title, opts.URL, opts.Body, direct)
 	}
+}
+
+// sessionOrProjectDirect is sticky session ShipMode when stamped, else the
+// project's live directToPrimary (what a new session will stamp).
+func (b *Bot) sessionOrProjectDirect(project, threadID string) bool {
+	if b == nil {
+		return false
+	}
+	if tid := strings.TrimSpace(threadID); tid != "" && b.sessions != nil {
+		if e, ok := b.sessions.Get(tid); ok && strings.TrimSpace(e.ShipMode) != "" {
+			return e.IsDirectShip()
+		}
+	}
+	return b.cfg != nil && b.cfg.ProjectDirectToPrimary(project)
 }
 
 func (b *Bot) startFixReuse(threadID, project, cwd string, tracked sessionstore.TrackedIssue, prompt string, actor Actor, attachmentPaths []string) (FixStartResult, error) {

@@ -1206,25 +1206,26 @@ func remoteWorkPromptPrefixMode(branch string, direct bool, primary string) stri
 			"Stay in this worktree; do not switch to the main checkout.",
 		)
 		if useDirect {
-			noPush := "Do NOT push to main/master and do NOT run `git push origin HEAD:main` (or similar)."
-			neverCommit := "2. Commit on this branch only (never commit to main/master yourself)."
-			afterShip := "After a successful run the bot will fast-forward integrate this branch onto the project primary and push."
+			primaryName := "the project primary"
+			forbidCheckout := "main/master"
+			pushDest := "main"
 			if primary != "" {
-				noPush = "Do NOT push to " + primary + " and do NOT run `git push origin HEAD:" + primary + "` (or similar)."
-				neverCommit = "2. Commit on this branch only (never commit to " + primary + " yourself)."
-				afterShip = "After a successful run the bot will fast-forward integrate this branch onto " + primary + " and push."
+				primaryName = primary
+				forbidCheckout = primary
+				pushDest = primary
 				lines = append(lines, "Project primary branch: "+primary)
 			}
 			lines = append(lines,
 				"Ship mode: direct-to-primary (no pull request for this project's repository).",
 				"When you make code changes you MUST:",
 				"1. "+scrutinizeBeforeShipStep,
-				neverCommit,
+				"2. Commit on this branch only (never check out or commit on "+forbidCheckout+" yourself).",
 				"3. Leave the working tree clean for tracked files (commit or discard staged/unstaged changes).",
 				"4. Do NOT open a pull request for this project's repository (`gh pr create` for this repo is forbidden).",
-				"5. "+noPush,
-				"6. Do NOT merge anything.",
-				afterShip,
+				"5. Do NOT run `git push origin HEAD:"+pushDest+"` (or any push that updates "+primaryName+"). The host bot fast-forwards "+primaryName+" after this run.",
+				"6. Do NOT merge a GitHub PR.",
+				"If origin/"+pushDest+" has moved, or the user asks to ship / push / land this on "+primaryName+": fetch and merge origin/"+pushDest+" into THIS branch, resolve conflicts, leave the tree clean. That is how the work lands — do not refuse the request, and do not push "+primaryName+" yourself.",
+				"After a successful run the bot will fast-forward integrate this branch onto "+primaryName+" and push.",
 				"Summarize your commits in the final reply (no PR URL required for this ship).",
 				"If the task legitimately touches another repository, you may open a PR there; still do not open a PR for this project repo.",
 			)

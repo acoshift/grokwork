@@ -63,7 +63,7 @@ func testFixBot(t *testing.T) (*Bot, string) {
 }
 
 func TestBuildGitHubFixPromptContract(t *testing.T) {
-	p := BuildGitHubFixPrompt("Alice", "acme", "app", 7, "Bug", "https://github.com/acme/app/issues/7", "body text")
+	p := BuildGitHubFixPrompt("Alice", "acme", "app", 7, "Bug", "https://github.com/acme/app/issues/7", "body text", false)
 	for _, want := range []string{
 		"Alice", "acme/app#7", "Bug", "body text", "Fixes acme/app#7", "Do not merge",
 	} {
@@ -71,10 +71,21 @@ func TestBuildGitHubFixPromptContract(t *testing.T) {
 			t.Fatalf("missing %q in\n%s", want, p)
 		}
 	}
+	d := BuildGitHubFixPrompt("Alice", "acme", "app", 7, "Bug", "https://github.com/acme/app/issues/7", "body text", true)
+	for _, want := range []string{
+		"host bot ships", "Fixes acme/app#7",
+	} {
+		if !strings.Contains(d, want) {
+			t.Fatalf("direct missing %q in\n%s", want, d)
+		}
+	}
+	if strings.Contains(d, "open/update a PR") || strings.Contains(d, "Do not merge") {
+		t.Fatalf("direct must not use PR wording:\n%s", d)
+	}
 }
 
 func TestBuildLinearFixPromptContract(t *testing.T) {
-	p := BuildLinearFixPrompt("Bob", "ENG-9", "Title", "https://linear.app/x/issue/ENG-9", "Todo", "desc")
+	p := BuildLinearFixPrompt("Bob", "ENG-9", "Title", "https://linear.app/x/issue/ENG-9", "Todo", "desc", false)
 	for _, want := range []string{
 		"Bob", "ENG-9", "Title", "desc", "Fixes ENG-9", "Do not merge", "Do not call Linear issueUpdate", "linear_get_issue",
 	} {
@@ -426,7 +437,7 @@ func waitHistory(t *testing.T, b *Bot, threadID string, n int) {
 }
 
 func TestBuildClickUpFixPromptContract(t *testing.T) {
-	p := BuildClickUpFixPrompt("Bob", "DEV-9", "Title", "https://app.clickup.com/t/999/DEV-9", "open", "desc")
+	p := BuildClickUpFixPrompt("Bob", "DEV-9", "Title", "https://app.clickup.com/t/999/DEV-9", "open", "desc", false)
 	if !strings.Contains(p, "Fixes DEV-9") {
 		t.Fatalf("%s", p)
 	}
