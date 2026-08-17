@@ -13,7 +13,7 @@ Discord  @Grok fix payment timeout
 
 ## Prerequisites
 
-- Go 1.26.5+
+- Go 1.26.6+
 - `grok` installed and signed in (`grok login` or `XAI_API_KEY`)
 - A Discord server you can add bots to
 - This process running while the team uses it

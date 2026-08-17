@@ -24,7 +24,7 @@ GROKWORK_WEB_PREVIEW=1 [GROKWORK_WEB_PREVIEW_DELAY_MS=800] \
   go test ./internal/web -run TestPreviewServer -timeout 0
 ```
 
-Running the bot requires `config.json` (copy `config.example.json`). Go 1.26.5+.
+Running the bot requires `config.json` (copy `config.example.json`). Go 1.26.6+.
 
 ## Go coding
 
