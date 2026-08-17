@@ -60,7 +60,19 @@ func (s *Server) githubMarkdown(project, src string) template.HTML {
 	})
 }
 
+type githubImageCacheEntry struct {
+	ctype string
+	body  []byte
+	until time.Time
+}
+
+const githubImageCacheTTL = time.Hour
+const githubImageCacheMax = 16
+
 func (s *Server) fetchGitHubImage(ctx context.Context, rawURL string) (string, []byte, error) {
+	if ctype, body, ok := s.lookupGitHubImage(rawURL); ok {
+		return ctype, body, nil
+	}
 	var ctype string
 	var body []byte
 	var err error
@@ -83,7 +95,40 @@ func (s *Server) fetchGitHubImage(ctx context.Context, rawURL string) (string, [
 	if !ghpr.AllowedImageType(ctype) {
 		return "", nil, ghpr.ErrNotImage
 	}
+	s.storeGitHubImage(rawURL, ctype, body)
 	return ctype, body, nil
+}
+
+func (s *Server) lookupGitHubImage(rawURL string) (string, []byte, bool) {
+	if s == nil {
+		return "", nil, false
+	}
+	s.githubImgMu.Lock()
+	defer s.githubImgMu.Unlock()
+	ent, ok := s.githubImgCache[rawURL]
+	if !ok || time.Now().After(ent.until) {
+		return "", nil, false
+	}
+	return ent.ctype, ent.body, true
+}
+
+func (s *Server) storeGitHubImage(rawURL, ctype string, body []byte) {
+	if s == nil || rawURL == "" || len(body) == 0 {
+		return
+	}
+	s.githubImgMu.Lock()
+	defer s.githubImgMu.Unlock()
+	if s.githubImgCache == nil {
+		s.githubImgCache = make(map[string]githubImageCacheEntry)
+	}
+	if len(s.githubImgCache) >= githubImageCacheMax {
+		clear(s.githubImgCache)
+	}
+	s.githubImgCache[rawURL] = githubImageCacheEntry{
+		ctype: ctype,
+		body:  body,
+		until: time.Now().Add(githubImageCacheTTL),
+	}
 }
 
 func (s *Server) githubAuthToken(ctx context.Context) (string, error) {

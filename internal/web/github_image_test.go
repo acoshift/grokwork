@@ -89,6 +89,27 @@ func TestGitHubImageProxyServes(t *testing.T) {
 	}
 }
 
+func TestGitHubImageProxyCaches(t *testing.T) {
+	srv := workflowServer(t)
+	var n int
+	srv.githubImageGet = func(context.Context, string) (string, []byte, error) {
+		n++
+		return "image/png", githubImagePNG, nil
+	}
+	const path = "/projects/proj/github-images?u=https://github.com/user-attachments/assets/abcd"
+	for range 2 {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status=%d", w.Code)
+		}
+	}
+	if n != 1 {
+		t.Fatalf("fetches=%d want 1", n)
+	}
+}
+
 func TestGitHubImageProxySniffsPNG(t *testing.T) {
 	srv := workflowServer(t)
 	srv.githubImageGet = func(context.Context, string) (string, []byte, error) {

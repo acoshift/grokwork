@@ -72,6 +72,8 @@ type Server struct {
 	ghTokenMu      sync.Mutex
 	ghToken        string
 	ghTokenUntil   time.Time
+	githubImgMu    sync.Mutex
+	githubImgCache map[string]githubImageCacheEntry
 	// Drive Files injectables (nil → production JWT + default HTTP clients).
 	driveHTTP *http.Client
 	driveAuth gdrive.TokenSource

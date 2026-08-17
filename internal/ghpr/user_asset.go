@@ -113,20 +113,53 @@ func AuthToken(ctx context.Context, run Runner) (string, error) {
 	return tok, nil
 }
 
+// GitHub's user-attachments CDN 503s generic clients (User-Agent grokwork,
+// Accept: image/*). The same URL 302s to S3 when we look like `gh`.
+const (
+	userAssetUserAgent = "GitHub CLI"
+	userAssetAccept    = "application/vnd.github.raw"
+)
+
 // FetchUserAsset GETs an allowlisted GitHub attachment using token on github.com
 // hops only. Redirects must stay on the allowlist (S3 user-asset buckets).
 func FetchUserAsset(ctx context.Context, token, rawURL string) (string, []byte, error) {
 	if !UserAssetURLAllowed(rawURL) {
 		return "", nil, fmt.Errorf("unsupported image url")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	var last error
+	for attempt := range 3 {
+		if attempt > 0 {
+			delay := time.Duration(attempt) * 250 * time.Millisecond
+			select {
+			case <-ctx.Done():
+				return "", nil, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		ctype, body, err := fetchUserAssetOnce(ctx, token, rawURL)
+		if err == nil {
+			return ctype, body, nil
+		}
+		last = err
+		if !userAssetRetryable(err) {
+			return "", nil, err
+		}
+	}
+	return "", nil, last
+}
+
+func userAssetRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "HTTP 502") || strings.Contains(s, "HTTP 503") || strings.Contains(s, "HTTP 504")
+}
+
+func fetchUserAssetOnce(ctx context.Context, token, rawURL string) (string, []byte, error) {
+	req, err := newUserAssetRequest(ctx, token, rawURL)
 	if err != nil {
 		return "", nil, err
-	}
-	req.Header.Set("User-Agent", "grokwork")
-	req.Header.Set("Accept", "image/*,*/*;q=0.8")
-	if u, err := url.Parse(rawURL); err == nil && userAssetNeedsAuth(u) && strings.TrimSpace(token) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
 	}
 	resp, err := userAssetHTTPClient.Do(req)
 	if err != nil {
@@ -158,6 +191,19 @@ func FetchUserAsset(ctx context.Context, token, rawURL string) (string, []byte, 
 		return "", nil, ErrNotImage
 	}
 	return ctype, body, nil
+}
+
+func newUserAssetRequest(ctx context.Context, token, rawURL string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAssetUserAgent)
+	req.Header.Set("Accept", userAssetAccept)
+	if u, err := url.Parse(rawURL); err == nil && userAssetNeedsAuth(u) && strings.TrimSpace(token) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	}
+	return req, nil
 }
 
 // AllowedImageType is the raster set we will serve or hand to the agent.
@@ -330,10 +376,16 @@ var userAssetHTTPClient = &http.Client{
 			return fmt.Errorf("redirect off allowlist (%s)", host)
 		}
 		req.Header.Del("Authorization")
-		if userAssetNeedsAuth(req.URL) && len(via) > 0 {
-			if tok := via[0].Header.Get("Authorization"); tok != "" {
-				req.Header.Set("Authorization", tok)
+		if userAssetNeedsAuth(req.URL) {
+			if len(via) > 0 {
+				if tok := via[0].Header.Get("Authorization"); tok != "" {
+					req.Header.Set("Authorization", tok)
+				}
 			}
+			req.Header.Set("Accept", userAssetAccept)
+		} else {
+			// S3 signed URLs: do not send the GitHub raw Accept.
+			req.Header.Set("Accept", "*/*")
 		}
 		return nil
 	},

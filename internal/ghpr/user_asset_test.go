@@ -1,6 +1,7 @@
 package ghpr
 
 import (
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -74,6 +75,31 @@ func TestExtractUserAssetURLsCap(t *testing.T) {
 	got := ExtractUserAssetURLs(b.String())
 	if len(got) != MaxUserAssetsPerBody {
 		t.Fatalf("cap: got %d", len(got))
+	}
+}
+
+func TestNewUserAssetRequestHeaders(t *testing.T) {
+	req, err := newUserAssetRequest(t.Context(), "tok", "https://github.com/user-attachments/assets/abcd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Header.Get("User-Agent"); got != userAssetUserAgent {
+		t.Fatalf("ua=%q", got)
+	}
+	if got := req.Header.Get("Accept"); got != userAssetAccept {
+		t.Fatalf("accept=%q", got)
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer tok" {
+		t.Fatalf("auth=%q", got)
+	}
+}
+
+func TestUserAssetRetryable(t *testing.T) {
+	if !userAssetRetryable(fmt.Errorf("github image: HTTP 503")) {
+		t.Fatal("503 should retry")
+	}
+	if userAssetRetryable(fmt.Errorf("github image: HTTP 404")) {
+		t.Fatal("404 should not retry")
 	}
 }
 
