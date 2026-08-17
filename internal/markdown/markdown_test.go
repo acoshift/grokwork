@@ -44,3 +44,55 @@ func TestRenderEmpty(t *testing.T) {
 		t.Fatalf("empty input must render empty, got %q", got)
 	}
 }
+
+func TestRenderGitHubHTMLImage(t *testing.T) {
+	src := "see\n\n<img width=\"1552\" height=\"1014\" alt=\"repro\" src=\"https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\" />\n"
+	got := string(Render(src))
+	for _, want := range []string{
+		`<img src="https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"`,
+		`alt="repro"`,
+		`referrerpolicy="no-referrer"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %s", want, got)
+		}
+	}
+	if strings.Contains(got, "onerror") || strings.Contains(got, "width=") {
+		t.Fatalf("must not pass through raw HTML attrs: %s", got)
+	}
+}
+
+func TestRenderWrappedGitHubHTMLImage(t *testing.T) {
+	src := `<a href="https://github.com/user-attachments/assets/abcd"><img src="https://github.com/user-attachments/assets/abcd" alt="shot"></a>`
+	got := string(Render(src))
+	if !strings.Contains(got, `<img src="https://github.com/user-attachments/assets/abcd"`) {
+		t.Fatalf("wrapped html img must render: %s", got)
+	}
+	if !strings.Contains(got, `alt="shot"`) {
+		t.Fatalf("alt missing: %s", got)
+	}
+}
+
+func TestRenderMarkdownImage(t *testing.T) {
+	got := string(Render("![diagram](https://example.com/a.png)"))
+	if !strings.Contains(got, `<img src="https://example.com/a.png"`) || !strings.Contains(got, `alt="diagram"`) {
+		t.Fatalf("markdown image must render: %s", got)
+	}
+}
+
+func TestRenderDropsUnsafeImageURL(t *testing.T) {
+	got := string(Render("![](javascript:alert(1))\n\n<img src=\"data:image/png;base64,abc\" alt=\"x\">\n\n<img src=\"https://example.com/ok.png\">"))
+	if strings.Contains(got, "javascript:") || strings.Contains(got, "data:") {
+		t.Fatalf("unsafe image url leaked: %s", got)
+	}
+	if !strings.Contains(got, `<img src="https://example.com/ok.png"`) {
+		t.Fatalf("safe sibling image must still render: %s", got)
+	}
+}
+
+func TestRenderImageInCodeFenceStaysText(t *testing.T) {
+	got := string(Render("```\n<img src=\"https://example.com/a.png\">\n```"))
+	if strings.Contains(got, "<img src=") {
+		t.Fatalf("fenced html img must not become an image: %s", got)
+	}
+}

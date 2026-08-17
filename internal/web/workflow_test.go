@@ -304,6 +304,41 @@ func TestIssuesListAndDetail(t *testing.T) {
 	}
 }
 
+func TestIssueDetailRendersBodyImages(t *testing.T) {
+	srv := workflowServer(t)
+	inner := srv.ghRunner
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "issue view 7") {
+			return []byte(`{
+				"number":7,"url":"https://github.com/acme/app/issues/7","title":"Screenshot bug",
+				"state":"OPEN","author":{"login":"alice"},"labels":[],
+				"body":"see\n\n<img width=\"800\" height=\"600\" alt=\"repro\" src=\"https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\" />\n",
+				"comments":[{"author":{"login":"bob"},"body":"![also](https://example.com/c.png)","url":"u"}]
+			}`), nil
+		}
+		return inner(ctx, dir, name, args...)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/issues/7?owner=acme&repo=app", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="page-issue-detail"`,
+		`src="https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"`,
+		`alt="repro"`,
+		`src="https://example.com/c.png"`,
+		`alt="also"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in %s", want, body)
+		}
+	}
+}
+
 func TestIssuesListShowsFixingWorkState(t *testing.T) {
 	srv := workflowServer(t)
 	// Active Fixes session for acme/api#7 → list should show FIXING, not bare OPEN.
