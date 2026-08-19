@@ -7313,3 +7313,8 @@
 {{define "model_picker_options"}}<option value="">Default ({{.ModelDefaultLabel}})</option>
 {{- template "model_optgroups" .ModelGroups}}
 {{- end}}
+{{/* review_model_picker_options is the same list with the review-model Default.
+     Used when a page also hosts a task-model card (issue Fix vs Plan). */}}
+{{define "review_model_picker_options"}}<option value="">Default ({{.ReviewModelDefaultLabel}})</option>
+{{- template "model_optgroups" .ModelGroups}}
+{{- end}}

@@ -261,3 +261,142 @@ func TestIssueDetailRendersBreakdown(t *testing.T) {
 		t.Fatal("missing item text")
 	}
 }
+
+// Plan this feature feeds the shared confirm modal: a hidden select the modal
+// clones from, and data-confirm-select so the pick is written back before submit.
+// Default names the review model (resolveDispatchCLI → ReviewAgentCLI), not Fix's
+// task model — the two cards share the page and must not share a label.
+func TestIssueDetailShowsPlanModelConfirm(t *testing.T) {
+	srv, cfg, _ := fixEnabledServer(t)
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+	})
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/projects/proj/issues/42?owner=acme&repo=app")
+	for _, want := range []string{
+		`id="btn-plan-feature"`,
+		`>Plan this feature</button>`,
+		`action="/projects/proj/issues/42/plan"`,
+		`data-confirm-title="Plan this feature"`,
+		`data-confirm-select="model"`,
+		`data-confirm-select-label="Model"`,
+		`<option value="">Default (claude-opus-5)</option>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in Plan UI", want)
+		}
+	}
+	// Two hidden selects: Fix (task default) and Plan (review default).
+	if got := strings.Count(body, `<select name="model" hidden>`); got < 2 {
+		t.Fatalf("Plan form needs its own hidden select, got %d", got)
+	}
+	if !strings.Contains(body, `<option value="">Default (grok-4.5)</option>`) {
+		t.Fatal("Fix modal Default must still name the task model")
+	}
+}
+
+func TestIssueDetailReplanShowsModelConfirm(t *testing.T) {
+	srv, cfg, _ := fixEnabledServer(t)
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+	})
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	orig := srv.ghRunner
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if strings.Contains(strings.Join(args, " "), "issue view") {
+			return []byte(`{
+				"number":42,"url":"https://github.com/acme/app/issues/42","title":"Auth SSO",
+				"state":"OPEN","author":{"login":"a"},"labels":[],
+				"body":"## Breakdown\n- [ ] one item\n","comments":[]
+			}`), nil
+		}
+		return orig(ctx, dir, name, args...)
+	}
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/projects/proj/issues/42?owner=acme&repo=app")
+	for _, want := range []string{
+		`id="btn-plan-feature"`,
+		`>Re-plan</button>`,
+		`data-confirm-title="Re-plan feature"`,
+		`data-confirm-select="model"`,
+		`<option value="">Default (claude-opus-5)</option>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in Re-plan UI", want)
+		}
+	}
+}
+
+func TestIssuePlanModelPickStampsSession(t *testing.T) {
+	srv, cfg, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "grok-4.5",
+	})
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/issues/42/plan", sid, csrf, url.Values{
+		"owner": {"acme"}, "repo": {"app"}, "model": {"claude-opus-5"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/sessions/") {
+		t.Fatalf("Location=%q", loc)
+	}
+	tid := strings.TrimPrefix(strings.Split(loc, "?")[0], "/sessions/")
+	bot.WaitIdleForTest(b, 5*time.Second)
+	e, ok := srv.sessions.Get(tid)
+	if !ok {
+		t.Fatalf("session %s missing", tid)
+	}
+	if e.Model != "claude-opus-5" || e.Agent != "claude" {
+		t.Fatalf("stamp agent=%q model=%q", e.Agent, e.Model)
+	}
+}
+
+func TestIssuePlanModelGateForInvestigator(t *testing.T) {
+	srv, cfg, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "investigator"); err != nil {
+		t.Fatal(err)
+	}
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5",
+	})
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/projects/proj/issues/42?owner=acme&repo=app")
+	if !strings.Contains(body, `id="btn-plan-feature"`) {
+		t.Fatal("investigator may still Plan (default model)")
+	}
+	if strings.Contains(body, `data-confirm-title="Plan this feature"`) {
+		t.Fatal("investigator must not see the Plan model modal")
+	}
+	if strings.Count(body, `name="model"`) != 0 {
+		t.Fatal("investigator must not see a model field")
+	}
+	w := postFix(t, srv, "/projects/proj/issues/42/plan", sid, csrf, url.Values{
+		"owner": {"acme"}, "repo": {"app"}, "model": {"claude-opus-5"},
+	})
+	assertRedirectErr(t, w, "/projects/proj/issues/42", "not allowed to pick a model")
+}

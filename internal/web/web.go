@@ -1024,6 +1024,10 @@ type pageData struct {
 	CanSelectModel    bool
 	ModelGroups       []config.ModelGroup
 	ModelDefaultLabel string
+	// ReviewModelDefaultLabel is what a review-default dispatch (Plan this
+	// feature, PR/commit review) names as Default. Distinct from
+	// ModelDefaultLabel on pages that also host a task-model card (issue Fix).
+	ReviewModelDefaultLabel string
 	// Case intake (/projects/{project}/cases/new + board CTAs): Discord /case
 	// parity — startSessions feature+role AND investigator-class capability.
 	CanOpenCase bool

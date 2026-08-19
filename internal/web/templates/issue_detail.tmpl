@@ -218,14 +218,18 @@
     {{template "csrf" $}}
     <input type="hidden" name="owner" value="{{.ActiveOwner}}">
     <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    {{/* Hidden: the confirm modal clones its options. Scripting off posts Default. */}}
+    {{if .CanSelectModel}}<select name="model" hidden>{{template "review_model_picker_options" $}}</select>{{end}}
     <div class="form-actions">
       {{if .IssueTasklist}}
       <button type="submit" id="btn-plan-feature" class="btn-secondary"
         data-confirm="Re-plan will rewrite the Breakdown section on this issue. Continue?"
         data-confirm-title="Re-plan feature"
-        data-confirm-ok="Re-plan">Re-plan</button>
+        data-confirm-ok="Re-plan"
+        {{- if .CanSelectModel}} data-confirm-select="model" data-confirm-select-label="Model"{{end}}>Re-plan</button>
       {{else}}
-      <button type="submit" id="btn-plan-feature">Plan this feature</button>
+      <button type="submit" id="btn-plan-feature"
+        {{- if .CanSelectModel}} data-confirm="Starts a session that writes a tasklist breakdown onto the issue. It does not implement code." data-confirm-title="Plan this feature" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model"{{end}}>Plan this feature</button>
       {{end}}
     </div>
   </form>

@@ -959,6 +959,10 @@ func (s *Server) attachModelPicker(d *pageData, project, def string) {
 	if d.ModelDefaultLabel == "" {
 		d.ModelDefaultLabel = "CLI default"
 	}
+	d.ReviewModelDefaultLabel = strings.TrimSpace(s.cfg.EffectiveReviewModel())
+	if d.ReviewModelDefaultLabel == "" {
+		d.ReviewModelDefaultLabel = "CLI default"
+	}
 }
 
 // silence unused import if template-only types shift
