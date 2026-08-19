@@ -4352,6 +4352,25 @@
       .review-cols { grid-template-columns: 1fr; }
       .file-rail { display: none; }
       .rv-kbd { display: none; }
+      /* Diff text is monospace and never reflows, so the desktop sizes show
+         barely 40 columns on a phone before the horizontal scroll takes over,
+         and the file header truncates its path to a directory stub. Scale the
+         review's own text down — every selector here is used only by
+         diff_review.tmpl, so no other page moves and the desktop rules above
+         are untouched. Interactive bits (.viewed-w, the bar's buttons and
+         .rv-filter's iOS 16px guard) keep their size: shrinking those trades
+         a reading win for a smaller tap target, and .fbadge is left alone
+         because it is already the smallest label on the card and frees no
+         width — .fpath is the flex:1 that absorbs whatever the row saves.
+         .ln switches rem -> em so it keeps exactly the fraction of the patch
+         size the desktop rule sets (0.72/0.78 = 0.923); that ratio is what
+         makes its 1.57 line-height match .dpatch's 1.45, so the gutter stays
+         aligned with the code at any size. */
+      .dpatch { font-size: 0.7rem; }
+      .dl .ln { font-size: 0.923em; padding-right: 0.5em; }
+      .fpath { font-size: 0.72rem; }
+      .fstat { font-size: 0.68rem; }
+      .rv-pnum { font-size: 0.72rem; }
       aside.side {
         /* relative + z-index so the project menu paints above main content. */
         position: relative;
