@@ -192,6 +192,31 @@ func (a Agent) Label() string {
 	}
 }
 
+// Limitations is the operator-facing caveat for this CLI, shown next to the
+// model picker. Empty means the harness has nothing the picker must warn
+// about. Keep this in lockstep with mcpCapsForRun and the driver flags:
+// cursor-agent has no --mcp-config, and grok investigate cannot allow one
+// named MCP server (--deny MCPTool).
+func (a Agent) Limitations() string {
+	switch a.Resolve() {
+	case AgentCursor:
+		return "Cannot use grokwork MCP (tickets, Linear, ClickUp, storage). Investigate is read-only ask mode — no tool allowlist and no shell."
+	case AgentGrok:
+		return "Investigate cannot use grokwork MCP (the CLI cannot allow one named server). Ship and Fix still attach MCP."
+	default:
+		return ""
+	}
+}
+
+// LimitationsForModel is Limitations of the CLI that owns model, or of
+// fallback when the name identifies neither CLI.
+func LimitationsForModel(model string, fallback Agent) string {
+	if a, ok := AgentForModel(model); ok {
+		return a.Limitations()
+	}
+	return fallback.Limitations()
+}
+
 // SessionLabel names the durable session in user-facing copy ("the Grok
 // session", "the Claude session").
 func (a Agent) SessionLabel() string { return a.Label() + " session" }

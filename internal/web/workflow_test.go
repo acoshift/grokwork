@@ -1369,7 +1369,7 @@ func TestCommitDetailModelConfirmWiring(t *testing.T) {
 		`data-confirm-select="model"`,
 		`data-confirm-title="Review commit"`,
 		// Default names the review model, not the task model.
-		`<option value="">Default (claude-opus-5)</option>`,
+		`>Default (claude-opus-5)</option>`,
 		`value="grok-4.5"`,
 		// Vendor-neutral card: the agent may be claude.
 		`<div class="rail-group-title">Agent</div>`,

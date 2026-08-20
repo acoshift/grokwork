@@ -555,7 +555,7 @@ func TestIssueDetailShowsFixWhenAllowed(t *testing.T) {
 		`<select name="model" hidden>`,
 		`data-confirm-title="Fix"`,
 		`data-confirm-select="model"`,
-		`<option value="">Default (grok-4.5)</option>`,
+		`>Default (grok-4.5)</option>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in Fix UI: %s", want, body[:min(800, len(body))])
@@ -682,7 +682,7 @@ func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
 		`value="2"`,
 		`class="issue-link"`,
 		`<select name="model" hidden>`,
-		`<option value="">Default (grok-4.5)</option>`,
+		`>Default (grok-4.5)</option>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("partial missing %q", want)

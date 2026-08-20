@@ -959,10 +959,16 @@ func (s *Server) attachModelPicker(d *pageData, project, def string) {
 	if d.ModelDefaultLabel == "" {
 		d.ModelDefaultLabel = "CLI default"
 	}
+	fallback := grokrun.AgentGrok
+	if s.cfg != nil {
+		fallback = s.cfg.DefaultAgent()
+	}
+	d.ModelDefaultLimits = grokrun.LimitationsForModel(def, fallback)
 	d.ReviewModelDefaultLabel = strings.TrimSpace(s.cfg.EffectiveReviewModel())
 	if d.ReviewModelDefaultLabel == "" {
 		d.ReviewModelDefaultLabel = "CLI default"
 	}
+	d.ReviewModelDefaultLimits = grokrun.LimitationsForModel(s.cfg.EffectiveReviewModel(), fallback)
 }
 
 // silence unused import if template-only types shift

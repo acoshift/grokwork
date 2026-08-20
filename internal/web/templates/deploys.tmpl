@@ -248,10 +248,11 @@ services:
     {{if .CanSelectModel}}
     <div class="field">
       <label for="deploy-model">Model</label>
-      <select id="deploy-model" name="model">
+      <select id="deploy-model" name="model" data-model-limits="deploy-model-limits">
         {{template "model_picker_options" $}}
       </select>
       <p class="rail-note" style="margin-top:0.4rem">The model picks the CLI, and the session keeps both for life.</p>
+      <p class="model-limits" id="deploy-model-limits"{{if not .ModelDefaultLimits}} hidden{{end}}>{{.ModelDefaultLimits}}</p>
     </div>
     {{end}}
     <div class="form-actions">

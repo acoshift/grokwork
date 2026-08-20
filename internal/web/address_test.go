@@ -143,7 +143,7 @@ func TestPRDetailModelPickerWiringAndGate(t *testing.T) {
 		// Both buttons feed the same field.
 		`id="btn-address-ci"`,
 		`id="btn-address-review"`,
-		`<option value="">Default (claude-opus-5)</option>`,
+		`>Default (claude-opus-5)</option>`,
 		`<div class="rail-group-title">Agent</div>`,
 	} {
 		if !strings.Contains(body, want) {

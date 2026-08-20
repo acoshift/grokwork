@@ -208,6 +208,38 @@ func TestSnapshotCarriesAgentSettings(t *testing.T) {
 	if snap.SummarizeAgent != "grok" || !snap.SummarizeAgentKnown {
 		t.Fatalf("summarize agent=%q known=%v", snap.SummarizeAgent, snap.SummarizeAgentKnown)
 	}
+	if snap.ModelLimits != grokrun.AgentClaude.Limitations() {
+		t.Fatalf("model limits=%q", snap.ModelLimits)
+	}
+	if snap.SummarizeLimits != grokrun.AgentGrok.Limitations() {
+		t.Fatalf("summarize limits=%q", snap.SummarizeLimits)
+	}
+}
+
+func TestModelGroupsCarryLimits(t *testing.T) {
+	want := map[string]struct{ agent, limits string }{
+		"composer-2.5":  {agent: "cursor", limits: grokrun.AgentCursor.Limitations()},
+		"grok-4.6":      {agent: "grok", limits: grokrun.AgentGrok.Limitations()},
+		"claude-opus-5": {agent: "claude", limits: ""},
+	}
+	seen := map[string]bool{}
+	for _, g := range ModelGroups("") {
+		for _, c := range g.Choices {
+			w, ok := want[c.Value]
+			if !ok {
+				continue
+			}
+			seen[c.Value] = true
+			if c.Agent != w.agent || c.Limits != w.limits {
+				t.Errorf("%s agent=%q limits=%q want %q / %q", c.Value, c.Agent, c.Limits, w.agent, w.limits)
+			}
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("missing option %s", name)
+		}
+	}
 }
 
 // Live config edits round-trip through save(): the web config page writes the

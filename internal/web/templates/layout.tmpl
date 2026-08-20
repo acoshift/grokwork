@@ -2029,6 +2029,7 @@
       color: var(--muted);
     }
     .gw-confirm-field > select { width: 100%; }
+    .gw-confirm-field .model-limits { margin-top: 0.45rem; }
     /* row-reverse + flex-start keeps the buttons packed right and Cancel on the
        left, while Confirm stays first in DOM (the form's default button). */
     .gw-confirm-foot {
@@ -2826,6 +2827,15 @@
       line-height: 1.45;
       color: var(--muted);
     }
+    /* Harness caveats under a model picker. Distinct from the lifetime note so
+       a Cursor pick is visibly a warning, not another muted caption. */
+    .model-limits {
+      margin: 0.35rem 0 0;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      color: var(--warn);
+    }
+    .model-limits[hidden] { display: none; }
     .action-body .rail-note { margin: 0; }
     /* PR comment byline: author, time, GitHub link on one wrapping row. */
     .pr-comment-head {
@@ -5293,6 +5303,7 @@
       <div class="gw-confirm-field" id="gw-confirm-field" hidden>
         <label for="gw-confirm-select" id="gw-confirm-field-label">Model</label>
         <select id="gw-confirm-select"></select>
+        <p class="model-limits" id="gw-confirm-limits" hidden></p>
       </div>
       {{/* Confirm is FIRST in DOM so it is the dialog form's default button:
            implicit submission — Enter pressed in the picker select, which is where
@@ -5660,6 +5671,27 @@
       return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
     }
 
+    function optionLimits(select) {
+      if (!select || select.selectedIndex < 0) return "";
+      var opt = select.options[select.selectedIndex];
+      return ((opt && opt.getAttribute("data-limits")) || "").trim();
+    }
+    function fillLimitsNote(note, select) {
+      if (!note) return;
+      var text = optionLimits(select);
+      note.textContent = text;
+      note.hidden = !text;
+    }
+    function paintSelectLimits(select) {
+      var id = select && select.getAttribute("data-model-limits");
+      if (!id) return;
+      fillLimitsNote(document.getElementById(id), select);
+    }
+    function paintAllModelLimits() {
+      var nodes = document.querySelectorAll("select[data-model-limits]");
+      for (var i = 0; i < nodes.length; i++) paintSelectLimits(nodes[i]);
+    }
+
     // openModal resolves {ok, value} — value is the picked option when the caller
     // passed opts.select, "" otherwise. appConfirm/appAlert flatten it to a bool.
     function openModal(kind, opts) {
@@ -5693,6 +5725,9 @@
           fieldSelect.appendChild(node.cloneNode(true));
         });
         fieldSelect.value = pick.from.value;
+        fillLimitsNote(document.getElementById("gw-confirm-limits"), fieldSelect);
+      } else {
+        fillLimitsNote(document.getElementById("gw-confirm-limits"), null);
       }
       return new Promise(function (resolve) {
         pending = resolve;
@@ -5726,6 +5761,20 @@
     dlg.addEventListener("click", function (e) {
       if (e.target === dlg) dlg.close();
     });
+    fieldSelect.addEventListener("change", function () {
+      fillLimitsNote(document.getElementById("gw-confirm-limits"), fieldSelect);
+    });
+    document.addEventListener("change", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-model-limits")) paintSelectLimits(t);
+    });
+    document.body.addEventListener("htmx:afterSettle", paintAllModelLimits);
+    document.body.addEventListener("htmx:historyRestore", paintAllModelLimits);
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", paintAllModelLimits);
+    } else {
+      paintAllModelLimits();
+    }
 
     function flatten(r) { return r.ok; }
     window.appConfirm = function (opts) { return openModal("confirm", opts).then(flatten); };
@@ -7320,7 +7369,7 @@
 {{- range .}}
 <optgroup label="{{.Label}}">
   {{- range .Choices}}
-  <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+  <option value="{{.Value}}"{{if .Selected}} selected{{end}}{{if .Limits}} data-limits="{{.Limits}}"{{end}}>{{.Label}}</option>
   {{- end}}
 </optgroup>
 {{- end}}
@@ -7328,12 +7377,14 @@
 {{/* model_picker_options is the dispatch-side list: no selection (a page can only
      start a new session, never re-point an existing one) and a leading Default
      naming what config would pick. Callers own the <select> — the start composer
-     shows it, the dispatch cards hide it and feed it to the confirm modal. */}}
-{{define "model_picker_options"}}<option value="">Default ({{.ModelDefaultLabel}})</option>
+     shows it, the dispatch cards hide it and feed it to the confirm modal.
+     data-limits travels on the option so cloneNode into the confirm picker keeps
+     the caveat without this script knowing what the names mean. */}}
+{{define "model_picker_options"}}<option value=""{{if .ModelDefaultLimits}} data-limits="{{.ModelDefaultLimits}}"{{end}}>Default ({{.ModelDefaultLabel}})</option>
 {{- template "model_optgroups" .ModelGroups}}
 {{- end}}
 {{/* review_model_picker_options is the same list with the review-model Default.
      Used when a page also hosts a task-model card (issue Fix vs Plan). */}}
-{{define "review_model_picker_options"}}<option value="">Default ({{.ReviewModelDefaultLabel}})</option>
+{{define "review_model_picker_options"}}<option value=""{{if .ReviewModelDefaultLimits}} data-limits="{{.ReviewModelDefaultLimits}}"{{end}}>Default ({{.ReviewModelDefaultLabel}})</option>
 {{- template "model_optgroups" .ModelGroups}}
 {{- end}}

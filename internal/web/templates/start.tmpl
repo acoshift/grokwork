@@ -46,10 +46,11 @@
     {{if .CanSelectModel}}
     <div class="field">
       <label for="start-model">Model</label>
-      <select id="start-model" name="model">
+      <select id="start-model" name="model" data-model-limits="start-model-limits">
         {{template "model_picker_options" $}}
       </select>
       <p class="rail-note" style="margin-top:0.4rem">The model picks the CLI, and the session keeps both for life.</p>
+      <p class="model-limits" id="start-model-limits"{{if not .ModelDefaultLimits}} hidden{{end}}>{{.ModelDefaultLimits}}</p>
     </div>
     {{end}}
     <div class="form-actions"><button type="submit" id="btn-start">Start task</button></div>

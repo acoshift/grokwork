@@ -241,6 +241,8 @@ func TestPagesRender(t *testing.T) {
 		{"/config/agent", `<option value="glm-5.2-high"`},
 		{"/config/agent", `<option value="kimi-k3-max"`},
 		{"/config/agent", `<option value="claude-opus-5-thinking-high"`},
+		{"/config/agent", grokrun.AgentCursor.Limitations()},
+		{"/config/agent", grokrun.AgentGrok.Limitations()},
 		{"/config/worktrees", `id="page-config-worktrees"`},
 		{"/config/worktrees", `name="worktreeIdleTTLDays"`},
 		{"/config/worktrees", `name="terminalSessionTTLDays"`},

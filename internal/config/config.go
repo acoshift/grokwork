@@ -339,6 +339,14 @@ type Snapshot struct {
 	SummarizeAgentKnown bool
 	ReviewAgent         string
 	ReviewAgentKnown    bool
+	// ModelLimits / SummarizeLimits / ReviewLimits are the currently selected
+	// (or fallback) CLI's harness caveats, so the config page can paint them
+	// without a second lookup. FallbackLimits is the empty "CLI default"
+	// option — the configured agent, not the inferred one.
+	ModelLimits     string
+	SummarizeLimits string
+	ReviewLimits    string
+	FallbackLimits  string
 	// ModelGroups / SummarizeModelGroups / ReviewModelGroups are the dropdown
 	// options for each field, grouped by agent and including the configured value
 	// when it is not curated.
@@ -1397,12 +1405,12 @@ func (c *Config) Snapshot() Snapshot {
 				raw := strings.TrimSpace(pc.PrimaryBranch)
 				return raw != "" && ValidatePrimaryBranchName(raw) != nil
 			}(),
-			SLA:                      slaItems(pc.SLA),
-			SLAConfigured:            slaConfigured(pc.SLA),
-			CapabilityByUser:         capabilityMapItems(pc.CapabilityByUser),
-			UnmappedUserIDs:          unmappedIDs(pc.AllowedUserIDs, pc.CapabilityByUser),
-			CapabilityTemplateNames:  capabilityTemplateNames(pc.CapabilityTemplates),
-			VerifyCommandsText:       FormatVerifyCommandsText(pc.VerifyCommands),
+			SLA:                     slaItems(pc.SLA),
+			SLAConfigured:           slaConfigured(pc.SLA),
+			CapabilityByUser:        capabilityMapItems(pc.CapabilityByUser),
+			UnmappedUserIDs:         unmappedIDs(pc.AllowedUserIDs, pc.CapabilityByUser),
+			CapabilityTemplateNames: capabilityTemplateNames(pc.CapabilityTemplates),
+			VerifyCommandsText:      FormatVerifyCommandsText(pc.VerifyCommands),
 		}
 		item.DeployEnabled, item.DeployManifestPath, item.DeployEnvs = deployItems(pc.Deploy)
 		if pc.Actions != nil && len(pc.Actions.DispatchRules) > 0 {
@@ -1546,6 +1554,7 @@ func (c *Config) Snapshot() Snapshot {
 		timeoutMs = DefaultTimeoutMs
 	}
 	agent := c.defaultAgentLocked()
+	rawFallback, _ := grokrun.ParseAgent(c.Agent)
 	modelAgent, modelAgentKnown := grokrun.AgentForModel(c.Model)
 	if !modelAgentKnown {
 		modelAgent = agent
@@ -1591,6 +1600,10 @@ func (c *Config) Snapshot() Snapshot {
 		SummarizeAgentKnown:       summarizeAgentKnown,
 		ReviewAgent:               reviewAgent.String(),
 		ReviewAgentKnown:          reviewAgentKnown,
+		ModelLimits:               modelAgent.Limitations(),
+		SummarizeLimits:           summarizeAgent.Limitations(),
+		ReviewLimits:              reviewAgent.Limitations(),
+		FallbackLimits:            rawFallback.Limitations(),
 		ModelGroups:               ModelGroups(c.Model),
 		SummarizeModelGroups:      ModelGroups(c.SummarizeModel),
 		ReviewModelGroups:         ModelGroups(c.ReviewModel),

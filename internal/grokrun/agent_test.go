@@ -1,6 +1,9 @@
 package grokrun
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseAgent(t *testing.T) {
 	cases := []struct {
@@ -167,6 +170,39 @@ func TestAgentForModel(t *testing.T) {
 			t.Errorf("AgentForModel(%q)=%q want %q", c.in, got, c.want)
 		}
 	}
+}
+
+func TestAgentLimitations(t *testing.T) {
+	if got := AgentCursor.Limitations(); got == "" || !containsAll(got, "MCP", "Investigate") {
+		t.Errorf("cursor limitations=%q", got)
+	}
+	if got := AgentGrok.Limitations(); got == "" || !containsAll(got, "Investigate", "MCP") {
+		t.Errorf("grok limitations=%q", got)
+	}
+	if got := AgentClaude.Limitations(); got != "" {
+		t.Errorf("claude should have no picker caveat, got %q", got)
+	}
+	if got := LimitationsForModel("composer-2.5", AgentGrok); got != AgentCursor.Limitations() {
+		t.Errorf("composer limitations=%q", got)
+	}
+	if got := LimitationsForModel("claude-opus-5", AgentGrok); got != "" {
+		t.Errorf("claude model limitations=%q", got)
+	}
+	if got := LimitationsForModel("", AgentCursor); got != AgentCursor.Limitations() {
+		t.Errorf("empty model should use fallback, got %q", got)
+	}
+	if got := LimitationsForModel("not-a-model", AgentGrok); got != AgentGrok.Limitations() {
+		t.Errorf("unknown model should use fallback, got %q", got)
+	}
+}
+
+func containsAll(s string, parts ...string) bool {
+	for _, p := range parts {
+		if !strings.Contains(s, p) {
+			return false
+		}
+	}
+	return true
 }
 
 func TestCLIResolvedFillsDefaultBin(t *testing.T) {

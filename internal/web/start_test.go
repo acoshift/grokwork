@@ -13,6 +13,7 @@ import (
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/grokrun"
 )
 
 func TestStartFeatureOff404(t *testing.T) {
@@ -481,6 +482,43 @@ func TestStartModelPickStampsSession(t *testing.T) {
 
 // An unknown name is rejected outright rather than handed to a CLI that has never
 // heard of it.
+// Cursor options carry the harness caveat on the <option> so the picker and the
+// confirm modal can show it without a second lookup. The Default option uses the
+// configured model's CLI, so a Cursor default paints the note on first load.
+func TestStartModelPickerShowsHarnessLimits(t *testing.T) {
+	srv, cfg, _ := fixEnabledServer(t)
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "composer-2.5",
+	})
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/projects/proj/start")
+	cursor := grokrun.AgentCursor.Limitations()
+	if cursor == "" {
+		t.Fatal("cursor must have a picker caveat")
+	}
+	for _, want := range []string{
+		`id="start-model"`,
+		`data-model-limits="start-model-limits"`,
+		`id="start-model-limits"`,
+		cursor,
+		`value="composer-2.5"`,
+		`value="claude-opus-5"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("start picker missing %q", want)
+		}
+	}
+	if strings.Contains(body, `id="start-model-limits" hidden`) {
+		t.Fatal("Cursor default must show the caveat, not hide it")
+	}
+}
+
 func TestStartModelPickRejectsUnknownName(t *testing.T) {
 	srv, cfg, b := fixEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })

@@ -1024,10 +1024,13 @@ type pageData struct {
 	CanSelectModel    bool
 	ModelGroups       []config.ModelGroup
 	ModelDefaultLabel string
-	// ReviewModelDefaultLabel is what a review-default dispatch (Plan this
-	// feature, PR/commit review) names as Default. Distinct from
-	// ModelDefaultLabel on pages that also host a task-model card (issue Fix).
-	ReviewModelDefaultLabel string
+	// ModelDefaultLimits is the Default option's harness caveat (the CLI that
+	// `def` would run on). ReviewModelDefaultLabel / ReviewModelDefaultLimits
+	// are the same pair for a review-model Default on pages that also host a
+	// task-model card (issue Fix vs Plan).
+	ModelDefaultLimits       string
+	ReviewModelDefaultLabel  string
+	ReviewModelDefaultLimits string
 	// Case intake (/projects/{project}/cases/new + board CTAs): Discord /case
 	// parity — startSessions feature+role AND investigator-class capability.
 	CanOpenCase bool

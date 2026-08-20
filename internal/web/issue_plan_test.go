@@ -286,7 +286,7 @@ func TestIssueDetailShowsPlanModelConfirm(t *testing.T) {
 		`data-confirm-title="Plan this feature"`,
 		`data-confirm-select="model"`,
 		`data-confirm-select-label="Model"`,
-		`<option value="">Default (claude-opus-5)</option>`,
+		`>Default (claude-opus-5)</option>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in Plan UI", want)
@@ -296,7 +296,7 @@ func TestIssueDetailShowsPlanModelConfirm(t *testing.T) {
 	if got := strings.Count(body, `<select name="model" hidden>`); got < 2 {
 		t.Fatalf("Plan form needs its own hidden select, got %d", got)
 	}
-	if !strings.Contains(body, `<option value="">Default (grok-4.5)</option>`) {
+	if !strings.Contains(body, `>Default (grok-4.5)</option>`) {
 		t.Fatal("Fix modal Default must still name the task model")
 	}
 }
@@ -330,7 +330,7 @@ func TestIssueDetailReplanShowsModelConfirm(t *testing.T) {
 		`>Re-plan</button>`,
 		`data-confirm-title="Re-plan feature"`,
 		`data-confirm-select="model"`,
-		`<option value="">Default (claude-opus-5)</option>`,
+		`>Default (claude-opus-5)</option>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in Re-plan UI", want)

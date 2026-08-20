@@ -26,8 +26,8 @@
     <div class="inline" style="grid-template-columns: 1fr 1fr 1fr;align-items:start">
       <div>
         <label for="model">Task model</label>
-        <select id="model" name="model">
-          <option value="">CLI default</option>
+        <select id="model" name="model" data-model-limits="model-limits">
+          <option value=""{{if .Config.FallbackLimits}} data-limits="{{.Config.FallbackLimits}}"{{end}}>CLI default</option>
           {{template "model_optgroups" .Config.ModelGroups}}
         </select>
         <p class="sub" style="margin:0.35rem 0 0" id="model-agent">
@@ -36,11 +36,12 @@
             {{else}}→ name not recognized, using the fallback agent{{end}}
           {{else}}→ fallback agent, each CLI picks its own default model{{end}}
         </p>
+        <p class="model-limits" id="model-limits"{{if not .Config.ModelLimits}} hidden{{end}}>{{.Config.ModelLimits}}</p>
       </div>
       <div>
         <label for="summarize-model">Session-title model</label>
-        <select id="summarize-model" name="summarizeModel">
-          <option value="">Same as task model</option>
+        <select id="summarize-model" name="summarizeModel" data-model-limits="summarize-limits">
+          <option value=""{{if .Config.ModelLimits}} data-limits="{{.Config.ModelLimits}}"{{end}}>Same as task model</option>
           {{template "model_optgroups" .Config.SummarizeModelGroups}}
         </select>
         <p class="sub" style="margin:0.35rem 0 0" id="summarize-agent">
@@ -49,11 +50,12 @@
             {{else}}→ name not recognized, runs on the session's agent{{end}}
           {{else}}→ same as the task model{{end}}
         </p>
+        <p class="model-limits" id="summarize-limits"{{if not .Config.SummarizeLimits}} hidden{{end}}>{{.Config.SummarizeLimits}}</p>
       </div>
       <div>
         <label for="review-model">Review model</label>
-        <select id="review-model" name="reviewModel">
-          <option value="">Same as task model</option>
+        <select id="review-model" name="reviewModel" data-model-limits="review-limits">
+          <option value=""{{if .Config.ModelLimits}} data-limits="{{.Config.ModelLimits}}"{{end}}>Same as task model</option>
           {{template "model_optgroups" .Config.ReviewModelGroups}}
         </select>
         <p class="sub" style="margin:0.35rem 0 0" id="review-agent">
@@ -62,6 +64,7 @@
             {{else}}→ name not recognized, using the fallback agent{{end}}
           {{else}}→ same as the task model{{end}}
         </p>
+        <p class="model-limits" id="review-limits"{{if not .Config.ReviewLimits}} hidden{{end}}>{{.Config.ReviewLimits}}</p>
       </div>
     </div>
 

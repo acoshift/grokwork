@@ -272,6 +272,11 @@ type ModelChoice struct {
 	Label string
 	// Selected marks the currently configured value.
 	Selected bool
+	// Agent is the CLI this name routes to (same as the enclosing group).
+	Agent string
+	// Limits is that CLI's harness caveat, copied onto the <option> so the
+	// picker and the confirm modal can show it without a second lookup.
+	Limits string
 }
 
 // ModelGroup is one optgroup: the models belonging to a single CLI. Grouping is
@@ -305,7 +310,13 @@ func ModelGroups(current string) []ModelGroup {
 		}
 	}
 	for _, opt := range grokrun.ModelOptions() {
-		add(opt.Agent, ModelChoice{Value: opt.Value, Label: opt.Label, Selected: opt.Value == current})
+		add(opt.Agent, ModelChoice{
+			Value:    opt.Value,
+			Label:    opt.Label,
+			Selected: opt.Value == current,
+			Agent:    opt.Agent.String(),
+			Limits:   opt.Agent.Limitations(),
+		})
 	}
 	if current != "" && !grokrun.IsKnownModel(current) {
 		agent, known := grokrun.AgentForModel(current)
@@ -313,7 +324,13 @@ func ModelGroups(current string) []ModelGroup {
 		if !known {
 			label = current + " (from config — agent not identified)"
 		}
-		add(agent, ModelChoice{Value: current, Label: label, Selected: true})
+		add(agent, ModelChoice{
+			Value:    current,
+			Label:    label,
+			Selected: true,
+			Agent:    agent.String(),
+			Limits:   agent.Limitations(),
+		})
 	}
 	// Drop empty groups so the select has no stray labels.
 	out := make([]ModelGroup, 0, len(groups))
