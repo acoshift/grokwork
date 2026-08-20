@@ -703,7 +703,7 @@ func TestNoSecretsLeakFromLoginFlow(t *testing.T) {
 	}
 
 	raw, err := os.ReadFile(filepath.Join(f.cfg.DataDir, "audit",
-		time.Now().Format("2006-01-02")+".jsonl"))
+		time.Now().UTC().Format("2006-01-02")+".jsonl"))
 	if err != nil {
 		t.Fatalf("audit file: %v", err)
 	}
