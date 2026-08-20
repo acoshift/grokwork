@@ -24,11 +24,11 @@ GROKWORK_WEB_PREVIEW=1 [GROKWORK_WEB_PREVIEW_DELAY_MS=800] \
   go test ./internal/web -run TestPreviewServer -timeout 0
 ```
 
-Running the bot requires `config.json` (copy `config.example.json`). Go 1.26.6+.
+Running the bot requires `config.json` (copy `config.example.json`). Go 1.27.0+.
 
 ## Go coding
 
-When writing or changing Go code, use **`/use-modern-go`**: load that skill and apply its guidelines for the version in `go.mod` (currently 1.26). Prefer current language and stdlib idioms (`any`, `min`/`max`, `slices`/`maps`/`cmp`, `for range n`, `strings.SplitSeq` when ranging, `wg.Go`, `errors.AsType`, `new(expr)` for pointers, `t.Context()` in tests, `omitzero` for `time.Time`/`time.Duration`, …) over legacy patterns. Do not use features newer than `go.mod`. Modernity is not a license to change behavior — keep refactors logic-preserving unless the task says otherwise.
+When writing or changing Go code, use **`/use-modern-go`**: load that skill and apply its guidelines for the version in `go.mod` (currently 1.27). Prefer current language and stdlib idioms (`any`, `min`/`max`, `slices`/`maps`/`cmp`, `for range n`, `strings.SplitSeq` when ranging, `wg.Go`, `errors.AsType`, `new(expr)` for pointers, `t.Context()` in tests, `omitzero` for `time.Time`/`time.Duration`, …) over legacy patterns. Do not use features newer than `go.mod`. Modernity is not a license to change behavior — keep refactors logic-preserving unless the task says otherwise.
 
 ## Workflow
 
