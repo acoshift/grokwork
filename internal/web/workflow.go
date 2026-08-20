@@ -170,7 +170,7 @@ func (s *Server) issuesPageShell(ctx *hime.Context) (pageData, error) {
 	}
 	state := strings.TrimSpace(ctx.FormValue("state"))
 	if state == "" {
-		state = "open"
+		state = defaultIssueListState
 	}
 	d.ActiveOwner = active.Owner
 	d.ActiveRepo = active.Repo
@@ -182,9 +182,10 @@ func (s *Server) issuesPageShell(ctx *hime.Context) (pageData, error) {
 }
 
 const (
-	issueListTTL        = 20 * time.Second
-	issueListMaxEntries = 32
-	issueListLimit      = 40
+	issueListTTL          = 20 * time.Second
+	issueListMaxEntries   = 32
+	issueListLimit        = 40
+	defaultIssueListState = "active"
 )
 
 type issueListCacheEntry struct {
@@ -193,8 +194,9 @@ type issueListCacheEntry struct {
 }
 
 // loadIssuesInto fetches (or reuses a short-TTL cache of) GitHub issues and
-// applies the FIXING overlay. state=open and state=fixing partition open
-// issues by whether a non-terminal Fixes session is bound.
+// applies the FIXING overlay. state=active is GitHub-open (both partitions);
+// state=open and state=fixing split that set by whether a non-terminal Fixes
+// session is bound.
 func (s *Server) loadIssuesInto(d *pageData, ctx *hime.Context) {
 	if d == nil || d.ActiveOwner == "" || d.ActiveRepo == "" {
 		return
@@ -207,12 +209,13 @@ func (s *Server) loadIssuesInto(d *pageData, ctx *hime.Context) {
 	}
 	state := d.IssueState
 	if state == "" {
-		state = "open"
+		state = defaultIssueListState
 	}
-	// "fixing" is a grokwork overlay on open GitHub issues. "open" and "fixing"
-	// partition those issues: open = no active Fixes session; fixing = has one.
+	// "fixing" is a grokwork overlay on open GitHub issues. "active" is the
+	// union; "open" and "fixing" partition it: open = no active Fixes session;
+	// fixing = has one.
 	ghState := state
-	if state == "fixing" {
+	if state == "active" || state == "fixing" {
 		ghState = "open"
 	}
 	cacheKey := project + "\x00" + d.ActiveOwner + "\x00" + d.ActiveRepo + "\x00" + ghState

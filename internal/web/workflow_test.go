@@ -249,6 +249,8 @@ func TestIssuesListAndDetail(t *testing.T) {
 		`hx-trigger="load"`,
 		`/partials/issues/table`,
 		"Loading issues…",
+		`value="active"`,
+		`state=active`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list shell missing %q in %s", want, body)
@@ -341,6 +343,17 @@ func TestIssueDetailRendersBodyImages(t *testing.T) {
 
 func TestIssuesListShowsFixingWorkState(t *testing.T) {
 	srv := workflowServer(t)
+	inner := srv.ghRunner
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.HasPrefix(joined, "issue list") && strings.Contains(joined, "--repo acme/api") {
+			return []byte(`[
+				{"number":7,"url":"https://github.com/acme/api/issues/7","title":"Fixture bug api","state":"OPEN","author":{"login":"alice"},"labels":[],"body":"body","closedByPullRequestsReferences":[]},
+				{"number":8,"url":"https://github.com/acme/api/issues/8","title":"Idle open bug","state":"OPEN","author":{"login":"bob"},"labels":[],"body":"body","closedByPullRequestsReferences":[]}
+			]`), nil
+		}
+		return inner(ctx, dir, name, args...)
+	}
 	// Active Fixes session for acme/api#7 → list should show FIXING, not bare OPEN.
 	e := sessionstore.Entry{Project: "proj", Label: sessionstore.LabelInProgress}
 	e.UpsertIssue(sessionstore.TrackedIssue{
@@ -358,16 +371,34 @@ func TestIssuesListShowsFixingWorkState(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, `value="fixing"`) {
-		t.Fatal("expected Fixing filter option on shell")
+	if !strings.Contains(body, `value="active"`) || !strings.Contains(body, `value="fixing"`) {
+		t.Fatal("expected Active and Fixing filter options on shell")
 	}
-	// Default state=open partitions out issues with an active Fixes session.
-	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api", nil)
+	if !strings.Contains(body, `option value="active" selected`) {
+		t.Fatalf("Active must be the default filter: %s", body)
+	}
+
+	// Default (and state=active) is GitHub-open: idle Open + Fixing.
+	for _, q := range []string{"", "&state=active"} {
+		req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api"+q, nil)
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		body = w.Body.String()
+		if !strings.Contains(body, "#7") || !strings.Contains(body, "FIXING") || !strings.Contains(body, "#8") {
+			t.Fatalf("active filter must include open and fixing issues (q=%q): %s", q, body)
+		}
+	}
+
+	// Filter state=open partitions out issues with an active Fixes session.
+	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api&state=open", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	body = w.Body.String()
 	if strings.Contains(body, "#7") || strings.Contains(body, "FIXING") {
 		t.Fatalf("open filter must exclude fixing issues: %s", body)
+	}
+	if !strings.Contains(body, "#8") {
+		t.Fatalf("open filter must keep idle open issues: %s", body)
 	}
 
 	// Filter state=fixing keeps the issue with FIXING badge
@@ -378,13 +409,16 @@ func TestIssuesListShowsFixingWorkState(t *testing.T) {
 	if !strings.Contains(body, "#7") || !strings.Contains(body, `class="badge status-fixing"`) || !strings.Contains(body, "FIXING") {
 		t.Fatalf("fixing filter: %s", body)
 	}
+	if strings.Contains(body, "#8") {
+		t.Fatalf("fixing filter must exclude idle open issues: %s", body)
+	}
 
 	// state=all still shows the FIXING overlay on open GitHub issues
 	req = httptest.NewRequest(http.MethodGet, "/partials/issues/table?project=proj&owner=acme&repo=api&state=all", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	body = w.Body.String()
-	if !strings.Contains(body, "#7") || !strings.Contains(body, "FIXING") {
+	if !strings.Contains(body, "#7") || !strings.Contains(body, "FIXING") || !strings.Contains(body, "#8") {
 		t.Fatalf("all filter should keep fixing overlay: %s", body)
 	}
 

@@ -28,6 +28,7 @@
   <div class="field">
     <label for="state">State</label>
     <select id="state" name="state" data-autosubmit>
+      <option value="active" {{if eq .IssueState "active"}}selected{{end}}>Active</option>
       <option value="open" {{if eq .IssueState "open"}}selected{{end}}>Open</option>
       <option value="fixing" {{if eq .IssueState "fixing"}}selected{{end}}>Fixing</option>
       <option value="closed" {{if eq .IssueState "closed"}}selected{{end}}>Closed</option>
