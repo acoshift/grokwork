@@ -5,6 +5,7 @@
 <p class="sub">
   Coding-agent skill packages discovered on this host — what Grok/Claude load for headless runs.
   User skills under <span class="mono">~/.grok/skills</span> and <span class="mono">~/.claude/skills</span> apply to every project worktree;
+  Claude plugins listed in <span class="mono">~/.claude/plugins/installed_plugins.json</span> contribute their <span class="mono">skills/</span> packages (marketplace clones that are not installed stay hidden);
   project skills under each checkout’s <span class="mono">.grok/skills</span> apply only when that repo is the agent cwd.
   This page is read-only; install or edit skills on disk (or via the coding CLI).
 </p>
@@ -51,7 +52,9 @@
   <p class="empty">No skills found under the usual host paths.</p>
   <p class="sub" style="margin:0">
     Install a user skill at <span class="mono">~/.grok/skills/&lt;name&gt;/SKILL.md</span>
-    (Claude: <span class="mono">~/.claude/skills/</span>), or add extra roots in
+    (Claude: <span class="mono">~/.claude/skills/</span>), install a Claude plugin whose
+    <span class="mono">skills/</span> packages land under
+    <span class="mono">~/.claude/plugins/</span>, or add extra roots in
     <span class="mono">~/.grok/config.toml</span> under <span class="mono">[skills] paths</span>.
     This repo also vendors <span class="mono">.grok/skills/scrutinize</span> for agents working on grokwork itself.
   </p>

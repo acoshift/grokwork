@@ -1,12 +1,15 @@
 // Package skills discovers coding-agent skill packages on the host.
 //
 // Locations match Grok's discovery (see ~/.grok/docs/user-guide/08-skills.md)
-// and Claude's ~/.claude/skills layout so the web UI can show what headless
-// runs are likely to load — without shelling out to `grok inspect`.
+// and Claude's ~/.claude/skills plus installed-plugin layout so the web UI
+// can show what headless runs are likely to load — without shelling out
+// to `grok inspect`.
 package skills
 
 import (
 	"bufio"
+	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -76,6 +79,14 @@ func List(opts ListOpts) []Info {
 		addRoot(expandHome(p, home), "config path")
 	}
 
+	// Claude Code plugins (and Grok's Claude-compat loader) read
+	// ~/.claude/plugins/installed_plugins.json — not the marketplace
+	// clones under …/plugins/marketplaces/. Each installPath/skills is
+	// one plugin's skill root.
+	for _, p := range claudeInstalledPluginSkills(home) {
+		addRoot(p.root, p.source)
+	}
+
 	// Project-local roots: higher priority conceptually; still collapsed by realpath.
 	names := make([]string, 0, len(opts.Projects))
 	for name := range opts.Projects {
@@ -100,6 +111,50 @@ func List(opts ListOpts) []Info {
 		}
 		return strings.Compare(a.Source, b.Source)
 	})
+	return out
+}
+
+type pluginSkillRoot struct {
+	root   string
+	source string
+}
+
+// claudeInstalledPluginSkills reads Claude's installed-plugin index and
+// returns each plugin's skills/ directory. Missing or unreadable JSON is
+// skipped (same as a missing skill root). Marketplace clones that are
+// not in the index are not scanned.
+func claudeInstalledPluginSkills(home string) []pluginSkillRoot {
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "plugins", "installed_plugins.json"))
+	if err != nil {
+		return nil
+	}
+	var file struct {
+		Plugins map[string][]struct {
+			InstallPath string `json:"installPath"`
+		} `json:"plugins"`
+	}
+	if json.Unmarshal(data, &file) != nil || len(file.Plugins) == 0 {
+		return nil
+	}
+	var out []pluginSkillRoot
+	for _, key := range slices.Sorted(maps.Keys(file.Plugins)) {
+		name, _, _ := strings.Cut(key, "@")
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		source := "plugin:" + name
+		for _, inst := range file.Plugins[key] {
+			p := expandHome(inst.InstallPath, home)
+			if p == "" {
+				continue
+			}
+			out = append(out, pluginSkillRoot{
+				root:   filepath.Join(p, "skills"),
+				source: source,
+			})
+		}
+	}
 	return out
 }
 

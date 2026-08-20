@@ -65,6 +65,94 @@ paths = ["`+filepath.Join(home, "extra-skills")+`"]
 	}
 }
 
+func TestListDiscoversClaudeInstalledPluginSkills(t *testing.T) {
+	home := t.TempDir()
+
+	pluginRoot := filepath.Join(home, ".claude", "plugins", "cache", "mkt", "design", "1.0.0")
+	writeSkill(t, filepath.Join(pluginRoot, "skills", "frontend-design"), "frontend-design", "Distinctive UI.")
+
+	// Same marketplace clone has a skill that is NOT in installed_plugins.json.
+	market := filepath.Join(home, ".claude", "plugins", "marketplaces", "mkt", "plugins", "example-plugin")
+	writeSkill(t, filepath.Join(market, "skills", "example-skill"), "example-skill", "Catalog only.")
+
+	// A leftover cache plugin with no index entry must stay hidden.
+	stale := filepath.Join(home, ".claude", "plugins", "cache", "mkt", "stale", "1.0.0")
+	writeSkill(t, filepath.Join(stale, "skills", "stale-skill"), "stale-skill", "Uninstalled leftover.")
+
+	writeFile(t, filepath.Join(home, ".claude", "plugins", "installed_plugins.json"), `{
+  "version": 2,
+  "plugins": {
+    "frontend-design@mkt": [
+      {
+        "scope": "user",
+        "installPath": "`+pluginRoot+`"
+      }
+    ],
+    "empty-plugin@mkt": [
+      {
+        "scope": "user",
+        "installPath": "`+filepath.Join(home, ".claude", "plugins", "cache", "mkt", "empty", "1.0.0")+`"
+      }
+    ]
+  }
+}
+`)
+
+	got := List(ListOpts{Home: home})
+	byName := map[string]Info{}
+	for _, sk := range got {
+		byName[sk.Name] = sk
+	}
+	if sk, ok := byName["frontend-design"]; !ok {
+		t.Fatalf("missing plugin skill, got %v", names(got))
+	} else if sk.Source != "plugin:frontend-design" {
+		t.Fatalf("source=%q", sk.Source)
+	}
+	for _, name := range []string{"example-skill", "stale-skill"} {
+		if _, ok := byName[name]; ok {
+			t.Fatalf("uninstalled plugin skill %q should not appear in %v", name, names(got))
+		}
+	}
+}
+
+func TestListClaudePluginSkillsCollapseWithUserCopy(t *testing.T) {
+	home := t.TempDir()
+	pluginRoot := filepath.Join(home, ".claude", "plugins", "cache", "mkt", "design", "1.0.0")
+	skillDir := filepath.Join(pluginRoot, "skills", "frontend-design")
+	writeSkill(t, skillDir, "frontend-design", "Distinctive UI.")
+	if err := os.MkdirAll(filepath.Join(home, ".claude", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(skillDir, filepath.Join(home, ".claude", "skills", "frontend-design")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(home, ".claude", "plugins", "installed_plugins.json"), `{
+  "plugins": {
+    "frontend-design@mkt": [{"installPath": "`+pluginRoot+`"}]
+  }
+}
+`)
+
+	got := List(ListOpts{Home: home})
+	n := 0
+	for _, sk := range got {
+		if sk.Name == "frontend-design" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("expected one frontend-design after realpath collapse, got %d in %v", n, names(got))
+	}
+}
+
+func TestClaudeInstalledPluginSkillsSkipsBadJSON(t *testing.T) {
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, ".claude", "plugins", "installed_plugins.json"), `{not json`)
+	if got := claudeInstalledPluginSkills(home); got != nil {
+		t.Fatalf("got %#v", got)
+	}
+}
+
 func TestParseFrontmatter(t *testing.T) {
 	name, desc := parseFrontmatter(`---
 name: scrutinize

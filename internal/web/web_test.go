@@ -201,6 +201,7 @@ func TestPagesRender(t *testing.T) {
 		{"/config", `href="/config/projects/proj"`},
 		{"/config/skills", `id="page-config-skills"`},
 		{"/config/skills", "Coding-agent skill packages"},
+		{"/config/skills", "installed_plugins.json"},
 		{"/config/skills", `class="table-scroll m-hide"`},
 		{"/config/skills", `class="m-rows"`},
 		{"/config/bot", `id="page-config-bot"`},
