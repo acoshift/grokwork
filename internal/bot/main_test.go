@@ -24,10 +24,10 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "poison bin:", err)
 		os.Exit(1)
 	}
-	for _, name := range []string{"grok", "claude"} {
+	for _, name := range []string{"grok", "claude", "cursor-agent"} {
 		script := "#!/bin/sh\n" +
-			"echo 'TEST BUG: execed the real " + name + " CLI. Point GrokBin/ClaudeBin at a fake" +
-			" (writeFakeGrok / writeFakeClaude); note SetAgentSettings rewrites both.' >&2\n" +
+			"echo 'TEST BUG: execed the real " + name + " CLI. Point GrokBin/ClaudeBin/CursorBin at a fake" +
+			" (writeFakeGrok / writeFakeClaude); note SetAgentSettings rewrites bins.' >&2\n" +
 			"exit 97\n"
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
 			fmt.Fprintln(os.Stderr, "poison bin:", err)
@@ -60,7 +60,7 @@ func TestMain(m *testing.M) {
 func setAgentSettingsKeepBins(t *testing.T, cfg *config.Config, in config.AgentSettings) {
 	t.Helper()
 	snap := cfg.Snapshot()
-	in.GrokBin, in.ClaudeBin = snap.GrokBin, snap.ClaudeBin
+	in.GrokBin, in.ClaudeBin, in.CursorBin = snap.GrokBin, snap.ClaudeBin, snap.CursorBin
 	if err := cfg.SetAgentSettings(in); err != nil {
 		t.Fatal(err)
 	}

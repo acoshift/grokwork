@@ -116,6 +116,7 @@
   "grokBin": "grok",
   "agent": "grok",
   "claudeBin": "claude",
+  "cursorBin": "cursor-agent",
   "claudeExtraArgs": [],
   "claudeIncludeAnthropicEnv": false,
   "yolo": true,

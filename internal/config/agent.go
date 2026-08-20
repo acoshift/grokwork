@@ -23,7 +23,7 @@ func (a AgentCLI) CLI() grokrun.CLI {
 }
 
 // Model settings are shared across agents: `model` and `summarizeModel` hold a
-// name from either vendor, and grokrun.AgentForModel decides which CLI it
+// name from any supported CLI, and grokrun.AgentForModel decides which CLI it
 // belongs to. Two rules keep that from doing damage:
 //
 //  1. A name it does not recognize never guesses — it falls back to the
@@ -189,6 +189,8 @@ func (c *Config) cliLocked(a grokrun.Agent, model string) AgentCLI {
 	case grokrun.AgentClaude:
 		out.Bin = strings.TrimSpace(c.ClaudeBin)
 		out.ExtraArgs = slices.Clone(c.ClaudeExtraArgs)
+	case grokrun.AgentCursor:
+		out.Bin = strings.TrimSpace(c.CursorBin)
 	default:
 		out.Bin = strings.TrimSpace(c.GrokBin)
 		out.ExtraArgs = slices.Clone(c.ExtraArgs)
@@ -291,6 +293,7 @@ func ModelGroups(current string) []ModelGroup {
 	groups := []ModelGroup{
 		{Agent: grokrun.AgentGrok.String(), Label: grokrun.AgentGrok.Label()},
 		{Agent: grokrun.AgentClaude.String(), Label: grokrun.AgentClaude.Label()},
+		{Agent: grokrun.AgentCursor.String(), Label: grokrun.AgentCursor.Label()},
 	}
 	add := func(agent grokrun.Agent, choice ModelChoice) {
 		name := agent.String()
@@ -334,7 +337,7 @@ func validModelChoice(submitted, current string) bool {
 }
 
 // AgentSettings is the editable agent configuration written by the web UI.
-// Model fields hold a name from either vendor; empty means "let the CLI pick".
+// Model fields hold a name from any supported CLI; empty means "let the CLI pick".
 type AgentSettings struct {
 	// Agent is the fallback used when Model does not identify one.
 	Agent string
@@ -347,6 +350,7 @@ type AgentSettings struct {
 	ReviewModel         string
 	GrokBin             string
 	ClaudeBin           string
+	CursorBin           string
 	IncludeAnthropicEnv bool
 }
 
@@ -356,8 +360,8 @@ type AgentSettings struct {
 func (c *Config) SetAgentSettings(in AgentSettings) error {
 	name, ok := grokrun.ParseAgent(in.Agent)
 	if !ok {
-		return fmt.Errorf("agent %q is not a known coding CLI (want %q or %q)",
-			in.Agent, grokrun.AgentGrok, grokrun.AgentClaude)
+		return fmt.Errorf("agent %q is not a known coding CLI (want %s)",
+			in.Agent, grokrun.KnownAgents())
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -376,6 +380,7 @@ func (c *Config) SetAgentSettings(in AgentSettings) error {
 	c.ReviewModel = strings.TrimSpace(in.ReviewModel)
 	c.GrokBin = binOrDefault(in.GrokBin, grokrun.AgentGrok)
 	c.ClaudeBin = binOrDefault(in.ClaudeBin, grokrun.AgentClaude)
+	c.CursorBin = binOrDefault(in.CursorBin, grokrun.AgentCursor)
 	c.ClaudeIncludeAnthropicEnv = &in.IncludeAnthropicEnv
 	return c.saveLocked()
 }

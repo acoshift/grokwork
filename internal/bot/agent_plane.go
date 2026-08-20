@@ -287,7 +287,12 @@ func (b *Bot) AgentAPI() *agentapi.Service {
 // caps to mint. Grok investigate stays off: --deny MCPTool is what blocks
 // ambient user-scope MCP, and dropping it would attach every configured
 // server. Claude can attach only our server via --mcp-config + --strict-mcp-config.
+// cursor-agent has no --mcp-config, so it never attaches — writing
+// .cursor/mcp.json into the worktree would pollute the session branch.
 func mcpCapsForRun(agent grokrun.Agent, pol RunPolicy) (agentauth.Caps, bool) {
+	if agent == grokrun.AgentCursor {
+		return agentauth.Caps{}, false
+	}
 	if pol.Tools == nil {
 		return agentauth.DefaultShipCaps(), true
 	}

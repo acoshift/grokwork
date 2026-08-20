@@ -9,6 +9,7 @@ type Agent string
 const (
 	AgentGrok   Agent = "grok"
 	AgentClaude Agent = "claude"
+	AgentCursor Agent = "cursor"
 )
 
 // ParseAgent normalizes user/config input. Empty means "unset" and resolves to
@@ -20,15 +21,32 @@ func ParseAgent(s string) (Agent, bool) {
 		return AgentGrok, true
 	case "claude", "cc", "claude-code":
 		return AgentClaude, true
+	case "cursor", "cursor-agent":
+		return AgentCursor, true
 	default:
 		return AgentGrok, false
 	}
+}
+
+// KnownAgents is the closed set ParseAgent accepts, for error messages.
+func KnownAgents() string {
+	return `"` + string(AgentGrok) + `", "` + string(AgentClaude) + `", or "` + string(AgentCursor) + `"`
 }
 
 // claudeModelMarkers are substrings that identify a Claude model. The CLI's own
 // aliases are bare words ("opus", "sonnet", "fable"), and third-party hosts use
 // vendor-prefixed ids ("us.anthropic.claude-sonnet-4-5-…"), so both shapes match.
 var claudeModelMarkers = []string{"claude", "anthropic", "opus", "sonnet", "haiku", "fable"}
+
+// cursorModelMarkers identify names that belong to cursor-agent. Checked before
+// grok/claude because the catalog reuses those vendors' names
+// (cursor-grok-4.6-high, claude-opus-5-thinking-high).
+var cursorModelMarkers = []string{"composer", "cursor-", "gpt-", "codex", "gemini"}
+
+// cursorClaudeQualifiers are suffixes the Cursor catalog adds to Claude family
+// ids. The Claude CLI's curated names (claude-opus-5, claude-haiku-4-5) do not
+// carry these, so a name with both a Claude marker and a qualifier is Cursor's.
+var cursorClaudeQualifiers = []string{"thinking", "-fast", "-low", "-medium", "-high", "-xhigh", "-max"}
 
 // AgentForModel infers which CLI owns a model name.
 //
@@ -41,8 +59,19 @@ func AgentForModel(model string) (Agent, bool) {
 	if m == "" {
 		return "", false
 	}
-	// grok is checked first so a vendor-qualified name that happens to contain a
-	// Claude marker still resolves to grok.
+	// Curated names win first so a listed Cursor Claude id cannot be stolen by
+	// the Claude-marker heuristic, and a listed Claude id cannot be stolen by a
+	// qualifier that happens to appear in some other spelling.
+	for _, opt := range ModelOptions() {
+		if strings.EqualFold(opt.Value, m) {
+			return opt.Agent, true
+		}
+	}
+	if looksLikeCursorModel(m) {
+		return AgentCursor, true
+	}
+	// grok before Claude so a vendor-qualified name that happens to contain a
+	// Claude marker still resolves to grok. cursor-grok-* already matched above.
 	if strings.Contains(m, "grok") {
 		return AgentGrok, true
 	}
@@ -52,6 +81,32 @@ func AgentForModel(model string) (Agent, bool) {
 		}
 	}
 	return "", false
+}
+
+func looksLikeCursorModel(m string) bool {
+	for _, marker := range cursorModelMarkers {
+		if strings.Contains(m, marker) {
+			return true
+		}
+	}
+	if !hasClaudeMarker(m) {
+		return false
+	}
+	for _, q := range cursorClaudeQualifiers {
+		if strings.Contains(m, q) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasClaudeMarker(m string) bool {
+	for _, marker := range claudeModelMarkers {
+		if strings.Contains(m, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // ModelOption is one selectable model for the config UI.
@@ -69,7 +124,7 @@ type ModelOption struct {
 // here that the inference table does not recognize fails the tests.
 //
 // Only pinned vendor ids are listed — no rolling aliases like "opus"/"sonnet".
-// Both CLIs also accept names not listed here; the config page keeps whatever
+// The CLIs also accept names not listed here; the config page keeps whatever
 // is already in config.json as a selectable option, so a hand-edited value
 // survives a save.
 func ModelOptions() []ModelOption {
@@ -79,12 +134,24 @@ func ModelOptions() []ModelOption {
 		{Value: "grok-4.6", Label: "grok-4.6", Agent: AgentGrok},
 		{Value: "grok-4.5", Label: "grok-4.5", Agent: AgentGrok},
 
-		// claude.
+		// claude (Claude Code CLI).
 		{Value: "claude-opus-5", Label: "claude-opus-5", Agent: AgentClaude},
 		{Value: "claude-opus-4-8", Label: "claude-opus-4-8", Agent: AgentClaude},
 		{Value: "claude-sonnet-5", Label: "claude-sonnet-5", Agent: AgentClaude},
 		{Value: "claude-haiku-4-5", Label: "claude-haiku-4-5", Agent: AgentClaude},
 		{Value: "claude-fable-5", Label: "claude-fable-5", Agent: AgentClaude},
+
+		// cursor-agent. Claude-family ids here are Cursor's effort/speed variants,
+		// distinct from the Claude Code names above — picking one is how a start
+		// task runs Claude-quality models on cursor-agent.
+		{Value: "composer-2.5", Label: "composer-2.5", Agent: AgentCursor},
+		{Value: "composer-2.5-fast", Label: "composer-2.5-fast", Agent: AgentCursor},
+		{Value: "claude-opus-5-thinking-high", Label: "claude-opus-5-thinking-high", Agent: AgentCursor},
+		{Value: "claude-sonnet-5-thinking-high", Label: "claude-sonnet-5-thinking-high", Agent: AgentCursor},
+		{Value: "claude-fable-5-thinking-high", Label: "claude-fable-5-thinking-high", Agent: AgentCursor},
+		{Value: "gpt-5.6-sol-medium", Label: "gpt-5.6-sol-medium", Agent: AgentCursor},
+		{Value: "cursor-grok-4.6-high", Label: "cursor-grok-4.6-high", Agent: AgentCursor},
+		{Value: "gemini-3.7-flash-high", Label: "gemini-3.7-flash-high", Agent: AgentCursor},
 	}
 }
 
@@ -114,6 +181,8 @@ func (a Agent) Label() string {
 	switch a.Resolve() {
 	case AgentClaude:
 		return "Claude"
+	case AgentCursor:
+		return "Cursor"
 	default:
 		return "Grok"
 	}
@@ -132,6 +201,10 @@ func (a Agent) DefaultInvestigateTools() string {
 	switch a.Resolve() {
 	case AgentClaude:
 		return "Read,Grep,Glob"
+	case AgentCursor:
+		// cursor-agent has no --tools flag; the driver maps a non-nil Tools
+		// pointer to --mode ask. These names are for policy/display only.
+		return "Read,Grep,Glob"
 	default:
 		return "read_file,grep"
 	}
@@ -142,6 +215,10 @@ func (a Agent) ShellInvestigateTool() string {
 	switch a.Resolve() {
 	case AgentClaude:
 		return "Bash"
+	case AgentCursor:
+		// Ask mode is read-only, so investigate-with-shell still cannot open a
+		// write path. Empty keeps InvestigateTools(true) file-only.
+		return ""
 	default:
 		return "run_terminal_command"
 	}
@@ -167,6 +244,8 @@ func (a Agent) DefaultBin() string {
 	switch a.Resolve() {
 	case AgentClaude:
 		return "claude"
+	case AgentCursor:
+		return "cursor-agent"
 	default:
 		return "grok"
 	}
@@ -194,6 +273,8 @@ func (a Agent) driver() driver {
 	switch a.Resolve() {
 	case AgentClaude:
 		return claudeDriver{}
+	case AgentCursor:
+		return cursorDriver{}
 	default:
 		return grokDriver{}
 	}

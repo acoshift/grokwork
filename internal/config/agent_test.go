@@ -39,9 +39,12 @@ func TestAgentDefaultsToGrok(t *testing.T) {
 	if got := cfg.DefaultAgent(); got != grokrun.AgentGrok {
 		t.Fatalf("default agent=%q", got)
 	}
-	// An unset claudeBin still resolves so /agent claude works without extra config.
+	// An unset claudeBin/cursorBin still resolves so those agents work without extra config.
 	if got := cfg.ClaudeBin; got != "claude" {
 		t.Fatalf("claudeBin=%q", got)
+	}
+	if got := cfg.CursorBin; got != "cursor-agent" {
+		t.Fatalf("cursorBin=%q", got)
 	}
 }
 
@@ -53,6 +56,9 @@ func TestAgentUnknownNameRejected(t *testing.T) {
 	}
 	if _, err := loadAgentConfig(t, `, "agent": "claude"`); err != nil {
 		t.Fatalf("claude should be accepted: %v", err)
+	}
+	if _, err := loadAgentConfig(t, `, "agent": "cursor"`); err != nil {
+		t.Fatalf("cursor should be accepted: %v", err)
 	}
 }
 
@@ -76,20 +82,40 @@ func TestModelNamePicksTheAgent(t *testing.T) {
 	}
 }
 
+// Cursor-hosted Claude ids must not route to the claude CLI.
+func TestCursorModelNamePicksCursorAgent(t *testing.T) {
+	cfg, err := loadAgentConfig(t, `,
+		"agent": "grok",
+		"model": "claude-opus-5-thinking-high",
+		"cursorBin": "/opt/cursor-agent"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.DefaultAgent(); got != grokrun.AgentCursor {
+		t.Fatalf("default agent=%q, want cursor from the model name", got)
+	}
+	got := cfg.ResolveAgentCLI("")
+	if got.Agent != grokrun.AgentCursor || got.Bin != "/opt/cursor-agent" || got.Model != "claude-opus-5-thinking-high" {
+		t.Fatalf("cli=%+v", got)
+	}
+}
+
 // Binaries and extra args stay per-agent: only the model is shared.
 func TestResolveAgentCLIKeepsBinariesAndArgsSeparate(t *testing.T) {
 	cfg, err := loadAgentConfig(t, `,
 		"grokBin": "/usr/local/bin/grok",
 		"extraArgs": ["--no-plan"],
 		"claudeBin": "/opt/claude",
+		"cursorBin": "/opt/cursor-agent",
 		"claudeExtraArgs": ["--effort", "high"]`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	g := cfg.ResolveAgentCLI("grok")
 	c := cfg.ResolveAgentCLI("claude")
-	if g.Bin != "/usr/local/bin/grok" || c.Bin != "/opt/claude" {
-		t.Fatalf("bins g=%q c=%q", g.Bin, c.Bin)
+	cur := cfg.ResolveAgentCLI("cursor")
+	if g.Bin != "/usr/local/bin/grok" || c.Bin != "/opt/claude" || cur.Bin != "/opt/cursor-agent" {
+		t.Fatalf("bins g=%q c=%q cursor=%q", g.Bin, c.Bin, cur.Bin)
 	}
 	if len(g.ExtraArgs) != 1 || g.ExtraArgs[0] != "--no-plan" {
 		t.Fatalf("grok extraArgs=%v", g.ExtraArgs)
@@ -364,6 +390,13 @@ func TestRequestedAgentCLIRejectsUncuratedName(t *testing.T) {
 	got, err := cfg.RequestedAgentCLI("")
 	if err != nil || got.Model != "grok-4" {
 		t.Fatalf("empty request must use config: cli=%+v err=%v", got, err)
+	}
+	cur, err := cfg.RequestedAgentCLI("composer-2.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur.Agent != grokrun.AgentCursor || cur.Model != "composer-2.5" {
+		t.Fatalf("cursor request cli=%+v", cur)
 	}
 }
 

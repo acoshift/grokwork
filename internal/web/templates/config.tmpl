@@ -47,7 +47,7 @@
           <span class="drill-t">Coding agent</span>
           <span class="drill-s">default CLI for new sessions</span>
         </span>
-        <span class="drill-v">{{if eq .Config.Agent "claude"}}Claude{{else}}Grok{{end}}{{if and (eq .Config.Agent "claude") .Config.ClaudeModel}} · {{.Config.ClaudeModel}}{{end}}</span>
+        <span class="drill-v">{{if eq .Config.Agent "claude"}}Claude{{else if eq .Config.Agent "cursor"}}Cursor{{else}}Grok{{end}}{{if and (eq .Config.Agent "claude") .Config.ClaudeModel}} · {{.Config.ClaudeModel}}{{end}}</span>
       </a>
       <a class="drill" href="{{route "config.skills"}}">
         <span class="drill-main">

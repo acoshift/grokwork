@@ -13,7 +13,7 @@ import (
 // Tool names are agent-specific vocabulary and do not carry across CLIs.
 func suggestVerifyTools(a Agent) string {
 	switch a.Resolve() {
-	case AgentClaude:
+	case AgentClaude, AgentCursor:
 		return "Read,Glob,Grep"
 	default:
 		return "read_file,list_dir,grep"

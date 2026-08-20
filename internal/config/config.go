@@ -70,12 +70,14 @@ type Config struct {
 	Projects            ProjectsMap       `json:"projects"`
 	Channels            map[string]string `json:"channels"` // channel ID → project name
 	GrokBin             string            `json:"grokBin"`
-	// Agent is the default coding CLI for new sessions: "grok" (default) or
-	// "claude". Sessions stamp the agent they were created with and keep it,
-	// since a session id cannot be resumed by the other CLI.
+	// Agent is the default coding CLI for new sessions: "grok" (default),
+	// "claude", or "cursor". Sessions stamp the agent they were created with
+	// and keep it, since a session id cannot be resumed by the other CLI.
 	Agent string `json:"agent,omitempty"`
 	// ClaudeBin is the claude CLI binary. Empty → "claude" on PATH.
 	ClaudeBin string `json:"claudeBin,omitempty"`
+	// CursorBin is the cursor-agent CLI binary. Empty → "cursor-agent" on PATH.
+	CursorBin string `json:"cursorBin,omitempty"`
 	// SummarizeModel overrides Model for thread-title summarization only. That
 	// call is one turn with tools off and returns a few words, so it is worth
 	// pointing at a cheap model. Like Model it takes a name from either vendor
@@ -318,9 +320,10 @@ type Snapshot struct {
 	HTTPListen   string
 	GrokBin      string
 	Model        string
-	// Agent is the default coding CLI for new sessions ("grok" or "claude").
+	// Agent is the default coding CLI for new sessions ("grok", "claude", or "cursor").
 	Agent     string
 	ClaudeBin string
+	CursorBin string
 	// SummarizeModel / ReviewModel are the raw configured values (empty = "use
 	// Model"), not the effective ones, so the config form shows a placeholder
 	// rather than a fabricated value.
@@ -797,11 +800,14 @@ func Load() (*Config, error) {
 	if c.ClaudeBin == "" {
 		c.ClaudeBin = grokrun.AgentClaude.DefaultBin()
 	}
+	if c.CursorBin == "" {
+		c.CursorBin = grokrun.AgentCursor.DefaultBin()
+	}
 	// Reject an unknown agent rather than silently running the default: a typo
 	// would otherwise route every session to the wrong CLI.
 	if _, ok := grokrun.ParseAgent(c.Agent); !ok {
-		return nil, fmt.Errorf("agent %q is not a known coding CLI (want %q or %q)",
-			c.Agent, grokrun.AgentGrok, grokrun.AgentClaude)
+		return nil, fmt.Errorf("agent %q is not a known coding CLI (want %s)",
+			c.Agent, grokrun.KnownAgents())
 	}
 	if c.MaxTurns <= 0 {
 		c.MaxTurns = DefaultMaxTurns
@@ -849,6 +855,7 @@ func (c *Config) saveLocked() error {
 		GrokBin                   string               `json:"grokBin"`
 		Agent                     string               `json:"agent,omitempty"`
 		ClaudeBin                 string               `json:"claudeBin,omitempty"`
+		CursorBin                 string               `json:"cursorBin,omitempty"`
 		SummarizeModel            string               `json:"summarizeModel,omitempty"`
 		ReviewModel               string               `json:"reviewModel,omitempty"`
 		ModelRates                map[string]ModelRate `json:"modelRates,omitempty"`
@@ -897,6 +904,7 @@ func (c *Config) saveLocked() error {
 		GrokBin:                   c.GrokBin,
 		Agent:                     c.Agent,
 		ClaudeBin:                 c.ClaudeBin,
+		CursorBin:                 c.CursorBin,
 		SummarizeModel:            c.SummarizeModel,
 		ReviewModel:               c.ReviewModel,
 		ModelRates:                cloneModelRates(c.ModelRates),
@@ -1554,6 +1562,10 @@ func (c *Config) Snapshot() Snapshot {
 	if claudeBin == "" {
 		claudeBin = grokrun.AgentClaude.DefaultBin()
 	}
+	cursorBin := strings.TrimSpace(c.CursorBin)
+	if cursorBin == "" {
+		cursorBin = grokrun.AgentCursor.DefaultBin()
+	}
 	rateItems := modelRateItemsFrom(c.ModelRates)
 	ratesSet := 0
 	for _, it := range rateItems {
@@ -1570,6 +1582,7 @@ func (c *Config) Snapshot() Snapshot {
 		Model:                     c.Model,
 		Agent:                     agent.String(),
 		ClaudeBin:                 claudeBin,
+		CursorBin:                 cursorBin,
 		SummarizeModel:            strings.TrimSpace(c.SummarizeModel),
 		ReviewModel:               strings.TrimSpace(c.ReviewModel),
 		ModelAgent:                modelAgent.String(),

@@ -292,7 +292,7 @@ func TestBuildRunPolicyIgnoresForeignToolOverride(t *testing.T) {
 
 // Explain mode is tools-off for every agent (the "" pointer, rewritten per driver).
 func TestBuildRunPolicyExplainStaysToolsOff(t *testing.T) {
-	for _, agent := range []grokrun.Agent{grokrun.AgentGrok, grokrun.AgentClaude} {
+	for _, agent := range []grokrun.Agent{grokrun.AgentGrok, grokrun.AgentClaude, grokrun.AgentCursor} {
 		pol := BuildRunPolicy(PolicyInput{RequestedMode: ModeExplain, Agent: agent})
 		if pol.Tools == nil || *pol.Tools != "" {
 			t.Fatalf("agent=%s tools=%v want tools-off", agent, pol.Tools)

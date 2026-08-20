@@ -223,6 +223,7 @@ func TestPagesRender(t *testing.T) {
 		{"/config/agent", `id="page-config-agent"`},
 		{"/config/agent", `name="agent"`},
 		{"/config/agent", `name="claudeBin"`},
+		{"/config/agent", `name="cursorBin"`},
 		{"/config/agent", `name="grokBin"`},
 		{"/config/agent", `name="model"`},
 		{"/config/agent", `name="summarizeModel"`},
@@ -231,10 +232,13 @@ func TestPagesRender(t *testing.T) {
 		// optgroup label is how the inferred agent shows at the point of choice.
 		{"/config/agent", `<optgroup label="Grok">`},
 		{"/config/agent", `<optgroup label="Claude">`},
+		{"/config/agent", `<optgroup label="Cursor">`},
 		{"/config/agent", `<option value="grok-4.6"`},
 		{"/config/agent", `<option value="grok-4.5"`},
 		{"/config/agent", `<option value="claude-opus-5"`},
 		{"/config/agent", `<option value="claude-sonnet-5"`},
+		{"/config/agent", `<option value="composer-2.5"`},
+		{"/config/agent", `<option value="claude-opus-5-thinking-high"`},
 		{"/config/worktrees", `id="page-config-worktrees"`},
 		{"/config/worktrees", `name="worktreeIdleTTLDays"`},
 		{"/config/worktrees", `name="terminalSessionTTLDays"`},
@@ -2035,7 +2039,7 @@ func TestConfigAddsPersist(t *testing.T) {
 	// A model that is not one of the offered options must not be persisted — the
 	// dropdown is the whole allowed set, so a hand-crafted POST cannot widen it.
 	reqBadModel := httptest.NewRequest(http.MethodPost, "/config/agent", strings.NewReader(url.Values{
-		"agent": {"grok"}, "model": {"gpt-5"},
+		"agent": {"grok"}, "model": {"not-a-model"},
 	}.Encode()))
 	reqBadModel.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	h.ServeHTTP(httptest.NewRecorder(), reqBadModel)

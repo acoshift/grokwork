@@ -14,6 +14,9 @@ func TestParseAgent(t *testing.T) {
 		{"claude", AgentClaude, true},
 		{"Claude-Code", AgentClaude, true},
 		{"cc", AgentClaude, true},
+		{"cursor", AgentCursor, true},
+		{"cursor-agent", AgentCursor, true},
+		{"Cursor-Agent", AgentCursor, true},
 		{"gpt", AgentGrok, false},
 	}
 	for _, c := range cases {
@@ -36,6 +39,9 @@ func TestAgentZeroValueIsGrok(t *testing.T) {
 	if _, isClaude := AgentClaude.driver().(claudeDriver); !isClaude {
 		t.Fatalf("claude picked %T", AgentClaude.driver())
 	}
+	if _, isCursor := AgentCursor.driver().(cursorDriver); !isCursor {
+		t.Fatalf("cursor picked %T", AgentCursor.driver())
+	}
 }
 
 // Tool names are per-agent vocabulary: grok's read_file means nothing to claude,
@@ -52,6 +58,12 @@ func TestAgentToolVocabularyDiffers(t *testing.T) {
 	}
 	if got := AgentClaude.InvestigateTools(true); got != "Read,Grep,Glob,Bash" {
 		t.Errorf("claude shell tools=%q", got)
+	}
+	if got := AgentCursor.DefaultInvestigateTools(); got != "Read,Grep,Glob" {
+		t.Errorf("cursor file tools=%q", got)
+	}
+	if got := AgentCursor.InvestigateTools(true); got != "Read,Grep,Glob" {
+		t.Errorf("cursor has no shell tool; investigate-with-shell=%q", got)
 	}
 	if AgentGrok.InvestigateTools(true) == AgentClaude.InvestigateTools(true) {
 		t.Error("agents must not share a tool allowlist")
@@ -88,17 +100,19 @@ func TestModelOptionsMatchInference(t *testing.T) {
 		t.Error("IsKnownModel disagrees with the option list")
 	}
 	// Both agents must be represented, or one CLI becomes unselectable in the UI.
-	var grok, claude int
+	var grok, claude, cursor int
 	for _, opt := range opts {
 		switch opt.Agent {
 		case AgentGrok:
 			grok++
 		case AgentClaude:
 			claude++
+		case AgentCursor:
+			cursor++
 		}
 	}
-	if grok == 0 || claude == 0 {
-		t.Fatalf("options cover grok=%d claude=%d; both must be offered", grok, claude)
+	if grok == 0 || claude == 0 || cursor == 0 {
+		t.Fatalf("options cover grok=%d claude=%d cursor=%d; all three must be offered", grok, claude, cursor)
 	}
 	if opts[0].Value != "grok-4.6" || opts[0].Agent != AgentGrok {
 		t.Fatalf("first option is %q/%q; newest grok model must lead", opts[0].Value, opts[0].Agent)
@@ -119,14 +133,21 @@ func TestAgentForModel(t *testing.T) {
 		{"haiku", AgentClaude, true},
 		{"fable", AgentClaude, true},
 		{"claude-opus-4-8", AgentClaude, true},
+		{"claude-opus-5", AgentClaude, true},
 		{"  SONNET  ", AgentClaude, true},
 		// Third-party hosts prefix the vendor.
 		{"us.anthropic.claude-sonnet-4-5-20250929-v1:0", AgentClaude, true},
+		// cursor-agent. Cursor-hosted Claude ids carry effort/speed suffixes
+		// the Claude CLI does not use; those must not route to claude.
+		{"composer-2.5", AgentCursor, true},
+		{"claude-opus-5-thinking-high", AgentCursor, true},
+		{"claude-opus-5-high", AgentCursor, true},
+		{"cursor-grok-4.6-high", AgentCursor, true},
+		{"gpt-5", AgentCursor, true},
+		{"gemini-3-pro", AgentCursor, true},
 		// Unknown names must not be guessed at — the caller falls back to the
 		// configured agent, and the CLI reports the bad model itself.
 		{"", AgentGrok, false},
-		{"gpt-5", AgentGrok, false},
-		{"gemini-3-pro", AgentGrok, false},
 		{"some-self-hosted-42", AgentGrok, false},
 	}
 	for _, c := range cases {
@@ -144,6 +165,9 @@ func TestAgentForModel(t *testing.T) {
 func TestCLIResolvedFillsDefaultBin(t *testing.T) {
 	if got := (CLI{Agent: AgentClaude}).Resolved().Bin; got != "claude" {
 		t.Errorf("claude bin=%q", got)
+	}
+	if got := (CLI{Agent: AgentCursor}).Resolved().Bin; got != "cursor-agent" {
+		t.Errorf("cursor bin=%q", got)
 	}
 	if got := (CLI{}).Resolved().Bin; got != "grok" {
 		t.Errorf("default bin=%q", got)

@@ -4,7 +4,8 @@
 <h1>Coding agent</h1>
 <p class="sub">
   Which CLI runs a session, and on which model. The model name picks the CLI —
-  <span class="mono">sonnet</span> runs Claude, <span class="mono">grok-4.6</span> runs Grok.
+  <span class="mono">sonnet</span> runs Claude Code, <span class="mono">claude-opus-5-thinking-high</span> runs Cursor,
+  <span class="mono">grok-4.6</span> runs Grok.
   These are the defaults; a builder may override the model per session when starting work in the web UI.
   A session stamps the agent and model it started on and keeps them for life, since a
   session cannot be resumed by the other CLI — so changes here only affect <strong>new</strong> sessions.
@@ -31,7 +32,7 @@
         </select>
         <p class="sub" style="margin:0.35rem 0 0" id="model-agent">
           {{if .Config.Model}}
-            {{if .Config.ModelAgentKnown}}→ runs on <strong>{{if eq .Config.ModelAgent "claude"}}Claude{{else}}Grok{{end}}</strong>
+            {{if .Config.ModelAgentKnown}}→ runs on <strong>{{if eq .Config.ModelAgent "claude"}}Claude{{else if eq .Config.ModelAgent "cursor"}}Cursor{{else}}Grok{{end}}</strong>
             {{else}}→ name not recognized, using the fallback agent{{end}}
           {{else}}→ fallback agent, each CLI picks its own default model{{end}}
         </p>
@@ -44,7 +45,7 @@
         </select>
         <p class="sub" style="margin:0.35rem 0 0" id="summarize-agent">
           {{if .Config.SummarizeModel}}
-            {{if .Config.SummarizeAgentKnown}}→ runs on <strong>{{if eq .Config.SummarizeAgent "claude"}}Claude{{else}}Grok{{end}}</strong>
+            {{if .Config.SummarizeAgentKnown}}→ runs on <strong>{{if eq .Config.SummarizeAgent "claude"}}Claude{{else if eq .Config.SummarizeAgent "cursor"}}Cursor{{else}}Grok{{end}}</strong>
             {{else}}→ name not recognized, runs on the session's agent{{end}}
           {{else}}→ same as the task model{{end}}
         </p>
@@ -57,7 +58,7 @@
         </select>
         <p class="sub" style="margin:0.35rem 0 0" id="review-agent">
           {{if .Config.ReviewModel}}
-            {{if .Config.ReviewAgentKnown}}→ runs on <strong>{{if eq .Config.ReviewAgent "claude"}}Claude{{else}}Grok{{end}}</strong>
+            {{if .Config.ReviewAgentKnown}}→ runs on <strong>{{if eq .Config.ReviewAgent "claude"}}Claude{{else if eq .Config.ReviewAgent "cursor"}}Cursor{{else}}Grok{{end}}</strong>
             {{else}}→ name not recognized, using the fallback agent{{end}}
           {{else}}→ same as the task model{{end}}
         </p>
@@ -65,12 +66,13 @@
     </div>
 
     <h2 style="margin:1.25rem 0 0.35rem">Binaries &amp; fallback</h2>
-    <div class="inline" style="grid-template-columns: 1fr 1fr 1fr;">
+    <div class="inline" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
       <div>
         <label for="agent">Fallback agent</label>
         <select id="agent" name="agent">
-          <option value="grok" {{if ne .Config.Agent "claude"}}selected{{end}}>Grok</option>
+          <option value="grok" {{if eq .Config.Agent "grok"}}selected{{end}}>Grok</option>
           <option value="claude" {{if eq .Config.Agent "claude"}}selected{{end}}>Claude</option>
+          <option value="cursor" {{if eq .Config.Agent "cursor"}}selected{{end}}>Cursor</option>
         </select>
       </div>
       <div>
@@ -80,6 +82,10 @@
       <div>
         <label for="claude-bin">Claude binary</label>
         <input id="claude-bin" type="text" name="claudeBin" value="{{.Config.ClaudeBin}}" placeholder="claude" autocomplete="off">
+      </div>
+      <div>
+        <label for="cursor-bin">Cursor binary</label>
+        <input id="cursor-bin" type="text" name="cursorBin" value="{{.Config.CursorBin}}" placeholder="cursor-agent" autocomplete="off">
       </div>
     </div>
     <p class="sub" style="margin:0.5rem 0 0">

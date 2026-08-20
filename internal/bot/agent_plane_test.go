@@ -77,6 +77,12 @@ func TestMCPCapsForRun(t *testing.T) {
 	if _, ok := mcpCapsForRun(grokrun.AgentClaude, RunPolicy{Tools: &empty}); ok {
 		t.Fatal("tools-off")
 	}
+	if _, ok := mcpCapsForRun(grokrun.AgentCursor, RunPolicy{}); ok {
+		t.Fatal("cursor-agent has no --mcp-config")
+	}
+	if _, ok := mcpCapsForRun(grokrun.AgentCursor, RunPolicy{Tools: &tools}); ok {
+		t.Fatal("cursor investigate")
+	}
 }
 
 func TestPrepareAgentMCPStripsDisabledErrorCaps(t *testing.T) {

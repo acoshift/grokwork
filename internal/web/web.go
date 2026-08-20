@@ -2081,6 +2081,7 @@ func (s *Server) updateAgentSettings(ctx *hime.Context) error {
 		ReviewModel:    strings.TrimSpace(ctx.PostFormValue("reviewModel")),
 		GrokBin:        strings.TrimSpace(ctx.PostFormValue("grokBin")),
 		ClaudeBin:      strings.TrimSpace(ctx.PostFormValue("claudeBin")),
+		CursorBin:      strings.TrimSpace(ctx.PostFormValue("cursorBin")),
 		IncludeAnthropicEnv: ctx.PostFormValue("claudeIncludeAnthropicEnv") == "1" ||
 			strings.EqualFold(ctx.PostFormValue("claudeIncludeAnthropicEnv"), "on"),
 	}
