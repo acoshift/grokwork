@@ -872,7 +872,7 @@ func previewFileByObject(object string) (filestore.Entry, []byte, bool) {
 	case "Docs for Customer/CR AMB/notes [v2].txt":
 		return filestore.Entry{Name: "notes [v2].txt", Size: int64(len(previewNotes)), Updated: stamp, ContentType: "text/plain"}, previewNotes, true
 	case "Docs for Customer/CR AMB/Sheet":
-		return filestore.Entry{Name: "Sheet", Size: 0, Updated: stamp, ContentType: "application/vnd.google-apps.spreadsheet"}, nil, true
+		return filestore.Entry{Name: "Sheet", Size: 0, Updated: stamp, ContentType: "application/vnd.google-apps.spreadsheet"}, previewPDF, true
 	default:
 		return filestore.Entry{}, nil, false
 	}
@@ -891,7 +891,7 @@ func (previewFiles) Download(_ context.Context, _ filestore.Target, object, dest
 		return fmt.Errorf("object not found")
 	}
 	if data == nil {
-		return fmt.Errorf("Google Docs/Sheets cannot be downloaded here; export as PDF first")
+		return fmt.Errorf("object not found")
 	}
 	return os.WriteFile(destPath, data, 0o600)
 }

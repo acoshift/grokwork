@@ -174,12 +174,12 @@
            data-src="/projects/{{$.Project}}/files/preview?object={{urlquery .Object}}"
            data-download="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" aria-label="Preview {{.Name}}"></a>
         {{else if .Downloadable}}
-        <a class="files-mrow-hit" href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false" aria-label="Download {{.Name}}"></a>
+        <a class="files-mrow-hit" href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false" aria-label="{{if .NativeGoogle}}Download PDF {{.Name}}{{else}}Download {{.Name}}{{end}}"></a>
         {{end}}
         {{template "fileIcon" .Icon}}
         <span class="m-row-main">
           <span class="m-row-t mono">{{.Name}}</span>
-          <span class="m-row-s">{{if .NativeGoogle}}Google Doc — export as PDF to download{{else}}{{.MetaLine}}{{end}}</span>
+          <span class="m-row-s">{{if and .NativeGoogle (not .Downloadable)}}Cannot download{{else}}{{.MetaLine}}{{end}}</span>
         </span>
         {{if .PreviewKind}}<span class="files-mrow-chev" aria-hidden="true"></span>{{else if .Downloadable}}<span class="files-mrow-dl" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 4.5V15M7.5 10.5 12 15l4.5-4.5M4.5 16v1.5A2 2 0 0 0 6.5 19.5h11a2 2 0 0 0 2-2V16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{{end}}
         {{if $.CanStorageWrite}}
@@ -227,9 +227,9 @@
           {{else}}
             <span>{{.Name}}</span>
           {{end}}
-          {{if .NativeGoogle}}<span class="files-note">Google Doc — export as PDF to download</span>{{else if not .IsDir}}<span class="files-note files-note-kind">{{.KindLabel}}</span>{{end}}
+          {{if and .NativeGoogle (not .Downloadable)}}<span class="files-note">Cannot download</span>{{else if not .IsDir}}<span class="files-note files-note-kind">{{.KindLabel}}</span>{{end}}
         </td>
-        <td class="mono muted files-size">{{if .IsDir}}—{{else}}{{.SizeHuman}}{{end}}</td>
+        <td class="mono muted files-size">{{if or .IsDir (not .SizeHuman)}}—{{else}}{{.SizeHuman}}{{end}}</td>
         <td class="mono muted">{{if .UpdatedText}}{{.UpdatedText}}{{else}}—{{end}}</td>
         <td class="row-actions files-actions">
           {{if .PreviewKind}}
@@ -241,7 +241,7 @@
                data-download="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}">Preview</a>
           {{end}}
           {{if .Downloadable}}
-            <a class="btn-secondary btn-compact" href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false">Download</a>
+            <a class="btn-secondary btn-compact" href="/projects/{{$.Project}}/files/download?object={{urlquery .Object}}" hx-boost="false">{{if .NativeGoogle}}Download PDF{{else}}Download{{end}}</a>
           {{end}}
           {{if and (not .IsDir) $.CanStorageWrite}}
             <form method="post" action="/projects/{{$.Project}}/files/delete"

@@ -129,6 +129,24 @@ func isGoogleNativeMIME(m string) bool {
 	return strings.HasPrefix(m, "application/vnd.google-apps.") && m != folderMIME
 }
 
+// ExportsAsPDF reports whether a Drive mime type can be downloaded via
+// files.export as application/pdf (Docs, Sheets, Slides, Drawings).
+func ExportsAsPDF(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	if i := strings.IndexByte(m, ';'); i >= 0 {
+		m = strings.TrimSpace(m[:i])
+	}
+	switch m {
+	case "application/vnd.google-apps.document",
+		"application/vnd.google-apps.spreadsheet",
+		"application/vnd.google-apps.presentation",
+		"application/vnd.google-apps.drawing":
+		return true
+	default:
+		return false
+	}
+}
+
 // doJSON issues an authorized request and decodes JSON into dest when non-nil.
 // For 204 responses dest is ignored. Returns status code.
 func (c *Client) doJSON(ctx context.Context, method, fullURL string, body any, dest any) (int, error) {
@@ -174,6 +192,32 @@ func (c *Client) doJSON(ctx context.Context, method, fullURL string, body any, d
 		}
 	}
 	return resp.StatusCode, nil
+}
+
+func isExportSizeLimit(body []byte) bool {
+	var errBody struct {
+		Error struct {
+			Message string `json:"message"`
+			Errors  []struct {
+				Reason string `json:"reason"`
+			} `json:"errors"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &errBody) == nil {
+		if strings.EqualFold(errBody.Error.Message, "This file is too large to be exported.") {
+			return true
+		}
+		if strings.Contains(strings.ToLower(errBody.Error.Message), "too large to be exported") {
+			return true
+		}
+		for _, e := range errBody.Error.Errors {
+			if e.Reason == "exportSizeLimitExceeded" {
+				return true
+			}
+		}
+	}
+	s := strings.ToLower(string(body))
+	return strings.Contains(s, "exportsizelimitexceeded") || strings.Contains(s, "too large to be exported")
 }
 
 func mapDriveError(method string, status int, body []byte) error {

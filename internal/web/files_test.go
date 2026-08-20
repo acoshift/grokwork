@@ -874,7 +874,9 @@ func TestFilePreviewKind(t *testing.T) {
 		{"a.bin", "application/octet-stream", ""},
 		{"a.svg", "image/svg+xml", ""},
 		{"a.html", "text/html", ""},
-		{"Sheet", "application/vnd.google-apps.spreadsheet", ""},
+		{"Sheet", "application/vnd.google-apps.spreadsheet", "pdf"},
+		{"Doc", "application/vnd.google-apps.document", "pdf"},
+		{"Form", "application/vnd.google-apps.form", ""},
 		{"photo.png", "text/html", ""},
 	}
 	for _, tc := range cases {
@@ -889,6 +891,7 @@ func TestFilesPageDownloadAndPreviewMarkup(t *testing.T) {
 	fake.listEntries = []filestore.Entry{
 		{Name: "Report [final].pdf", Size: 4096, ContentType: "application/pdf"},
 		{Name: "Sheet", Size: 0, ContentType: "application/vnd.google-apps.spreadsheet"},
+		{Name: "Intake", Size: 0, ContentType: "application/vnd.google-apps.form"},
 		{Name: "notes [v2].txt", Size: 12, ContentType: "text/plain"},
 	}
 	sid, _ := adminLogin(t, srv)
@@ -904,18 +907,25 @@ func TestFilesPageDownloadAndPreviewMarkup(t *testing.T) {
 		`data-src="/projects/proj/files/preview?object=Report&#43;%5Bfinal%5D.pdf"`,
 		`data-preview="pdf"`,
 		`>Preview</a>`,
-		`Google Doc — export as PDF to download`,
+		`href="/projects/proj/files/download?object=Sheet"`,
+		`href="/projects/proj/files?preview=Sheet"`,
+		`>Download PDF</a>`,
+		`Google Sheet`,
+		`Cannot download`,
 		`notes [v2].txt`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q", want)
 		}
 	}
-	if strings.Contains(body, `/files/download?object=Sheet`) {
-		t.Fatal("native Google file must not have a Download href")
+	if strings.Contains(body, `/files/download?object=Intake`) {
+		t.Fatal("unexportable Google file must not have a Download href")
 	}
-	if strings.Contains(body, `preview=Sheet`) {
-		t.Fatal("native Google file must not have a Preview href")
+	if strings.Contains(body, `preview=Intake`) {
+		t.Fatal("unexportable Google file must not have a Preview href")
+	}
+	if strings.Contains(body, "export as PDF to download") {
+		t.Fatal("exportable native must not keep the old cannot-download note")
 	}
 }
 
@@ -971,15 +981,44 @@ func TestFilesDownloadDriveStreamsObject(t *testing.T) {
 	}
 }
 
-func TestFilesDownloadDriveNativeRedirects(t *testing.T) {
+func TestFilesDownloadDriveNativeExportsPDF(t *testing.T) {
 	srv, _, fake := driveStorageServer(t)
 	fake.describeObject = "Sheet"
 	fake.describeEntry = filestore.Entry{
 		Name: "Sheet", Size: 0, ContentType: "application/vnd.google-apps.spreadsheet",
 	}
 	fake.describeOK = true
+	fake.downloadBody = []byte("%PDF-1.1 native")
 	sid, _ := adminLogin(t, srv)
 	req := httptest.NewRequest(http.MethodGet, "/projects/proj/files/download?object=Sheet", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/pdf" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if got := w.Header().Get("Content-Disposition"); !strings.Contains(got, `filename="Sheet.pdf"`) ||
+		!strings.Contains(got, "attachment") ||
+		!strings.Contains(got, "filename*=UTF-8''Sheet.pdf") {
+		t.Fatalf("Content-Disposition = %q", got)
+	}
+	if w.Body.String() != "%PDF-1.1 native" {
+		t.Fatalf("body = %q", w.Body.String())
+	}
+}
+
+func TestFilesDownloadDriveFormRefused(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	fake.describeObject = "Intake"
+	fake.describeEntry = filestore.Entry{
+		Name: "Intake", Size: 0, ContentType: "application/vnd.google-apps.form",
+	}
+	fake.describeOK = true
+	sid, _ := adminLogin(t, srv)
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/files/download?object=Intake", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -988,6 +1027,22 @@ func TestFilesDownloadDriveNativeRedirects(t *testing.T) {
 	}
 	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
 		t.Fatalf("Location = %q", loc)
+	}
+}
+
+func TestWithPDFExt(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ in, want string }{
+		{"Sheet", "Sheet.pdf"},
+		{"Sheet.pdf", "Sheet.pdf"},
+		{"Sheet.PDF", "Sheet.PDF"},
+		{"", "file.pdf"},
+		{"  Q3 Plan  ", "Q3 Plan.pdf"},
+	}
+	for _, tc := range cases {
+		if got := withPDFExt(tc.in); got != tc.want {
+			t.Errorf("withPDFExt(%q)=%q want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
@@ -1031,9 +1086,24 @@ func TestFilesPreviewPDFAndRefusals(t *testing.T) {
 
 	fake.describeObject = "Sheet"
 	fake.describeEntry = filestore.Entry{Name: "Sheet", Size: 0, ContentType: "application/vnd.google-apps.spreadsheet"}
+	fake.downloadBody = []byte("%PDF-1.1 sheet")
 	w = get("/projects/proj/files/preview?object=Sheet")
+	if w.Code != http.StatusOK {
+		t.Fatalf("sheet preview status = %d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/pdf" {
+		t.Fatalf("sheet preview Content-Type = %q", got)
+	}
+	if got := w.Header().Get("Content-Disposition"); !strings.Contains(got, "inline") ||
+		!strings.Contains(got, "Sheet.pdf") {
+		t.Fatalf("sheet preview Content-Disposition = %q", got)
+	}
+
+	fake.describeObject = "Intake"
+	fake.describeEntry = filestore.Entry{Name: "Intake", Size: 0, ContentType: "application/vnd.google-apps.form"}
+	w = get("/projects/proj/files/preview?object=Intake")
 	if w.Code != http.StatusUnsupportedMediaType {
-		t.Fatalf("native preview status = %d, want 415", w.Code)
+		t.Fatalf("form preview status = %d, want 415", w.Code)
 	}
 }
 
@@ -1140,6 +1210,10 @@ func TestFileRowMetaLine(t *testing.T) {
 	}
 	if got := (fileRow{IsDir: true}).MetaLine(); got != "" {
 		t.Fatalf("stampless dir meta = %q, want empty", got)
+	}
+	native := fileRow{KindLabel: "Google Sheet", NativeGoogle: true, SizeHuman: "", UpdatedText: "2026-08-01 10:00"}
+	if got := native.MetaLine(); got != "Google Sheet · 2026-08-01 10:00" {
+		t.Fatalf("native meta = %q", got)
 	}
 }
 

@@ -6,7 +6,7 @@
 | **Date** | 2026-08-12 |
 | **Status** | Implemented (see PR plan; ship as filestore + config+gdrive+web unit) |
 | **Related** | [`design-project-storage-gcs.md`](./design-project-storage-gcs.md), [`design-global-project-storage.md`](./design-global-project-storage.md) |
-| **Revision** | 2026-08-12 — address design review (isolation race, REST contract, path parity, JWT checklist, clear/confirm predicates, PR ship unit, timeouts, delete/overwrite) |
+| **Revision** | 2026-08-20 — PDF export on download/preview for Docs/Sheets/Slides/Drawings (K9); 2026-08-12 — address design review (isolation race, REST contract, path parity, JWT checklist, clear/confirm predicates, PR ship unit, timeouts, delete/overwrite) |
 
 ## Overview
 
@@ -69,7 +69,7 @@ From [`design-global-project-storage.md`](./design-global-project-storage.md) an
 - Syncing or mirroring objects between GCS and Drive.
 - Migrating existing GCS objects into Drive (or the reverse).
 - Per-user Drive (“each member’s My Drive”).
-- Google Docs / Sheets native conversion / export on download (v1 refuses; list+delete still work).
+- Export Google Docs/Sheets/Slides to Office formats (docx/xlsx/pptx) on download (PDF export is implemented).
 - Signed browser URLs (keep server-proxy download like GCS).
 - Shared-drive *management* (create shared drives, IAM UI) — operators provision out of band.
 - Changing `webAuth.features.storage` or `CanStorageWrite`.
@@ -91,7 +91,7 @@ From [`design-global-project-storage.md`](./design-global-project-storage.md) an
 | K7 | `EffectiveStorage` purity | Stays I/O-free. Drive inherit stamps `IsolationSegment` (`json:"-"`) = `storageProjectSegment(name)`; adapter find-or-creates that child under `DriveFolderID` | Config must not call Drive under `RLock`; fail-closed isolation still holds. |
 | K8 | Child folder timing | **Any** Files op resolves the effective root first (isolation child when segment set). **Create-if-missing applies only to `IsolationSegment`**, not to arbitrary user path segments (user intermediates are K13). | List of a new project is empty under *its* folder, not the shared parent. No create-on-config-save. |
 | K8b | Isolation create race | After create, re-list by name ordered by `createdTime`; if count > 1, keep the **oldest** folder and permanently delete younger duplicates that this request can identify; **never** return “ambiguous” for the isolation segment itself | Prevents concurrent first-open from permanently bricking a project root (Drive allows duplicate names). |
-| K9 | Google-native files | List + delete allowed; download returns a clear error | Export is a product feature later; silent PDF conversion would surprise operators. |
+| K9 | Google-native files | Docs/Sheets/Slides/Drawings: `files.export` as PDF on Download and Preview (UI label “Download PDF”). Forms, shortcuts, and other `vnd.google-apps.*` still refuse. | PDF matches the existing previewer; a silent Office conversion would surprise operators. Drive caps export at 10 MB — surface that, never as an IAM error. |
 | K10 | Mutators | Unified `SetGlobalStorage` / `SetProjectStorage` taking structured input; keep GCS-named wrappers as thin callers | Backend-aware identity without three parallel save paths. |
 | K11 | Empty credentialsFile for Drive | **Error** at normalize/set when `backend=gdrive` | Drive has no host “gcloud login” fallback that is safe/default; SA path is required. GCS empty still means host ADC. |
 | K12 | Folder URL paste | Normalize accepts bare id **or** Drive folder URL / `folders/ID` and strips to id | Operators paste URLs from the browser bar. |
@@ -715,20 +715,21 @@ Mirror of GCS: never recursive, never folder.
 #### Google-native mime policy
 
 ```go
-const folderMIME = "application/vnd.google-apps.folder"
-
-func isGoogleNativeMIME(m string) bool {
-	return strings.HasPrefix(m, "application/vnd.google-apps.") &&
-		m != folderMIME
-}
+func ExportsAsPDF(m string) bool // document, spreadsheet, presentation, drawing (case-insensitive)
 
 // Download:
-if isGoogleNativeMIME(meta.mimeType) {
-	return fmt.Errorf("download of Google-native file %q is not supported (export later); mime=%s", name, mime)
+if ExportsAsPDF(mime) {
+    return exportMedia(id) // GET /files/{id}/export?mimeType=application/pdf
 }
+if isGoogleNativeMIME(mime) {
+    return fmt.Errorf("drive: cannot export %q (mime=%s)", name, mime)
+}
+return downloadMedia(id) // GET /files/{id}?alt=media
 ```
 
-List rows show them as normal files (size often 0 from API). Upload always creates binary files; never creates Docs.
+Web serve path: exportable natives are downloadable + `PreviewKind=pdf` (via `filePreviewKind`, not a listing special case). Response `Content-Type` is `application/pdf`; filename gets a `.pdf` suffix. Unexportable natives have no Download/Preview href. Drive reports size 0 — hide that, don’t print `"0 B"`. Upload always creates binary files; never creates Docs.
+
+`files.export` 403 `exportSizeLimitExceeded` is mapped **before** `mapDriveError` (whose 403 branch is IAM “permission denied”).
 
 #### Drive REST contract (authoritative for PR 3 fakes)
 
@@ -785,7 +786,19 @@ GET https://www.googleapis.com/drive/v3/files/{fileId}
 Response 200: raw bytes (Content-Type from object or application/octet-stream)
 ```
 
-Web layer still caps size via Describe before this call.
+Web layer still caps size via Describe before this call. Native Workspace files cannot use this endpoint.
+
+##### 3b. Export (PDF)
+
+```
+GET https://www.googleapis.com/drive/v3/files/{fileId}/export
+  ?mimeType=application/pdf
+
+Response 200: PDF bytes
+Response 403 exportSizeLimitExceeded: file is too large to export (Drive caps at 10 MB)
+```
+
+Documented parameters are `fileId` + `mimeType` only — do **not** send or assert `supportsAllDrives`. Used for document / spreadsheet / presentation / drawing. Web stats the staged file against `maxFileDownloadBytes` after the call (Describe size is 0).
 
 ##### 4. Create folder
 
@@ -1032,7 +1045,7 @@ Routes unchanged: `GET/POST /config/storage`, `POST /config/projects/storage`, F
 | Object-name injection / path traversal | High | Reuse `ValidateObjectPath`; Drive name escape in `q=` |
 | Credentials path / key material leak | High | Audit `credentialsFileSet` only; ScrubPaths; never log JWT assertion |
 | Silent duplicate files on “overwrite” | High | K15 update-by-id; never create second same name when overwrite false |
-| Google Workspace native file exfil via broken export | Medium | Refuse download of `vnd.google-apps.*` (non-folder) |
+| Google Workspace native file exfil via broken export | Medium | Export only the closed PDF mime table (`ExportsAsPDF`); refuse shortcuts/forms/other native types |
 | Ambiguous duplicate names → wrong file | Medium | Adapter errors on ambiguous name for **user** paths; isolation uses oldest-wins |
 | Login OAuth confused with Drive auth | Medium | Separate packages; Drive never uses session cookies or login tokens |
 | SSRF via credentials path | Low | Absolute path only; host-local file read for SA JSON (same as GCS) |
@@ -1081,7 +1094,7 @@ No new metrics subsystem; latency target: list p95 &lt; 3s for ≤200 rows on a 
 | gdrive JWT | PKCS#8 parse; sign RS256; exchange against httptest; cache reuse; error body without logging assertion |
 | gdrive REST fakes | assert exact method/path/query per contract section; multipart boundary shape |
 | gdrive isolation race | concurrent ensureIsolation; dual create → oldest wins + delete younger |
-| gdrive path | list one level; nested upload auto-creates parents; list missing parent fails; ambiguous user name; native mime download refuse; delete refuses folder; upload overwrite updates id not duplicate |
+| gdrive path | list one level; nested upload auto-creates parents; list missing parent fails; ambiguous user name; native PDF export; form/shortcut refuse; 403 size-limit ≠ IAM; delete refuses folder; upload overwrite updates id not duplicate |
 | web files | inject Drive backend fake; inherit uses child; GCS regression; audit backend field; configured without bucket |
 | web settings | backend picker; clear empties all fields; cleared audit true only when nil; dynamic confirm string; same-folder isolation warning |
 
@@ -1144,7 +1157,7 @@ Do not skip scrutinize before ship. **PR 1** may land alone. **PR 2, 3, and 4 ar
 
 **Scope** (ship with 2+4)
 
-- `internal/gdrive`: JWTBearer checklist, REST contract above, isolation race recovery, path resolve, K13 upload parents, K14 delete, K15 overwrite, native-mime refuse, timeouts, list pagination.
+- `internal/gdrive`: JWTBearer checklist, REST contract above, isolation race recovery, path resolve, K13 upload parents, K14 delete, K15 overwrite, native PDF export, timeouts, list pagination.
 - `filestore` gdrive adapter.
 - Fake HTTP tests asserting contract URLs/queries/multipart; concurrent isolation test.
 - Wire `Server.driveHTTP` / token source injectables.
@@ -1176,7 +1189,7 @@ Do not skip scrutinize before ship. **PR 1** may land alone. **PR 2, 3, and 4 ar
 1. Global or project storage can be configured as `backend=gdrive` with `driveFolderId` + required `credentialsFile`; invalid combos are load/setter errors.
 2. Project with no override inherits global Drive under an isolated child folder (segment name) with race-safe ensure; override Drive uses the configured folder as-is; disable still yields no Files I/O.
 3. Existing GCS configs and Files behavior unchanged when `backend` omitted.
-4. Files list/upload/download/delete work against a test double of the Drive API matching the REST contract; download refuses Google-native mime types; delete refuses folders; overwrite updates existing file id.
+4. Files list/upload/download/delete work against a test double of the Drive API matching the REST contract; Docs/Sheets/Slides/Drawings export as PDF; other native types refuse; delete refuses folders; overwrite updates existing file id.
 5. Nested Upload path auto-creates intermediate Drive folders; List of missing parent fails closed.
 6. Global clear / audit `cleared` is identity-based; clear form cannot leave a Drive identity half-set.
 7. Automated tests cover config matrix + isolation race + web handlers; `go test` green for touched packages.
@@ -1186,7 +1199,7 @@ Do not skip scrutinize before ship. **PR 1** may land alone. **PR 2, 3, and 4 ar
 ## Follow-ups (explicitly out of v1)
 
 - OAuth user credentials for Drive.
-- Export Google Docs/Sheets to PDF/DOCX on download.
+- Export Google Docs/Sheets/Slides to Office formats (docx/xlsx/pptx).
 - “Open in Drive” deep-link column on Files rows.
 - Friendly folder display name on the Files header.
 - Multi-backend at once (GCS **and** Drive tabs).

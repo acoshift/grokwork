@@ -38,6 +38,8 @@ type fakeDrive struct {
 	children map[string][]string
 	// media[id] = bytes
 	media map[string][]byte
+	// exportTooLarge[id] makes files.export return 403 exportSizeLimitExceeded.
+	exportTooLarge map[string]bool
 	// createCount tracks folder creates for race tests
 	createCount atomic.Int32
 	// afterCreateHooks runs after each create (for race injection)
@@ -90,6 +92,12 @@ func (f *fakeDrive) transport() http.RoundTripper {
 		switch {
 		case r.Method == http.MethodGet && path == "/drive/v3/files" && q.Get("alt") != "media":
 			return f.handleList(q)
+		case r.Method == http.MethodGet && strings.HasPrefix(path, "/drive/v3/files/") && strings.HasSuffix(path, "/export"):
+			id := strings.TrimSuffix(strings.TrimPrefix(path, "/drive/v3/files/"), "/export")
+			if decoded, err := url.PathUnescape(id); err == nil {
+				id = decoded
+			}
+			return f.handleExport(id, q)
 		case r.Method == http.MethodGet && strings.HasPrefix(path, "/drive/v3/files/"):
 			id := strings.TrimPrefix(path, "/drive/v3/files/")
 			if q.Get("alt") == "media" {
@@ -215,6 +223,40 @@ func (f *fakeDrive) handleDownload(id string) (*http.Response, error) {
 		StatusCode: 200,
 		Header:     http.Header{"Content-Type": []string{"application/octet-stream"}},
 		Body:       io.NopCloser(bytes.NewReader(data)),
+	}, nil
+}
+
+var fakeExportPDF = []byte("%PDF-1.1\n%%EOF\n")
+
+func (f *fakeDrive) handleExport(id string, q url.Values) (*http.Response, error) {
+	if q.Get("mimeType") != "application/pdf" {
+		return jsonResponse(400, map[string]any{"error": map[string]any{"message": "want pdf"}}), nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m, ok := f.files[id]
+	if !ok {
+		return jsonResponse(404, map[string]any{"error": map[string]any{"message": "not found"}}), nil
+	}
+	if f.exportTooLarge[id] {
+		return jsonResponse(403, map[string]any{
+			"error": map[string]any{
+				"code":    403,
+				"message": "This file is too large to be exported.",
+				"errors": []map[string]any{{
+					"reason":  "exportSizeLimitExceeded",
+					"message": "This file is too large to be exported.",
+				}},
+			},
+		}), nil
+	}
+	if !ExportsAsPDF(m.MimeType) {
+		return jsonResponse(400, map[string]any{"error": map[string]any{"message": "not exportable"}}), nil
+	}
+	return &http.Response{
+		StatusCode: 200,
+		Header:     http.Header{"Content-Type": []string{"application/pdf"}},
+		Body:       io.NopCloser(bytes.NewReader(fakeExportPDF)),
 	}, nil
 }
 
@@ -452,15 +494,125 @@ func TestListOneLevel(t *testing.T) {
 	}
 }
 
-func TestNativeMimeRefuseDownload(t *testing.T) {
+func TestExportsAsPDF(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		mime string
+		want bool
+	}{
+		{"application/vnd.google-apps.document", true},
+		{"application/vnd.google-apps.spreadsheet", true},
+		{"application/vnd.google-apps.presentation", true},
+		{"application/vnd.google-apps.drawing", true},
+		{"APPLICATION/VND.GOOGLE-APPS.DOCUMENT", true},
+		{"application/vnd.google-apps.document; charset=utf-8", true},
+		{"application/vnd.google-apps.form", false},
+		{"application/vnd.google-apps.shortcut", false},
+		{"application/vnd.google-apps.folder", false},
+		{"application/pdf", false},
+		{"text/plain", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := ExportsAsPDF(tc.mime); got != tc.want {
+			t.Errorf("ExportsAsPDF(%q)=%v want %v", tc.mime, got, tc.want)
+		}
+	}
+}
+
+func TestDownloadExportsNativeAsPDF(t *testing.T) {
+	types := []struct {
+		name, mime, id string
+	}{
+		{"Doc", "application/vnd.google-apps.document", "doc1"},
+		{"Sheet", "application/vnd.google-apps.spreadsheet", "sheet1"},
+		{"Deck", "application/vnd.google-apps.presentation", "deck1"},
+		{"Sketch", "application/vnd.google-apps.drawing", "draw1"},
+	}
+	for _, tc := range types {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeDrive()
+			f.addFile("root1", tc.id, fileMeta{Name: tc.name, MimeType: tc.mime, Size: "0"}, nil)
+			c := testClient(f)
+			dest := filepath.Join(t.TempDir(), "out")
+			if err := c.Download(t.Context(), Target{FolderID: "root1"}, tc.name, dest); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(dest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != string(fakeExportPDF) {
+				t.Fatalf("got %q", raw)
+			}
+			f.mu.Lock()
+			var exp *recordedReq
+			for i := range f.reqs {
+				if strings.HasSuffix(f.reqs[i].URL.Path, "/export") {
+					exp = &f.reqs[i]
+				}
+			}
+			f.mu.Unlock()
+			if exp == nil {
+				t.Fatal("no export request")
+			}
+			if exp.Method != http.MethodGet {
+				t.Fatalf("method = %s", exp.Method)
+			}
+			if !strings.HasSuffix(exp.URL.Path, "/files/"+tc.id+"/export") {
+				t.Fatalf("path = %s", exp.URL.Path)
+			}
+			q := exp.URL.Query()
+			if q.Get("mimeType") != "application/pdf" {
+				t.Fatalf("mimeType = %q", q.Get("mimeType"))
+			}
+			if q.Get("supportsAllDrives") != "" {
+				t.Fatalf("export must not send supportsAllDrives, got %q", q.Get("supportsAllDrives"))
+			}
+		})
+	}
+}
+
+func TestDownloadRefusesUnexportableNative(t *testing.T) {
 	f := newFakeDrive()
-	f.addFile("root1", "doc1", fileMeta{
-		Name: "Sheet", MimeType: "application/vnd.google-apps.spreadsheet", Size: "0",
+	f.addFile("root1", "form1", fileMeta{
+		Name: "Intake", MimeType: "application/vnd.google-apps.form", Size: "0",
+	}, nil)
+	f.addFile("root1", "sc1", fileMeta{
+		Name: "Link", MimeType: "application/vnd.google-apps.shortcut", Size: "0",
 	}, nil)
 	c := testClient(f)
-	err := c.Download(t.Context(), Target{FolderID: "root1"}, "Sheet", filepath.Join(t.TempDir(), "out"))
-	if err == nil || !strings.Contains(err.Error(), "Google-native") {
-		t.Fatalf("want native refuse, got %v", err)
+	for _, name := range []string{"Intake", "Link"} {
+		err := c.Download(t.Context(), Target{FolderID: "root1"}, name, filepath.Join(t.TempDir(), "out"))
+		if err == nil || !strings.Contains(err.Error(), "cannot export") {
+			t.Fatalf("%s: want cannot export, got %v", name, err)
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.reqs {
+		if strings.HasSuffix(r.URL.Path, "/export") {
+			t.Fatalf("unexportable native hit /export: %s", r.URL.Path)
+		}
+	}
+}
+
+func TestDownloadExportSizeLimit(t *testing.T) {
+	f := newFakeDrive()
+	f.exportTooLarge = map[string]bool{"doc1": true}
+	f.addFile("root1", "doc1", fileMeta{
+		Name: "Huge", MimeType: "application/vnd.google-apps.document", Size: "0",
+	}, nil)
+	c := testClient(f)
+	err := c.Download(t.Context(), Target{FolderID: "root1"}, "Huge", filepath.Join(t.TempDir(), "out"))
+	if err == nil {
+		t.Fatal("expected size-limit error")
+	}
+	if !strings.Contains(err.Error(), "too large to export") {
+		t.Fatalf("want 10 MB copy, got %v", err)
+	}
+	if strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("size limit must not look like IAM: %v", err)
 	}
 }
 

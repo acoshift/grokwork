@@ -242,6 +242,9 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 			ContentType:  e.ContentType,
 			NativeGoogle: isGoogleNativeMIME(e.ContentType),
 		}
+		if row.NativeGoogle && e.Size == 0 {
+			row.SizeHuman = ""
+		}
 		if !e.Updated.IsZero() {
 			row.Updated = e.Updated
 			row.UpdatedText = e.Updated.UTC().Format("2006-01-02 15:04")
@@ -251,7 +254,7 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 			d.FilesDirCount++
 		} else {
 			row.Object = filestore.AppendName(subPath, e.Name)
-			row.Downloadable = !row.NativeGoogle
+			row.Downloadable = !row.NativeGoogle || gdrive.ExportsAsPDF(e.ContentType)
 			if row.Downloadable {
 				row.PreviewKind = filePreviewKind(e.Name, e.ContentType)
 			}
@@ -305,7 +308,7 @@ func (r fileRow) MetaLine() string {
 	if r.KindLabel != "" && !r.IsDir {
 		parts = append(parts, r.KindLabel)
 	}
-	if !r.IsDir {
+	if !r.IsDir && r.SizeHuman != "" {
 		parts = append(parts, r.SizeHuman)
 	}
 	if r.UpdatedText != "" {
@@ -640,13 +643,13 @@ func (s *Server) serveStoredFile(ctx *hime.Context, mode fileServeMode) error {
 	if !exists {
 		return fail(http.StatusNotFound, fmt.Errorf("object not found"))
 	}
-	if isGoogleNativeMIME(meta.ContentType) {
+	if isGoogleNativeMIME(meta.ContentType) && !gdrive.ExportsAsPDF(meta.ContentType) {
 		action := "downloaded"
 		if mode == fileServeInline {
 			action = "previewed"
 		}
 		return fail(http.StatusUnsupportedMediaType,
-			fmt.Errorf("Google Docs/Sheets cannot be %s here; export as PDF first", action))
+			fmt.Errorf("Google file cannot be %s here", action))
 	}
 	if meta.Size > maxFileDownloadBytes {
 		return fail(http.StatusRequestEntityTooLarge,
@@ -668,6 +671,14 @@ func (s *Server) serveStoredFile(ctx *hime.Context, mode fileServeMode) error {
 	if err := be.Download(ctx.Context(), tgt, object, dest); err != nil {
 		return fail(http.StatusBadGateway, err)
 	}
+	fi, err := os.Stat(dest)
+	if err != nil {
+		return fail(http.StatusInternalServerError, err)
+	}
+	if fi.Size() > maxFileDownloadBytes {
+		return fail(http.StatusRequestEntityTooLarge,
+			fmt.Errorf("object is %s; max download is %s", formatFileBytes(fi.Size()), formatFileBytes(maxFileDownloadBytes)))
+	}
 	f, err := os.Open(dest)
 	if err != nil {
 		return fail(http.StatusInternalServerError, err)
@@ -688,6 +699,11 @@ func (s *Server) serveStoredFile(ctx *hime.Context, mode fileServeMode) error {
 	original := path.Base(object)
 	if meta.Name != "" {
 		original = meta.Name
+	}
+	if gdrive.ExportsAsPDF(meta.ContentType) {
+		ctype = "application/pdf"
+		leaf = withPDFExt(leaf)
+		original = withPDFExt(original)
 	}
 	h := ctx.ResponseWriter().Header()
 	h.Set("Content-Type", ctype)
@@ -862,7 +878,21 @@ func isGoogleNativeMIME(m string) bool {
 	return strings.HasPrefix(m, "application/vnd.google-apps.") && m != googleAppsFolderMIME
 }
 
+func withPDFExt(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "file.pdf"
+	}
+	if strings.EqualFold(path.Ext(name), ".pdf") {
+		return name
+	}
+	return name + ".pdf"
+}
+
 func filePreviewKind(name, ctype string) string {
+	if gdrive.ExportsAsPDF(ctype) {
+		return "pdf"
+	}
 	if isGoogleNativeMIME(ctype) {
 		return ""
 	}

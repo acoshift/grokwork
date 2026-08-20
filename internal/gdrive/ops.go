@@ -148,7 +148,9 @@ func (c *Client) Upload(ctx context.Context, localPath string, t Target, object 
 	return c.createFileMultipart(ctx, parentID, leaf, localPath, contentType)
 }
 
-// Download writes the object bytes to destPath. Refuses Google-native mime types (K9).
+// Download writes the object bytes to destPath. Workspace types that
+// ExportsAsPDF reports are fetched via files.export as PDF; other native
+// types are refused.
 func (c *Client) Download(ctx context.Context, t Target, object, destPath string) error {
 	object = strings.TrimSpace(object)
 	if object == "" {
@@ -179,8 +181,11 @@ func (c *Client) Download(ctx context.Context, t Target, object, destPath string
 		return fmt.Errorf("drive: ambiguous name %q under parent", leaf)
 	}
 	f := files[0]
+	if ExportsAsPDF(f.MimeType) {
+		return c.exportMedia(ctx, f.ID, destPath)
+	}
 	if isGoogleNativeMIME(f.MimeType) {
-		return fmt.Errorf("download of Google-native file %q is not supported (export later); mime=%s", leaf, f.MimeType)
+		return fmt.Errorf("drive: cannot export %q (mime=%s)", leaf, f.MimeType)
 	}
 	return c.downloadMedia(ctx, f.ID, destPath)
 }
@@ -412,12 +417,47 @@ func (c *Client) downloadMedia(ctx context.Context, fileID, destPath string) err
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return mapDriveError("GET", resp.StatusCode, raw)
 	}
+	return writeDestFile(destPath, resp.Body)
+}
+
+func (c *Client) exportMedia(ctx context.Context, fileID, destPath string) error {
+	if c == nil || c.Auth == nil {
+		return fmt.Errorf("drive: client not configured")
+	}
+	token, err := c.Auth.Token(ctx)
+	if err != nil {
+		return err
+	}
+	params := url.Values{}
+	params.Set("mimeType", "application/pdf")
+	u := c.apiBase() + "/files/" + url.PathEscape(fileID) + "/export?" + params.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.mediaHTTP().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		if resp.StatusCode == http.StatusForbidden && isExportSizeLimit(raw) {
+			return fmt.Errorf("drive: file is too large to export (Drive caps exports at 10 MB)")
+		}
+		return mapDriveError("GET", resp.StatusCode, raw)
+	}
+	return writeDestFile(destPath, resp.Body)
+}
+
+func writeDestFile(destPath string, r io.Reader) error {
 	f, err := os.Create(destPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	if _, err := io.Copy(f, r); err != nil {
 		return err
 	}
 	return nil
