@@ -126,6 +126,10 @@ func (f fileMeta) created() time.Time {
 }
 
 func isGoogleNativeMIME(m string) bool {
+	m = strings.ToLower(strings.TrimSpace(m))
+	if i := strings.IndexByte(m, ';'); i >= 0 {
+		m = strings.TrimSpace(m[:i])
+	}
 	return strings.HasPrefix(m, "application/vnd.google-apps.") && m != folderMIME
 }
 

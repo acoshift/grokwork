@@ -456,11 +456,12 @@ func writeDestFile(destPath string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	if _, err := io.Copy(f, r); err != nil {
-		return err
+	_, copyErr := io.Copy(f, r)
+	closeErr := f.Close()
+	if copyErr != nil {
+		return copyErr
 	}
-	return nil
+	return closeErr
 }
 
 func contentTypeFor(name, localPath string) string {

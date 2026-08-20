@@ -1030,6 +1030,73 @@ func TestFilesDownloadDriveFormRefused(t *testing.T) {
 	}
 }
 
+func TestDriveExportsPDF(t *testing.T) {
+	t.Parallel()
+	if driveExportsPDF(filestore.BackendGCS, "application/vnd.google-apps.document") {
+		t.Fatal("GCS must not claim Drive PDF export")
+	}
+	if !driveExportsPDF(filestore.BackendGDrive, "application/vnd.google-apps.document") {
+		t.Fatal("Drive Doc must export as PDF")
+	}
+	if driveExportsPDF(filestore.BackendGDrive, "application/vnd.google-apps.form") {
+		t.Fatal("Drive Form must not export as PDF")
+	}
+}
+
+func TestFilesGCSNativeMimeNotExported(t *testing.T) {
+	srv, _, _ := storageServer(t)
+	fake := &fakeFilesBackend{
+		listEntries: []filestore.Entry{
+			{Name: "Sheet", Size: 0, ContentType: "application/vnd.google-apps.spreadsheet"},
+		},
+		describeObject: "Sheet",
+		describeEntry: filestore.Entry{
+			Name: "Sheet", Size: 0, ContentType: "application/vnd.google-apps.spreadsheet",
+		},
+		describeOK:   true,
+		downloadBody: []byte("NOT-A-PDF"),
+	}
+	srv.filesBackendFn = func(t filestore.Target) (filestore.Backend, error) {
+		if t.Backend != filestore.BackendGCS {
+			return nil, fmt.Errorf("test fake: unexpected backend %q", t.Backend)
+		}
+		return fake, nil
+	}
+	sid, _ := adminLogin(t, srv)
+	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	if strings.Contains(body, `/files/download?object=Sheet`) {
+		t.Fatal("GCS native mime must not get a Download href")
+	}
+	if strings.Contains(body, `preview=Sheet`) {
+		t.Fatal("GCS native mime must not get a Preview href")
+	}
+	if strings.Contains(body, "Download PDF") {
+		t.Fatal("GCS native mime must not say Download PDF")
+	}
+	if !strings.Contains(body, "Cannot download") {
+		t.Fatal("GCS native mime should keep the cannot-download note")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/files/download?object=Sheet", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("download status = %d, want redirect; body=%s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
+		t.Fatalf("Location = %q", loc)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/projects/proj/files/preview?object=Sheet", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("preview status = %d, want 415", w.Code)
+	}
+}
+
 func TestWithPDFExt(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ in, want string }{
@@ -1178,6 +1245,7 @@ func TestFileIconKind(t *testing.T) {
 		{"Sheet", "application/vnd.google-apps.spreadsheet", false, "gsheet", "Google Sheet"},
 		{"Doc", "application/vnd.google-apps.document", false, "gdoc", "Google Doc"},
 		{"Deck", "application/vnd.google-apps.presentation", false, "gslides", "Google Slides"},
+		{"Sketch", "application/vnd.google-apps.drawing", false, "gdoc", "Google Drawing"},
 		{"Form", "application/vnd.google-apps.form", false, "gdoc", "Google file"},
 		{"notes.txt", "text/plain", false, "text", "TXT"},
 		{"README", "text/markdown", false, "text", "Text"},

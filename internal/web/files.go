@@ -213,14 +213,15 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 	d.FilesPath = subPath
 	d.FilesCrumbs = fileBreadcrumbs(subPath)
 
-	be, err := s.filesBackend(storageTarget(eff))
+	tgt := storageTarget(eff)
+	be, err := s.filesBackend(tgt)
 	if err != nil {
 		if d.Error == "" {
 			d.Error = err.Error()
 		}
 		return s.viewPage(ctx, "files", d)
 	}
-	entries, err := be.List(ctx.Context(), storageTarget(eff), subPath)
+	entries, err := be.List(ctx.Context(), tgt, subPath)
 	if err != nil {
 		if d.Error == "" {
 			d.Error = err.Error()
@@ -254,7 +255,7 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 			d.FilesDirCount++
 		} else {
 			row.Object = filestore.AppendName(subPath, e.Name)
-			row.Downloadable = !row.NativeGoogle || gdrive.ExportsAsPDF(e.ContentType)
+			row.Downloadable = !row.NativeGoogle || driveExportsPDF(tgt.Backend, e.ContentType)
 			if row.Downloadable {
 				row.PreviewKind = filePreviewKind(e.Name, e.ContentType)
 			}
@@ -335,6 +336,8 @@ func fileIconKind(name, ctype string, isDir bool) (icon, label string) {
 		return "gsheet", "Google Sheet"
 	case "application/vnd.google-apps.presentation":
 		return "gslides", "Google Slides"
+	case "application/vnd.google-apps.drawing":
+		return "gdoc", "Google Drawing"
 	}
 	if isGoogleNativeMIME(ct) {
 		return "gdoc", "Google file"
@@ -643,7 +646,8 @@ func (s *Server) serveStoredFile(ctx *hime.Context, mode fileServeMode) error {
 	if !exists {
 		return fail(http.StatusNotFound, fmt.Errorf("object not found"))
 	}
-	if isGoogleNativeMIME(meta.ContentType) && !gdrive.ExportsAsPDF(meta.ContentType) {
+	exportPDF := driveExportsPDF(tgt.Backend, meta.ContentType)
+	if isGoogleNativeMIME(meta.ContentType) && !exportPDF {
 		action := "downloaded"
 		if mode == fileServeInline {
 			action = "previewed"
@@ -700,7 +704,7 @@ func (s *Server) serveStoredFile(ctx *hime.Context, mode fileServeMode) error {
 	if meta.Name != "" {
 		original = meta.Name
 	}
-	if gdrive.ExportsAsPDF(meta.ContentType) {
+	if exportPDF {
 		ctype = "application/pdf"
 		leaf = withPDFExt(leaf)
 		original = withPDFExt(original)
@@ -876,6 +880,10 @@ const googleAppsFolderMIME = "application/vnd.google-apps.folder"
 func isGoogleNativeMIME(m string) bool {
 	m = strings.TrimSpace(strings.ToLower(m))
 	return strings.HasPrefix(m, "application/vnd.google-apps.") && m != googleAppsFolderMIME
+}
+
+func driveExportsPDF(backend, ctype string) bool {
+	return backend == filestore.BackendGDrive && gdrive.ExportsAsPDF(ctype)
 }
 
 func withPDFExt(name string) string {

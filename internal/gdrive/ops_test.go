@@ -494,6 +494,26 @@ func TestListOneLevel(t *testing.T) {
 	}
 }
 
+func TestIsGoogleNativeMIME(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		mime string
+		want bool
+	}{
+		{"application/vnd.google-apps.document", true},
+		{"APPLICATION/VND.GOOGLE-APPS.FORM", true},
+		{"application/vnd.google-apps.shortcut; charset=utf-8", true},
+		{"application/vnd.google-apps.folder", false},
+		{"application/pdf", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := isGoogleNativeMIME(tc.mime); got != tc.want {
+			t.Errorf("isGoogleNativeMIME(%q)=%v want %v", tc.mime, got, tc.want)
+		}
+	}
+}
+
 func TestExportsAsPDF(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
