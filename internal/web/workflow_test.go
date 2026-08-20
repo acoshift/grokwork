@@ -274,7 +274,7 @@ func TestIssuesListAndDetail(t *testing.T) {
 	for _, want := range []string{
 		"Fixture bug api",
 		"#7",
-		`title="Pull requests that reference this issue">PR</span>`,
+		`class="badge status-done" title="Pull requests that reference this issue">PR</span>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list partial missing %q in %s", want, body)
