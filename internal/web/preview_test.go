@@ -696,6 +696,19 @@ func previewGitRunner() func(ctx context.Context, dir, name string, args ...stri
 				}
 			}
 			return nil, nil
+		case name == "gh" && strings.HasPrefix(joined, "issue list"):
+			return []byte(`[
+				{"number":12,"url":"https://github.com/acme/webapp/issues/12","title":"Checkout webhook duplicates settle jobs","state":"OPEN","author":{"login":"beam"},
+				 "createdAt":"2026-07-18T09:00:00Z","updatedAt":"2026-07-21T11:05:00Z",
+				 "closedByPullRequestsReferences":[{"number":128,"url":"https://github.com/acme/webapp/pull/128","repository":{"name":"webapp","owner":{"login":"acme"}}}]},
+				{"number":19,"url":"https://github.com/acme/webapp/issues/19","title":"Rate limit headers missing on public API","state":"OPEN","author":{"login":"poon"},
+				 "createdAt":"2026-07-19T14:20:00Z","updatedAt":"2026-07-20T08:11:00Z",
+				 "closedByPullRequestsReferences":[]},
+				{"number":24,"url":"https://github.com/acme/webapp/issues/24","title":"Safari 17 drops session cookie on payment return","state":"OPEN","author":{"login":"mint"},
+				 "createdAt":"2026-07-20T16:40:00Z","updatedAt":"2026-07-21T09:02:00Z",
+				 "closedByPullRequestsReferences":[{"number":131,"url":"https://github.com/acme/webapp/pull/131","repository":{"name":"webapp","owner":{"login":"acme"}}},
+				  {"number":133,"url":"https://github.com/acme/webapp/pull/133","repository":{"name":"webapp","owner":{"login":"acme"}}}]}
+			]`), nil
 		case name == "gh" && strings.HasPrefix(joined, "pr view"):
 			return []byte(`{
 				"number":128,"url":"https://github.com/acme/webapp/pull/128",

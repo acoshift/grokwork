@@ -274,13 +274,14 @@ func TestIssuesListAndDetail(t *testing.T) {
 	for _, want := range []string{
 		"Fixture bug api",
 		"#7",
-		">PRs</th>",
-		// Linked PR count column (one PR in fixture).
-		"<td class=\"mono\">1</td>",
+		`title="Pull requests that reference this issue">PR</span>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list partial missing %q in %s", want, body)
 		}
+	}
+	if strings.Contains(body, ">PRs</th>") {
+		t.Fatal("PRs column must be gone; linked PRs belong in the State badge")
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/projects/proj/issues/7?owner=acme&repo=app", nil)
@@ -386,6 +387,9 @@ func TestIssuesListShowsFixingWorkState(t *testing.T) {
 		body = w.Body.String()
 		if !strings.Contains(body, "#7") || !strings.Contains(body, "FIXING") || !strings.Contains(body, "#8") {
 			t.Fatalf("active filter must include open and fixing issues (q=%q): %s", q, body)
+		}
+		if strings.Contains(body, `title="Pull requests that reference this issue"`) {
+			t.Fatalf("issues without linked PRs must not show a PR badge (q=%q)", q)
 		}
 	}
 
