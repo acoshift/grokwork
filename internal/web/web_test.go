@@ -238,6 +238,8 @@ func TestPagesRender(t *testing.T) {
 		{"/config/agent", `<option value="claude-opus-5"`},
 		{"/config/agent", `<option value="claude-sonnet-5"`},
 		{"/config/agent", `<option value="composer-2.5"`},
+		{"/config/agent", `<option value="glm-5.2-high"`},
+		{"/config/agent", `<option value="kimi-k3-max"`},
 		{"/config/agent", `<option value="claude-opus-5-thinking-high"`},
 		{"/config/worktrees", `id="page-config-worktrees"`},
 		{"/config/worktrees", `name="worktreeIdleTTLDays"`},

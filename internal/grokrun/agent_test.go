@@ -145,6 +145,13 @@ func TestAgentForModel(t *testing.T) {
 		{"cursor-grok-4.6-high", AgentCursor, true},
 		{"gpt-5", AgentCursor, true},
 		{"gemini-3-pro", AgentCursor, true},
+		{"glm-5.2-high", AgentCursor, true},
+		{"glm-5.2-max", AgentCursor, true},
+		{"kimi-k3-max", AgentCursor, true},
+		{"kimi-k2.7-code", AgentCursor, true},
+		// Unlisted effort variants still belong to cursor-agent.
+		{"kimi-k3-high", AgentCursor, true},
+		{"glm-4.7", AgentCursor, true},
 		// Unknown names must not be guessed at — the caller falls back to the
 		// configured agent, and the CLI reports the bad model itself.
 		{"", AgentGrok, false},

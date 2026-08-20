@@ -40,8 +40,8 @@ var claudeModelMarkers = []string{"claude", "anthropic", "opus", "sonnet", "haik
 
 // cursorModelMarkers identify names that belong to cursor-agent. Checked before
 // grok/claude because the catalog reuses those vendors' names
-// (cursor-grok-4.6-high, claude-opus-5-thinking-high).
-var cursorModelMarkers = []string{"composer", "cursor-", "gpt-", "codex", "gemini"}
+// (cursor-grok-4.6-high, claude-opus-5-thinking-high, glm-5.2-high, kimi-k3-max).
+var cursorModelMarkers = []string{"composer", "cursor-", "gpt-", "codex", "gemini", "glm", "kimi"}
 
 // cursorClaudeQualifiers are suffixes the Cursor catalog adds to Claude family
 // ids. The Claude CLI's curated names (claude-opus-5, claude-haiku-4-5) do not
@@ -152,6 +152,10 @@ func ModelOptions() []ModelOption {
 		{Value: "gpt-5.6-sol-medium", Label: "gpt-5.6-sol-medium", Agent: AgentCursor},
 		{Value: "cursor-grok-4.6-high", Label: "cursor-grok-4.6-high", Agent: AgentCursor},
 		{Value: "gemini-3.7-flash-high", Label: "gemini-3.7-flash-high", Agent: AgentCursor},
+		{Value: "glm-5.2-high", Label: "glm-5.2-high", Agent: AgentCursor},
+		{Value: "glm-5.2-max", Label: "glm-5.2-max", Agent: AgentCursor},
+		{Value: "kimi-k3-max", Label: "kimi-k3-max", Agent: AgentCursor},
+		{Value: "kimi-k2.7-code", Label: "kimi-k2.7-code", Agent: AgentCursor},
 	}
 }
 
