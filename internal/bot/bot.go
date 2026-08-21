@@ -432,23 +432,6 @@ func (b *Bot) claimOrEnqueueInternal(threadID string, job *runJob, item taskItem
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.job != nil {
-		// Same-user follow-up replaces last queued item by that author (social queue).
-		if item.authorID != "" {
-			for i := len(st.queue) - 1; i >= 0; i-- {
-				if st.queue[i].authorID == item.authorID {
-					oldID := st.queue[i].taskID
-					st.queue[i] = item
-					if err := b.saveJournalFromState(threadID, st, item, false); err != nil {
-						// leave old item? best-effort restore is hard; report err
-						return false, 0, err
-					}
-					if b.runs != nil && oldID != "" && oldID != item.taskID {
-						b.runs.RemoveTaskFiles(threadID, oldID)
-					}
-					return false, i + 1, nil
-				}
-			}
-		}
 		if len(st.queue) >= maxFollowupQueue {
 			return false, 0, errQueueFull
 		}

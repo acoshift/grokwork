@@ -33,7 +33,7 @@ Order is suggested priority, not a commitment. **Code on `main` wins** if this f
 - [x] Live progress + `/cancel`; attachments + reply context into prompts
 - [x] Per-thread git worktree isolation; idle worktree TTL + idle repo fetch
 - [x] Stream Grok output; queue when busy (max 5)
-- [x] **Queue social object** — author + intent; `/queue`, `/dequeue`, `/cancel-mine`; same-user replace last pending
+- [x] **Queue social object** — author + intent; `/queue`, `/dequeue`, `/cancel-mine`; same user may queue multiple follow-ups (thread cap 5)
 - [x] Thread ownership & hand-off (`/claim`, `/hand-off`); cancel/reset owner/co/mod
 - [x] Continuity / brief card; labels + lifecycle; `/board` (activity + **cases**)
 - [x] Issue binding (GitHub + Linear L1 bind/prompt); PR multi-card + poller + CI triage + `/fix-ci`

@@ -83,36 +83,63 @@ func TestQueueFull(t *testing.T) {
 	}
 }
 
-func TestSameUserQueueReplace(t *testing.T) {
+func TestSameUserQueueAppends(t *testing.T) {
 	b := &Bot{}
-	const threadID = "t-replace"
+	const threadID = "t-append"
 	job := &runJob{cancel: func() {}, start: time.Now(), project: "p"}
 	if claimed, _, err := b.claimOrEnqueue(threadID, job, taskItem{threadID: threadID, authorID: "hold"}); err != nil || !claimed {
 		t.Fatalf("claim: %v %v", claimed, err)
 	}
-	_, _, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{
+	_, pos, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{
 		threadID: threadID, authorID: "alice", authorName: "Alice",
 		parsed: Parsed{Prompt: "first follow-up"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, pos, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{
+	if pos != 1 {
+		t.Fatalf("pos=%d want 1", pos)
+	}
+	_, pos, err = b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{
 		threadID: threadID, authorID: "alice", authorName: "Alice",
-		parsed: Parsed{Prompt: "second follow-up replaces"},
+		parsed: Parsed{Prompt: "second follow-up"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pos != 1 {
-		t.Fatalf("pos=%d want 1 (replaced)", pos)
+	if pos != 2 {
+		t.Fatalf("pos=%d want 2 (appended)", pos)
 	}
-	if n := b.queueLen(threadID); n != 1 {
-		t.Fatalf("queueLen=%d want 1 after replace", n)
+	if n := b.queueLen(threadID); n != 2 {
+		t.Fatalf("queueLen=%d want 2", n)
 	}
 	q := b.queueSnapshot(threadID)
-	if q[0].parsed.Prompt != "second follow-up replaces" {
-		t.Fatalf("prompt=%q", q[0].parsed.Prompt)
+	if q[0].parsed.Prompt != "first follow-up" || q[1].parsed.Prompt != "second follow-up" {
+		t.Fatalf("queue prompts = %q, %q", q[0].parsed.Prompt, q[1].parsed.Prompt)
+	}
+}
+
+func TestSameUserQueueCanFillThreadCap(t *testing.T) {
+	b := &Bot{}
+	const threadID = "t-alice-full"
+	job := &runJob{cancel: func() {}, start: time.Now(), project: "p"}
+	if claimed, _, err := b.claimOrEnqueue(threadID, job, taskItem{threadID: threadID, authorID: "alice"}); err != nil || !claimed {
+		t.Fatalf("claim: %v %v", claimed, err)
+	}
+	for i := range maxFollowupQueue {
+		claimed, pos, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{
+			threadID: threadID, authorID: "alice",
+			parsed:   Parsed{Prompt: "q"},
+		})
+		if err != nil || claimed || pos != i+1 {
+			t.Fatalf("enqueue %d: claimed=%v pos=%d err=%v", i, claimed, pos, err)
+		}
+	}
+	claimed, _, err := b.claimOrEnqueue(threadID, &runJob{cancel: func() {}}, taskItem{
+		threadID: threadID, authorID: "alice", parsed: Parsed{Prompt: "overflow"},
+	})
+	if err != errQueueFull || claimed {
+		t.Fatalf("want queue full, claimed=%v err=%v", claimed, err)
 	}
 }
 

@@ -546,11 +546,11 @@ echo '{"type":"end","sessionId":"sess-fifo","stopReason":"EndTurn","num_turns":1
 		Active: &runjournal.TaskRecord{
 			ID: "a1", Status: runjournal.StatusInterrupted, Prompt: "PROMPT-ALPHA",
 			Project: "app", ProjectCwd: proj, Source: SourceWeb, Attempt: 1,
-			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+			AuthorID: "alice", CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		},
 		Queue: []runjournal.TaskRecord{
-			{ID: "q1", Status: runjournal.StatusPending, Prompt: "PROMPT-BETA", Project: "app", ProjectCwd: proj, Source: SourceWeb, Attempt: 1, CreatedAt: time.Now().UTC().Format(time.RFC3339)},
-			{ID: "q2", Status: runjournal.StatusPending, Prompt: "PROMPT-GAMMA", Project: "app", ProjectCwd: proj, Source: SourceWeb, Attempt: 1, CreatedAt: time.Now().UTC().Format(time.RFC3339)},
+			{ID: "q1", Status: runjournal.StatusPending, Prompt: "PROMPT-BETA", Project: "app", ProjectCwd: proj, Source: SourceWeb, Attempt: 1, AuthorID: "alice", CreatedAt: time.Now().UTC().Format(time.RFC3339)},
+			{ID: "q2", Status: runjournal.StatusPending, Prompt: "PROMPT-GAMMA", Project: "app", ProjectCwd: proj, Source: SourceWeb, Attempt: 1, AuthorID: "alice", CreatedAt: time.Now().UTC().Format(time.RFC3339)},
 		},
 		Host: b1.hostname,
 	}
