@@ -284,12 +284,14 @@ func (b *Bot) AgentAPI() *agentapi.Service {
 }
 
 // mcpCapsForRun decides whether this run attaches grokwork MCP and which
-// caps to mint. Grok investigate stays off: --deny MCPTool is what blocks
-// ambient user-scope MCP, and dropping it would attach every configured
-// server. Claude can attach only our server via --mcp-config + --strict-mcp-config.
-// cursor-agent has no --mcp-config, so it never attaches — writing
-// .cursor/mcp.json into the worktree would pollute the session branch.
-func mcpCapsForRun(agent grokrun.Agent, pol RunPolicy) (agentauth.Caps, bool) {
+// caps to mint. Grok investigate stays off unless always is set: --deny
+// MCPTool is what blocks ambient user-scope MCP, and dropping it would
+// attach every configured server. Claude can attach only our server via
+// --mcp-config + --strict-mcp-config. cursor-agent has no --mcp-config, so
+// it never attaches — writing .cursor/mcp.json into the worktree would
+// pollute the session branch. always is the per-project AgentMCPAlways
+// opt-in (trusted teams); tools-off still never attaches.
+func mcpCapsForRun(agent grokrun.Agent, pol RunPolicy, always bool) (agentauth.Caps, bool) {
 	if agent == grokrun.AgentCursor {
 		return agentauth.Caps{}, false
 	}
@@ -299,21 +301,23 @@ func mcpCapsForRun(agent grokrun.Agent, pol RunPolicy) (agentauth.Caps, bool) {
 	if strings.TrimSpace(*pol.Tools) == "" {
 		return agentauth.Caps{}, false
 	}
-	if agent != grokrun.AgentClaude {
-		return agentauth.Caps{}, false
+	if agent == grokrun.AgentClaude || always {
+		return agentauth.DefaultInvestigateCaps(), true
 	}
-	return agentauth.DefaultInvestigateCaps(), true
+	return agentauth.Caps{}, false
 }
 
 // prepareAgentMCP mints a session-bound token and writes MCP config outside
 // the worktree. Ship/fix (any agent) and Claude investigate attach; Grok
-// investigate and tools-off do not. Claude uses --mcp-config; grok ship uses
-// the same server from user scope plus TOKEN/SOCK in the child env.
+// investigate attaches only when the project has AgentMCPAlways. Tools-off
+// never attaches. Claude uses --mcp-config; grok uses the same server from
+// user scope plus TOKEN/SOCK in the child env (and drops --deny MCPTool
+// when this mint succeeds on an allowlisted run).
 func (b *Bot) prepareAgentMCP(threadID, project, actorID string, agent grokrun.Agent, pol RunPolicy) (mcpPath, token string, ok bool) {
 	if b == nil || b.agent == nil || b.cfg == nil || !b.cfg.AgentMCPEnabled() {
 		return "", "", false
 	}
-	caps, attach := mcpCapsForRun(agent, pol)
+	caps, attach := mcpCapsForRun(agent, pol, b.cfg.ProjectAgentMCPAlways(project))
 	if !attach {
 		return "", "", false
 	}

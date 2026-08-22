@@ -198,7 +198,7 @@ func (a Agent) Label() string {
 // model picker. Empty means the harness has nothing the picker must warn
 // about. Keep this in lockstep with mcpCapsForRun and the driver flags:
 // cursor-agent has no --mcp-config, and grok investigate cannot allow one
-// named MCP server (--deny MCPTool).
+// named MCP server (--deny MCPTool) unless the project sets agentMCPAlways.
 func (a Agent) Limitations() string {
 	switch a.Resolve() {
 	case AgentCursor:

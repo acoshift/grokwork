@@ -2064,6 +2064,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		ForceNewSession: forceNew,
 		Yolo:            pol.Yolo,
 		Tools:           pol.Tools,
+		AllowMCP:        mcpOK,
 		NoSubagents:     pol.NoSubagents,
 		Env:             childEnv,
 		MCPConfigPath:   mcpPath,

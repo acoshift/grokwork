@@ -48,6 +48,12 @@ type ProjectConfig struct {
 	// DirectToPrimary, when true, new sessions stamp ShipMode=direct and ship
 	// via fast-forward push to the project primary (no PR). nil/false = PR mode.
 	DirectToPrimary *bool `json:"directToPrimary,omitempty"`
+	// AgentMCPAlways, when true, grokwork MCP attaches on Grok investigate and
+	// plan as well as ship/fix. That drops --deny MCPTool, so every MCP server
+	// in the operator's user config and any worktree .grok/config.toml also
+	// attaches — trusted internal projects only. nil/false keeps the default
+	// (Grok investigate stays off). Host agentMCP: false still kills every attach.
+	AgentMCPAlways *bool `json:"agentMCPAlways,omitempty"`
 	// SafeTeamMode enables capability templates (K16). nil/false → legacy builder default.
 	SafeTeamMode            *bool  `json:"safeTeamMode,omitempty"`
 	SafeTeamDefaultTemplate string `json:"safeTeamDefaultTemplate,omitempty"` // default investigator
@@ -68,8 +74,8 @@ type ProjectConfig struct {
 	CapabilityByUser    map[string]string       `json:"capabilityByUser,omitempty"` // actor ID → template
 	InvestigateTools    string                  `json:"investigateTools,omitempty"` // comma tools allowlist
 	// VerifyCommands are project shell checks run by @Grok /verify (no Grok).
-	VerifyCommands []VerifyCommand      `json:"verifyCommands,omitempty"`
-	GitHub         *ProjectGitHubConfig `json:"github,omitempty"`
+	VerifyCommands []VerifyCommand       `json:"verifyCommands,omitempty"`
+	GitHub         *ProjectGitHubConfig  `json:"github,omitempty"`
 	Linear         *ProjectLinearConfig  `json:"linear,omitempty"`
 	ClickUp        *ProjectClickUpConfig `json:"clickup,omitempty"`
 	// Errors is per-provider production error-source opt-in (GCP / Sentry / deploys.app).
@@ -214,6 +220,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		Teams                    map[string]TeamConfig   `json:"teams,omitempty"`
 		RepoFetchIntervalMinutes *int                    `json:"repoFetchIntervalMinutes,omitempty"`
 		DirectToPrimary          *bool                   `json:"directToPrimary,omitempty"`
+		AgentMCPAlways           *bool                   `json:"agentMCPAlways,omitempty"`
 		SafeTeamMode             *bool                   `json:"safeTeamMode,omitempty"`
 		SafeTeamDefaultTemplate  string                  `json:"safeTeamDefaultTemplate,omitempty"`
 		DefaultMode              string                  `json:"defaultMode,omitempty"`
@@ -242,6 +249,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			Teams:                    cloneTeams(pc.Teams),
 			RepoFetchIntervalMinutes: cloneIntPtr(pc.RepoFetchIntervalMinutes),
 			DirectToPrimary:          cloneBoolPtr(pc.DirectToPrimary),
+			AgentMCPAlways:           cloneBoolPtr(pc.AgentMCPAlways),
 			SafeTeamMode:             cloneBoolPtr(pc.SafeTeamMode),
 			SafeTeamDefaultTemplate:  pc.SafeTeamDefaultTemplate,
 			DefaultMode:              pc.DefaultMode,
@@ -301,6 +309,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			Teams:                    cloneTeams(v.Teams),
 			RepoFetchIntervalMinutes: cloneIntPtr(v.RepoFetchIntervalMinutes),
 			DirectToPrimary:          cloneBoolPtr(v.DirectToPrimary),
+			AgentMCPAlways:           cloneBoolPtr(v.AgentMCPAlways),
 			SafeTeamMode:             cloneBoolPtr(v.SafeTeamMode),
 			SafeTeamDefaultTemplate:  v.SafeTeamDefaultTemplate,
 			DefaultMode:              v.DefaultMode,
@@ -723,6 +732,41 @@ func (c *Config) SetProjectDirectToPrimary(name string, enabled bool) error {
 		pc.DirectToPrimary = new(true)
 	} else {
 		pc.DirectToPrimary = nil
+	}
+	c.Projects[name] = pc
+	return c.saveLocked()
+}
+
+// ProjectAgentMCPAlways reports whether this project attaches grokwork MCP on
+// Grok investigate/plan as well as ship/fix. nil/false → default (Grok
+// investigate stays off). Host AgentMCPEnabled still gates every attach.
+func (c *Config) ProjectAgentMCPAlways(name string) bool {
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	return ok && pc.AgentMCPAlways != nil && *pc.AgentMCPAlways
+}
+
+// SetProjectAgentMCPAlways sets per-project always-attach MCP and persists.
+// true enables Grok investigate/plan attach; false clears the opt-in.
+func (c *Config) SetProjectAgentMCPAlways(name string, enabled bool) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	if enabled {
+		pc.AgentMCPAlways = new(true)
+	} else {
+		pc.AgentMCPAlways = nil
 	}
 	c.Projects[name] = pc
 	return c.saveLocked()

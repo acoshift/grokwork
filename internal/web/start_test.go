@@ -524,6 +524,35 @@ func TestStartModelPickerShowsHarnessLimits(t *testing.T) {
 	}
 }
 
+func TestStartModelPickerHidesGrokLimitsWhenAlwaysMCP(t *testing.T) {
+	srv, cfg, _ := fixEnabledServer(t)
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectAgentMCPAlways("proj", true); err != nil {
+		t.Fatal(err)
+	}
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.6",
+	})
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/projects/proj/start")
+	grok := grokrun.AgentGrok.Limitations()
+	if grok == "" {
+		t.Fatal("grok must have a default caveat")
+	}
+	if strings.Contains(body, grok) {
+		t.Fatal("always-attach project must not show Grok investigate MCP caveat")
+	}
+	cursor := grokrun.AgentCursor.Limitations()
+	if !strings.Contains(body, cursor) {
+		t.Fatal("cursor caveat must remain")
+	}
+}
+
 func TestStartModelPickRejectsUnknownName(t *testing.T) {
 	srv, cfg, b := fixEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })

@@ -35,7 +35,12 @@ type Options struct {
 	// Tools non-nil → --tools allowlist. Pointer to "" means tools-off: the CLI
 	// treats an empty --tools value as unrestricted, so we rewrite it to a
 	// single non-agentic built-in and deny MCP meta-tools (see toolsOffAllowlist).
-	Tools            *string
+	Tools *string
+	// AllowMCP, when true with a non-empty Tools allowlist, omits --deny MCPTool
+	// so Grok can attach user/repo MCP servers (including grokwork). Trusted
+	// projects only: repo .grok/config.toml MCP is otherwise RCE on investigate.
+	// Tools-off (pointer to "") still denies MCP even when this is set.
+	AllowMCP         bool
 	NoSubagents      bool
 	NoPlan           bool
 	NoMemory         bool
@@ -69,12 +74,13 @@ type Options struct {
 const toolsOffAllowlist = "ask_user_question"
 
 // toolFlags maps Options.Tools to CLI args. nil → no flag (unrestricted built-ins
-// and MCP meta-tools may attach from user/repo config). Non-nil always denies
-// MCPTool: empty string is tools-off (pin a non-agentic built-in), and a
-// non-empty allowlist is investigate-style — without --deny MCPTool, Grok still
-// attaches MCP meta-tools and repo .grok/config.toml servers, which would be
-// RCE on "read-only" investigate runs.
-func toolFlags(tools *string) []string {
+// and MCP meta-tools may attach from user/repo config). Non-nil denies MCPTool
+// unless allowMCP is set with a non-empty allowlist: empty string is tools-off
+// (pin a non-agentic built-in; MCP stays denied), and a non-empty allowlist is
+// investigate-style. Without --deny MCPTool, Grok still attaches MCP meta-tools
+// and repo .grok/config.toml servers, which would be RCE on "read-only"
+// investigate runs unless the project opted into AgentMCPAlways.
+func toolFlags(tools *string, allowMCP bool) []string {
 	if tools == nil {
 		return nil
 	}
@@ -83,6 +89,10 @@ func toolFlags(tools *string) []string {
 		// Empty allowlist is unrestricted in the CLI; pin a non-agentic tool
 		// so headless "tools-off" tasks cannot burn max-turns exploring the repo.
 		t = toolsOffAllowlist
+		allowMCP = false
+	}
+	if allowMCP {
+		return []string{"--tools", t}
 	}
 	return []string{"--deny", "MCPTool", "--tools", t}
 }

@@ -252,6 +252,7 @@ type ProjectItem struct {
 	MemberIDs                []string
 	RepoFetchIntervalMinutes int  // effective minutes (default when unset; 0 = disabled)
 	DirectToPrimary          bool // true when project ships without PRs
+	AgentMCPAlways           bool // true when Grok investigate/plan also attach grokwork MCP
 	// Safe team / capabilities (K16)
 	SafeTeamMode            bool
 	SafeTeamDefaultTemplate string // effective (default "investigator")
@@ -1396,6 +1397,7 @@ func (c *Config) Snapshot() Snapshot {
 			MemberIDs:                projectActorIDsLocked(pc),
 			RepoFetchIntervalMinutes: fetchMins,
 			DirectToPrimary:          pc.DirectToPrimary != nil && *pc.DirectToPrimary,
+			AgentMCPAlways:           pc.AgentMCPAlways != nil && *pc.AgentMCPAlways,
 			SafeTeamMode:             pc.SafeTeamMode != nil && *pc.SafeTeamMode,
 			SafeTeamDefaultTemplate:  defaultTpl,
 			DefaultMode:              strings.TrimSpace(strings.ToLower(pc.DefaultMode)),

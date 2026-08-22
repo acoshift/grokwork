@@ -60,27 +60,63 @@ func TestPrepareAgentMCPClaudeOnly(t *testing.T) {
 	b.revokeAgentThread("t1")
 }
 
+func TestPrepareAgentMCPAlwaysAttachesGrokInvestigate(t *testing.T) {
+	b, _ := testFixBot(t)
+	if err := b.ensureAgentPlaneForTest(); err != nil {
+		t.Skip(err.Error())
+	}
+	if err := b.cfg.SetProjectAgentMCPAlways("app", true); err != nil {
+		t.Fatal(err)
+	}
+	gtools := "read_file,grep"
+	path, tok, ok := b.prepareAgentMCP("t-always", "app", "actor", grokrun.AgentGrok, RunPolicy{Tools: &gtools})
+	if !ok || path == "" || tok == "" {
+		t.Fatal("grok investigate must get MCP when agentMCPAlways is set")
+	}
+	cred, err := b.agent.Auth.Verify(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cred.Caps.SessionRead || cred.Caps.SessionDone || cred.Caps.StorageWrite {
+		t.Fatalf("always-attach grok investigate must stay read-only: %+v", cred.Caps)
+	}
+	empty := ""
+	_, _, ok = b.prepareAgentMCP("t-always", "app", "actor", grokrun.AgentGrok, RunPolicy{Tools: &empty})
+	if ok {
+		t.Fatal("tools-off must not get MCP even when always is set")
+	}
+	_, _, ok = b.prepareAgentMCP("t-always", "app", "actor", grokrun.AgentCursor, RunPolicy{})
+	if ok {
+		t.Fatal("cursor must not get MCP even when always is set")
+	}
+	b.revokeAgentThread("t-always")
+}
+
 func TestMCPCapsForRun(t *testing.T) {
 	t.Parallel()
-	if _, ok := mcpCapsForRun(grokrun.AgentGrok, RunPolicy{}); !ok {
+	if _, ok := mcpCapsForRun(grokrun.AgentGrok, RunPolicy{}, false); !ok {
 		t.Fatal("grok ship")
 	}
 	tools := "Read,Grep"
-	caps, ok := mcpCapsForRun(grokrun.AgentClaude, RunPolicy{Tools: &tools})
+	caps, ok := mcpCapsForRun(grokrun.AgentClaude, RunPolicy{Tools: &tools}, false)
 	if !ok || caps.SessionDone || !caps.SessionRead {
 		t.Fatalf("claude investigate: %+v ok=%v", caps, ok)
 	}
-	if _, ok := mcpCapsForRun(grokrun.AgentGrok, RunPolicy{Tools: &tools}); ok {
+	if _, ok := mcpCapsForRun(grokrun.AgentGrok, RunPolicy{Tools: &tools}, false); ok {
 		t.Fatal("grok investigate")
 	}
+	gCaps, gOK := mcpCapsForRun(grokrun.AgentGrok, RunPolicy{Tools: &tools}, true)
+	if !gOK || gCaps.SessionDone || !gCaps.SessionRead {
+		t.Fatalf("grok investigate always: %+v ok=%v", gCaps, gOK)
+	}
 	empty := ""
-	if _, ok := mcpCapsForRun(grokrun.AgentClaude, RunPolicy{Tools: &empty}); ok {
+	if _, ok := mcpCapsForRun(grokrun.AgentClaude, RunPolicy{Tools: &empty}, true); ok {
 		t.Fatal("tools-off")
 	}
-	if _, ok := mcpCapsForRun(grokrun.AgentCursor, RunPolicy{}); ok {
+	if _, ok := mcpCapsForRun(grokrun.AgentCursor, RunPolicy{}, true); ok {
 		t.Fatal("cursor-agent has no --mcp-config")
 	}
-	if _, ok := mcpCapsForRun(grokrun.AgentCursor, RunPolicy{Tools: &tools}); ok {
+	if _, ok := mcpCapsForRun(grokrun.AgentCursor, RunPolicy{Tools: &tools}, true); ok {
 		t.Fatal("cursor investigate")
 	}
 }

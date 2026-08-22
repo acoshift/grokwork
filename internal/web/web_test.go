@@ -271,6 +271,8 @@ func TestPagesRender(t *testing.T) {
 		{"/config/projects/proj/workflow", `id="page-project-config-workflow"`},
 		{"/config/projects/proj/workflow", "Shipping"},
 		{"/config/projects/proj/workflow", "name=\"directToPrimary\""},
+		{"/config/projects/proj/workflow", "name=\"agentMCPAlways\""},
+		{"/config/projects/proj/workflow", `id="project-agent-mcp"`},
 		{"/config/projects/proj/workflow", "name=\"primaryBranch\""},
 		{"/config/projects/proj/workflow", "name=\"defaultMode\""},
 		{"/config/projects/proj/workflow", "Verify commands"},
@@ -2372,6 +2374,21 @@ func TestProjectConfigPage(t *testing.T) {
 		t.Fatalf("defaultMode=%q", cfg.ProjectDefaultMode("proj"))
 	}
 
+	form = url.Values{"name": {"proj"}, "agentMCPAlways": {"1"}}
+	req = httptest.NewRequest(http.MethodPost, "/config/projects/agent-mcp", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("set agent-mcp status=%d body=%s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/config/projects/proj/workflow?") {
+		t.Fatalf("set agent-mcp Location=%q", loc)
+	}
+	if !cfg.ProjectAgentMCPAlways("proj") {
+		t.Fatal("agentMCPAlways not set")
+	}
+
 	// Capability map user.
 	form = url.Values{"name": {"proj"}, "id": {"u-builder"}, "template": {"builder"}}
 	req = httptest.NewRequest(http.MethodPost, "/config/projects/capabilities/users", strings.NewReader(form.Encode()))
@@ -2422,6 +2439,8 @@ func TestProjectConfigPage(t *testing.T) {
 		{"/config/projects/proj/workflow", []string{
 			`id="page-project-config-workflow"`,
 			`name="directToPrimary"`,
+			`name="agentMCPAlways"`,
+			`id="project-agent-mcp"`,
 			`name="primaryBranch"`,
 			`id="project-primary-branch"`,
 			`id="project-verify"`,

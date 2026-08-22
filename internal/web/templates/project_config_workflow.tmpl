@@ -67,6 +67,34 @@
   </div>
 </div>
 
+<div class="section card" id="project-agent-mcp">
+  <h2>Grokwork MCP</h2>
+  <p class="sub" style="margin-top:0">
+    In-session grokwork tools (tickets, Linear, ClickUp, storage, error sources).
+    The host kill switch <span class="mono">agentMCP: false</span> still disables every attach.
+    Explain / tools-off never attach. Cursor never attaches.
+  </p>
+  <form method="post" action="{{route "config.setProjectAgentMCP"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <div class="choice-row">
+      <label class="choice">
+        <input type="radio" name="agentMCPAlways" value="0" {{if not .ProjectItem.AgentMCPAlways}}checked{{end}}>
+        <span class="dot"></span>
+        <span class="t">Default <span class="flag ok">safe</span></span>
+        <span class="d">Ship/fix attach for every agent. Claude investigate gets a read-only mint. Grok investigate stays off (<span class="mono">--deny MCPTool</span>) so a repo <span class="mono">.grok/config.toml</span> cannot run MCP on a read-only turn.</span>
+      </label>
+      <label class="choice">
+        <input type="radio" name="agentMCPAlways" value="1" {{if .ProjectItem.AgentMCPAlways}}checked{{end}}>
+        <span class="dot"></span>
+        <span class="t">Always attach <span class="flag warn">trusted</span></span>
+        <span class="d">Grok investigate and plan also attach grokwork MCP (read-only). Also attaches every other MCP server in the operator&rsquo;s user config and the worktree. Internal teams with no external members only.</span>
+      </label>
+    </div>
+    <div class="form-actions"><button type="submit">Save MCP attach</button></div>
+  </form>
+</div>
+
 <div class="section card" id="project-sessions">
   <h2>Sessions</h2>
   <form class="inline" method="post" action="{{route "config.setProjectMode"}}" style="grid-template-columns: minmax(0, 22rem) auto;">

@@ -503,11 +503,21 @@ func (s *Server) attachErrorSessions(d *pageData, project, src, id, location, re
 }
 
 func (s *Server) attachErrorGrokBanner(d *pageData, project, reuseThread string) {
-	if d == nil || !s.errorInvestigateOnGrok(project, reuseThread) {
+	if d == nil || !s.grokInvestigateLacksMCP(project, reuseThread) {
 		return
 	}
 	d.ErrorGrokBanner = true
 	d.ErrorGrokBannerCopy = errorGrokBannerCopy(s.cfg.ResolveCapabilities(project, d.UserID).CanShip())
+}
+
+// grokInvestigateLacksMCP is true when an investigate run on this project would
+// not attach grokwork MCP because it is Grok and the project has not opted into
+// AgentMCPAlways (or the host kill switch is off).
+func (s *Server) grokInvestigateLacksMCP(project, reuseThread string) bool {
+	if s.cfg != nil && s.cfg.AgentMCPEnabled() && s.cfg.ProjectAgentMCPAlways(project) {
+		return false
+	}
+	return s.errorInvestigateOnGrok(project, reuseThread)
 }
 
 func (s *Server) errorInvestigateOnGrok(project, reuseThread string) bool {
@@ -532,6 +542,9 @@ func (s *Server) attachSessionErrorBanner(d *pageData, ent sessionstore.Entry, t
 		return
 	}
 	if s.bot == nil || s.bot.ThreadAgent(threadID) != grokrun.AgentGrok {
+		return
+	}
+	if s.cfg != nil && s.cfg.AgentMCPEnabled() && s.cfg.ProjectAgentMCPAlways(ent.Project) {
 		return
 	}
 	d.ErrorGrokBanner = true

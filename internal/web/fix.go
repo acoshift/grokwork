@@ -969,6 +969,34 @@ func (s *Server) attachModelPicker(d *pageData, project, def string) {
 		d.ReviewModelDefaultLabel = "CLI default"
 	}
 	d.ReviewModelDefaultLimits = grokrun.LimitationsForModel(s.cfg.EffectiveReviewModel(), fallback)
+	if s.cfg.AgentMCPEnabled() && s.cfg.ProjectAgentMCPAlways(project) {
+		stripGrokInvestigateLimits(d)
+	}
+}
+
+// stripGrokInvestigateLimits drops Grok's "investigate cannot attach MCP"
+// picker caveat when this project always-attaches grokwork MCP.
+func stripGrokInvestigateLimits(d *pageData) {
+	if d == nil {
+		return
+	}
+	grok := grokrun.AgentGrok.Limitations()
+	if grok == "" {
+		return
+	}
+	if d.ModelDefaultLimits == grok {
+		d.ModelDefaultLimits = ""
+	}
+	if d.ReviewModelDefaultLimits == grok {
+		d.ReviewModelDefaultLimits = ""
+	}
+	for i := range d.ModelGroups {
+		for j := range d.ModelGroups[i].Choices {
+			if d.ModelGroups[i].Choices[j].Limits == grok {
+				d.ModelGroups[i].Choices[j].Limits = ""
+			}
+		}
+	}
 }
 
 // silence unused import if template-only types shift

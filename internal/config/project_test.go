@@ -261,6 +261,66 @@ func TestProjectDirectToPrimary(t *testing.T) {
 	}
 }
 
+func TestProjectAgentMCPAlways(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{
+		Projects: ProjectsMap{
+			"solo": {Path: filepath.Join(dir, "solo")},
+			"team": {Path: filepath.Join(dir, "team")},
+		},
+		ConfigPath: filepath.Join(dir, "config.json"),
+	}
+	if cfg.ProjectAgentMCPAlways("solo") {
+		t.Fatal("default should be false")
+	}
+	if err := cfg.SetProjectAgentMCPAlways("solo", true); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ProjectAgentMCPAlways("solo") {
+		t.Fatal("want true after set")
+	}
+	if cfg.ProjectAgentMCPAlways("team") {
+		t.Fatal("team should stay false")
+	}
+	raw, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var disk struct {
+		Projects ProjectsMap `json:"projects"`
+	}
+	if err := json.Unmarshal(raw, &disk); err != nil {
+		t.Fatal(err)
+	}
+	if disk.Projects["solo"].AgentMCPAlways == nil || !*disk.Projects["solo"].AgentMCPAlways {
+		t.Fatalf("disk lost flag: %+v", disk.Projects["solo"])
+	}
+	cloned := cloneProjectsMap(cfg.Projects)
+	if cloned["solo"].AgentMCPAlways == nil || !*cloned["solo"].AgentMCPAlways {
+		t.Fatalf("clone lost flag: %+v", cloned["solo"])
+	}
+	snap := cfg.Snapshot()
+	var soloItem *ProjectItem
+	for i := range snap.Projects {
+		if snap.Projects[i].Name == "solo" {
+			soloItem = &snap.Projects[i]
+			break
+		}
+	}
+	if soloItem == nil || !soloItem.AgentMCPAlways {
+		t.Fatalf("snapshot want true: %+v", soloItem)
+	}
+	if err := cfg.SetProjectAgentMCPAlways("solo", false); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProjectAgentMCPAlways("solo") {
+		t.Fatal("want false after clear")
+	}
+	if err := cfg.SetProjectAgentMCPAlways("missing", true); err == nil {
+		t.Fatal("want error for missing project")
+	}
+}
+
 func TestProjectsMapDualShape(t *testing.T) {
 	raw := []byte(`{
 		"stringy": "/tmp/a",

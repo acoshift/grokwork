@@ -44,7 +44,7 @@ func (grokDriver) args(in argInput) []string {
 	} else if in.prebound && in.runSessionID != "" {
 		args = append(args, "-s", in.runSessionID)
 	}
-	args = append(args, toolFlags(opt.Tools)...)
+	args = append(args, toolFlags(opt.Tools, opt.AllowMCP)...)
 	if opt.NoSubagents {
 		args = append(args, "--no-subagents")
 	}

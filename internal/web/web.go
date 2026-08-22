@@ -202,6 +202,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.setProjectChannel":           "/config/projects/channel",
 		"config.setProjectFetch":             "/config/projects/fetch",
 		"config.setProjectShip":              "/config/projects/ship",
+		"config.setProjectAgentMCP":          "/config/projects/agent-mcp",
 		"config.setProjectSafeTeam":          "/config/projects/safe-team",
 		"config.setProjectVerify":            "/config/projects/verify",
 		"config.setProjectDeployEnabled":     "/config/projects/deploy/enabled",
@@ -613,6 +614,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/channel", s.requireAdmin(hime.Handler(s.setProjectChannel)))
 	mux.Handle("POST /config/projects/fetch", s.requireAdmin(hime.Handler(s.setProjectFetch)))
 	mux.Handle("POST /config/projects/ship", s.requireAdmin(hime.Handler(s.setProjectShip)))
+	mux.Handle("POST /config/projects/agent-mcp", s.requireAdmin(hime.Handler(s.setProjectAgentMCP)))
 	mux.Handle("POST /config/projects/safe-team", s.requireAdmin(hime.Handler(s.setProjectSafeTeam)))
 	mux.Handle("POST /config/projects/mode", s.requireAdmin(hime.Handler(s.setProjectMode)))
 	mux.Handle("POST /config/projects/case-key", s.requireAdmin(hime.Handler(s.setProjectCaseKey)))
@@ -1678,6 +1680,20 @@ func (s *Server) setProjectShip(ctx *hime.Context) error {
 	msg := fmt.Sprintf("Updated ship workflow for project %q (pull request mode)", name)
 	if enabled {
 		msg = fmt.Sprintf("Updated ship workflow for project %q (direct to primary)", name)
+	}
+	return s.projectConfigTabRedirect(ctx, name, "workflow", msg, err)
+}
+
+func (s *Server) setProjectAgentMCP(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	enabled := ctx.PostFormValue("agentMCPAlways") == "1"
+	err := s.cfg.SetProjectAgentMCPAlways(name, enabled)
+	s.auditAction(ctx, "config.set_project_agent_mcp", err, map[string]any{
+		"name": name, "agentMCPAlways": enabled,
+	})
+	msg := fmt.Sprintf("Updated grokwork MCP attach for project %q (default)", name)
+	if enabled {
+		msg = fmt.Sprintf("Updated grokwork MCP attach for project %q (always attach)", name)
 	}
 	return s.projectConfigTabRedirect(ctx, name, "workflow", msg, err)
 }
