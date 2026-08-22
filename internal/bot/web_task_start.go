@@ -28,7 +28,7 @@ type StartWebTaskOpts struct {
 	// owns it. Empty means "whatever config says", which stays unstamped so the
 	// existing resolve-at-run-start path applies. Requires builder-class caps.
 	Model string
-	// AttachmentPaths are staged web images; ownership transfers to StartTask.
+	// AttachmentPaths are staged web files; ownership transfers to StartTask.
 	AttachmentPaths []string
 	// WebNative forces a w_* unit on grok/web/. When true, skip Discord thread
 	// create even if the gateway is up and a channel is mapped.

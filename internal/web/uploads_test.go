@@ -20,6 +20,9 @@ import (
 // Real PNG magic so http.DetectContentType returns image/png.
 var testPNG = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0, 0, 0, 0, 0}
 
+// Minimal PDF header — start/continue/case used to reject anything not image/*.
+var testPDF = []byte("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n")
+
 func postMultipart(t *testing.T, srv *Server, path, sid, csrf string, fields map[string]string, files map[string][]byte) *httptest.ResponseRecorder {
 	t.Helper()
 	var body bytes.Buffer
@@ -83,29 +86,31 @@ func TestSessionContinueMultipartPNG(t *testing.T) {
 	}
 }
 
-func TestSessionContinueNonImageRejected(t *testing.T) {
+func TestSessionContinuePDFAccepted(t *testing.T) {
 	srv, b := addressEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
-	if err := srv.sessions.Set("s-bad", sessionstore.Entry{Project: "proj", Origin: "web"}); err != nil {
+	if err := srv.sessions.Set("s-pdf", sessionstore.Entry{Project: "proj", Origin: "web"}); err != nil {
 		t.Fatal(err)
 	}
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := postMultipart(t, srv, "/sessions/s-bad/continue", sid, csrf,
-		map[string]string{"prompt": "here is a text file"},
-		map[string][]byte{"notes.txt": []byte("not an image")},
+	w := postMultipart(t, srv, "/sessions/s-pdf/continue", sid, csrf,
+		map[string]string{"prompt": "here is a spec"},
+		map[string][]byte{"spec.pdf": testPDF},
 	)
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	loc := w.Header().Get("Location")
-	if !strings.Contains(loc, "err=") {
-		t.Fatalf("want flash err, got %q", loc)
+	if strings.Contains(loc, "err=") {
+		t.Fatalf("unexpected err redirect: %s", loc)
 	}
-	if !strings.Contains(loc, "not") || !strings.Contains(loc, "image") {
-		t.Fatalf("Location=%q want not-an-image flash", loc)
+	bot.WaitIdleForTest(b, 5*time.Second)
+	stage := filepath.Join(srv.cfg.DataDir, "attachments", "web")
+	if entries, _ := os.ReadDir(stage); len(entries) != 0 {
+		t.Fatalf("staging leftovers after success: %v", entries)
 	}
 }
 
@@ -161,7 +166,7 @@ func TestCaseNewMultipartPNG(t *testing.T) {
 	}
 }
 
-func TestCaseNewNonImageRejected(t *testing.T) {
+func TestCaseNewPDFAccepted(t *testing.T) {
 	srv, _, b := fixEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
@@ -169,18 +174,21 @@ func TestCaseNewNonImageRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := postMultipart(t, srv, "/projects/proj/cases/new", sid, csrf,
-		map[string]string{"title": "Has bad file", "severity": "low"},
-		map[string][]byte{"log.txt": []byte("plain text")},
+		map[string]string{"title": "Has a spec", "severity": "low"},
+		map[string][]byte{"log.txt": []byte("plain text"), "spec.pdf": testPDF},
 	)
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d", w.Code)
 	}
 	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/projects/proj/cases/new") {
-		t.Fatalf("want case new redirect, got %q", loc)
+	if !strings.HasPrefix(loc, "/sessions/") {
+		t.Fatalf("Location=%q", loc)
 	}
-	if !strings.Contains(loc, "err=") {
-		t.Fatalf("want err flash: %s", loc)
+	if strings.Contains(loc, "err=") {
+		t.Fatalf("unexpected err: %s", loc)
+	}
+	if !strings.Contains(loc, "investigat") {
+		t.Fatalf("files-only must report investigating flash: %s", loc)
 	}
 }
 
@@ -261,7 +269,7 @@ func TestStartMultipartPNG(t *testing.T) {
 	}
 }
 
-func TestStartNonImageRejected(t *testing.T) {
+func TestStartPDFAccepted(t *testing.T) {
 	srv, _, b := fixEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
@@ -269,18 +277,23 @@ func TestStartNonImageRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := postMultipart(t, srv, "/projects/proj/start", sid, csrf,
-		map[string]string{"prompt": "here is a text file"},
-		map[string][]byte{"notes.txt": []byte("not an image")},
+		map[string]string{"prompt": "here is a spec"},
+		map[string][]byte{"spec.pdf": testPDF, "notes.txt": []byte("plain notes")},
 	)
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/projects/proj/start") {
-		t.Fatalf("want start redirect, got %q", loc)
+	if !strings.HasPrefix(loc, "/sessions/") {
+		t.Fatalf("Location=%q", loc)
 	}
-	if !strings.Contains(loc, "err=") {
-		t.Fatalf("want err flash: %s", loc)
+	if strings.Contains(loc, "err=") {
+		t.Fatalf("unexpected err: %s", loc)
+	}
+	bot.WaitIdleForTest(b, 5*time.Second)
+	stage := filepath.Join(srv.cfg.DataDir, "attachments", "web")
+	if entries, _ := os.ReadDir(stage); len(entries) != 0 {
+		t.Fatalf("staging leftovers after success: %v", entries)
 	}
 }
 
@@ -325,11 +338,14 @@ func TestCaseNewPageRendersImageInput(t *testing.T) {
 		`name="images"`,
 		`enctype="multipart/form-data"`,
 		`id="case-attach-chips"`,
-		"With notes or images",
+		"With notes or files",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in case new page", want)
 		}
+	}
+	if strings.Contains(body, `accept="image/*"`) {
+		t.Fatal("case file input must not restrict the picker to images")
 	}
 }
 
@@ -362,5 +378,10 @@ func TestSessionPageRendersAttachControls(t *testing.T) {
 			t.Fatalf("missing %q", want)
 		}
 	}
+	if strings.Contains(body, `accept="image/*"`) {
+		t.Fatal("continue file input must not restrict the picker to images")
+	}
+	if !strings.Contains(body, `aria-label="Attach files"`) {
+		t.Fatal("continue attach button must say files, not images")
+	}
 }
-

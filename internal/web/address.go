@@ -160,7 +160,7 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
 	}
 	// Multipart must be parsed before any PostFormValue (default limits).
-	uploads, upErr := s.formImageUploads(ctx)
+	uploads, upErr := s.formFileUploads(ctx)
 	if upErr != nil {
 		return s.sessionRedirect(ctx, threadID, "", upErr.Error())
 	}

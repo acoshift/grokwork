@@ -26,7 +26,7 @@ type StartCaseOpts struct {
 	Ref             string // optional external ticket id (ZD-4821, ACME-231, …)
 	Notes           string // optional intake notes; non-empty → queue an investigate run
 	Actor           Actor
-	AttachmentPaths []string // staged web images; notes or attachments queue investigate
+	AttachmentPaths []string // staged web files; notes or attachments queue investigate
 }
 
 // StartCase creates a work unit and the case shell (Mode=case, Phase=intake).

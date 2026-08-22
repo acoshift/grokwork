@@ -48,12 +48,12 @@ func (s *Server) canOpenCase(d pageData, project string) bool {
 }
 
 // postCaseNew creates the case shell (Mode=case, Phase=intake) and redirects to
-// the session workspace. Notes or images queue an investigate run; empty intake
+// the session workspace. Notes or files queue an investigate run; empty intake
 // stays intake-only, exactly like Discord "/case".
 func (s *Server) postCaseNew(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
 	// Multipart must be parsed before any PostFormValue (default limits).
-	uploads, upErr := s.formImageUploads(ctx)
+	uploads, upErr := s.formFileUploads(ctx)
 	if upErr != nil {
 		return s.caseNewRedirect(ctx, project, upErr.Error())
 	}

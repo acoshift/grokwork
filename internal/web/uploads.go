@@ -12,13 +12,14 @@ import (
 	"github.com/acoshift/grokwork/internal/bot"
 )
 
-// formImageUploads parses a multipart POST and returns the "images" field files.
+// formFileUploads parses a multipart POST and returns the "images" field files
+// (the historical form name; contents are any type, including PDFs).
 // Non-multipart requests return (nil, nil) so urlencoded posts keep working.
 // MUST be called BEFORE any ctx.PostFormValue in the handler. Note the real
 // body bound is requireMember's MaxBytesReader: checkCSRF's FormValue fallback
 // usually parses the multipart body before the handler runs, so the wrap below
 // only bites on paths that skipped that parse.
-func (s *Server) formImageUploads(ctx *hime.Context) ([]bot.WebUpload, error) {
+func (s *Server) formFileUploads(ctx *hime.Context) ([]bot.WebUpload, error) {
 	if ctx == nil || ctx.Request == nil {
 		return nil, nil
 	}

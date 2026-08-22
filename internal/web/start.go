@@ -59,7 +59,7 @@ func (s *Server) startOpensDiscordThread(project string) bool {
 func (s *Server) postStart(ctx *hime.Context) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
 	// Multipart must be parsed before any PostFormValue (default limits).
-	uploads, upErr := s.formImageUploads(ctx)
+	uploads, upErr := s.formFileUploads(ctx)
 	if upErr != nil {
 		return s.startRedirect(ctx, project, "", upErr.Error())
 	}
@@ -92,7 +92,7 @@ func (s *Server) postStart(ctx *hime.Context) error {
 	detail := map[string]any{
 		"project": project, "origin": "web-start", "mode": mode, "model": model,
 		"attachments": len(paths),
-		"threadId": res.ThreadID, "status": string(res.Status), "created": res.Created,
+		"threadId":    res.ThreadID, "status": string(res.Status), "created": res.Created,
 	}
 	if startErr != nil {
 		cleanup()

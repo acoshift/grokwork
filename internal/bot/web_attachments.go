@@ -1,10 +1,8 @@
 package bot
 
 import (
-	"bytes"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,10 +77,10 @@ func (b *Bot) SaveWebAttachments(uploads []WebUpload) (paths []string, cleanup f
 			return fail(fmt.Errorf("open %q: %w", u.Filename, openErr))
 		}
 
-		n, snifferr := saveWebImage(u.Filename, rc, path, maxAttachmentBytes)
+		n, writeErr := saveWebFile(u.Filename, rc, path, maxAttachmentBytes)
 		_ = rc.Close()
-		if snifferr != nil {
-			return fail(snifferr)
+		if writeErr != nil {
+			return fail(writeErr)
 		}
 		total += n
 		if total > maxTotalBytes {
@@ -93,36 +91,20 @@ func (b *Bot) SaveWebAttachments(uploads []WebUpload) (paths []string, cleanup f
 	return out, cleanup, nil
 }
 
-// saveWebImage sniffs the first 512 bytes, requires image/*, and writes the
-// sniffed prefix plus the rest under dest with a per-file size guard.
-func saveWebImage(name string, r io.Reader, dest string, maxBytes int64) (int64, error) {
-	head := make([]byte, 512)
-	nh, err := io.ReadFull(r, head)
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return 0, fmt.Errorf("read %q: %w", name, err)
-	}
-	head = head[:nh]
-	ctype := http.DetectContentType(head)
-	if !strings.HasPrefix(ctype, "image/") {
-		return 0, fmt.Errorf("attachment %q is not an image (%s)", name, ctype)
-	}
-
+// saveWebFile writes r under dest with a per-file size guard. Type is not
+// gated — Discord attachments already accept PDFs and other files; the web
+// composers match that.
+func saveWebFile(name string, r io.Reader, dest string, maxBytes int64) (int64, error) {
 	f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
 		return 0, err
 	}
 	defer f.Close()
 
-	// Sniffed bytes already count toward the limit; stream the remainder with +1 oversize detect.
-	remainBudget := maxBytes + 1 - int64(nh)
-	if remainBudget < 0 {
-		remainBudget = 0
-	}
-	body := io.MultiReader(bytes.NewReader(head), io.LimitReader(r, remainBudget))
-	n, err := io.Copy(f, body)
+	n, err := io.Copy(f, io.LimitReader(r, maxBytes+1))
 	if err != nil {
 		_ = os.Remove(dest)
-		return 0, err
+		return 0, fmt.Errorf("write %q: %w", name, err)
 	}
 	if n > maxBytes {
 		_ = os.Remove(dest)

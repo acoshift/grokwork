@@ -88,10 +88,10 @@
     {{template "csrf" $}}
     <label for="continue-prompt" class="sr-only">Prompt</label>
     <textarea id="continue-prompt" name="prompt" rows="1" required placeholder="{{if $caseInvestigate}}What should the agent look into?{{else}}What should happen next?{{end}}"></textarea>
-    <button type="button" class="composer-attach" id="btn-attach" title="Attach images" aria-label="Attach images">
+    <button type="button" class="composer-attach" id="btn-attach" title="Attach files" aria-label="Attach files">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
     </button>
-    <input type="file" id="continue-images" name="images" accept="image/*" multiple hidden data-attach-chips="continue-attach-chips" data-attach-button="btn-attach">
+    <input type="file" id="continue-images" name="images" multiple hidden data-attach-chips="continue-attach-chips" data-attach-button="btn-attach">
     <button type="submit" id="btn-continue" class="composer-send" title="Send follow-up" aria-label="Send follow-up">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
     </button>

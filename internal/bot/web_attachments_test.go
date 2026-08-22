@@ -65,21 +65,34 @@ func TestSaveWebAttachmentsHappy(t *testing.T) {
 	}
 }
 
-func TestSaveWebAttachmentsNonImage(t *testing.T) {
+func TestSaveWebAttachmentsPDFAndText(t *testing.T) {
 	b, _ := testBotWithData(t)
-	_, cleanup, err := b.SaveWebAttachments([]WebUpload{
-		webUpload("notes.txt", []byte("hello world")),
+	pdf := []byte("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n")
+	txt := []byte("hello world")
+	paths, cleanup, err := b.SaveWebAttachments([]WebUpload{
+		webUpload("spec.pdf", pdf),
+		webUpload("notes.txt", txt),
 	})
-	if err == nil {
-		cleanup()
-		t.Fatal("expected non-image error")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "not an image") {
-		t.Fatalf("err=%v", err)
+	t.Cleanup(cleanup)
+	if len(paths) != 2 {
+		t.Fatalf("paths=%d", len(paths))
 	}
-	// Staging dir must not linger after failure.
-	if entries, _ := os.ReadDir(webStagingRoot(b.cfg.DataDir)); len(entries) != 0 {
-		t.Fatalf("staging leftovers: %v", entries)
+	gotPDF, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotPDF, pdf) {
+		t.Fatalf("pdf content mismatch")
+	}
+	gotTxt, err := os.ReadFile(paths[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotTxt, txt) {
+		t.Fatalf("txt content mismatch")
 	}
 }
 

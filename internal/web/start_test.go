@@ -236,6 +236,8 @@ func TestStartPageShowsFormForMember(t *testing.T) {
 		`name="mode"`,
 		`id="start-images"`,
 		`name="images"`,
+		`id="start-attach-chips"`,
+		"Files (images, PDFs, …)",
 		`value="investigate"`,
 		`value="explain"`,
 		`value="plan"`,
@@ -254,6 +256,9 @@ func TestStartPageShowsFormForMember(t *testing.T) {
 	}
 	if strings.Contains(body, "Project default mode is") {
 		t.Fatal("fix-default project must not render the non-fix ship caveat")
+	}
+	if strings.Contains(body, `accept="image/*"`) {
+		t.Fatal("start file input must not restrict the picker to images")
 	}
 	assertNavActive(t, body, "Start task")
 }

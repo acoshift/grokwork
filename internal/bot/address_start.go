@@ -105,7 +105,7 @@ type ContinueOpts struct {
 	Project         string // optional; taken from session when empty
 	Prompt          string
 	Actor           Actor
-	AttachmentPaths []string // staged web images; ownership transfers to StartTask
+	AttachmentPaths []string // staged web files; ownership transfers to StartTask
 }
 
 // StartContinue runs StartTask on an existing work unit (never creates a thread).
