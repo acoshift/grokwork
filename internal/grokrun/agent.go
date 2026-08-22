@@ -131,6 +131,7 @@ func ModelOptions() []ModelOption {
 	return []ModelOption{
 		// grok. `grok models` reports what a given account can actually reach, so
 		// this list is intentionally short — extend it per deployment.
+		{Value: "grok-4.6-xhigh", Label: "grok-4.6-xhigh", Agent: AgentGrok},
 		{Value: "grok-4.6", Label: "grok-4.6", Agent: AgentGrok},
 		{Value: "grok-4.5", Label: "grok-4.5", Agent: AgentGrok},
 
@@ -150,6 +151,7 @@ func ModelOptions() []ModelOption {
 		{Value: "claude-sonnet-5-thinking-high", Label: "claude-sonnet-5-thinking-high", Agent: AgentCursor},
 		{Value: "claude-fable-5-thinking-high", Label: "claude-fable-5-thinking-high", Agent: AgentCursor},
 		{Value: "gpt-5.6-sol-medium", Label: "gpt-5.6-sol-medium", Agent: AgentCursor},
+		{Value: "cursor-grok-4.6-xhigh", Label: "cursor-grok-4.6-xhigh", Agent: AgentCursor},
 		{Value: "cursor-grok-4.6-high", Label: "cursor-grok-4.6-high", Agent: AgentCursor},
 		{Value: "gemini-3.7-flash-high", Label: "gemini-3.7-flash-high", Agent: AgentCursor},
 		{Value: "glm-5.2-high", Label: "glm-5.2-high", Agent: AgentCursor},
