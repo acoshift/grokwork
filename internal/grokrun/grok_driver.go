@@ -33,7 +33,11 @@ func (grokDriver) args(in argInput) []string {
 		args = append(args, "--yolo")
 	}
 	if opt.Model != "" {
-		args = append(args, "-m", opt.Model)
+		model, effort := grokCLIModel(opt.Model)
+		args = append(args, "-m", model)
+		if effort != "" {
+			args = append(args, "--effort", effort)
+		}
 	}
 	if opt.SessionID != "" {
 		if opt.ForceNewSession {
@@ -128,6 +132,21 @@ func (grokDriver) decodeFinal(stdout []byte) (finalOut, bool) {
 		out.Text = parsed.Text
 	}
 	return out, true
+}
+
+// grokCLIModel maps a picker/stamp name onto the grok CLI's -m value and an
+// optional --effort. The CLI catalog is model ids only (`grok models` lists
+// grok-4.6, grok-4.5); extra-high reasoning is a flag, unlike cursor-agent
+// where xhigh is part of the model name. Passing grok-4.6-xhigh as -m fails
+// with "unknown model id".
+func grokCLIModel(name string) (model, effort string) {
+	name = strings.TrimSpace(name)
+	switch strings.ToLower(name) {
+	case "grok-4.6-xhigh":
+		return "grok-4.6", "xhigh"
+	default:
+		return name, ""
+	}
 }
 
 func firstNonEmpty(vals ...string) string {
