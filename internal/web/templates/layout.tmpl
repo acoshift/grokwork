@@ -3875,6 +3875,15 @@
     }
     .toolbar .field-sm input[type=number] { width: 5.5rem; }
     .toolbar button, .toolbar .btn { height: 2.5rem; flex: 0 0 auto; }
+    /* Same 2.5rem box as the pills, on the input row — not mid label+field. */
+    .toolbar .sub {
+      margin: 0;
+      align-self: end;
+      display: inline-flex;
+      align-items: center;
+      height: 2.5rem;
+      line-height: 1;
+    }
 
     /* ── Pager (commits list, etc.) ──────────────────────────────────────
        Ledger footer: mono range readout on the left, a joined Newer/Older

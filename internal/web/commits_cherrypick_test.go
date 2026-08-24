@@ -38,6 +38,9 @@ func TestCommitsCherryPickMarkupWhenConfigured(t *testing.T) {
 		`>production</option>`,
 		`id="commits-table"`,
 		`id="btn-commits-cherrypick"`,
+		`id="commits-cherrypick-hint"`,
+		`.toolbar .sub {`,
+		`align-self: end`,
 		`<select name="target" hidden>`,
 	} {
 		if !strings.Contains(body, want) {
