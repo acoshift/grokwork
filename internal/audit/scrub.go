@@ -20,7 +20,8 @@ const pathChar = "[^\\s\"'`)]"
 var pathRE = regexp.MustCompile(`(?i)(?:` +
 	`[A-Za-z]:\\` + pathChar + `+` + // C:\Users\…
 	`|/(?:Users|home|var|tmp|private|opt|usr|srv|mnt|data|workspace|root|Volumes|Applications|Library|etc)/` + pathChar + `*` +
-	`|data/worktrees/` + pathChar + `*)`)
+	`|data/worktrees/` + pathChar + `*` +
+	`|data/cherrypick/` + pathChar + `*)`)
 
 // ScrubPaths removes filesystem paths from text bound for the audit log.
 //

@@ -5455,7 +5455,10 @@
             ms = Number(ms);
             if (ms > 0) {
               clearAutoClose();
-              autoCloseTimer = setTimeout(function () { closeModal(); }, ms);
+              autoCloseTimer = setTimeout(function () {
+                if (opts.reload) location.reload();
+                else closeModal();
+              }, ms);
             }
           } else if (typeof opts.onError === "function") {
             try { opts.onError(data.message || "failed"); } catch (e) { /* ignore */ }
@@ -5619,6 +5622,7 @@
         subtitle: btn.getAttribute("data-subtitle") || "",
         fill: btn.getAttribute("data-fill") || "",
         resultKey: btn.getAttribute("data-result-key") || "text",
+        reload: btn.hasAttribute("data-reload"),
         autoCloseMs: autoClose == null || autoClose === "" ? 900 : Number(autoClose)
       });
     }

@@ -59,8 +59,9 @@ func (b *Bot) runIdleSweepCycle(reason string) {
 	start := time.Now()
 	nWT := b.sweepIdleWorktrees()
 	nSess := b.sweepTerminalSessions()
-	log.Printf("bg: idle sweep done reason=%s worktrees=%d terminalSessions=%d elapsed=%s",
-		reason, nWT, nSess, time.Since(start).Round(time.Millisecond))
+	nCP := gitworktree.SweepExpiredCherryPicks(b.bgContext(), b.cfg.DataDir)
+	log.Printf("bg: idle sweep done reason=%s worktrees=%d terminalSessions=%d cherrypickJobs=%d elapsed=%s",
+		reason, nWT, nSess, nCP, time.Since(start).Round(time.Millisecond))
 }
 
 // sweepIdleWorktrees applies the configured TTL (0 disables).

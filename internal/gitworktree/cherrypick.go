@@ -47,6 +47,33 @@ type CherryPickResult struct {
 	Noop    bool
 }
 
+// ConflictError means a cherry-pick stopped on unmerged files. The checkout
+// and sequencer are still on disk (caller must continue or abort).
+type ConflictError struct {
+	Target    string
+	SHA       string
+	Files     []string
+	Remaining []string
+	Result    CherryPickResult
+}
+
+func (e *ConflictError) Error() string {
+	if e == nil {
+		return "cherry-pick conflict"
+	}
+	msg := fmt.Sprintf("conflict cherry-picking %s onto %s", shortSHA(e.SHA), e.Target)
+	if len(e.Files) > 0 {
+		msg += ": " + strings.Join(e.Files, ", ")
+	}
+	return msg
+}
+
+// SequencerLive reports whether a cherry-pick is in progress.
+func SequencerLive(ctx context.Context, checkout string) bool {
+	_, err := gitOutput(ctx, checkout, "rev-parse", "--verify", "CHERRY_PICK_HEAD")
+	return err == nil
+}
+
 var (
 	cherryPickMu    sync.Mutex
 	cherryPickLocks = map[string]*sync.Mutex{}
@@ -143,22 +170,34 @@ func CherryPick(ctx context.Context, opts CherryPickOpts) (CherryPickResult, err
 	if err := AddDetached(ctx, repo, checkout, out.FromSHA); err != nil {
 		return out, scrubCherryPickErr(err, repo, checkout)
 	}
-	defer func() { _ = Remove(ctx, repo, checkout, "") }()
+	keep := false
+	defer func() {
+		if !keep {
+			_ = Remove(ctx, repo, checkout, "")
+		}
+	}()
 
-	for _, sha := range ordered {
+	for i, sha := range ordered {
 		if err := applyCherryPick(ctx, checkout, sha); err != nil {
 			files := conflictFiles(ctx, checkout)
 			empty := isEmptyCherryPick(err) && len(files) == 0
-			_ = runGit(ctx, checkout, "cherry-pick", "--abort")
 			if empty {
+				_ = runGit(ctx, checkout, "cherry-pick", "--abort")
 				out.Skipped = append(out.Skipped, shortSHA(sha))
 				continue
 			}
-			short := shortSHA(sha)
-			if len(files) > 0 {
-				return out, fmt.Errorf("conflict cherry-picking %s onto %s: %s", short, target, strings.Join(files, ", "))
+			if len(files) == 0 {
+				_ = runGit(ctx, checkout, "cherry-pick", "--abort")
+				return out, scrubCherryPickErr(fmt.Errorf("cherry-pick %s onto %s: %w", shortSHA(sha), target, err), repo, checkout)
 			}
-			return out, scrubCherryPickErr(fmt.Errorf("cherry-pick %s onto %s: %w", short, target, err), repo, checkout)
+			keep = true
+			return out, &ConflictError{
+				Target:    target,
+				SHA:       sha,
+				Files:     files,
+				Remaining: slices.Clone(ordered[i:]),
+				Result:    out,
+			}
 		}
 		out.Picked = append(out.Picked, shortSHA(sha))
 	}

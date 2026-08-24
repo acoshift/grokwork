@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/moonrhythm/hime"
 
@@ -386,6 +387,15 @@ func (s *Server) attachCherryPick(ctx *hime.Context, d *pageData, project, repoP
 	userID, role := s.sessionIdentity(ctx)
 	memberOK := !d.AuthEnabled || config.RoleAtLeast(role, config.WebRoleMember)
 	d.CanCherryPick = len(d.CherryPickTargets) > 0 && memberOK && s.cfg.ResolveCapabilities(project, userID).CanShip()
+	if list, err := gitworktree.ListJobs(s.cfg.DataDir); err == nil {
+		for i := range list {
+			if list[i].Open() && list[i].Project == project {
+				cp := list[i]
+				d.OpenCherryPickJob = &cp
+				break
+			}
+		}
+	}
 }
 
 func (s *Server) postCommitsCherryPick(ctx *hime.Context) error {
@@ -434,6 +444,10 @@ func (s *Server) postCommitsCherryPick(ctx *hime.Context) error {
 		return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, "", denied)
 	}
 
+	if open, ok := gitworktree.OpenJobForTarget(s.cfg.DataDir, project, path, target); ok {
+		return ctx.Redirect("/projects/" + url.PathEscape(project) + "/cherrypick/" + url.PathEscape(open.ID))
+	}
+
 	id := cherryPickNonce()
 	checkout := gitworktree.CherryPickCheckoutPath(s.cfg.DataDir, project, id)
 	res, err := gitworktree.CherryPick(ctx.Context(), gitworktree.CherryPickOpts{
@@ -456,6 +470,37 @@ func (s *Server) postCommitsCherryPick(ctx *hime.Context) error {
 		detail["to"] = shortSHA(res.ToSHA)
 	}
 	detail["noop"] = res.Noop
+	if cerr, ok := errors.AsType[*gitworktree.ConflictError](err); ok {
+		now := time.Now().UTC()
+		job := gitworktree.Job{
+			ID:        id,
+			Project:   project,
+			Owner:     owner,
+			Repo:      repo,
+			RepoPath:  path,
+			Checkout:  checkout,
+			Target:    target,
+			FromSHA:   res.FromSHA,
+			Picked:    res.Picked,
+			Skipped:   res.Skipped,
+			Current:   cerr.SHA,
+			Remaining: cerr.Remaining,
+			Files:     cerr.Files,
+			Status:    gitworktree.JobStatusConflict,
+			ActorID:   userID,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		detail["job"] = id
+		detail["files"] = len(cerr.Files)
+		if saveErr := gitworktree.SaveJob(s.cfg.DataDir, job); saveErr != nil {
+			_ = gitworktree.AbortCherryPick(ctx.Context(), path, checkout)
+			s.auditAction(ctx, audit.ActionGitCherryPick, saveErr, detail)
+			return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, "", saveErr)
+		}
+		s.auditAction(ctx, audit.ActionGitCherryPick, nil, detail)
+		return ctx.Redirect("/projects/" + url.PathEscape(project) + "/cherrypick/" + url.PathEscape(id))
+	}
 	s.auditAction(ctx, audit.ActionGitCherryPick, err, detail)
 	if err != nil {
 		return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, "", err)
@@ -519,7 +564,7 @@ func (s *Server) cherryPickRedirect(ctx *hime.Context, project, owner, repo, ref
 func cherryPickNonce() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "0"
+		return "cp_" + strings.Repeat("0", 32)
 	}
-	return hex.EncodeToString(b[:])
+	return "cp_" + hex.EncodeToString(b[:])
 }

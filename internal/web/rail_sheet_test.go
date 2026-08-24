@@ -68,13 +68,13 @@ func TestRailSheetChromeIsShellOnly(t *testing.T) {
 	}
 }
 
-// TestRailSheetHeadOnEveryRail pins that all five rail-bearing detail pages
-// render the sheet header. A page that skips it gets a sheet with no title and
+// TestRailSheetHeadOnEveryRail pins that every rail-bearing detail page
+// renders the sheet header. A page that skips it gets a sheet with no title and
 // no close button on phones — and nothing on desktop would show it.
 func TestRailSheetHeadOnEveryRail(t *testing.T) {
 	tmpls := []string{
 		"session.tmpl", "pr_detail.tmpl", "issue_detail.tmpl",
-		"linear_detail.tmpl", "commit_detail.tmpl",
+		"linear_detail.tmpl", "commit_detail.tmpl", "cherrypick_conflict.tmpl",
 	}
 	for _, name := range tmpls {
 		raw, err := templateFS.ReadFile("templates/" + name)

@@ -61,7 +61,10 @@ const (
 	ActionCommitReviewStart      = "commit.review.start"
 	ActionPRReviewStart          = "pr.review.start" // agentic PR review → PR comment
 	ActionGitFetch               = "git.fetch"
-	ActionGitCherryPick          = "git.cherrypick"         // cherry-pick SHAs onto an allowlisted target branch and push
+	ActionGitCherryPick          = "git.cherrypick"          // cherry-pick SHAs onto an allowlisted target branch and push
+	ActionGitCherryPickContinue  = "git.cherrypick.continue" // resolve conflict and continue/push
+	ActionGitCherryPickAbort     = "git.cherrypick.abort"
+	ActionGitCherryPickSuggest   = "git.cherrypick.suggest" // one-shot conflict resolution, no session
 	ActionGitSync                = "git.sync"               // fetch + merge origin primary into a unit branch
 	ActionGitCheckpoint          = "git.checkpoint"         // bot-owned local checkpoint ref
 	ActionGitCheckpointRestore   = "git.checkpoint_restore" // hard reset a unit worktree to a checkpoint

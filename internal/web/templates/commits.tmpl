@@ -6,6 +6,12 @@
 </p>
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+{{if .OpenCherryPickJob}}
+<div class="flash">
+  Cherry-pick onto <span class="mono">{{.OpenCherryPickJob.Target}}</span> is waiting on a conflict.
+  <a href="/projects/{{.Project}}/cherrypick/{{.OpenCherryPickJob.ID}}">Resolve</a>
+</div>
+{{end}}
 
 <div class="toolbar" id="commits-toolbar">
 <form method="get" action="/projects/{{.Project}}/commits" id="commits-filter" style="display:contents">

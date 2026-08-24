@@ -29,6 +29,7 @@ import (
 	"github.com/acoshift/grokwork/internal/gcs"
 	"github.com/acoshift/grokwork/internal/gdrive"
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/identity"
@@ -108,6 +109,8 @@ type Server struct {
 	verifyDrafts  map[string]string
 	// Test injectable; nil → grokrun.SuggestVerifyCommands (SSE stream hooks optional).
 	suggestVerify func(ctx context.Context, cli grokrun.CLI, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error)
+	// Test injectable; nil → grokrun.SuggestConflictResolution.
+	suggestConflict func(ctx context.Context, cli grokrun.CLI, cwd string, timeout time.Duration, files []string, target, sha string, hooks *grokrun.SuggestStreamHooks) (string, error)
 }
 
 // New builds a hime app with dashboard, history, config, and SSE routes.
@@ -355,6 +358,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("actions", "layout.tmpl", "actions.tmpl")
 	tp.ParseFiles("actions_run", "layout.tmpl", "actions_run.tmpl")
 	tp.ParseFiles("commit_detail", "layout.tmpl", "commit_detail.tmpl", "diff_review.tmpl")
+	tp.ParseFiles("cherrypick_conflict", "layout.tmpl", "cherrypick_conflict.tmpl")
 
 	static, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -483,6 +487,13 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))
 	mux.Handle("POST /projects/{project}/commits/fetch", s.requireMember(hime.Handler(s.postCommitsFetch)))
 	mux.Handle("POST /projects/{project}/commits/cherrypick", s.requireMember(hime.Handler(s.postCommitsCherryPick)))
+	mux.Handle("GET /projects/{project}/cherrypick/{id}", s.requireAuth(hime.Handler(s.cherryPickConflictPage)))
+	mux.Handle("POST /projects/{project}/cherrypick/{id}/file", s.requireMember(hime.Handler(s.postCherryPickFile)))
+	mux.Handle("POST /projects/{project}/cherrypick/{id}/ours", s.requireMember(hime.Handler(s.postCherryPickOurs)))
+	mux.Handle("POST /projects/{project}/cherrypick/{id}/theirs", s.requireMember(hime.Handler(s.postCherryPickTheirs)))
+	mux.Handle("POST /projects/{project}/cherrypick/{id}/continue", s.requireMember(hime.Handler(s.postCherryPickContinue)))
+	mux.Handle("POST /projects/{project}/cherrypick/{id}/abort", s.requireMember(hime.Handler(s.postCherryPickAbort)))
+	mux.Handle("POST /projects/{project}/cherrypick/{id}/suggest", s.requireMember(hime.Handler(s.postCherryPickSuggest)))
 	mux.Handle("GET /projects/{project}/commits/{sha}", s.requireAuth(hime.Handler(s.commitDetail)))
 	mux.Handle("GET /projects/{project}/commits/{sha}/file", s.requireAuth(hime.Handler(s.commitDiffFile)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}", s.requireAuth(hime.Handler(s.prDetail)))
@@ -934,6 +945,9 @@ type pageData struct {
 	CanReviewCommit   bool
 	CherryPickTargets []string
 	CanCherryPick     bool
+	OpenCherryPickJob *gitworktree.Job
+	CherryPickJob     gitworktree.Job
+	CherryPickFiles   []cherryPickFileView
 	// Write UI flags (from config snapshot + session)
 	CanGitHubWrite  bool
 	CanMerge        bool

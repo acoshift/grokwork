@@ -1,0 +1,102 @@
+{{define "content"}}
+<p class="pr-crumb">
+  <a href="/projects/{{.Project}}/commits">← Commits</a>
+  <span class="crumb-sep">/</span>
+  <span class="mono">cherry-pick {{.CherryPickJob.Target}}</span>
+</p>
+<div class="pr-title-row">
+  <h1 id="page-cherrypick-conflict">Conflict on {{.CherryPickJob.Target}}</h1>
+</div>
+<p class="sub">
+  Applying <span class="mono">{{.CherryPickJob.Current}}</span>
+  onto <span class="mono">{{.CherryPickJob.Target}}</span>
+  {{if .CherryPickJob.Picked}} · {{len .CherryPickJob.Picked}} already applied{{end}}
+  {{if .CherryPickJob.Remaining}} · {{len .CherryPickJob.Remaining}} remaining{{end}}
+</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+<div class="pr-cols">
+<div class="pr-main">
+{{range .CherryPickFiles}}
+<div class="section card">
+  <h2 class="mono">{{.Path}}</h2>
+  {{if .Binary}}
+  <p class="muted">Binary file — use Ours or Theirs.</p>
+  {{else if .TooBig}}
+  <p class="muted">File is too large to edit here — use Ours or Theirs.</p>
+  {{else if $.CanCherryPick}}
+  <form method="post" action="/projects/{{$.Project}}/cherrypick/{{$.CherryPickJob.ID}}/file">
+    {{template "csrf" $}}
+    <input type="hidden" name="path" value="{{.Path}}">
+    <textarea name="content" rows="16" class="mono" spellcheck="false">{{.Content}}</textarea>
+    <div class="form-actions"><button type="submit">Save file</button></div>
+  </form>
+  {{else}}
+  <pre class="mono">{{.Content}}</pre>
+  {{end}}
+  {{if $.CanCherryPick}}
+  <form method="post" action="/projects/{{$.Project}}/cherrypick/{{$.CherryPickJob.ID}}/ours" style="display:inline">
+    {{template "csrf" $}}
+    <input type="hidden" name="path" value="{{.Path}}">
+    <button type="submit" class="btn-secondary">Ours (target)</button>
+  </form>
+  <form method="post" action="/projects/{{$.Project}}/cherrypick/{{$.CherryPickJob.ID}}/theirs" style="display:inline">
+    {{template "csrf" $}}
+    <input type="hidden" name="path" value="{{.Path}}">
+    <button type="submit" class="btn-secondary">Theirs (picked commit)</button>
+  </form>
+  {{end}}
+</div>
+{{else}}
+<div class="empty">No unmerged files. Apply &amp; continue, or Abort.</div>
+{{end}}
+</div>
+
+{{template "rail_scrim" $}}
+<aside class="pr-rail" id="page-rail">
+{{template "rail_sheet_head" $}}
+
+{{if .CanCherryPick}}
+<div class="rail-group">
+  <div class="rail-group-title">Resolve</div>
+  <form method="post" action="/projects/{{.Project}}/cherrypick/{{.CherryPickJob.ID}}/suggest">
+    {{template "csrf" .}}
+    <button type="button" class="btn-secondary"
+      data-grok-stream
+      data-url="/projects/{{.Project}}/cherrypick/{{.CherryPickJob.ID}}/suggest"
+      data-title="Suggest conflict resolution"
+      data-subtitle="Editing conflicted files in the checkout"
+      data-reload
+      data-auto-close="900"
+      title="One-shot Grok run; does not create a session">Suggest with Grok</button>
+  </form>
+  <p class="rail-note">Grok writes the working tree only. Review, then Apply. It does not start a session, commit, or push.</p>
+</div>
+
+<div class="rail-group">
+  <div class="rail-group-title">Finish</div>
+  <form method="post" action="/projects/{{.Project}}/cherrypick/{{.CherryPickJob.ID}}/continue" hx-boost="false"
+    data-confirm="Stages the working tree, continues the cherry-pick, and fast-forward-pushes if the rest applies cleanly. It never force-pushes."
+    data-confirm-title="Apply and continue" data-confirm-ok="Apply" data-confirm-danger
+    data-confirm-wait="Continuing cherry-pick…">
+    {{template "csrf" .}}
+    <div class="form-actions"><button type="submit">Apply &amp; continue</button></div>
+  </form>
+  <form method="post" action="/projects/{{.Project}}/cherrypick/{{.CherryPickJob.ID}}/abort" hx-boost="false"
+    data-confirm="Aborts the cherry-pick and deletes the checkout. Nothing is pushed."
+    data-confirm-title="Abort cherry-pick" data-confirm-ok="Abort" data-confirm-danger>
+    {{template "csrf" .}}
+    <div class="form-actions"><button type="submit" class="btn-secondary">Abort</button></div>
+  </form>
+</div>
+{{else}}
+<div class="rail-group">
+  <div class="rail-group-title">Resolve</div>
+  <p class="rail-note">Builder access is required to edit, apply, or abort this cherry-pick.</p>
+</div>
+{{end}}
+
+</aside>
+</div>
+{{end}}

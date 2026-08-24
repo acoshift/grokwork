@@ -766,7 +766,14 @@ func deleteRemoteBranch(ctx context.Context, repo, branch string) error {
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
+	return runGitEnv(ctx, dir, nil, args...)
+}
+
+func runGitEnv(ctx context.Context, dir string, extraEnv []string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -780,6 +787,14 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 }
 
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
+	raw, err := gitOutputRaw(ctx, dir, args...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(raw)), nil
+}
+
+func gitOutputRaw(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -789,9 +804,9 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 		if msg == "" {
 			msg = err.Error()
 		}
-		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+		return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return stdout.Bytes(), nil
 }
 
 func sanitizePathSegment(s string) string {

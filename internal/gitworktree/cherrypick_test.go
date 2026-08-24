@@ -1,9 +1,11 @@
 package gitworktree
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -146,7 +148,7 @@ func TestCherryPickEmptyPatchSkipsAndContinues(t *testing.T) {
 	assertGone(t, checkout)
 }
 
-func TestCherryPickConflictAbortsClean(t *testing.T) {
+func TestCherryPickConflictParks(t *testing.T) {
 	ctx := t.Context()
 	remote, main := setupCherryPickFixture(t)
 
@@ -184,11 +186,229 @@ func TestCherryPickConflictAbortsClean(t *testing.T) {
 	if got := originSHA(t, main, "staging"); got != before {
 		t.Fatalf("remote moved on conflict: %s → %s", before, got)
 	}
-	assertGone(t, checkout)
+	cerr, ok := errors.AsType[*ConflictError](err)
+	if !ok {
+		t.Fatalf("want ConflictError, got %T %v", err, err)
+	}
+	if !slices.Contains(cerr.Files, "README") {
+		t.Fatalf("files=%v", cerr.Files)
+	}
+	if _, err := os.Stat(checkout); err != nil {
+		t.Fatalf("checkout should remain: %v", err)
+	}
+	if !SequencerLive(ctx, checkout) {
+		t.Fatal("expected CHERRY_PICK_HEAD in checkout")
+	}
 	assertMainCleanOnMain(t, main)
 	if _, err := os.Stat(filepath.Join(main, ".git", "CHERRY_PICK_HEAD")); err == nil {
 		t.Fatal("sequencer leaked into main checkout")
 	}
+}
+
+func TestCherryPickAbortDeletes(t *testing.T) {
+	ctx := t.Context()
+	_, main, checkout, before, _ := parkConflict(t)
+	if err := AbortCherryPick(ctx, main, checkout); err != nil {
+		t.Fatal(err)
+	}
+	assertGone(t, checkout)
+	if got := originSHA(t, main, "staging"); got != before {
+		t.Fatalf("abort moved remote: %s", got)
+	}
+	assertMainCleanOnMain(t, main)
+}
+
+func TestCherryPickContinuePushes(t *testing.T) {
+	ctx := t.Context()
+	_, main, checkout, _, conflictSHA := parkConflict(t)
+	if err := WriteWorkingFile(checkout, "README", []byte("mainline\n")); err != nil {
+		t.Fatal(err)
+	}
+	res, err := ContinueCherryPick(ctx, ContinueOpts{
+		Repo: main, Checkout: checkout, Target: "staging",
+		FromSHA: originSHA(t, main, "staging"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Noop || res.ToSHA == "" {
+		t.Fatalf("res=%+v", res)
+	}
+	got := originSHA(t, main, "staging")
+	if got == conflictSHA {
+		// new SHA from -x is expected; content must match
+	}
+	blob, err := gitOutput(ctx, main, "show", "origin/staging:README")
+	if err != nil || strings.TrimSpace(blob) != "mainline" {
+		t.Fatalf("README on staging: %q err=%v", blob, err)
+	}
+	assertGone(t, checkout)
+}
+
+func TestCherryPickContinueStaleTarget(t *testing.T) {
+	ctx := t.Context()
+	remote, main, checkout, from, _ := parkConflict(t)
+	side := filepath.Join(t.TempDir(), "mover")
+	runGitTest(t, t.TempDir(), "clone", remote, side)
+	runGitTest(t, side, "config", "user.name", "test")
+	runGitTest(t, side, "config", "user.email", "test@example.com")
+	runGitTest(t, side, "checkout", "staging")
+	if err := os.WriteFile(filepath.Join(side, "extra.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, side, "add", "extra.txt")
+	runGitTest(t, side, "commit", "-m", "move staging")
+	runGitTest(t, side, "push", "origin", "staging")
+	moved := originSHA(t, main, "staging")
+	if moved == from {
+		t.Fatal("expected staging to move")
+	}
+	if err := WriteWorkingFile(checkout, "README", []byte("mainline\n")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ContinueCherryPick(ctx, ContinueOpts{
+		Repo: main, Checkout: checkout, Target: "staging", FromSHA: from,
+	})
+	if !errors.Is(err, ErrTargetMoved) {
+		t.Fatalf("want ErrTargetMoved, got %v", err)
+	}
+	if got := originSHA(t, main, "staging"); got != moved {
+		t.Fatalf("continue must not push over moved target: %s", got)
+	}
+	if _, err := os.Stat(checkout); err != nil {
+		t.Fatalf("stale continue must leave checkout: %v", err)
+	}
+}
+
+func TestCherryPickContinueOursIsNoopAndCleans(t *testing.T) {
+	ctx := t.Context()
+	_, main, checkout, from, _ := parkConflict(t)
+	if err := CheckoutConflictSide(ctx, checkout, "README", "ours"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := ContinueCherryPick(ctx, ContinueOpts{
+		Repo: main, Checkout: checkout, Target: "staging", FromSHA: from, Current: originSHA(t, main, "staging"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Noop {
+		t.Fatalf("taking ours on the only commit should be a no-op, got %+v", res)
+	}
+	if got := originSHA(t, main, "staging"); got != from {
+		t.Fatalf("ours-continue pushed: %s", got)
+	}
+	assertGone(t, checkout)
+}
+
+func TestCherryPickContinueLeftoverMarkers(t *testing.T) {
+	ctx := t.Context()
+	_, main, checkout, from, _ := parkConflict(t)
+	if err := WriteWorkingFile(checkout, "README", []byte("<<<<<<< ours\nstaging\n=======\nmainline\n>>>>>>> theirs\n")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ContinueCherryPick(ctx, ContinueOpts{
+		Repo: main, Checkout: checkout, Target: "staging", FromSHA: from,
+	})
+	if err == nil || !strings.Contains(err.Error(), "conflict markers") {
+		t.Fatalf("want leftover-marker error, got %v", err)
+	}
+	if !SequencerLive(ctx, checkout) {
+		t.Fatal("leftover markers must not abort the sequencer")
+	}
+	if got := originSHA(t, main, "staging"); got != from {
+		t.Fatalf("remote moved: %s", got)
+	}
+}
+
+func TestCheckoutConflictSideOursTheirs(t *testing.T) {
+	ctx := t.Context()
+	_, main, checkout, from, _ := parkConflict(t)
+	if err := CheckoutConflictSide(ctx, checkout, "README", "ours"); err != nil {
+		t.Fatal(err)
+	}
+	ours, err := ReadWorkingFile(checkout, "README", 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(ours)) != "staging" {
+		t.Fatalf("ours=%q", ours)
+	}
+	if err := CheckoutConflictSide(ctx, checkout, "README", "theirs"); err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := ReadWorkingFile(checkout, "README", 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(theirs)) != "mainline" {
+		t.Fatalf("theirs=%q", theirs)
+	}
+	if !SequencerLive(ctx, checkout) {
+		t.Fatal("ours/theirs must not stage or continue")
+	}
+	if got := originSHA(t, main, "staging"); got != from {
+		t.Fatalf("remote moved: %s", got)
+	}
+}
+
+func TestContainedRelPathRejectsEscape(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if _, err := ContainedRelPath(dir, "../secret"); err == nil {
+		t.Fatal("expected reject")
+	}
+	if _, err := ContainedRelPath(dir, "/etc/passwd"); err == nil {
+		t.Fatal("expected reject abs")
+	}
+	if _, err := ContainedRelPath(dir, "foo/../../secret"); err == nil {
+		t.Fatal("expected reject dotted escape")
+	}
+	got, err := ContainedRelPath(dir, "README")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Join(dir, "README") {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestCherryPickContinueHasNoForce(t *testing.T) {
+	src, err := os.ReadFile("cherrypick_continue.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(src), "--force") {
+		t.Fatal("cherrypick_continue.go must not mention --force")
+	}
+}
+
+func parkConflict(t *testing.T) (remote, main, checkout, fromSHA, conflictSHA string) {
+	t.Helper()
+	ctx := t.Context()
+	remote, main = setupCherryPickFixture(t)
+	side := filepath.Join(t.TempDir(), "side")
+	runGitTest(t, t.TempDir(), "clone", remote, side)
+	runGitTest(t, side, "config", "user.name", "test")
+	runGitTest(t, side, "config", "user.email", "test@example.com")
+	runGitTest(t, side, "checkout", "staging")
+	if err := os.WriteFile(filepath.Join(side, "README"), []byte("staging\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, side, "add", "README")
+	runGitTest(t, side, "commit", "-m", "staging readme")
+	runGitTest(t, side, "push", "origin", "staging")
+	runGitTest(t, main, "fetch", "origin")
+	fromSHA = originSHA(t, main, "staging")
+	conflictSHA = commitOnMain(t, main, "README", "mainline\n", "main readme")
+	checkout = CherryPickCheckoutPath(t.TempDir(), "proj", "conflict")
+	_, err := CherryPick(ctx, CherryPickOpts{
+		Repo: main, Checkout: checkout, Target: "staging", SHAs: []string{conflictSHA},
+	})
+	if _, ok := errors.AsType[*ConflictError](err); !ok {
+		t.Fatalf("park: %v", err)
+	}
+	return remote, main, checkout, fromSHA, conflictSHA
 }
 
 func TestCherryPickRefusesMissingTarget(t *testing.T) {
