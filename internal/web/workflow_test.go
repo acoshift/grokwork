@@ -1279,6 +1279,9 @@ func TestCommitsListAndDetail(t *testing.T) {
 	if strings.Contains(body, `name="n"`) || strings.Contains(body, `for="n"`) {
 		t.Fatal("limit filter must be gone from commits list")
 	}
+	if strings.Contains(body, `id="commits-cherrypick"`) {
+		t.Fatal("cherry-pick must be off when targets are empty")
+	}
 	// Single fixture commit → no pager (page 1 only, no next).
 	if strings.Contains(body, `aria-label="Commits pagination"`) {
 		t.Fatal("pager should not show when only one page of commits")

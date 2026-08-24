@@ -32,7 +32,30 @@
   <input type="hidden" name="ref" value="{{.CommitRef}}">
   <button type="submit" class="btn-secondary" title="git fetch --all --prune; unshallow if needed">Fetch</button>
 </form>
+{{if .CanCherryPick}}
+  <div class="field">
+    <label for="cp-target">Target</label>
+    <select id="cp-target" name="target" form="commits-cherrypick">
+      {{range .CherryPickTargets}}<option value="{{.}}">{{.}}</option>{{end}}
+    </select>
+  </div>
+  <button type="button" id="btn-commits-cherrypick" class="btn-secondary" form="commits-cherrypick" disabled
+    data-confirm="Cherry-picks the selected commits onto the target branch and pushes. It does not start an agent, does not force-push, and does not merge a PR. At most 20 commits."
+    data-confirm-title="Cherry-pick to branch" data-confirm-ok="Cherry-pick" data-confirm-danger
+    data-confirm-select="target" data-confirm-select-label="Target branch">Cherry-pick</button>
+  <button type="button" id="btn-commits-cherrypick-cancel" class="btn-secondary" hidden>Cancel</button>
+  <span id="commits-cherrypick-hint" class="sub" style="margin:0;align-self:center" hidden>Select commits, then Confirm. At most 20.</span>
+{{end}}
 </div>
+{{if .CanCherryPick}}
+<style>
+  #commits-toolbar [hidden],
+  #commits-table .col-cp-select[hidden] { display: none !important; }
+  #commits-table.is-selecting tbody tr { cursor: pointer; }
+  body.is-cp-selecting .m-rows { display: none !important; }
+  body.is-cp-selecting .table-scroll.m-hide { display: block !important; }
+</style>
+{{end}}
 <script>
 (function(){
   var form=document.getElementById('commits-filter');
@@ -64,14 +87,31 @@
     </a>
     {{end}}
   </div>
+  {{if .CanCherryPick}}<form method="post" action="/projects/{{.Project}}/commits/cherrypick" id="commits-cherrypick" hx-boost="false">
+    {{template "csrf" $}}
+    <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    <input type="hidden" name="ref" value="{{.CommitRef}}">
+    <input type="hidden" name="page" value="{{.CommitPage}}">
+  {{end}}
   <div class="table-scroll m-hide">
-  <table>
-    <thead><tr><th>SHA</th><th>Subject</th><th>Author</th><th>Date</th></tr></thead>
+  <table id="commits-table">
+    <thead><tr>
+      {{if $.CanCherryPick}}<th class="col-cp-select" hidden aria-label="Select"></th>{{end}}
+      <th>SHA</th><th>Subject</th><th>Author</th><th>Date</th>
+    </tr></thead>
     <tbody>
     {{range .Commits}}
       <tr>
-        <td class="mono"><a href="/projects/{{$.Project}}/commits/{{.SHA}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.ShortSHA}}</a></td>
-        <td><a class="pr-title" href="/projects/{{$.Project}}/commits/{{.SHA}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.Subject}}</a></td>
+        {{if $.CanCherryPick}}
+        <td class="col-cp-select" hidden>
+          <label class="check" style="min-height:0;margin:0">
+            <input type="checkbox" name="sha" value="{{.SHA}}" disabled>
+          </label>
+        </td>
+        {{end}}
+        <td class="mono"><a class="commit-link" href="/projects/{{$.Project}}/commits/{{.SHA}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.ShortSHA}}</a></td>
+        <td><a class="pr-title commit-link" href="/projects/{{$.Project}}/commits/{{.SHA}}?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}">{{.Subject}}</a></td>
         <td>{{.AuthorName}}</td>
         <td class="mono">{{if not .AuthorDate.IsZero}}{{.AuthorDate.Format "2006-01-02 15:04"}}{{end}}</td>
       </tr>
@@ -79,6 +119,7 @@
     </tbody>
   </table>
   </div>
+  {{if .CanCherryPick}}</form>{{end}}
   {{else if not .Error}}
   <div class="empty">No commits for this ref.</div>
   {{end}}
@@ -112,4 +153,87 @@
   </nav>
   {{end}}
 </div>
+{{if .CanCherryPick}}
+<script>
+(function(){
+  var btn=document.getElementById('btn-commits-cherrypick');
+  if(!btn) return;
+  var cancel=document.getElementById('btn-commits-cherrypick-cancel');
+  var hint=document.getElementById('commits-cherrypick-hint');
+  var mode=false;
+  function bulkForm(){ return document.getElementById('commits-cherrypick'); }
+  function tableEl(){ return document.getElementById('commits-table'); }
+  function cols(){ var f=bulkForm(); return f?f.querySelectorAll('.col-cp-select'):[]; }
+  function boxes(){ var f=bulkForm(); return f?f.querySelectorAll('input[name="sha"]'):[]; }
+  function links(){ var f=bulkForm(); return f?f.querySelectorAll('a.commit-link'):[]; }
+  function countChecked(){
+    var n=0, b=boxes();
+    for(var i=0;i<b.length;i++) if(b[i].checked) n++;
+    return n;
+  }
+  function updateConfirm(){
+    if(!mode) return;
+    var n=countChecked();
+    btn.disabled=n===0;
+    btn.textContent=n>0?('Confirm ('+n+')'):'Confirm';
+  }
+  function setMode(on){
+    mode=on;
+    document.body.classList.toggle('is-cp-selecting', on);
+    var table=tableEl();
+    var c=cols(), b=boxes(), a=links();
+    for(var i=0;i<c.length;i++) c[i].hidden=!on;
+    for(var j=0;j<b.length;j++){
+      b[j].disabled=!on;
+      if(!on) b[j].checked=false;
+    }
+    for(var k=0;k<a.length;k++){
+      var link=a[k];
+      if(on){
+        if(link.hasAttribute('href')){
+          link.setAttribute('data-href', link.getAttribute('href'));
+          link.removeAttribute('href');
+        }
+      }else{
+        var href=link.getAttribute('data-href');
+        if(href){
+          link.setAttribute('href', href);
+          link.removeAttribute('data-href');
+        }
+      }
+    }
+    if(table) table.classList.toggle('is-selecting', on);
+    btn.type=on?'submit':'button';
+    btn.disabled=on?false:!bulkForm();
+    btn.textContent=on?'Confirm':'Cherry-pick';
+    if(cancel) cancel.hidden=!on;
+    if(hint) hint.hidden=!on;
+    updateConfirm();
+  }
+  btn.addEventListener('click', function(e){
+    if(!mode){
+      e.preventDefault();
+      if(!bulkForm()) return;
+      setMode(true);
+    }
+  });
+  if(cancel) cancel.addEventListener('click', function(){ setMode(false); });
+  var table=tableEl();
+  if(table){
+    table.addEventListener('change', function(){ updateConfirm(); });
+    table.addEventListener('click', function(e){
+      if(!mode) return;
+      var tr=e.target.closest('tbody tr');
+      if(!tr || !table.contains(tr)) return;
+      if(e.target.closest('input[name="sha"]') || e.target.closest('label.check')) return;
+      e.preventDefault();
+      var box=tr.querySelector('input[name="sha"]');
+      if(!box || box.disabled) return;
+      box.checked=!box.checked;
+      updateConfirm();
+    });
+  }
+})();
+</script>
+{{end}}
 {{end}}

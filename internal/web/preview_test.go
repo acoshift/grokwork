@@ -55,9 +55,10 @@ func TestPreviewServer(t *testing.T) {
 			// unmapped direct member on the default fallback, and an inert
 			// capability map (no membership at all).
 			"webapp": {
-				Path:           mkProj("webapp"),
-				AllowedUserIDs: []string{"111111111111111111", "222222222222222222"},
-				SafeTeamMode:   new(true),
+				Path:              mkProj("webapp"),
+				AllowedUserIDs:    []string{"111111111111111111", "222222222222222222"},
+				SafeTeamMode:      new(true),
+				CherryPickTargets: []string{"staging", "production"},
 				// SLA targets so the case board shows breached / on-hold chips
 				// and the Workflow tab renders a filled-in form.
 				SLA: map[string]config.SLATarget{

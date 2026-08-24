@@ -57,6 +57,7 @@ cp config.example.json config.json
 | `projects.*.repoFetchIntervalMinutes` | Idle background `git fetch` interval for the main checkout (default `5`; `0` disables). Editable on the project settings page. New worktrees always fetch with a hardcoded 5s throttle. |
 | `projects.*.directToPrimary` | When true, new sessions use **No-PR / direct-to-primary** ship: worktree per session, bot fast-forwards primary and pushes (default false / PR mode). Editable on project settings. Sticky per thread after first run. |
 | `projects.*.primaryBranch` | Optional short branch name grokwork treats as this project's primary (worktree base, direct ship, `/sync`, commits default, deploy empty allowlist, Actions tip). Empty = `origin/HEAD` + common names. May differ from GitHub's default. Single path component only. Editable on project Workflow settings. |
+| `projects.*.cherryPickTargets` | Short branch names the commits UI may cherry-pick onto (typically `staging`, `production`). Empty = feature off. The project primary is never a valid target even if listed. Single path component each, at most 8. Editable on project Workflow settings. |
 | `resumeActiveRuns` | Persist in-flight runs under `data/runs/` and auto-resume after restart (default `true`). Editable on the Config page |
 | `autoFixCI` / `autoFixCIMax` | Auto-queue CI fixes when checks fail (default off; max attempts per PR, default 2) |
 | `maxConcurrentRuns` | Host-wide cap on simultaneous agent runs (nil/`0` = unlimited). Editable on the Config page |

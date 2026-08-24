@@ -263,6 +263,12 @@ type ProjectItem struct {
 	PrimaryBranch string
 	// PrimaryBranchInvalid is true when raw PrimaryBranch fails validation.
 	PrimaryBranchInvalid bool
+	// CherryPickTargetsText is the Workflow textarea (raw, one name per line).
+	CherryPickTargetsText string
+	// CherryPickTargets is the effective allowlist (invalid names omitted).
+	CherryPickTargets []string
+	// CherryPickTargetsInvalid is true when any stored name fails validation.
+	CherryPickTargetsInvalid bool
 	// SLA is one settings-form row per severity (SLASeverities order); empty
 	// minutes mean that clock has no target. SLAConfigured is true when at
 	// least one row has one.
@@ -767,6 +773,17 @@ func Load() (*Config, error) {
 				fmt.Fprintf(os.Stderr,
 					"[warn] project %q: primaryBranch %q is invalid (%v) and will be ignored until fixed in Workflow settings\n",
 					name, raw, err)
+			}
+		}
+		for _, t := range pc.CherryPickTargets {
+			t = strings.TrimSpace(t)
+			if t == "" {
+				continue
+			}
+			if err := ValidatePrimaryBranchName(t); err != nil {
+				fmt.Fprintf(os.Stderr,
+					"[warn] project %q: cherryPickTargets %q is invalid (%v) and will be ignored until fixed in Workflow settings\n",
+					name, t, err)
 			}
 		}
 		// ClickUp customIdPrefix colliding with Linear teamKey: bare PREFIX-N stays
@@ -1407,12 +1424,15 @@ func (c *Config) Snapshot() Snapshot {
 				raw := strings.TrimSpace(pc.PrimaryBranch)
 				return raw != "" && ValidatePrimaryBranchName(raw) != nil
 			}(),
-			SLA:                     slaItems(pc.SLA),
-			SLAConfigured:           slaConfigured(pc.SLA),
-			CapabilityByUser:        capabilityMapItems(pc.CapabilityByUser),
-			UnmappedUserIDs:         unmappedIDs(pc.AllowedUserIDs, pc.CapabilityByUser),
-			CapabilityTemplateNames: capabilityTemplateNames(pc.CapabilityTemplates),
-			VerifyCommandsText:      FormatVerifyCommandsText(pc.VerifyCommands),
+			CherryPickTargetsText:    strings.Join(pc.CherryPickTargets, "\n"),
+			CherryPickTargets:        effectiveCherryPickTargets(pc.CherryPickTargets),
+			CherryPickTargetsInvalid: cherryPickTargetsInvalid(pc.CherryPickTargets),
+			SLA:                      slaItems(pc.SLA),
+			SLAConfigured:            slaConfigured(pc.SLA),
+			CapabilityByUser:         capabilityMapItems(pc.CapabilityByUser),
+			UnmappedUserIDs:          unmappedIDs(pc.AllowedUserIDs, pc.CapabilityByUser),
+			CapabilityTemplateNames:  capabilityTemplateNames(pc.CapabilityTemplates),
+			VerifyCommandsText:       FormatVerifyCommandsText(pc.VerifyCommands),
 		}
 		item.DeployEnabled, item.DeployManifestPath, item.DeployEnvs = deployItems(pc.Deploy)
 		if pc.Actions != nil && len(pc.Actions.DispatchRules) > 0 {

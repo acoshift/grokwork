@@ -216,6 +216,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.setProjectMode":              "/config/projects/mode",
 		"config.setProjectCaseKey":           "/config/projects/case-key",
 		"config.setProjectPrimaryBranch":     "/config/projects/primary-branch",
+		"config.setProjectCherryPickTargets": "/config/projects/cherry-pick-targets",
 		"config.setProjectSLA":               "/config/projects/sla",
 		"config.addProjectMember":            "/config/projects/members",
 		"config.setProjectCapabilityUser":    "/config/projects/capabilities/users",
@@ -481,6 +482,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postActionsDispatch))))
 	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))
 	mux.Handle("POST /projects/{project}/commits/fetch", s.requireMember(hime.Handler(s.postCommitsFetch)))
+	mux.Handle("POST /projects/{project}/commits/cherrypick", s.requireMember(hime.Handler(s.postCommitsCherryPick)))
 	mux.Handle("GET /projects/{project}/commits/{sha}", s.requireAuth(hime.Handler(s.commitDetail)))
 	mux.Handle("GET /projects/{project}/commits/{sha}/file", s.requireAuth(hime.Handler(s.commitDiffFile)))
 	mux.Handle("GET /prs/{owner}/{repo}/{n}", s.requireAuth(hime.Handler(s.prDetail)))
@@ -619,6 +621,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/mode", s.requireAdmin(hime.Handler(s.setProjectMode)))
 	mux.Handle("POST /config/projects/case-key", s.requireAdmin(hime.Handler(s.setProjectCaseKey)))
 	mux.Handle("POST /config/projects/primary-branch", s.requireAdmin(hime.Handler(s.setProjectPrimaryBranch)))
+	mux.Handle("POST /config/projects/cherry-pick-targets", s.requireAdmin(hime.Handler(s.setProjectCherryPickTargets)))
 	mux.Handle("POST /config/projects/sla", s.requireAdmin(hime.Handler(s.setProjectSLA)))
 	mux.Handle("POST /config/projects/members", s.requireAdmin(hime.Handler(s.addProjectMember)))
 	mux.Handle("POST /config/projects/verify", s.requireAdmin(hime.Handler(s.setProjectVerify)))
@@ -926,9 +929,11 @@ type pageData struct {
 	CommitHasNext bool
 	// 1-based position of the first/last row on this page within the full
 	// log (total is unknown — git log has no cheap count). Zero when empty.
-	CommitRangeStart int
-	CommitRangeEnd   int
-	CanReviewCommit  bool
+	CommitRangeStart  int
+	CommitRangeEnd    int
+	CanReviewCommit   bool
+	CherryPickTargets []string
+	CanCherryPick     bool
 	// Write UI flags (from config snapshot + session)
 	CanGitHubWrite  bool
 	CanMerge        bool
@@ -1751,6 +1756,26 @@ func (s *Server) setProjectPrimaryBranch(ctx *hime.Context) error {
 	msg := fmt.Sprintf("Updated primary branch for project %q", name)
 	if strings.TrimSpace(branch) == "" {
 		msg = fmt.Sprintf("Cleared primary branch override for project %q (using origin/HEAD heuristic)", name)
+	}
+	return s.projectConfigTabRedirect(ctx, name, "workflow", msg, err)
+}
+
+func (s *Server) setProjectCherryPickTargets(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	var lines []string
+	for line := range strings.SplitSeq(ctx.PostFormValue("cherryPickTargets"), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	err := s.cfg.SetProjectCherryPickTargets(name, lines)
+	s.auditAction(ctx, audit.ActionConfigSetProjectCherryPickTargets, err, map[string]any{
+		"name": name, "n": len(lines),
+	})
+	msg := fmt.Sprintf("Updated cherry-pick targets for project %q", name)
+	if len(lines) == 0 {
+		msg = fmt.Sprintf("Cleared cherry-pick targets for project %q", name)
 	}
 	return s.projectConfigTabRedirect(ctx, name, "workflow", msg, err)
 }

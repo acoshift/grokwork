@@ -65,6 +65,30 @@
       new worktrees use the configured primary immediately.
     </p>
   </div>
+
+  <div style="border-top:1px solid var(--border); margin-top:1.1rem; padding-top:1rem;">
+    <form method="post" action="{{route "config.setProjectCherryPickTargets"}}" id="project-cherry-pick-targets">
+      {{template "csrf" $}}
+      <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+      <div>
+        <label for="project-cherry-pick-targets-input">Cherry-pick targets</label>
+        <textarea id="project-cherry-pick-targets-input" name="cherryPickTargets" rows="4" class="mono"
+                  placeholder="staging&#10;production" spellcheck="false">{{.ProjectItem.CherryPickTargetsText}}</textarea>
+        {{if .ProjectItem.CherryPickTargetsInvalid}}
+        <p class="sub" style="margin:0.35rem 0 0; color:var(--danger, #b00); font-size:0.8rem">
+          One or more stored names are invalid and are ignored until fixed.
+        </p>
+        {{end}}
+      </div>
+      <div class="form-actions"><button type="submit">Save cherry-pick targets</button></div>
+    </form>
+    <p class="sub" style="margin:0.5rem 0 0; font-size:0.8rem">
+      Long-lived branches the commits UI may cherry-pick onto (one name per line). Empty turns the
+      button off. The project <strong>primary</strong> is never a valid target even if listed &mdash;
+      that line is Direct-to-primary / pull requests. Single branch names only (no
+      <span class="mono">/</span>, no <span class="mono">origin/</span>). At most 8.
+    </p>
+  </div>
 </div>
 
 <div class="section card" id="project-agent-mcp">

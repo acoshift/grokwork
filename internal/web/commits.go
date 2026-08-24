@@ -1,10 +1,13 @@
 package web
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -106,6 +109,7 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 	if d.Error == "" && listErr != nil {
 		d.Error = listErr.Error()
 	}
+	s.attachCherryPick(ctx, &d, project, repoPath)
 	return s.viewPage(ctx, "commits", d)
 }
 
@@ -237,6 +241,7 @@ func (s *Server) commitDetail(ctx *hime.Context) error {
 		}
 	}
 	d.CanReviewCommit = d.CanStartSession
+	s.attachCherryPick(ctx, &d, project, path)
 	s.attachModelPicker(&d, project, s.cfg.EffectiveReviewModel())
 	d.Flash = strings.TrimSpace(ctx.FormValue("ok"))
 	if e := strings.TrimSpace(ctx.FormValue("err")); e != "" {
@@ -374,4 +379,147 @@ func shortOr(a, b string) string {
 		return a
 	}
 	return b
+}
+
+func (s *Server) attachCherryPick(ctx *hime.Context, d *pageData, project, repoPath string) {
+	d.CherryPickTargets = s.effectiveCherryPickTargets(ctx, project, repoPath)
+	userID, role := s.sessionIdentity(ctx)
+	memberOK := !d.AuthEnabled || config.RoleAtLeast(role, config.WebRoleMember)
+	d.CanCherryPick = len(d.CherryPickTargets) > 0 && memberOK && s.cfg.ResolveCapabilities(project, userID).CanShip()
+}
+
+func (s *Server) postCommitsCherryPick(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return ctx.Status(http.StatusForbidden).Error(err.Error())
+	}
+	owner := strings.TrimSpace(ctx.PostFormValue("owner"))
+	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
+	ref := strings.TrimSpace(ctx.PostFormValue("ref"))
+	page := strings.TrimSpace(ctx.PostFormValue("page"))
+	target := strings.TrimSpace(ctx.PostFormValue("target"))
+	shas := ctx.Request.PostForm["sha"]
+
+	detail := map[string]any{
+		"project": project, "owner": owner, "repo": repo, "target": target,
+	}
+	userID, _ := s.sessionIdentity(ctx)
+	if !s.cfg.ResolveCapabilities(project, userID).CanShip() {
+		denied := errors.New("not allowed to cherry-pick for this project")
+		s.auditAction(ctx, audit.ActionGitCherryPick, denied, detail)
+		return ctx.Status(http.StatusForbidden).Error("forbidden: " + denied.Error())
+	}
+
+	root, err := s.projectPath(project)
+	if err != nil {
+		return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, "", err)
+	}
+	catalog, _ := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
+	active, pickErr := config.ResolveRepoPicker(catalog, owner, repo)
+	if pickErr != nil {
+		return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, "", pickErr)
+	}
+	path, err := gitworktree.ResolveLocalRepo(ctx.Context(), root, active.Owner, active.Repo)
+	if err != nil {
+		return s.cherryPickRedirect(ctx, project, active.Owner, active.Repo, ref, page, shas, "", err)
+	}
+	owner, repo = active.Owner, active.Repo
+	detail["owner"] = owner
+	detail["repo"] = repo
+
+	allowed := s.effectiveCherryPickTargets(ctx, project, path)
+	if target == "" || !slices.Contains(allowed, target) {
+		denied := errors.New("cherry-pick target is not allowlisted")
+		s.auditAction(ctx, audit.ActionGitCherryPick, denied, detail)
+		return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, "", denied)
+	}
+
+	id := cherryPickNonce()
+	checkout := gitworktree.CherryPickCheckoutPath(s.cfg.DataDir, project, id)
+	res, err := gitworktree.CherryPick(ctx.Context(), gitworktree.CherryPickOpts{
+		Repo:             path,
+		Checkout:         checkout,
+		Target:           target,
+		SHAs:             shas,
+		PreferredPrimary: s.cfg.ProjectPrimaryBranch(project),
+	})
+	if res.Picked != nil {
+		detail["picked"] = res.Picked
+	}
+	if res.Skipped != nil {
+		detail["skipped"] = res.Skipped
+	}
+	if res.FromSHA != "" {
+		detail["from"] = shortSHA(res.FromSHA)
+	}
+	if res.ToSHA != "" {
+		detail["to"] = shortSHA(res.ToSHA)
+	}
+	detail["noop"] = res.Noop
+	s.auditAction(ctx, audit.ActionGitCherryPick, err, detail)
+	if err != nil {
+		return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, "", err)
+	}
+	okMsg := fmt.Sprintf("All selected commits are already on %s. Nothing pushed.", target)
+	if !res.Noop {
+		okMsg = fmt.Sprintf("Cherry-picked %d commit(s) onto %s (%s → %s).",
+			len(res.Picked), target, shortSHA(res.FromSHA), shortSHA(res.ToSHA))
+	}
+	return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, okMsg, nil)
+}
+
+func (s *Server) effectiveCherryPickTargets(ctx *hime.Context, project, repoPath string) []string {
+	targets := slices.Clone(s.cfg.ProjectCherryPickTargets(project))
+	if repoPath != "" && gitworktree.IsRepo(repoPath) {
+		pref := s.cfg.ProjectPrimaryBranch(project)
+		if name, _, err := gitworktree.ResolvePrimaryBranch(ctx.Context(), repoPath, pref); err == nil {
+			targets = slices.DeleteFunc(targets, func(t string) bool { return t == name })
+		}
+	}
+	return targets
+}
+
+func (s *Server) cherryPickRedirect(ctx *hime.Context, project, owner, repo, ref, page string, shas []string, okMsg string, err error) error {
+	q := url.Values{}
+	if owner != "" {
+		q.Set("owner", owner)
+	}
+	if repo != "" {
+		q.Set("repo", repo)
+	}
+	if err != nil {
+		q.Set("err", err.Error())
+	} else if okMsg != "" {
+		q.Set("ok", okMsg)
+	}
+	hexSHAs := make([]string, 0, len(shas))
+	for _, sha := range shas {
+		if gitworktree.IsHexSHA(sha) {
+			hexSHAs = append(hexSHAs, sha)
+		}
+	}
+	var u string
+	if len(hexSHAs) == 1 {
+		u = fmt.Sprintf("/projects/%s/commits/%s", url.PathEscape(project), url.PathEscape(hexSHAs[0]))
+	} else {
+		if ref != "" {
+			q.Set("ref", ref)
+		}
+		if page != "" && page != "1" {
+			q.Set("page", page)
+		}
+		u = fmt.Sprintf("/projects/%s/commits", url.PathEscape(project))
+	}
+	if enc := q.Encode(); enc != "" {
+		u += "?" + enc
+	}
+	return ctx.Redirect(u)
+}
+
+func cherryPickNonce() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "0"
+	}
+	return hex.EncodeToString(b[:])
 }

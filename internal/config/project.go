@@ -66,6 +66,10 @@ type ProjectConfig struct {
 	// allowlist, Actions tip). Empty = origin/HEAD heuristic. Single path
 	// component only; never include "origin/" or refs/ prefixes.
 	PrimaryBranch string `json:"primaryBranch,omitempty"`
+	// CherryPickTargets are short branch names the commits UI may cherry-pick
+	// onto (typically staging/production). Empty = feature off. Primary is
+	// never a valid runtime target even if listed. Single path component each.
+	CherryPickTargets []string `json:"cherryPickTargets,omitempty"`
 	// SLA are this project's per-severity case deadlines, keyed by severity
 	// (see sla.go). Absent or empty means this project has no SLAs, which is
 	// deliberately different from having ones nobody can meet.
@@ -201,6 +205,10 @@ func (m *ProjectsMap) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("projects[%q]: storage: %w", name, err)
 		}
 		pc.Storage = st
+		pc.CherryPickTargets = cleanIDList(pc.CherryPickTargets)
+		if len(pc.CherryPickTargets) == 0 {
+			pc.CherryPickTargets = nil
+		}
 		out[name] = pc
 	}
 	*m = out
@@ -226,6 +234,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		DefaultMode              string                  `json:"defaultMode,omitempty"`
 		CaseKey                  string                  `json:"caseKey,omitempty"`
 		PrimaryBranch            string                  `json:"primaryBranch,omitempty"`
+		CherryPickTargets        []string                `json:"cherryPickTargets,omitempty"`
 		SLA                      map[string]SLATarget    `json:"sla,omitempty"`
 		CapabilityTemplates      map[string]Capabilities `json:"capabilityTemplates,omitempty"`
 		CapabilityByUser         map[string]string       `json:"capabilityByUser,omitempty"`
@@ -255,6 +264,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			DefaultMode:              pc.DefaultMode,
 			CaseKey:                  pc.CaseKey,
 			PrimaryBranch:            pc.PrimaryBranch,
+			CherryPickTargets:        slices.Clone(pc.CherryPickTargets),
 			SLA:                      cloneSLA(pc.SLA),
 			CapabilityTemplates:      cloneCapabilitiesMap(pc.CapabilityTemplates),
 			CapabilityByUser:         cloneStringMap(pc.CapabilityByUser),
@@ -315,6 +325,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			DefaultMode:              v.DefaultMode,
 			CaseKey:                  v.CaseKey,
 			PrimaryBranch:            v.PrimaryBranch,
+			CherryPickTargets:        slices.Clone(v.CherryPickTargets),
 			SLA:                      cloneSLA(v.SLA),
 			CapabilityTemplates:      cloneCapabilitiesMap(v.CapabilityTemplates),
 			CapabilityByUser:         cloneStringMap(v.CapabilityByUser),
@@ -699,6 +710,87 @@ func (c *Config) SetProjectPrimaryBranch(name, branch string) error {
 		return fmt.Errorf("project %q not found", name)
 	}
 	pc.PrimaryBranch = branch
+	c.Projects[name] = pc
+	return c.saveLocked()
+}
+
+// MaxCherryPickTargets is the max length of projects.*.cherryPickTargets.
+const MaxCherryPickTargets = 8
+
+func effectiveCherryPickTargets(raw []string) []string {
+	var out []string
+	for _, n := range raw {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if ValidatePrimaryBranchName(n) != nil {
+			continue
+		}
+		if slices.Contains(out, n) {
+			continue
+		}
+		out = append(out, n)
+		if len(out) >= MaxCherryPickTargets {
+			break
+		}
+	}
+	return out
+}
+
+func cherryPickTargetsInvalid(raw []string) bool {
+	for _, n := range raw {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if ValidatePrimaryBranchName(n) != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// ProjectCherryPickTargets returns valid target branch names (empty = off).
+func (c *Config) ProjectCherryPickTargets(name string) []string {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return nil
+	}
+	return effectiveCherryPickTargets(pc.CherryPickTargets)
+}
+
+// SetProjectCherryPickTargets replaces the allowlist and persists. Empty clears
+// (feature off). Every non-empty name must pass ValidatePrimaryBranchName.
+func (c *Config) SetProjectCherryPickTargets(name string, targets []string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	cleaned := cleanIDList(targets)
+	if len(cleaned) > MaxCherryPickTargets {
+		return fmt.Errorf("at most %d cherry-pick targets", MaxCherryPickTargets)
+	}
+	for _, t := range cleaned {
+		if err := ValidatePrimaryBranchName(t); err != nil {
+			return fmt.Errorf("cherry-pick target %q: %w", t, err)
+		}
+	}
+	if len(cleaned) == 0 {
+		cleaned = nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	pc.CherryPickTargets = cleaned
 	c.Projects[name] = pc
 	return c.saveLocked()
 }

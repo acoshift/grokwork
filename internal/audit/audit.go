@@ -61,6 +61,7 @@ const (
 	ActionCommitReviewStart      = "commit.review.start"
 	ActionPRReviewStart          = "pr.review.start" // agentic PR review → PR comment
 	ActionGitFetch               = "git.fetch"
+	ActionGitCherryPick          = "git.cherrypick"         // cherry-pick SHAs onto an allowlisted target branch and push
 	ActionGitSync                = "git.sync"               // fetch + merge origin primary into a unit branch
 	ActionGitCheckpoint          = "git.checkpoint"         // bot-owned local checkpoint ref
 	ActionGitCheckpointRestore   = "git.checkpoint_restore" // hard reset a unit worktree to a checkpoint
@@ -86,11 +87,12 @@ const (
 	// GitHub Actions (workflow_dispatch from the web Actions page).
 	ActionActionsDispatch = "actions.dispatch"
 	// Project file storage (GCS). Local staging paths never enter details.
-	ActionStorageUpload                 = "storage.upload"
-	ActionStorageDelete                 = "storage.delete"
-	ActionConfigSetProjectStorage       = "config.set_project_storage"
-	ActionConfigSetGlobalStorage        = "config.set_global_storage"
-	ActionConfigSetProjectPrimaryBranch = "config.set_project_primary_branch"
+	ActionStorageUpload                     = "storage.upload"
+	ActionStorageDelete                     = "storage.delete"
+	ActionConfigSetProjectStorage           = "config.set_project_storage"
+	ActionConfigSetGlobalStorage            = "config.set_global_storage"
+	ActionConfigSetProjectPrimaryBranch     = "config.set_project_primary_branch"
+	ActionConfigSetProjectCherryPickTargets = "config.set_project_cherry_pick_targets"
 	// Agent control plane (markers + MCP). source=agent|agent-marker in detail.
 	ActionAgentSessionDone    = "agent.session.done"
 	ActionAgentSessionAbandon = "agent.session.abandon"

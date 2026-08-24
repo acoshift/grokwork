@@ -56,6 +56,29 @@
   {{end}}
 </div>
 
+{{if .CanCherryPick}}
+<div class="rail-group" id="commit-cherrypick-actions">
+  <div class="rail-group-title">Cherry-pick</div>
+  <form method="post" action="/projects/{{.Project}}/commits/cherrypick" class="grok-dispatch" hx-boost="false"
+    data-confirm="Cherry-picks this commit onto the target branch and pushes. It does not start an agent, does not force-push, and does not merge a PR."
+    data-confirm-title="Cherry-pick to branch" data-confirm-ok="Cherry-pick" data-confirm-danger
+    data-confirm-select="target" data-confirm-select-label="Target branch">
+    {{template "csrf" .}}
+    <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    <input type="hidden" name="sha" value="{{.Commit.SHA}}">
+    <div class="field">
+      <label for="commit-cp-target">Target branch</label>
+      <select id="commit-cp-target" name="target">
+        {{range .CherryPickTargets}}<option value="{{.}}">{{.}}</option>{{end}}
+      </select>
+    </div>
+    <div class="form-actions"><button type="submit">Cherry-pick</button></div>
+  </form>
+  <p class="rail-note">Applies this commit onto the target branch and pushes. It does not start an agent, does not force-push, and does not merge a PR.</p>
+</div>
+{{end}}
+
 </aside>
 </div>{{/* /pr-cols */}}
 

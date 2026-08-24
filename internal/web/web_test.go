@@ -2443,6 +2443,8 @@ func TestProjectConfigPage(t *testing.T) {
 			`id="project-agent-mcp"`,
 			`name="primaryBranch"`,
 			`id="project-primary-branch"`,
+			`name="cherryPickTargets"`,
+			`id="project-cherry-pick-targets"`,
 			`id="project-verify"`,
 			"go test ./...",
 			"make lint",
