@@ -33,12 +33,6 @@
   <button type="submit" class="btn-secondary" title="git fetch --all --prune; unshallow if needed">Fetch</button>
 </form>
 {{if .CanCherryPick}}
-  <div class="field" id="commits-cherrypick-target" hidden>
-    <label for="cp-target">Target</label>
-    <select id="cp-target" name="target" form="commits-cherrypick">
-      {{range .CherryPickTargets}}<option value="{{.}}">{{.}}</option>{{end}}
-    </select>
-  </div>
   <button type="button" id="btn-commits-cherrypick" class="btn-secondary" form="commits-cherrypick"{{if not .Commits}} disabled{{end}}
     data-confirm="Cherry-picks the selected commits onto the target branch and pushes. It does not start an agent, does not force-push, and does not merge a PR. At most 20 commits."
     data-confirm-title="Cherry-pick to branch" data-confirm-ok="Cherry-pick" data-confirm-danger
@@ -93,6 +87,8 @@
     <input type="hidden" name="repo" value="{{.ActiveRepo}}">
     <input type="hidden" name="ref" value="{{.CommitRef}}">
     <input type="hidden" name="page" value="{{.CommitPage}}">
+    {{/* Hidden: the confirm modal clones its options. Scripting off posts the first target. */}}
+    <select name="target" hidden>{{range $.CherryPickTargets}}<option value="{{.}}">{{.}}</option>{{end}}</select>
   {{end}}
   <div class="table-scroll m-hide">
   <table id="commits-table">
@@ -160,7 +156,6 @@
   if(!btn) return;
   var cancel=document.getElementById('btn-commits-cherrypick-cancel');
   var hint=document.getElementById('commits-cherrypick-hint');
-  var targetField=document.getElementById('commits-cherrypick-target');
   var mode=false;
   function bulkForm(){ return document.getElementById('commits-cherrypick'); }
   function tableEl(){ return document.getElementById('commits-table'); }
@@ -209,7 +204,6 @@
     btn.textContent=on?'Confirm':'Cherry-pick';
     if(cancel) cancel.hidden=!on;
     if(hint) hint.hidden=!on;
-    if(targetField) targetField.hidden=!on;
     updateConfirm();
   }
   btn.addEventListener('click', function(e){

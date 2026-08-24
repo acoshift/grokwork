@@ -37,7 +37,7 @@ func TestCommitsCherryPickMarkupWhenConfigured(t *testing.T) {
 		`>production</option>`,
 		`id="commits-table"`,
 		`id="btn-commits-cherrypick"`,
-		`id="commits-cherrypick-target" hidden`,
+		`<select name="target" hidden>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list missing %q", want)
@@ -55,7 +55,7 @@ func TestCommitsCherryPickMarkupWhenConfigured(t *testing.T) {
 	detail := getUnauthed(t, srv, "/projects/proj/commits/"+sha+"?owner=acme&repo=app")
 	for _, want := range []string{
 		`id="commit-cherrypick-actions"`,
-		`name="target"`,
+		`<select name="target" hidden>`,
 		`data-confirm-select="target"`,
 		`name="sha"`,
 	} {

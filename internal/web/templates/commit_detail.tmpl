@@ -67,12 +67,8 @@
     <input type="hidden" name="owner" value="{{.ActiveOwner}}">
     <input type="hidden" name="repo" value="{{.ActiveRepo}}">
     <input type="hidden" name="sha" value="{{.Commit.SHA}}">
-    <div class="field">
-      <label for="commit-cp-target">Target branch</label>
-      <select id="commit-cp-target" name="target">
-        {{range .CherryPickTargets}}<option value="{{.}}">{{.}}</option>{{end}}
-      </select>
-    </div>
+    {{/* Hidden: the confirm modal clones its options. Scripting off posts the first target. */}}
+    <select name="target" hidden>{{range .CherryPickTargets}}<option value="{{.}}">{{.}}</option>{{end}}</select>
     <div class="form-actions"><button type="submit">Cherry-pick</button></div>
   </form>
   <p class="rail-note">Applies this commit onto the target branch and pushes. It does not start an agent, does not force-push, and does not merge a PR.</p>
