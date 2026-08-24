@@ -41,6 +41,7 @@ func TestCommitsCherryPickMarkupWhenConfigured(t *testing.T) {
 		`id="commits-cherrypick-hint"`,
 		`.toolbar .sub {`,
 		`align-self: end`,
+		`body.is-cp-selecting #commits-filter > *`,
 		`<select name="target" hidden>`,
 	} {
 		if !strings.Contains(body, want) {
