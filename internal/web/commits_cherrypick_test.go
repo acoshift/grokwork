@@ -37,6 +37,7 @@ func TestCommitsCherryPickMarkupWhenConfigured(t *testing.T) {
 		`>production</option>`,
 		`id="commits-table"`,
 		`id="btn-commits-cherrypick"`,
+		`id="commits-cherrypick-target" hidden`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list missing %q", want)
