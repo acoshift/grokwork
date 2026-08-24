@@ -36,7 +36,8 @@
   <button type="button" id="btn-commits-cherrypick" class="btn-secondary" form="commits-cherrypick"{{if not .Commits}} disabled{{end}}
     data-confirm="Cherry-picks the selected commits onto the target branch and pushes. It does not start an agent, does not force-push, and does not merge a PR. At most 20 commits."
     data-confirm-title="Cherry-pick to branch" data-confirm-ok="Cherry-pick" data-confirm-danger
-    data-confirm-select="target" data-confirm-select-label="Target branch">Cherry-pick</button>
+    data-confirm-select="target" data-confirm-select-label="Target branch"
+    data-confirm-wait="Cherry-picking onto the target branch…">Cherry-pick</button>
   <button type="button" id="btn-commits-cherrypick-cancel" class="btn-secondary" hidden>Cancel</button>
   <span id="commits-cherrypick-hint" class="sub" style="margin:0;align-self:center" hidden>Select commits, then Confirm. At most 20.</span>
 {{end}}

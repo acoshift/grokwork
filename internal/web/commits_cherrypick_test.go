@@ -33,6 +33,7 @@ func TestCommitsCherryPickMarkupWhenConfigured(t *testing.T) {
 		`name="sha"`,
 		`name="target"`,
 		`data-confirm-select="target"`,
+		`data-confirm-wait="Cherry-picking onto the target branch…"`,
 		`>staging</option>`,
 		`>production</option>`,
 		`id="commits-table"`,
@@ -57,6 +58,7 @@ func TestCommitsCherryPickMarkupWhenConfigured(t *testing.T) {
 		`id="commit-cherrypick-actions"`,
 		`<select name="target" hidden>`,
 		`data-confirm-select="target"`,
+		`data-confirm-wait="Cherry-picking onto the target branch…"`,
 		`name="sha"`,
 	} {
 		if !strings.Contains(detail, want) {

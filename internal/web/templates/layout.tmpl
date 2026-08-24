@@ -2040,6 +2040,11 @@
       margin-top: 1.1rem;
     }
     .gw-confirm-modal.is-alert #gw-confirm-cancel { display: none; }
+    /* data-confirm-wait: keep the dialog up while the underlying form POSTs
+       (native navigation, e.g. cherry-pick). Cancel/Esc/backdrop are ignored. */
+    .gw-confirm-modal.is-busy { cursor: progress; }
+    .gw-confirm-modal.is-busy .gw-confirm-field { pointer-events: none; opacity: 0.7; }
+    .gw-confirm-modal.is-busy #gw-confirm-cancel { opacity: 0.5; }
     /* Destructive OK: the app's only solid-red button — reserved for the
        moment of highest consequence. Follows the primary button's dark-mode
        inversion (light fill, near-black text). */
@@ -5650,7 +5655,8 @@
     // window.confirm cannot be used under hx-boost). appConfirm/appAlert
     // resolve a Promise; declaratively, forms (or a specific submit button,
     // e.g. one of several actions) carry data-confirm plus optional
-    // data-confirm-title / data-confirm-ok / data-confirm-danger.
+    // data-confirm-title / data-confirm-ok / data-confirm-danger /
+    // data-confirm-wait (keep the dialog open with a spinner while the form POSTs).
     var dlg = document.getElementById("gw-confirm-modal");
     if (!dlg) return;
     var dlgForm = dlg.querySelector("form");
@@ -5662,6 +5668,8 @@
     var fieldLabel = document.getElementById("gw-confirm-field-label");
     var fieldSelect = document.getElementById("gw-confirm-select");
     var pending = null; // resolver of the currently open dialog's Promise
+    var waitOnOk = false;
+    var waitMessage = "";
 
     // quietSelectFocus reports whether focusing a <select> merely focuses it.
     // Evaluated per call, not once: a media query result can change under the
@@ -5708,6 +5716,14 @@
       }
       var danger = !!opts.danger;
       var isAlert = kind === "alert";
+      waitOnOk = !isAlert && !!opts.wait;
+      waitMessage = (opts.waitMessage || "").trim();
+      dlg.classList.remove("is-busy");
+      dlg.removeAttribute("aria-busy");
+      okBtn.disabled = false;
+      okBtn.classList.remove("is-loading");
+      cancelBtn.disabled = false;
+      fieldSelect.disabled = false;
       dlg.classList.toggle("is-danger", danger);
       dlg.classList.toggle("is-alert", isAlert);
       titleEl.textContent = opts.title || (isAlert ? "Heads up" : "Are you sure?");
@@ -5745,6 +5761,28 @@
       });
     }
 
+    // data-confirm-wait: Confirm must not close the dialog. method="dialog"
+    // would tear it down before the underlying POST starts, leaving the page
+    // frozen with no spinner while git fetch/cherry-pick/push runs.
+    dlgForm.addEventListener("submit", function (e) {
+      if (!waitOnOk) return;
+      if (e.submitter && e.submitter.value === "cancel") return;
+      e.preventDefault();
+      if (dlg.classList.contains("is-busy")) return;
+      dlg.classList.add("is-busy");
+      dlg.setAttribute("aria-busy", "true");
+      okBtn.disabled = true;
+      okBtn.classList.add("is-loading");
+      cancelBtn.disabled = true;
+      fieldSelect.disabled = true;
+      if (waitMessage) msgEl.textContent = waitMessage;
+      var resolve = pending;
+      pending = null;
+      if (resolve) resolve({ ok: true, value: fieldSelect.value });
+    });
+    dlg.addEventListener("cancel", function (e) {
+      if (dlg.classList.contains("is-busy")) e.preventDefault();
+    });
     // method="dialog" buttons and Esc (native cancel) both land here.
     dlg.addEventListener("close", function () {
       if (dlg.open) return; // stale queued close from a superseded open
@@ -5759,7 +5797,7 @@
     });
     // Click on the backdrop (the dialog element itself) = cancel.
     dlg.addEventListener("click", function (e) {
-      if (e.target === dlg) dlg.close();
+      if (e.target === dlg && !dlg.classList.contains("is-busy")) dlg.close();
     });
     fieldSelect.addEventListener("change", function () {
       fillLimitsNote(document.getElementById("gw-confirm-limits"), fieldSelect);
@@ -5859,6 +5897,8 @@
         message: src.dataset.confirm,
         ok: src.dataset.confirmOk,
         danger: src.hasAttribute("data-confirm-danger"),
+        wait: src.hasAttribute("data-confirm-wait"),
+        waitMessage: src.dataset.confirmWait,
         select: pickEl ? { label: src.dataset.confirmSelectLabel, from: pickEl } : null
       }).then(function (r) {
         if (!r.ok || !form.isConnected) return; // SSE swap may replace the form while open
