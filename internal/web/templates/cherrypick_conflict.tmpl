@@ -18,34 +18,38 @@
 
 <div class="pr-cols">
 <div class="pr-main">
-{{range .CherryPickFiles}}
+{{range $i, $f := .CherryPickFiles}}
 <div class="section card">
-  <h2 class="mono">{{.Path}}</h2>
-  {{if .Binary}}
+  <h2 class="mono">{{$f.Path}}</h2>
+  {{if $f.Binary}}
   <p class="muted">Binary file — use Ours or Theirs.</p>
-  {{else if .TooBig}}
+  {{else if $f.TooBig}}
   <p class="muted">File is too large to edit here — use Ours or Theirs.</p>
   {{else if $.CanCherryPick}}
-  <form method="post" action="/projects/{{$.Project}}/cherrypick/{{$.CherryPickJob.ID}}/file">
+  <form method="post" action="/projects/{{$.Project}}/cherrypick/{{$.CherryPickJob.ID}}/file" id="cp-file-{{$i}}">
     {{template "csrf" $}}
-    <input type="hidden" name="path" value="{{.Path}}">
-    <textarea name="content" rows="16" class="mono" spellcheck="false">{{.Content}}</textarea>
-    <div class="form-actions"><button type="submit">Save file</button></div>
+    <input type="hidden" name="path" value="{{$f.Path}}">
+    <textarea name="content" rows="16" class="mono" spellcheck="false">{{$f.Content}}</textarea>
   </form>
   {{else}}
-  <pre class="mono">{{.Content}}</pre>
+  <pre class="mono">{{$f.Content}}</pre>
   {{end}}
   {{if $.CanCherryPick}}
-  <form method="post" action="/projects/{{$.Project}}/cherrypick/{{$.CherryPickJob.ID}}/ours" style="display:inline">
-    {{template "csrf" $}}
-    <input type="hidden" name="path" value="{{.Path}}">
-    <button type="submit" class="btn-secondary">Ours (target)</button>
-  </form>
-  <form method="post" action="/projects/{{$.Project}}/cherrypick/{{$.CherryPickJob.ID}}/theirs" style="display:inline">
-    {{template "csrf" $}}
-    <input type="hidden" name="path" value="{{.Path}}">
-    <button type="submit" class="btn-secondary">Theirs (picked commit)</button>
-  </form>
+  <div class="form-actions">
+    {{if and (not $f.Binary) (not $f.TooBig)}}
+    <button type="submit" form="cp-file-{{$i}}">Save file</button>
+    {{end}}
+    <form method="post" action="/projects/{{$.Project}}/cherrypick/{{$.CherryPickJob.ID}}/ours">
+      {{template "csrf" $}}
+      <input type="hidden" name="path" value="{{$f.Path}}">
+      <button type="submit" class="btn-secondary">Ours (target)</button>
+    </form>
+    <form method="post" action="/projects/{{$.Project}}/cherrypick/{{$.CherryPickJob.ID}}/theirs">
+      {{template "csrf" $}}
+      <input type="hidden" name="path" value="{{$f.Path}}">
+      <button type="submit" class="btn-secondary">Theirs (picked commit)</button>
+    </form>
+  </div>
   {{end}}
 </div>
 {{else}}

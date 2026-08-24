@@ -56,6 +56,9 @@ func TestCherryPickConflictRedirectsToResolvePage(t *testing.T) {
 		`>Abort</button>`,
 		`Ours (target)`,
 		`Theirs (picked commit)`,
+		`>Save file</button>`,
+		`form="cp-file-0"`,
+		`.form-actions > form {`,
 		`name="content"`,
 		`README`,
 	} {
