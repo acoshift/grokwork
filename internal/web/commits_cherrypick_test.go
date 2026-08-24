@@ -36,13 +36,14 @@ func TestCommitsCherryPickMarkupWhenConfigured(t *testing.T) {
 		`>staging</option>`,
 		`>production</option>`,
 		`id="commits-table"`,
+		`id="btn-commits-cherrypick"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list missing %q", want)
 		}
 	}
-	if !strings.Contains(body, `name="sha"`) {
-		t.Fatal("expected table checkboxes")
+	if strings.Contains(body, `form="commits-cherrypick" disabled`) {
+		t.Fatal("list cherry-pick must be clickable when commits exist")
 	}
 
 	// Detail rail: need a real SHA from the repo.
