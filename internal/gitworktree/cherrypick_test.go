@@ -310,8 +310,8 @@ func TestCherryPickContinueLeftoverMarkers(t *testing.T) {
 	_, err := ContinueCherryPick(ctx, ContinueOpts{
 		Repo: main, Checkout: checkout, Target: "staging", FromSHA: from,
 	})
-	if err == nil || !strings.Contains(err.Error(), "conflict markers") {
-		t.Fatalf("want leftover-marker error, got %v", err)
+	if !errors.Is(err, ErrUnresolvedConflicts) {
+		t.Fatalf("want ErrUnresolvedConflicts, got %v", err)
 	}
 	if !SequencerLive(ctx, checkout) {
 		t.Fatal("leftover markers must not abort the sequencer")

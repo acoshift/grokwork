@@ -140,6 +140,61 @@ func TestCherryPickConflictContinueAndAbort(t *testing.T) {
 	}
 }
 
+func TestCherryPickContinueWithMarkersStaysOpen(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	_, main, conflictSHA := setupWebConflictRepo(t)
+	pointProjectAt(t, cfg, main)
+	before := originSHAWeb(t, main, "staging")
+	id := postConflictJob(t, srv, conflictSHA)
+	base := "/projects/proj/cherrypick/" + id
+
+	w := postUnauthed(t, srv, base+"/continue", nil)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("continue status=%d loc=%s body=%s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "/projects/proj/cherrypick/"+id) || !strings.Contains(loc, "err=") {
+		t.Fatalf("want resolve-page err flash, got %s", loc)
+	}
+	j, err := gitworktree.LoadJob(cfg.DataDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !j.Open() {
+		t.Fatalf("job status=%s, want conflict so Save/Apply still work", j.Status)
+	}
+	if originSHAWeb(t, main, "staging") != before {
+		t.Fatal("continue-with-markers must not push")
+	}
+
+	w = postUnauthed(t, srv, base+"/file", url.Values{
+		"path": {"README"}, "content": {"mainline\n"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("save status=%d loc=%s", w.Code, w.Header().Get("Location"))
+	}
+	if loc := w.Header().Get("Location"); strings.Contains(loc, "err=") {
+		t.Fatalf("save after leftover continue: %s", loc)
+	}
+
+	w = postUnauthed(t, srv, base+"/continue", nil)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("apply status=%d loc=%s body=%s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+	loc = w.Header().Get("Location")
+	if strings.Contains(loc, "err=") || !strings.Contains(loc, "/projects/proj/commits") {
+		t.Fatalf("want commits ok after save+apply, got %s", loc)
+	}
+	got := originSHAWeb(t, main, "staging")
+	if got == before {
+		t.Fatal("save+apply must push")
+	}
+	blob, err := gitworktreeOutput(t, main, "show", "origin/staging:README")
+	if err != nil || strings.TrimSpace(blob) != "mainline" {
+		t.Fatalf("README=%q err=%v", blob, err)
+	}
+}
+
 func TestCherryPickSuggestNoSession(t *testing.T) {
 	srv, cfg, _ := testServer(t)
 	_, main, conflictSHA := setupWebConflictRepo(t)

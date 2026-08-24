@@ -196,7 +196,9 @@ func (s *Server) postCherryPickContinue(ctx *hime.Context) error {
 		s.auditAction(ctx, audit.ActionGitCherryPickContinue, nil, detail)
 		return s.cherryPickJobRedirect(ctx, j, "", cerr)
 	}
-	if errors.Is(err, gitworktree.ErrTargetMoved) {
+	if err != nil && (errors.Is(err, gitworktree.ErrTargetMoved) ||
+		errors.Is(err, gitworktree.ErrUnresolvedConflicts) ||
+		gitworktree.SequencerLive(ctx.Context(), j.Checkout)) {
 		s.auditAction(ctx, audit.ActionGitCherryPickContinue, err, detail)
 		return s.cherryPickJobRedirect(ctx, j, "", err)
 	}

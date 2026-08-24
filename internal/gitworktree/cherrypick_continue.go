@@ -9,8 +9,13 @@ import (
 	"strings"
 )
 
-// ErrTargetMoved means origin/<target> is no longer FromSHA.
-var ErrTargetMoved = fmt.Errorf("target branch moved since cherry-pick started")
+var (
+	// ErrTargetMoved means origin/<target> is no longer FromSHA.
+	ErrTargetMoved = fmt.Errorf("target branch moved since cherry-pick started")
+	// ErrUnresolvedConflicts means conflict markers (or an unreadable
+	// conflicted file) remain; the sequencer is still live.
+	ErrUnresolvedConflicts = fmt.Errorf("unresolved conflict markers")
+)
 
 const maxConflictFileBytes = 512 << 10
 
@@ -61,7 +66,7 @@ func ContinueCherryPick(ctx context.Context, opts ContinueOpts) (CherryPickResul
 	if SequencerLive(ctx, checkout) {
 		files := conflictFiles(ctx, checkout)
 		if leftover := leftoverMarkers(ctx, checkout, files); leftover != "" {
-			return out, fmt.Errorf("unresolved conflict markers in %s", leftover)
+			return out, fmt.Errorf("%w in %s", ErrUnresolvedConflicts, leftover)
 		}
 		for _, f := range files {
 			if err := runGit(ctx, checkout, "add", "--", f); err != nil {
