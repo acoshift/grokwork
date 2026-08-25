@@ -70,6 +70,9 @@ type ProjectConfig struct {
 	// onto (typically staging/production). Empty = feature off. Primary is
 	// never a valid runtime target even if listed. Single path component each.
 	CherryPickTargets []string `json:"cherryPickTargets,omitempty"`
+	// ForcePushTargets, when true, the commits UI force-pushes one SHA onto
+	// CherryPickTargets instead of cherry-picking. nil/false = cherry-pick.
+	ForcePushTargets *bool `json:"forcePushTargets,omitempty"`
 	// SLA are this project's per-severity case deadlines, keyed by severity
 	// (see sla.go). Absent or empty means this project has no SLAs, which is
 	// deliberately different from having ones nobody can meet.
@@ -235,6 +238,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		CaseKey                  string                  `json:"caseKey,omitempty"`
 		PrimaryBranch            string                  `json:"primaryBranch,omitempty"`
 		CherryPickTargets        []string                `json:"cherryPickTargets,omitempty"`
+		ForcePushTargets         *bool                   `json:"forcePushTargets,omitempty"`
 		SLA                      map[string]SLATarget    `json:"sla,omitempty"`
 		CapabilityTemplates      map[string]Capabilities `json:"capabilityTemplates,omitempty"`
 		CapabilityByUser         map[string]string       `json:"capabilityByUser,omitempty"`
@@ -265,6 +269,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			CaseKey:                  pc.CaseKey,
 			PrimaryBranch:            pc.PrimaryBranch,
 			CherryPickTargets:        slices.Clone(pc.CherryPickTargets),
+			ForcePushTargets:         cloneBoolPtr(pc.ForcePushTargets),
 			SLA:                      cloneSLA(pc.SLA),
 			CapabilityTemplates:      cloneCapabilitiesMap(pc.CapabilityTemplates),
 			CapabilityByUser:         cloneStringMap(pc.CapabilityByUser),
@@ -326,6 +331,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			CaseKey:                  v.CaseKey,
 			PrimaryBranch:            v.PrimaryBranch,
 			CherryPickTargets:        slices.Clone(v.CherryPickTargets),
+			ForcePushTargets:         cloneBoolPtr(v.ForcePushTargets),
 			SLA:                      cloneSLA(v.SLA),
 			CapabilityTemplates:      cloneCapabilitiesMap(v.CapabilityTemplates),
 			CapabilityByUser:         cloneStringMap(v.CapabilityByUser),
@@ -765,24 +771,43 @@ func (c *Config) ProjectCherryPickTargets(name string) []string {
 	return effectiveCherryPickTargets(pc.CherryPickTargets)
 }
 
+func cleanCherryPickTargets(targets []string) ([]string, error) {
+	cleaned := cleanIDList(targets)
+	if len(cleaned) > MaxCherryPickTargets {
+		return nil, fmt.Errorf("at most %d cherry-pick targets", MaxCherryPickTargets)
+	}
+	for _, t := range cleaned {
+		if err := ValidatePrimaryBranchName(t); err != nil {
+			return nil, fmt.Errorf("cherry-pick target %q: %w", t, err)
+		}
+	}
+	if len(cleaned) == 0 {
+		return nil, nil
+	}
+	return cleaned, nil
+}
+
 // SetProjectCherryPickTargets replaces the allowlist and persists. Empty clears
 // (feature off). Every non-empty name must pass ValidatePrimaryBranchName.
+// Does not change ForcePushTargets.
 func (c *Config) SetProjectCherryPickTargets(name string, targets []string) error {
+	return c.setProjectCherryPick(name, targets, nil)
+}
+
+// SetProjectCherryPickConfig replaces the allowlist and force-push mode in one
+// persist. force true → commits UI force-pushes one SHA onto the targets.
+func (c *Config) SetProjectCherryPickConfig(name string, targets []string, force bool) error {
+	return c.setProjectCherryPick(name, targets, &force)
+}
+
+func (c *Config) setProjectCherryPick(name string, targets []string, force *bool) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("project name is required")
 	}
-	cleaned := cleanIDList(targets)
-	if len(cleaned) > MaxCherryPickTargets {
-		return fmt.Errorf("at most %d cherry-pick targets", MaxCherryPickTargets)
-	}
-	for _, t := range cleaned {
-		if err := ValidatePrimaryBranchName(t); err != nil {
-			return fmt.Errorf("cherry-pick target %q: %w", t, err)
-		}
-	}
-	if len(cleaned) == 0 {
-		cleaned = nil
+	cleaned, err := cleanCherryPickTargets(targets)
+	if err != nil {
+		return err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -791,8 +816,27 @@ func (c *Config) SetProjectCherryPickTargets(name string, targets []string) erro
 		return fmt.Errorf("project %q not found", name)
 	}
 	pc.CherryPickTargets = cleaned
+	if force != nil {
+		if *force {
+			pc.ForcePushTargets = new(true)
+		} else {
+			pc.ForcePushTargets = nil
+		}
+	}
 	c.Projects[name] = pc
 	return c.saveLocked()
+}
+
+// ProjectForcePushTargets reports whether the commits UI force-pushes onto
+// cherryPickTargets instead of cherry-picking. nil/false → cherry-pick.
+func (c *Config) ProjectForcePushTargets(name string) bool {
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	return ok && pc.ForcePushTargets != nil && *pc.ForcePushTargets
 }
 
 // ProjectDirectToPrimary reports whether new sessions for this project use

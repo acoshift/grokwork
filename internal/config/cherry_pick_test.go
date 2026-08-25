@@ -90,6 +90,82 @@ func TestCherryPickTargetsInvalidOmittedFromEffective(t *testing.T) {
 	}
 }
 
+func TestForcePushTargetsSetClearRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{
+		Projects:   ProjectsMap{"app": {Path: filepath.Join(dir, "app")}},
+		ConfigPath: filepath.Join(dir, "config.json"),
+	}
+	if cfg.ProjectForcePushTargets("app") {
+		t.Fatal("empty should be cherry-pick")
+	}
+	if err := cfg.SetProjectCherryPickConfig("app", []string{"staging"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ProjectForcePushTargets("app") {
+		t.Fatal("want force-push")
+	}
+	if got := cfg.ProjectCherryPickTargets("app"); !slices.Equal(got, []string{"staging"}) {
+		t.Fatalf("targets: %v", got)
+	}
+	snap := cfg.Snapshot()
+	if len(snap.Projects) == 0 || !snap.Projects[0].ForcePushTargets {
+		t.Fatalf("snapshot force: %+v", snap.Projects)
+	}
+
+	m := ProjectsMap{"app": cfg.Projects["app"]}
+	b, err := m.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"forcePushTargets"`) {
+		t.Fatalf("marshal dropped forcePushTargets: %s", b)
+	}
+	var back ProjectsMap
+	if err := back.UnmarshalJSON(b); err != nil {
+		t.Fatal(err)
+	}
+	if back["app"].ForcePushTargets == nil || !*back["app"].ForcePushTargets {
+		t.Fatal("unmarshal dropped forcePushTargets")
+	}
+	cloned := cloneProjectsMap(m)
+	if cloned["app"].ForcePushTargets == nil || !*cloned["app"].ForcePushTargets {
+		t.Fatal("clone dropped forcePushTargets")
+	}
+	*cloned["app"].ForcePushTargets = false
+	if cfg.Projects["app"].ForcePushTargets == nil || !*cfg.Projects["app"].ForcePushTargets {
+		t.Fatal("clone must detach the bool")
+	}
+
+	if err := cfg.SetProjectCherryPickTargets("app", []string{"staging", "production"}); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ProjectForcePushTargets("app") {
+		t.Fatal("SetProjectCherryPickTargets must leave force flag intact")
+	}
+	if got := cfg.ProjectCherryPickTargets("app"); !slices.Equal(got, []string{"staging", "production"}) {
+		t.Fatalf("targets after leave-intact: %v", got)
+	}
+
+	if err := cfg.SetProjectCherryPickConfig("app", []string{"staging"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProjectForcePushTargets("app") {
+		t.Fatal("cleared force")
+	}
+	b, err = ProjectsMap{"app": cfg.Projects["app"]}.MarshalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"forcePushTargets"`) {
+		t.Fatalf("false should omit forcePushTargets: %s", b)
+	}
+
+	if err := cfg.SetProjectCherryPickConfig("missing", []string{"staging"}, true); err == nil {
+		t.Fatal("expected unknown project")
+	}
+}
+
 func TestCherryPickTargetsCap(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &Config{

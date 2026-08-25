@@ -384,6 +384,7 @@ func shortOr(a, b string) string {
 
 func (s *Server) attachCherryPick(ctx *hime.Context, d *pageData, project, repoPath string) {
 	d.CherryPickTargets = s.effectiveCherryPickTargets(ctx, project, repoPath)
+	d.ForcePushTargets = s.cfg.ProjectForcePushTargets(project)
 	userID, role := s.sessionIdentity(ctx)
 	memberOK := !d.AuthEnabled || config.RoleAtLeast(role, config.WebRoleMember)
 	d.CanCherryPick = len(d.CherryPickTargets) > 0 && memberOK && s.cfg.ResolveCapabilities(project, userID).CanShip()
@@ -398,55 +399,87 @@ func (s *Server) attachCherryPick(ctx *hime.Context, d *pageData, project, repoP
 	}
 }
 
-func (s *Server) postCommitsCherryPick(ctx *hime.Context) error {
-	project := strings.TrimSpace(ctx.PathValue("project"))
-	if err := s.ensureProjectAccess(ctx, project); err != nil {
-		return ctx.Status(http.StatusForbidden).Error(err.Error())
-	}
-	owner := strings.TrimSpace(ctx.PostFormValue("owner"))
-	repo := strings.TrimSpace(ctx.PostFormValue("repo"))
-	ref := strings.TrimSpace(ctx.PostFormValue("ref"))
-	page := strings.TrimSpace(ctx.PostFormValue("page"))
-	target := strings.TrimSpace(ctx.PostFormValue("target"))
-	shas := ctx.Request.PostForm["sha"]
+type targetPromote struct {
+	Project, Owner, Repo, Ref, Page, Target, Path, UserID string
+	SHAs                                                  []string
+	Detail                                                map[string]any
+}
 
-	detail := map[string]any{
-		"project": project, "owner": owner, "repo": repo, "target": target,
+func (p targetPromote) redirect(s *Server, ctx *hime.Context, okMsg string, err error) error {
+	return s.cherryPickRedirect(ctx, p.Project, p.Owner, p.Repo, p.Ref, p.Page, p.SHAs, okMsg, err)
+}
+
+// loadTargetPromote parses a commits-UI target POST: project access, CanShip,
+// repo containment (ResolveLocalRepo), and the cherryPickTargets allowlist.
+func (s *Server) loadTargetPromote(ctx *hime.Context, action, shipDeny, targetDeny string) (targetPromote, error) {
+	var p targetPromote
+	p.Project = strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, p.Project); err != nil {
+		return p, ctx.Status(http.StatusForbidden).Error(err.Error())
 	}
-	userID, _ := s.sessionIdentity(ctx)
-	if !s.cfg.ResolveCapabilities(project, userID).CanShip() {
-		denied := errors.New("not allowed to cherry-pick for this project")
-		s.auditAction(ctx, audit.ActionGitCherryPick, denied, detail)
-		return ctx.Status(http.StatusForbidden).Error("forbidden: " + denied.Error())
+	p.Owner = strings.TrimSpace(ctx.PostFormValue("owner"))
+	p.Repo = strings.TrimSpace(ctx.PostFormValue("repo"))
+	p.Ref = strings.TrimSpace(ctx.PostFormValue("ref"))
+	p.Page = strings.TrimSpace(ctx.PostFormValue("page"))
+	p.Target = strings.TrimSpace(ctx.PostFormValue("target"))
+	p.SHAs = ctx.Request.PostForm["sha"]
+	p.Detail = map[string]any{
+		"project": p.Project, "owner": p.Owner, "repo": p.Repo, "target": p.Target,
+	}
+	p.UserID, _ = s.sessionIdentity(ctx)
+	if !s.cfg.ResolveCapabilities(p.Project, p.UserID).CanShip() {
+		denied := errors.New(shipDeny)
+		s.auditAction(ctx, action, denied, p.Detail)
+		return p, ctx.Status(http.StatusForbidden).Error("forbidden: " + denied.Error())
 	}
 
-	root, err := s.projectPath(project)
+	root, err := s.projectPath(p.Project)
 	if err != nil {
-		return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, "", err)
+		return p, p.redirect(s, ctx, "", err)
 	}
-	catalog, _ := s.cfg.ProjectRepoCatalogWith(ctx.Context(), project, nil)
-	active, pickErr := config.ResolveRepoPicker(catalog, owner, repo)
+	catalog, _ := s.cfg.ProjectRepoCatalogWith(ctx.Context(), p.Project, nil)
+	active, pickErr := config.ResolveRepoPicker(catalog, p.Owner, p.Repo)
 	if pickErr != nil {
-		return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, "", pickErr)
+		return p, p.redirect(s, ctx, "", pickErr)
 	}
 	path, err := gitworktree.ResolveLocalRepo(ctx.Context(), root, active.Owner, active.Repo)
 	if err != nil {
-		return s.cherryPickRedirect(ctx, project, active.Owner, active.Repo, ref, page, shas, "", err)
+		p.Owner, p.Repo = active.Owner, active.Repo
+		return p, p.redirect(s, ctx, "", err)
 	}
-	owner, repo = active.Owner, active.Repo
-	detail["owner"] = owner
-	detail["repo"] = repo
+	p.Owner, p.Repo = active.Owner, active.Repo
+	p.Path = path
+	p.Detail["owner"] = p.Owner
+	p.Detail["repo"] = p.Repo
 
-	allowed := s.effectiveCherryPickTargets(ctx, project, path)
-	if target == "" || !slices.Contains(allowed, target) {
-		denied := errors.New("cherry-pick target is not allowlisted")
-		s.auditAction(ctx, audit.ActionGitCherryPick, denied, detail)
-		return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, "", denied)
+	allowed := s.effectiveCherryPickTargets(ctx, p.Project, path)
+	if p.Target == "" || !slices.Contains(allowed, p.Target) {
+		denied := errors.New(targetDeny)
+		s.auditAction(ctx, action, denied, p.Detail)
+		return p, p.redirect(s, ctx, "", denied)
+	}
+	return p, nil
+}
+
+func (s *Server) postCommitsCherryPick(ctx *hime.Context) error {
+	p, err := s.loadTargetPromote(ctx, audit.ActionGitCherryPick,
+		"not allowed to cherry-pick for this project",
+		"cherry-pick target is not allowlisted")
+	if err != nil {
+		return err
+	}
+	if s.cfg.ProjectForcePushTargets(p.Project) {
+		denied := errors.New("this project force-pushes onto target branches; use Force-push")
+		s.auditAction(ctx, audit.ActionGitCherryPick, denied, p.Detail)
+		return p.redirect(s, ctx, "", denied)
 	}
 
-	if open, ok := gitworktree.OpenJobForTarget(s.cfg.DataDir, project, path, target); ok {
-		return ctx.Redirect("/projects/" + url.PathEscape(project) + "/cherrypick/" + url.PathEscape(open.ID))
+	if open, ok := gitworktree.OpenJobForTarget(s.cfg.DataDir, p.Project, p.Path, p.Target); ok {
+		return ctx.Redirect("/projects/" + url.PathEscape(p.Project) + "/cherrypick/" + url.PathEscape(open.ID))
 	}
+
+	project, owner, repo, ref, page, target, path, userID, shas := p.Project, p.Owner, p.Repo, p.Ref, p.Page, p.Target, p.Path, p.UserID, p.SHAs
+	detail := p.Detail
 
 	id := cherryPickNonce()
 	checkout := gitworktree.CherryPickCheckoutPath(s.cfg.DataDir, project, id)
@@ -511,6 +544,63 @@ func (s *Server) postCommitsCherryPick(ctx *hime.Context) error {
 			len(res.Picked), target, shortSHA(res.FromSHA), shortSHA(res.ToSHA))
 	}
 	return s.cherryPickRedirect(ctx, project, owner, repo, ref, page, shas, okMsg, nil)
+}
+
+func (s *Server) postCommitsForcePush(ctx *hime.Context) error {
+	p, err := s.loadTargetPromote(ctx, audit.ActionGitForcePush,
+		"not allowed to force-push for this project",
+		"force-push target is not allowlisted")
+	if err != nil {
+		return err
+	}
+	if !s.cfg.ProjectForcePushTargets(p.Project) {
+		denied := errors.New("this project cherry-picks onto target branches; use Cherry-pick")
+		s.auditAction(ctx, audit.ActionGitForcePush, denied, p.Detail)
+		return p.redirect(s, ctx, "", denied)
+	}
+	var hex []string
+	for _, sha := range p.SHAs {
+		sha = strings.TrimSpace(sha)
+		if sha == "" {
+			continue
+		}
+		hex = append(hex, sha)
+	}
+	if len(hex) != 1 {
+		denied := errors.New("force-push requires exactly one commit")
+		s.auditAction(ctx, audit.ActionGitForcePush, denied, p.Detail)
+		return p.redirect(s, ctx, "", denied)
+	}
+	if open, ok := gitworktree.OpenJobForTarget(s.cfg.DataDir, p.Project, p.Path, p.Target); ok {
+		return ctx.Redirect("/projects/" + url.PathEscape(p.Project) + "/cherrypick/" + url.PathEscape(open.ID))
+	}
+
+	res, err := gitworktree.ForcePush(ctx.Context(), gitworktree.ForcePushOpts{
+		Repo:             p.Path,
+		Target:           p.Target,
+		SHA:              hex[0],
+		PreferredPrimary: s.cfg.ProjectPrimaryBranch(p.Project),
+	})
+	if res.FromSHA != "" {
+		p.Detail["from"] = shortSHA(res.FromSHA)
+	}
+	if res.ToSHA != "" {
+		p.Detail["to"] = shortSHA(res.ToSHA)
+	}
+	p.Detail["noop"] = res.Noop
+	p.Detail["forced"] = res.Forced
+	s.auditAction(ctx, audit.ActionGitForcePush, err, p.Detail)
+	if err != nil {
+		return p.redirect(s, ctx, "", err)
+	}
+	okMsg := fmt.Sprintf("%s is already at %s. Nothing pushed.", p.Target, shortSHA(res.ToSHA))
+	if !res.Noop && res.Forced {
+		okMsg = fmt.Sprintf("Force-pushed %s (%s → %s). Unique commits on %s that are not in %s are no longer on that branch.",
+			p.Target, shortSHA(res.FromSHA), shortSHA(res.ToSHA), p.Target, shortSHA(res.ToSHA))
+	} else if !res.Noop {
+		okMsg = fmt.Sprintf("Updated %s (%s → %s).", p.Target, shortSHA(res.FromSHA), shortSHA(res.ToSHA))
+	}
+	return p.redirect(s, ctx, okMsg, nil)
 }
 
 func (s *Server) effectiveCherryPickTargets(ctx *hime.Context, project, repoPath string) []string {

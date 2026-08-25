@@ -2444,6 +2444,7 @@ func TestProjectConfigPage(t *testing.T) {
 			`name="primaryBranch"`,
 			`id="project-primary-branch"`,
 			`name="cherryPickTargets"`,
+			`name="forcePushTargets"`,
 			`id="project-cherry-pick-targets"`,
 			`id="project-verify"`,
 			"go test ./...",

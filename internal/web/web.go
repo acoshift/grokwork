@@ -487,6 +487,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))
 	mux.Handle("POST /projects/{project}/commits/fetch", s.requireMember(hime.Handler(s.postCommitsFetch)))
 	mux.Handle("POST /projects/{project}/commits/cherrypick", s.requireMember(hime.Handler(s.postCommitsCherryPick)))
+	mux.Handle("POST /projects/{project}/commits/force-push", s.requireMember(hime.Handler(s.postCommitsForcePush)))
 	mux.Handle("GET /projects/{project}/cherrypick/{id}", s.requireAuth(hime.Handler(s.cherryPickConflictPage)))
 	mux.Handle("POST /projects/{project}/cherrypick/{id}/file", s.requireMember(hime.Handler(s.postCherryPickFile)))
 	mux.Handle("POST /projects/{project}/cherrypick/{id}/ours", s.requireMember(hime.Handler(s.postCherryPickOurs)))
@@ -945,6 +946,7 @@ type pageData struct {
 	CanReviewCommit   bool
 	CherryPickTargets []string
 	CanCherryPick     bool
+	ForcePushTargets  bool
 	OpenCherryPickJob *gitworktree.Job
 	CherryPickJob     gitworktree.Job
 	CherryPickFiles   []cherryPickFileView
@@ -1783,13 +1785,14 @@ func (s *Server) setProjectCherryPickTargets(ctx *hime.Context) error {
 			lines = append(lines, line)
 		}
 	}
-	err := s.cfg.SetProjectCherryPickTargets(name, lines)
+	force := ctx.PostFormValue("forcePushTargets") == "1"
+	err := s.cfg.SetProjectCherryPickConfig(name, lines, force)
 	s.auditAction(ctx, audit.ActionConfigSetProjectCherryPickTargets, err, map[string]any{
-		"name": name, "n": len(lines),
+		"name": name, "n": len(lines), "forcePush": force,
 	})
-	msg := fmt.Sprintf("Updated cherry-pick targets for project %q", name)
+	msg := fmt.Sprintf("Updated target branches for project %q", name)
 	if len(lines) == 0 {
-		msg = fmt.Sprintf("Cleared cherry-pick targets for project %q", name)
+		msg = fmt.Sprintf("Cleared target branches for project %q", name)
 	}
 	return s.projectConfigTabRedirect(ctx, name, "workflow", msg, err)
 }

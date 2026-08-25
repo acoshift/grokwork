@@ -83,8 +83,10 @@ func TestPreviewServer(t *testing.T) {
 				},
 			},
 			"api": {
-				Path:           mkProj("api"),
-				AllowedUserIDs: []string{"111111111111111111", "222222222222222222"},
+				Path:              mkProj("api"),
+				AllowedUserIDs:    []string{"111111111111111111", "222222222222222222"},
+				CherryPickTargets: []string{"staging"},
+				ForcePushTargets:  new(true),
 				Teams: map[string]config.TeamConfig{
 					"eng": {Label: "Engineering", Members: []string{"discord:555555555555555555"}, Capabilities: "builder"},
 				},
@@ -330,6 +332,9 @@ func TestPreviewServer(t *testing.T) {
 
 	// Repo catalog so the commits browser and PR diff resolve without gh.
 	if err := cfg.SetProjectGitHubRepos("webapp", []config.GitHubRepoRef{{Owner: "acme", Repo: "webapp"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectGitHubRepos("api", []config.GitHubRepoRef{{Owner: "acme", Repo: "api"}}); err != nil {
 		t.Fatal(err)
 	}
 

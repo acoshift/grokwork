@@ -57,6 +57,25 @@
 </div>
 
 {{if .CanCherryPick}}
+{{if .ForcePushTargets}}
+<div class="rail-group" id="commit-cherrypick-actions">
+  <div class="rail-group-title">Force-push</div>
+  <form method="post" action="/projects/{{.Project}}/commits/force-push" class="grok-dispatch" hx-boost="false"
+    data-confirm="Moves the target branch to this commit and pushes. Fast-forward when possible; otherwise force-with-lease. Commits only on the target disappear from that branch. It does not start an agent and does not merge a PR."
+    data-confirm-title="Force-push to branch" data-confirm-ok="Force-push" data-confirm-danger
+    data-confirm-select="target" data-confirm-select-label="Target branch"
+    data-confirm-wait="Updating the target branch…">
+    {{template "csrf" .}}
+    <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+    <input type="hidden" name="sha" value="{{.Commit.SHA}}">
+    {{/* Hidden: the confirm modal clones its options. Scripting off posts the first target. */}}
+    <select name="target" hidden>{{range .CherryPickTargets}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+    <div class="form-actions"><button type="submit">Force-push</button></div>
+  </form>
+  <p class="rail-note">Moves the target branch to this commit. Fast-forward when possible; otherwise force-with-lease. It does not start an agent and does not merge a PR.</p>
+</div>
+{{else}}
 <div class="rail-group" id="commit-cherrypick-actions">
   <div class="rail-group-title">Cherry-pick</div>
   <form method="post" action="/projects/{{.Project}}/commits/cherrypick" class="grok-dispatch" hx-boost="false"
@@ -74,6 +93,7 @@
   </form>
   <p class="rail-note">Applies this commit onto the target branch and pushes. It does not start an agent, does not force-push, and does not merge a PR.</p>
 </div>
+{{end}}
 {{end}}
 
 </aside>

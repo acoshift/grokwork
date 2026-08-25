@@ -71,7 +71,7 @@
       {{template "csrf" $}}
       <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
       <div>
-        <label for="project-cherry-pick-targets-input">Cherry-pick targets</label>
+        <label for="project-cherry-pick-targets-input">Target branches</label>
         <textarea id="project-cherry-pick-targets-input" name="cherryPickTargets" rows="4" class="mono"
                   placeholder="staging&#10;production" spellcheck="false">{{.ProjectItem.CherryPickTargetsText}}</textarea>
         {{if .ProjectItem.CherryPickTargetsInvalid}}
@@ -80,10 +80,24 @@
         </p>
         {{end}}
       </div>
-      <div class="form-actions"><button type="submit">Save cherry-pick targets</button></div>
+      <div class="choice-row" style="margin-top:0.85rem">
+        <label class="choice">
+          <input type="radio" name="forcePushTargets" value="0" {{if not .ProjectItem.ForcePushTargets}}checked{{end}}>
+          <span class="dot"></span>
+          <span class="t">Cherry-pick <span class="flag ok">default</span></span>
+          <span class="d">Apply selected commits onto the target and fast-forward-push. Conflicts park a resolve page.</span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="forcePushTargets" value="1" {{if .ProjectItem.ForcePushTargets}}checked{{end}}>
+          <span class="dot"></span>
+          <span class="t">Force-push <span class="flag warn">rewinds</span></span>
+          <span class="d">Move the target to one commit. Fast-forward when possible; <span class="mono">--force-with-lease</span> otherwise. GitHub must allow force-pushes on those branches for rewind.</span>
+        </label>
+      </div>
+      <div class="form-actions"><button type="submit">Save target branches</button></div>
     </form>
     <p class="sub" style="margin:0.5rem 0 0; font-size:0.8rem">
-      Long-lived branches the commits UI may cherry-pick onto (one name per line). Empty turns the
+      Long-lived branches the commits UI may update (one name per line). Empty turns the
       button off. The project <strong>primary</strong> is never a valid target even if listed &mdash;
       that line is Direct-to-primary / pull requests. Single branch names only (no
       <span class="mono">/</span>, no <span class="mono">origin/</span>). At most 8.

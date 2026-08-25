@@ -39,13 +39,25 @@
   <button type="submit" class="btn-secondary" title="git fetch --all --prune; unshallow if needed">Fetch</button>
 </form>
 {{if .CanCherryPick}}
+  {{if .ForcePushTargets}}
   <button type="button" id="btn-commits-cherrypick" class="btn-secondary" form="commits-cherrypick"{{if not .Commits}} disabled{{end}}
+    data-idle-label="Force-push"
+    data-confirm="Moves the target branch to the selected commit and pushes. Fast-forward when possible; otherwise force-with-lease. Commits only on the target disappear from that branch. It does not start an agent and does not merge a PR."
+    data-confirm-title="Force-push to branch" data-confirm-ok="Force-push" data-confirm-danger
+    data-confirm-select="target" data-confirm-select-label="Target branch"
+    data-confirm-wait="Updating the target branch…">Force-push</button>
+  <button type="button" id="btn-commits-cherrypick-cancel" class="btn-secondary" hidden>Cancel</button>
+  <span id="commits-cherrypick-hint" class="sub" hidden>Select one commit, then Confirm.</span>
+  {{else}}
+  <button type="button" id="btn-commits-cherrypick" class="btn-secondary" form="commits-cherrypick"{{if not .Commits}} disabled{{end}}
+    data-idle-label="Cherry-pick"
     data-confirm="Cherry-picks the selected commits onto the target branch and pushes. It does not start an agent, does not force-push, and does not merge a PR. At most 20 commits."
     data-confirm-title="Cherry-pick to branch" data-confirm-ok="Cherry-pick" data-confirm-danger
     data-confirm-select="target" data-confirm-select-label="Target branch"
     data-confirm-wait="Cherry-picking onto the target branch…">Cherry-pick</button>
   <button type="button" id="btn-commits-cherrypick-cancel" class="btn-secondary" hidden>Cancel</button>
   <span id="commits-cherrypick-hint" class="sub" hidden>Select commits, then Confirm. At most 20.</span>
+  {{end}}
 {{end}}
 </div>
 {{if .CanCherryPick}}
@@ -90,7 +102,7 @@
     </a>
     {{end}}
   </div>
-  {{if .CanCherryPick}}<form method="post" action="/projects/{{.Project}}/commits/cherrypick" id="commits-cherrypick" hx-boost="false">
+  {{if .CanCherryPick}}<form method="post" action="/projects/{{.Project}}/commits/{{if $.ForcePushTargets}}force-push{{else}}cherrypick{{end}}" id="commits-cherrypick" hx-boost="false">
     {{template "csrf" $}}
     <input type="hidden" name="owner" value="{{.ActiveOwner}}">
     <input type="hidden" name="repo" value="{{.ActiveRepo}}">
@@ -111,7 +123,7 @@
         {{if $.CanCherryPick}}
         <td class="col-cp-select" hidden>
           <label class="check" style="min-height:0;margin:0">
-            <input type="checkbox" name="sha" value="{{.SHA}}" disabled>
+            <input type="{{if $.ForcePushTargets}}radio{{else}}checkbox{{end}}" name="sha" value="{{.SHA}}" disabled>
           </label>
         </td>
         {{end}}
@@ -210,7 +222,7 @@
     if(table) table.classList.toggle('is-selecting', on);
     btn.type=on?'submit':'button';
     btn.disabled=on?false:!bulkForm();
-    btn.textContent=on?'Confirm':'Cherry-pick';
+    btn.textContent=on?'Confirm':(btn.getAttribute('data-idle-label')||'Cherry-pick');
     if(cancel) cancel.hidden=!on;
     if(hint) hint.hidden=!on;
     updateConfirm();
@@ -234,7 +246,8 @@
       e.preventDefault();
       var box=tr.querySelector('input[name="sha"]');
       if(!box || box.disabled) return;
-      box.checked=!box.checked;
+      if(box.type==='radio') box.checked=true;
+      else box.checked=!box.checked;
       updateConfirm();
     });
   }

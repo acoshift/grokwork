@@ -65,6 +65,7 @@ const (
 	ActionGitCherryPickContinue  = "git.cherrypick.continue" // resolve conflict and continue/push
 	ActionGitCherryPickAbort     = "git.cherrypick.abort"
 	ActionGitCherryPickSuggest   = "git.cherrypick.suggest" // one-shot conflict resolution, no session
+	ActionGitForcePush           = "git.forcepush"          // point an allowlisted target branch at one SHA (FF or lease)
 	ActionGitSync                = "git.sync"               // fetch + merge origin primary into a unit branch
 	ActionGitCheckpoint          = "git.checkpoint"         // bot-owned local checkpoint ref
 	ActionGitCheckpointRestore   = "git.checkpoint_restore" // hard reset a unit worktree to a checkpoint

@@ -269,6 +269,9 @@ type ProjectItem struct {
 	CherryPickTargets []string
 	// CherryPickTargetsInvalid is true when any stored name fails validation.
 	CherryPickTargetsInvalid bool
+	// ForcePushTargets is true when the commits UI force-pushes one SHA onto
+	// CherryPickTargets instead of cherry-picking.
+	ForcePushTargets bool
 	// SLA is one settings-form row per severity (SLASeverities order); empty
 	// minutes mean that clock has no target. SLAConfigured is true when at
 	// least one row has one.
@@ -1427,6 +1430,7 @@ func (c *Config) Snapshot() Snapshot {
 			CherryPickTargetsText:    strings.Join(pc.CherryPickTargets, "\n"),
 			CherryPickTargets:        effectiveCherryPickTargets(pc.CherryPickTargets),
 			CherryPickTargetsInvalid: cherryPickTargetsInvalid(pc.CherryPickTargets),
+			ForcePushTargets:         pc.ForcePushTargets != nil && *pc.ForcePushTargets,
 			SLA:                      slaItems(pc.SLA),
 			SLAConfigured:            slaConfigured(pc.SLA),
 			CapabilityByUser:         capabilityMapItems(pc.CapabilityByUser),
