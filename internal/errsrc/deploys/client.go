@@ -1,5 +1,5 @@
 // Package deploys is a thin HTTP client for deploys.app error.list / error.get,
-// plus a CLI wrapper that mints a short-lived token via `deploys me generate-token`.
+// plus a CLI wrapper that mints a 1-year token via `deploys me generate-token`.
 // It is not grokwork's own deploy pipeline (see internal/deploy).
 package deploys
 

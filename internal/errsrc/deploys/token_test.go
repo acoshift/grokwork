@@ -35,7 +35,7 @@ func TestGenerateTokenArgsAndParse(t *testing.T) {
 		"me", "generate-token",
 		"-project", "acme",
 		"-permissions", "error.list,error.get",
-		"-ttl", "3600",
+		"-ttl", "31536000",
 		"-label", "grokwork:errors",
 		"-output", "json",
 	}

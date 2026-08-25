@@ -153,6 +153,8 @@ func TestGenerateDeploysErrorsTokenButtonRenders(t *testing.T) {
 		">Generate token</button>",
 		`data-confirm-title="Generate token"`,
 		"deploys me generate-token",
+		"1 year",
+		"Mint a 1-year deploys.app token",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q", want)
@@ -173,6 +175,9 @@ func TestGenerateDeploysErrorsTokenFlashNamesExpiry(t *testing.T) {
 	loc, err := url.QueryUnescape(w.Header().Get("Location"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(loc, "Minted a 1-year deploys.app token") {
+		t.Fatalf("flash should name 1-year TTL: %q", loc)
 	}
 	if !strings.Contains(loc, "expires 2026-08-25 15:04 UTC") {
 		t.Fatalf("flash should name expiry: %q", loc)

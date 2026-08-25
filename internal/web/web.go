@@ -1634,7 +1634,7 @@ func (s *Server) generateDeploysErrorsToken(ctx *hime.Context) error {
 	if err != nil {
 		return s.projectConfigTabRedirect(ctx, name, "integrations", "", err)
 	}
-	msg := fmt.Sprintf("Minted a 1-hour deploys.app token for %q", project)
+	msg := fmt.Sprintf("Minted a 1-year deploys.app token for %q", project)
 	if !tok.ExpiresAt.IsZero() {
 		msg += " (expires " + tok.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC") + ")"
 	}
