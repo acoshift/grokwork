@@ -252,6 +252,18 @@ func TestErrorsGrokBannerCopy(t *testing.T) {
 	if !strings.Contains(body, `id="error-grok-banner"`) || !strings.Contains(body, "Pick Claude") {
 		t.Fatalf("builder banner:\n%s", body)
 	}
+	for _, want := range []string{
+		`id="btn-fix-error"`,
+		`>Fix</button>`,
+		`data-confirm-title="Fix"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in Fix UI:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "Fix with Grok") {
+		t.Fatal("stale Grok-branded Fix label")
+	}
 	if i := strings.Index(body, `id="btn-fix-error"`); i >= 0 {
 		j := strings.Index(body[i:], `id="error-grok-banner"`)
 		k := strings.Index(body[i:], `id="btn-investigate-error"`)

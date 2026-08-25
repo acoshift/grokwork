@@ -24,7 +24,7 @@ const (
 	errorSourceDisabled    = "Error source not enabled"
 	errorNotFound          = "Error not found"
 	errorDeploysLocator    = "location and name are required"
-	errorGrokBannerBuilder = "This investigate run is on Grok, which cannot attach grokwork MCP (`--deny MCPTool`). It will not fetch the sample stack. Pick Claude for this session, or use **Fix with Grok** (ship/fix attaches MCP)."
+	errorGrokBannerBuilder = "This investigate run is on Grok, which cannot attach grokwork MCP (`--deny MCPTool`). It will not fetch the sample stack. Pick Claude for this session, or use **Fix** (ship/fix attaches MCP)."
 	errorGrokBannerOther   = "This investigate run is on Grok, which cannot attach grokwork MCP. It will not fetch the sample stack. Ask a builder to start this session on Claude, or to Fix it."
 )
 
