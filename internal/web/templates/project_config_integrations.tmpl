@@ -241,6 +241,8 @@
     Prefer a service account granted only <span class="mono">error.list</span> + <span class="mono">error.get</span>, then set
     <span class="mono">DEPLOYS_AUTH_USER_&lt;PROJECT&gt;</span> + <span class="mono">DEPLOYS_AUTH_PASS_&lt;PROJECT&gt;</span> (HTTP Basic).
     A Bearer token from <span class="mono">deploys auth token</span> lasts 7 days — use the suffixed env, not the CLI’s unsuffixed <span class="mono">DEPLOYS_TOKEN</span>.
+    <strong>Generate token</strong> runs <span class="mono">deploys me generate-token</span> on this host
+    (<span class="mono">error.list</span> + <span class="mono">error.get</span>, 1 hour) using the operator’s CLI login, then stores it.
   </p>
   <form method="post" action="{{route "config.setProjectErrorsDeploys"}}">
     {{template "csrf" $}}
@@ -272,7 +274,14 @@
     <label class="check">
       <input type="checkbox" name="clearApiToken" value="1"> Clear stored token
     </label>
-    <div class="form-actions"><button type="submit">Save deploys.app errors</button></div>
+    <div class="form-actions">
+      <button type="submit">Save deploys.app errors</button>
+      <button type="submit" class="btn-secondary"
+        formaction="{{route "config.generateDeploysErrorsToken"}}"
+        data-confirm="Mint a 1-hour deploys.app token (error.list + error.get) using this host’s deploys CLI login and store it?"
+        data-confirm-title="Generate token"
+        data-confirm-ok="Generate">Generate token</button>
+    </div>
   </form>
 </div>
 

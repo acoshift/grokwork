@@ -643,7 +643,7 @@ Do **not** add error groups to `/search` in L1. Bound sessions remain searchable
 
 1. Prefer a deploys.app **service account** on the target project, granted only `error.list` + `error.get`, then set `DEPLOYS_AUTH_USER_<PROJECT>` + `DEPLOYS_AUTH_PASS_<PROJECT>` (Basic).
 2. Or paste a Bearer token from `deploys login` + `deploys auth token` into the form / `DEPLOYS_API_TOKEN_<PROJECT>`. That env name is grokwork’s `ProjectEnvKeySuffix` form — **not** the CLI’s unsuffixed `DEPLOYS_TOKEN`. Session tokens last **7 days** and cannot be refreshed — rotate or use a service account.
-3. Do **not** store a `me.generateToken` scoped token (TTL clamped to 3600s). That API is for handing a short-lived agent cred to *their* side, not for a grokwork project setting.
+3. **Generate token** on the Integrations card runs `deploys me generate-token -permissions error.list,error.get -ttl 3600` with the host CLI login and stores the bearer. TTL is clamped to 3600s — a convenience for setup, not a long-lived credential. Prefer a service account for anything that has to last. The minted value is never written to a flash, audit row, or error string.
 
 Thin client (`internal/errsrc/deploys`):
 

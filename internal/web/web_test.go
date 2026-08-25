@@ -287,6 +287,9 @@ func TestPagesRender(t *testing.T) {
 		{"/config/projects/proj/integrations", "name=\"guildId\""},
 		{"/config/projects/proj/integrations", "GitHub repositories"},
 		{"/config/projects/proj/integrations", "LINEAR_API_KEY_PROJ"},
+		{"/config/projects/proj/integrations", "deploys.app errors"},
+		{"/config/projects/proj/integrations", "Generate token"},
+		{"/config/projects/proj/integrations", "/config/projects/errors-deploys/generate-token"},
 		{"/config/projects/proj/danger", `id="page-project-config-danger"`},
 		{"/config/projects/proj/danger", "Remove project"},
 	}

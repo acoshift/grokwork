@@ -20,6 +20,9 @@ const (
 	ActionConfigSetErrorsGCP     = "config.set_project_errors_gcp"
 	ActionConfigSetErrorsSentry  = "config.set_project_errors_sentry"
 	ActionConfigSetErrorsDeploys = "config.set_project_errors_deploys"
+
+	ActionConfigGenerateErrorsDeploysToken = "config.generate_project_errors_deploys_token"
+
 	ActionConfigAddUser          = "config.add_user"
 	ActionConfigRemoveUser       = "config.remove_user"
 	ActionConfigSetTeam          = "config.set_team"

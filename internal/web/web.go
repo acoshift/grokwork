@@ -111,6 +111,8 @@ type Server struct {
 	suggestVerify func(ctx context.Context, cli grokrun.CLI, cwd string, timeout time.Duration, hooks *grokrun.SuggestStreamHooks) (string, error)
 	// Test injectable; nil → grokrun.SuggestConflictResolution.
 	suggestConflict func(ctx context.Context, cli grokrun.CLI, cwd string, timeout time.Duration, files []string, target, sha string, hooks *grokrun.SuggestStreamHooks) (string, error)
+	// deploysCLI, when set, replaces exec of the deploys binary (errors token mint).
+	deploysCLI deploys.CLIRunner
 }
 
 // New builds a hime app with dashboard, history, config, and SSE routes.
@@ -199,6 +201,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.setProjectErrorsGCP":         "/config/projects/errors-gcp",
 		"config.setProjectErrorsSentry":      "/config/projects/errors-sentry",
 		"config.setProjectErrorsDeploys":     "/config/projects/errors-deploys",
+		"config.generateDeploysErrorsToken":  "/config/projects/errors-deploys/generate-token",
 		"config.setProjectGitHub":            "/config/projects/github",
 		"config.setProjectStorage":           "/config/projects/storage",
 		"config.storage":                     "/config/storage",
@@ -623,6 +626,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/errors-gcp", s.requireAdmin(hime.Handler(s.setProjectErrorsGCP)))
 	mux.Handle("POST /config/projects/errors-sentry", s.requireAdmin(hime.Handler(s.setProjectErrorsSentry)))
 	mux.Handle("POST /config/projects/errors-deploys", s.requireAdmin(hime.Handler(s.setProjectErrorsDeploys)))
+	mux.Handle("POST /config/projects/errors-deploys/generate-token", s.requireAdmin(hime.Handler(s.generateDeploysErrorsToken)))
 	mux.Handle("POST /config/projects/github", s.requireAdmin(hime.Handler(s.setProjectGitHub)))
 	mux.Handle("POST /config/projects/storage", s.requireAdmin(hime.Handler(s.setProjectStorage)))
 	mux.Handle("POST /config/projects/channel", s.requireAdmin(hime.Handler(s.setProjectChannel)))
@@ -1595,6 +1599,46 @@ func (s *Server) setProjectErrorsDeploys(ctx *hime.Context) error {
 		"name": name, "enabled": enabled, "deploysProject": strings.TrimSpace(ctx.PostFormValue("project")),
 	})
 	return s.projectConfigTabRedirect(ctx, name, "integrations", fmt.Sprintf("Updated deploys.app errors for project %q", name), err)
+}
+
+func (s *Server) generateDeploysErrorsToken(ctx *hime.Context) error {
+	name := strings.TrimSpace(ctx.PostFormValue("name"))
+	enabled := ctx.PostFormValue("enabled") == "1" || strings.EqualFold(ctx.PostFormValue("enabled"), "on")
+	project := strings.TrimSpace(ctx.PostFormValue("project"))
+	location := ctx.PostFormValue("location")
+	deployment := ctx.PostFormValue("deployment")
+	fail := func(err error) error {
+		s.auditAction(ctx, audit.ActionConfigGenerateErrorsDeploysToken, err, map[string]any{
+			"name": name, "enabled": enabled, "deploysProject": project,
+		})
+		return s.projectConfigTabRedirect(ctx, name, "integrations", "", err)
+	}
+	if name == "" {
+		return fail(fmt.Errorf("project name is required"))
+	}
+	if _, ok := s.cfg.ProjectPath(name); !ok {
+		return fail(fmt.Errorf("project %q not found", name))
+	}
+	tok, err := deploys.GenerateToken(ctx.Context(), s.deploysCLI, project)
+	if err != nil {
+		return fail(err)
+	}
+	err = s.cfg.SetProjectErrorsDeploys(name, enabled, project, location, deployment, tok.Value, false)
+	detail := map[string]any{
+		"name": name, "enabled": enabled, "deploysProject": project,
+	}
+	if !tok.ExpiresAt.IsZero() {
+		detail["expiresAt"] = tok.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	s.auditAction(ctx, audit.ActionConfigGenerateErrorsDeploysToken, err, detail)
+	if err != nil {
+		return s.projectConfigTabRedirect(ctx, name, "integrations", "", err)
+	}
+	msg := fmt.Sprintf("Minted a 1-hour deploys.app token for %q", project)
+	if !tok.ExpiresAt.IsZero() {
+		msg += " (expires " + tok.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC") + ")"
+	}
+	return s.projectConfigTabRedirect(ctx, name, "integrations", msg, nil)
 }
 
 func (s *Server) setProjectActionsRule(ctx *hime.Context) error {
