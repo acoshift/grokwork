@@ -88,6 +88,14 @@ type streamAccum struct {
 	// sawDelta records that incremental text arrived, so drivers that also emit a
 	// final aggregated copy of the same text can skip it.
 	sawDelta bool
+	// inDelta is true while incremental chunks of the current assistant message
+	// are arriving. finishDelta marks that message complete so the next delta
+	// starts a new paragraph instead of gluing onto the last word.
+	inDelta bool
+	// msgStart is the byte offset in b of the current assistant message, after
+	// any paragraph break inserted by separate. Used to recognize an assembled
+	// copy of that message even when the model text itself contains blank lines.
+	msgStart int
 }
 
 func (a *streamAccum) text(delta string) {
@@ -106,7 +114,20 @@ func (a *streamAccum) delta(d string) {
 		return
 	}
 	a.sawDelta = true
+	a.inDelta = true
 	a.text(d)
+}
+
+func (a *streamAccum) finishDelta() {
+	a.inDelta = false
+}
+
+func (a *streamAccum) currentMessage() string {
+	s := a.b.String()
+	if a.msgStart <= 0 || a.msgStart > len(s) {
+		return s
+	}
+	return s[a.msgStart:]
 }
 
 func (a *streamAccum) thought(delta string) {
@@ -125,9 +146,11 @@ func (a *streamAccum) activity(line string) {
 // messages in one run do not run together. No-op before any text has arrived.
 func (a *streamAccum) separate() {
 	if a.b.Len() == 0 {
+		a.msgStart = 0
 		return
 	}
 	a.text("\n\n")
+	a.msgStart = a.b.Len()
 }
 
 // maxTurns marks the run as turn-limited and appends the user-facing notice once.

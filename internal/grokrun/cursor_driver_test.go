@@ -115,6 +115,86 @@ func TestCursorDecodeStream(t *testing.T) {
 	}
 }
 
+func TestCursorDecodePartialTokens(t *testing.T) {
+	var texts []string
+	out, err := decodeStream(strings.NewReader(cursorPartialStream), cursorDriver{}, streamCallbacks{
+		onText: func(s string) { texts = append(texts, s) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Text != "Hello world." {
+		t.Errorf("text=%q (tokens must concatenate; assembled copy must be skipped)", out.Text)
+	}
+	if strings.Join(texts, "") != "Hello world." {
+		t.Errorf("deltas=%q", texts)
+	}
+	for _, d := range texts {
+		if strings.Contains(d, "\n") {
+			t.Errorf("token %q must not start a new paragraph", d)
+		}
+	}
+}
+
+func TestCursorDecodeTwoMessagesAfterTool(t *testing.T) {
+	out, err := decodeStream(strings.NewReader(cursorTwoMessageStream), cursorDriver{}, streamCallbacks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Text != "First paragraph.\n\nSecond paragraph." {
+		t.Errorf("text=%q", out.Text)
+	}
+}
+
+func TestCursorDecodeSecondMessageWithBlankLine(t *testing.T) {
+	raw := strings.Join([]string{
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"First"}]},"timestamp_ms":1}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"First"}]},"timestamp_ms":2}`,
+		`{"type":"tool_call","subtype":"started"}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]},"timestamp_ms":3}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"\n\n"}]},"timestamp_ms":4}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"world"}]},"timestamp_ms":5}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Hello\n\nworld"}]}}`,
+	}, "\n")
+	out, err := decodeStream(strings.NewReader(raw), cursorDriver{}, streamCallbacks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Text != "First\n\nHello\n\nworld" {
+		t.Errorf("text=%q", out.Text)
+	}
+}
+
+func TestCursorDecodePartialTokensWithBlankLine(t *testing.T) {
+	raw := strings.Join([]string{
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]},"timestamp_ms":1}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"\n\n"}]},"timestamp_ms":2}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"world"}]},"timestamp_ms":3}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Hello\n\nworld"}]}}`,
+	}, "\n")
+	out, err := decodeStream(strings.NewReader(raw), cursorDriver{}, streamCallbacks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Text != "Hello\n\nworld" {
+		t.Errorf("text=%q (blank lines inside a message must not be treated as a new message)", out.Text)
+	}
+}
+
+func TestCursorDecodeWholeMessagesStillSeparate(t *testing.T) {
+	raw := strings.Join([]string{
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"one"}]}}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"two"}]}}`,
+	}, "\n")
+	out, err := decodeStream(strings.NewReader(raw), cursorDriver{}, streamCallbacks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Text != "one\n\ntwo" {
+		t.Errorf("text=%q", out.Text)
+	}
+}
+
 func TestCursorDecodeFinal(t *testing.T) {
 	out, ok := cursorDriver{}.decodeFinal([]byte(cursorFinalJSON))
 	if !ok {
@@ -151,4 +231,25 @@ const cursorStream = `{"type":"system","subtype":"init","session_id":"c3b1575d-f
 `
 
 const cursorFinalJSON = `{"type":"result","subtype":"success","is_error":false,"result":"json-ok","session_id":"fc9e92cc-7174-4411-84de-f4404bd949f4","usage":{"inputTokens":8657,"outputTokens":36,"cacheReadTokens":6176,"cacheWriteTokens":0}}
+`
+
+// cursorPartialStream is the --stream-partial-output shape: one timestamped
+// assistant event per token, then the assembled message with no timestamp_ms.
+const cursorPartialStream = `{"type":"system","subtype":"init","session_id":"d6445ce5-1119-4b30-a2c3-8aba02462ed6"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello"}]},"session_id":"d6445ce5-1119-4b30-a2c3-8aba02462ed6","timestamp_ms":1}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":" world"}]},"session_id":"d6445ce5-1119-4b30-a2c3-8aba02462ed6","timestamp_ms":2}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"."}]},"session_id":"d6445ce5-1119-4b30-a2c3-8aba02462ed6","timestamp_ms":3}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello world."}]},"session_id":"d6445ce5-1119-4b30-a2c3-8aba02462ed6"}
+{"type":"result","subtype":"success","is_error":false,"result":"Hello world.","session_id":"d6445ce5-1119-4b30-a2c3-8aba02462ed6","usage":{"inputTokens":1,"outputTokens":3,"cacheReadTokens":0,"cacheWriteTokens":0}}
+`
+
+// cursorTwoMessageStream is a tool-using run: tokens, a timestamped flush of
+// the first message (CLI does this on toolCallStarted), then a second message.
+const cursorTwoMessageStream = `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"First"}]},"timestamp_ms":1}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":" paragraph."}]},"timestamp_ms":2}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"First paragraph."}]},"timestamp_ms":3}
+{"type":"tool_call","subtype":"started","call_id":"c1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Second"}]},"timestamp_ms":4}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":" paragraph."}]},"timestamp_ms":5}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Second paragraph."}]}}
 `

@@ -16,8 +16,11 @@ import (
 //   - --print is required for non-interactive use. --trust skips the workspace
 //     prompt so a headless run cannot hang on a TTY question.
 //   - --output-format stream-json needs --stream-partial-output for thinking
-//     deltas. Assistant text arrives as whole messages and is emitted twice
-//     (once with timestamp_ms, once without); the second copy is skipped.
+//     and assistant text deltas. Each token is a timestamped assistant event;
+//     the CLI then emits the assembled message without timestamp_ms (and a
+//     timestamped copy of the same text before a tool call). Those assembled
+//     copies are skipped. Treating every assistant event as a new message is
+//     what used to render one word per line.
 //   - There is no --tools / --max-turns / --mcp-config / --session-id. A non-nil
 //     Tools pointer maps to --mode ask (read-only). Session resume is
 //     create-or-attach via --resume <id>. A missing id is not an error.
@@ -81,8 +84,8 @@ type cursorEvent struct {
 	Text      string `json:"text"`
 	Result    string `json:"result"`
 	IsError   bool   `json:"is_error"`
-	// TimestampMS is set on the first copy of an assistant/thinking event.
-	// The CLI then repeats the same assistant message without it.
+	// TimestampMS is set on live thinking/assistant events (token deltas and
+	// the pre-tool flush). The assembled copy at the end of a message omits it.
 	TimestampMS int64 `json:"timestamp_ms"`
 
 	Message *struct {
@@ -146,22 +149,14 @@ func (cursorDriver) decodeLine(line []byte, acc *streamAccum) {
 		for _, blk := range ev.Message.Content {
 			switch blk.Type {
 			case "text":
-				// The CLI emits the same assistant message twice; taking both
-				// would duplicate the reply. A later distinct message still
-				// lands because the buffer no longer equals that text alone.
-				if acc.sawDelta {
-					continue
-				}
-				if strings.TrimSpace(acc.b.String()) == strings.TrimSpace(blk.Text) {
-					continue
-				}
-				acc.separate()
-				acc.text(blk.Text)
+				cursorAssistantText(acc, blk.Text, ev.TimestampMS != 0)
 			case "tool_use", "tool_call":
+				acc.finishDelta()
 				acc.activity(cursorToolActivity(blk, acc.cb.cwd))
 			}
 		}
 	case "tool", "tool_call", "tool_use", "tool_start":
+		acc.finishDelta()
 		if ev.Message != nil {
 			for _, blk := range ev.Message.Content {
 				acc.activity(cursorToolActivity(blk, acc.cb.cwd))
@@ -185,6 +180,28 @@ func (cursorDriver) decodeLine(line []byte, acc *streamAccum) {
 			}
 		}
 	}
+}
+
+// cursorAssistantText folds one assistant text payload. timestamped events are
+// live tokens (--stream-partial-output); an assembled copy of the same message
+// follows, with or without a timestamp, and must not be appended again.
+func cursorAssistantText(acc *streamAccum, text string, partial bool) {
+	if text == "" {
+		return
+	}
+	if cur := acc.currentMessage(); cur != "" && strings.TrimSpace(cur) == strings.TrimSpace(text) {
+		acc.finishDelta()
+		return
+	}
+	if partial {
+		if !acc.inDelta {
+			acc.separate()
+		}
+		acc.delta(text)
+		return
+	}
+	acc.separate()
+	acc.text(text)
 }
 
 func cursorToolActivity(blk cursorContentBlock, cwd string) string {
