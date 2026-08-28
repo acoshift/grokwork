@@ -9,14 +9,14 @@
 </div>
 <p class="sub">Support cases {{if .Project}}for this project{{else}}across your projects{{end}}.</p>
 
-{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
+{{/* Counts JSON (swap none) keeps stage chrome mounted; list still innerHTML-swaps rows. */}}
 <div class="live-region"
      id="live-cases-pipeline"
-     hx-get="{{route "partial.cases.pipeline"}}?project={{urlquery .Project}}&amp;phase={{urlquery .Cases.PhaseFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}&amp;scope={{urlquery .Cases.Scope}}&amp;owner={{urlquery .Cases.OwnerFilter}}&amp;sla={{urlquery .Cases.SLAFilter}}"
+     hx-get="{{route "partial.cases.counts"}}?project={{urlquery .Project}}&amp;phase={{urlquery .Cases.PhaseFilter}}&amp;severity={{urlquery .Cases.SeverityFilter}}&amp;scope={{urlquery .Cases.Scope}}&amp;owner={{urlquery .Cases.OwnerFilter}}&amp;sla={{urlquery .Cases.SLAFilter}}"
      hx-trigger="sse:cases"
      hx-target="this"
      hx-select="unset"
-     hx-swap="innerHTML"
+     hx-swap="none"
      hx-sync="this:queue last">
   {{template "cases_pipeline" .}}
 </div>
@@ -48,15 +48,15 @@
     <label for="owner">Owner</label>
     <select id="owner" name="owner" data-autosubmit>
       <option value="" {{if eq .Cases.OwnerFilter ""}}selected{{end}}>Anyone</option>
-      <option value="mine" {{if eq .Cases.OwnerFilter "mine"}}selected{{end}}>Mine ({{.Cases.Mine}})</option>
-      <option value="unassigned" {{if eq .Cases.OwnerFilter "unassigned"}}selected{{end}}>Needs an engineer ({{.Cases.Unassigned}})</option>
+      <option value="mine" {{if eq .Cases.OwnerFilter "mine"}}selected{{end}} data-case-count="mine" data-case-count-prefix="Mine">Mine ({{.Cases.Mine}})</option>
+      <option value="unassigned" {{if eq .Cases.OwnerFilter "unassigned"}}selected{{end}} data-case-count="unassigned" data-case-count-prefix="Needs an engineer">Needs an engineer ({{.Cases.Unassigned}})</option>
     </select>
   </div>
   <div class="field">
     <label for="sla">SLA</label>
     <select id="sla" name="sla" data-autosubmit>
       <option value="" {{if eq .Cases.SLAFilter ""}}selected{{end}}>Any</option>
-      <option value="breached" {{if eq .Cases.SLAFilter "breached"}}selected{{end}}>Breached ({{.Cases.Breached}})</option>
+      <option value="breached" {{if eq .Cases.SLAFilter "breached"}}selected{{end}} data-case-count="breached" data-case-count-prefix="Breached">Breached ({{.Cases.Breached}})</option>
     </select>
   </div>
   <div class="field">
@@ -79,6 +79,57 @@
      hx-sync="this:queue last">
   {{template "cases_list" .}}
 </div>
+<script>
+(function () {
+  function paint(data) {
+    if (!data || typeof data !== "object") return;
+    document.querySelectorAll("[data-case-count]").forEach(function (el) {
+      var key = el.getAttribute("data-case-count");
+      if (!key || !Object.prototype.hasOwnProperty.call(data, key)) return;
+      var n = data[key];
+      if (typeof n !== "number" || !isFinite(n)) return;
+      n = Math.floor(n);
+      var prefix = el.getAttribute("data-case-count-prefix");
+      if (prefix) {
+        el.textContent = prefix + " (" + n + ")";
+        return;
+      }
+      el.textContent = String(n);
+      var stage = el.closest(".case-stage");
+      if (stage) stage.classList.toggle("is-zero", n === 0);
+    });
+  }
+  function paintFromEvent(e) {
+    var d = e && e.detail;
+    if (!d || !d.xhr) return;
+    if (d.successful === false) return;
+    var url = "";
+    if (d.pathInfo) url = d.pathInfo.requestPath || d.pathInfo.finalRequestPath || "";
+    if (!url && d.xhr.responseURL) url = d.xhr.responseURL;
+    if (url.indexOf("/partials/cases/counts") === -1) return;
+    try { paint(JSON.parse(d.xhr.responseText)); } catch (err) {}
+  }
+  function load() {
+    var host = document.getElementById("live-cases-pipeline");
+    if (!host) return;
+    var url = host.getAttribute("hx-get");
+    if (!url) return;
+    fetch(url, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { Accept: "application/json" }
+    }).then(function (r) {
+      return r.ok ? r.json() : null;
+    }).then(paint).catch(function () {});
+  }
+  if (!window.__gwCaseCountsBound) {
+    window.__gwCaseCountsBound = true;
+    document.body.addEventListener("htmx:afterOnLoad", paintFromEvent);
+    document.body.addEventListener("htmx:afterRequest", paintFromEvent);
+  }
+  load();
+})();
+</script>
 {{end}}
 
 {{/* cases_qs carries the non-phase filters onto the pipeline stage links, so
@@ -98,38 +149,38 @@
     <a class="case-stage{{if eq .Cases.PhaseFilter "intake"}} active{{end}}{{if eq .Cases.Intake 0}} is-zero{{end}}"
        href="{{$base}}?phase=intake{{template "cases_qs" .Cases}}">
       <span class="stage-name">intake</span>
-      <span class="stage-count">{{.Cases.Intake}}</span>
+      <span class="stage-count" data-case-count="intake">{{.Cases.Intake}}</span>
       <span class="stage-plain">New case</span>
     </a>
     <a class="case-stage{{if eq .Cases.PhaseFilter "investigate"}} active{{end}}{{if eq .Cases.Investigate 0}} is-zero{{end}}"
        href="{{$base}}?phase=investigate{{template "cases_qs" .Cases}}">
       <span class="stage-name">investigate</span>
-      <span class="stage-count">{{.Cases.Investigate}}</span>
+      <span class="stage-count" data-case-count="investigate">{{.Cases.Investigate}}</span>
       <span class="stage-plain">Looking into it</span>
     </a>
     <a class="case-stage{{if eq .Cases.PhaseFilter "answered"}} active{{end}}{{if eq .Cases.Answered 0}} is-zero{{end}}"
        href="{{$base}}?phase=answered{{template "cases_qs" .Cases}}">
       <span class="stage-name">answered</span>
-      <span class="stage-count">{{.Cases.Answered}}</span>
+      <span class="stage-count" data-case-count="answered">{{.Cases.Answered}}</span>
       <span class="stage-plain">Answer ready</span>
     </a>
     <a class="case-stage{{if eq .Cases.PhaseFilter "fixing"}} active{{end}}{{if eq .Cases.Fixing 0}} is-zero{{end}}"
        href="{{$base}}?phase=fixing{{template "cases_qs" .Cases}}">
       <span class="stage-name">fixing</span>
-      <span class="stage-count">{{.Cases.Fixing}}</span>
+      <span class="stage-count" data-case-count="fixing">{{.Cases.Fixing}}</span>
       <span class="stage-plain">With engineering</span>
     </a>
     <a class="case-stage{{if eq .Cases.PhaseFilter "shipping"}} active{{end}}{{if eq .Cases.Shipping 0}} is-zero{{end}}"
        href="{{$base}}?phase=shipping{{template "cases_qs" .Cases}}">
       <span class="stage-name">shipping</span>
-      <span class="stage-count">{{.Cases.Shipping}}</span>
+      <span class="stage-count" data-case-count="shipping">{{.Cases.Shipping}}</span>
       <span class="stage-plain">Fix in review</span>
     </a>
   </div>
   <a class="case-archive{{if eq .Cases.PhaseFilter "closed"}} active{{end}}"
      href="{{$base}}?phase=closed{{template "cases_qs" .Cases}}">
     <span class="stage-name">closed</span>
-    <span class="stage-count">{{.Cases.Closed}}</span>
+    <span class="stage-count" data-case-count="closed">{{.Cases.Closed}}</span>
     <span class="stage-plain">Resolved</span>
   </a>
 </div>

@@ -267,6 +267,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"partial.project.pulse":   "/partials/projects/pulse",
 		"partial.ship.stats":      "/partials/ship/stats",
 		"partial.ship.table":      "/partials/ship/table",
+		"partial.cases.counts":    "/partials/cases/counts",
 		"partial.cases.pipeline":  "/partials/cases/pipeline",
 		"partial.cases.list":      "/partials/cases/list",
 		"partial.history.table":   "/partials/history/table",
@@ -610,6 +611,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/ship/table", s.requireAuth(hime.Handler(s.partialShipTable)))
 	mux.Handle("GET /partials/cases/pipeline", s.requireAuth(hime.Handler(s.partialCasesPipeline)))
 	mux.Handle("GET /partials/cases/list", s.requireAuth(hime.Handler(s.partialCasesList)))
+	mux.Handle("GET /partials/cases/counts", s.requireAuth(hime.Handler(s.partialCasesCounts)))
 	mux.Handle("GET /partials/history/table", s.requireAuth(hime.Handler(s.partialHistoryTable)))
 	mux.Handle("GET /partials/history/turns/{threadID}", s.requireAuth(hime.Handler(s.partialHistoryTurns)))
 	mux.Handle("GET /partials/sessions/{threadID}", s.requireAuth(hime.Handler(s.partialSession)))
