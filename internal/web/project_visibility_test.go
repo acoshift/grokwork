@@ -233,6 +233,7 @@ func TestDetailRoutesEnforceProjectACL(t *testing.T) {
 		"/sessions/th-secret",
 		"/history/th-secret",
 		"/partials/sessions/th-secret",
+		"/partials/sessions/th-secret/run",
 		"/partials/history/turns/th-secret",
 		"/sessions/th-secret/diff",
 		"/projects/secret",

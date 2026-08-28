@@ -751,7 +751,9 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 	return s.viewPage(ctx, "session", d)
 }
 
-// partialSession streams work-unit status + turns (including the in-flight reply).
+// partialSession streams work-unit chrome + sealed turns. Dashboard ticks
+// remount the nested run region instead — fpDashboard includes elapsed, so a
+// host-wide 2s tick must not rebuild every sealed turn.
 func (s *Server) partialSession(ctx *hime.Context) error {
 	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
 	if threadID == "" {
@@ -761,6 +763,18 @@ func (s *Server) partialSession(ctx *hime.Context) error {
 		return forbiddenProject(ctx, err)
 	}
 	return s.viewFragment(ctx, "session", "session_live", s.sessionPageData(ctx, threadID))
+}
+
+// partialSessionRun streams the in-flight run slice (elapsed, queue, live turn).
+func (s *Server) partialSessionRun(ctx *hime.Context) error {
+	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
+	if threadID == "" {
+		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
+	}
+	if err := s.ensureSessionPageAccess(ctx, threadID); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	return s.viewFragment(ctx, "session", "session_run", s.sessionPageData(ctx, threadID))
 }
 
 // ensureSessionPageAccess is ensureThreadAccess plus a narrow fallback for the

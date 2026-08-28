@@ -580,22 +580,32 @@ func TestSessionQueueListRendersWithRemove(t *testing.T) {
 		}
 	}
 
-	// Live fragment must still be chrome-free.
-	req = httptest.NewRequest(http.MethodGet, "/partials/sessions/queue-th", nil)
-	req.Header.Set("HX-Request", "true")
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
-	w = httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("partial status=%d", w.Code)
+	getPartial := func(path string) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("HX-Request", "true")
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status=%d", path, w.Code)
+		}
+		return w.Body.String()
 	}
-	partial := w.Body.String()
-	if !strings.Contains(partial, `value="task-1"`) {
-		t.Fatal("partial missing queue Remove control")
+
+	runPartial := getPartial("/partials/sessions/queue-th/run")
+	if !strings.Contains(runPartial, `value="task-1"`) {
+		t.Fatal("run partial missing queue Remove control")
 	}
-	if strings.Contains(partial, "<nav") || strings.Contains(partial, "sse-status") ||
-		strings.Contains(partial, "session-continue-form") {
-		t.Fatal("live fragment leaked layout chrome / rail form")
+	if strings.Contains(runPartial, "<nav") || strings.Contains(runPartial, "sse-status") ||
+		strings.Contains(runPartial, "session-continue-form") {
+		t.Fatal("run fragment leaked layout chrome / rail form")
+	}
+
+	recordPartial := getPartial("/partials/sessions/queue-th")
+	if strings.Contains(recordPartial, "<nav") || strings.Contains(recordPartial, "sse-status") ||
+		strings.Contains(recordPartial, "session-continue-form") {
+		t.Fatal("record fragment leaked layout chrome / rail form")
 	}
 }
 

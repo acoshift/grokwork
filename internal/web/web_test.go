@@ -393,7 +393,8 @@ func TestPagesRender(t *testing.T) {
 			{"/partials/cases/list?project=proj", `id="cases-list"`, "cases"},
 			{"/partials/history/table", "thread-99", "history"},
 			{"/partials/history/turns/thread-99", `id="turns"`, "history"},
-			{"/partials/sessions/thread-99", `id="turns"`, "dashboard"},
+			{"/partials/sessions/thread-99", `id="turns"`, "history"},
+			{"/partials/sessions/thread-99/run", "No active", "dashboard"},
 			{"/partials/worktrees/table", "All worktrees", "worktrees"},
 			{"/partials/issues/table?project=proj&owner=acme&repo=app", "No issues.", ""},
 			{"/partials/config/lists", "Projects", "config"},
@@ -438,7 +439,7 @@ func TestPagesRender(t *testing.T) {
 			{"/ship", []string{`hx-trigger="sse:ship"`}},
 			{"/history", []string{`hx-trigger="sse:history"`}},
 			{"/history/thread-99", []string{`hx-trigger="sse:history"`}},
-			{"/sessions/thread-99", []string{`hx-trigger="sse:dashboard, sse:history"`, `/partials/sessions/thread-99`}},
+			{"/sessions/thread-99", []string{`hx-trigger="sse:history"`, `hx-trigger="sse:dashboard"`, `/partials/sessions/thread-99`, `/partials/sessions/thread-99/run`}},
 			{"/worktrees", []string{`hx-trigger="sse:worktrees"`}},
 			{"/config", []string{`hx-trigger="sse:config"`}},
 		}
@@ -742,9 +743,12 @@ func TestSessionsHub(t *testing.T) {
 	for _, want := range []string{
 		`id="page-session"`,
 		`id="live-session"`,
-		`hx-trigger="sse:dashboard, sse:history"`,
+		`id="live-session-run"`,
+		`hx-trigger="sse:history"`,
+		`hx-trigger="sse:dashboard"`,
 		`hx-swap="innerHTML show:none focus-scroll:false"`,
 		`/partials/sessions/thread-99`,
+		`/partials/sessions/thread-99/run`,
 		"thread-99",
 		"Grok Work",
 		`href="/projects/proj/sessions">← Sessions</a>`,
@@ -1106,27 +1110,38 @@ func TestSessionDetailStreamsLiveTurn(t *testing.T) {
 		}
 	}
 
-	// SSE partial
-	req = httptest.NewRequest(http.MethodGet, "/partials/sessions/thread-99", nil)
-	req.Header.Set("HX-Request", "true")
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("partial status=%d", w.Code)
+	getPartial := func(path string) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("HX-Request", "true")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status=%d", path, w.Code)
+		}
+		return w.Body.String()
 	}
-	partial := w.Body.String()
-	if !strings.Contains(partial, "Here is the live reply so far…") {
-		t.Fatal("partial missing live text")
+
+	runPartial := getPartial("/partials/sessions/thread-99/run")
+	if !strings.Contains(runPartial, "Here is the live reply so far…") {
+		t.Fatal("run partial missing live text")
 	}
-	if strings.Contains(partial, "<nav") || strings.Contains(partial, "sse-status") {
-		t.Fatal("partial leaked layout chrome")
+	if !strings.Contains(runPartial, `id="live-stream-body"`) {
+		t.Fatal("run partial missing live stream body")
 	}
-	// Continue form must stay on the full page only (outside live-region).
-	if strings.Contains(partial, "session-continue-form") {
-		t.Fatal("continue form must not be in live partial")
+
+	recordPartial := getPartial("/partials/sessions/thread-99")
+	for _, partial := range []string{runPartial, recordPartial} {
+		if strings.Contains(partial, "<nav") || strings.Contains(partial, "sse-status") {
+			t.Fatal("partial leaked layout chrome")
+		}
+		if strings.Contains(partial, "session-continue-form") {
+			t.Fatal("continue form must not be in live partial")
+		}
 	}
 	assertTurnAgentAboveUser(t, body)
-	assertTurnAgentAboveUser(t, partial)
+	assertTurnAgentAboveUser(t, recordPartial)
+	assertTurnAgentAboveUser(t, runPartial)
 }
 
 // TestSessionTurnShowsAgentAboveUser pins the in-turn order on the session

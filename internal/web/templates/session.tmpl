@@ -58,13 +58,13 @@
 <div class="pr-cols">
 <div class="pr-main">
 
-{{/* Live work-unit + turns: dashboard ticks while a run is active (elapsed + stream text);
-     history fires when a turn is sealed into the log. Continue form stays in the rail so SSE
-     swaps do not wipe in-progress prompt text. */}}
+{{/* Record region: work-unit chrome + sealed turns. Dashboard (elapsed +
+     stream) is nested in #live-session-run — fpDashboard includes elapsed, so a
+     host-wide 2s tick must not remount every sealed turn. */}}
 <div class="live-region"
      id="live-session"
      hx-get="/partials/sessions/{{.ThreadID}}{{if .NavProject}}?project={{urlquery .NavProject}}{{else if .Project}}?project={{urlquery .Project}}{{end}}"
-     hx-trigger="sse:dashboard, sse:history"
+     hx-trigger="sse:history"
      hx-target="this"
      hx-select="unset"
      hx-swap="innerHTML show:none focus-scroll:false"
@@ -440,42 +440,13 @@
     {{else}}
     <span class="badge">{{$lab}}</span>
     {{end}}
-    {{if .RunBusy}} <span class="badge live">running</span>{{if .RunElapsed}} <span class="mono muted">{{.RunElapsed}}</span>{{end}}{{end}}
     {{if .SessionEntry.Origin}} · origin <span class="mono">{{.SessionEntry.Origin}}</span>{{end}}
     {{if .SessionEntry.OwnerName}} · owner {{.SessionEntry.OwnerName}}{{end}}
     {{if .SessionEntry.WorktreeBranch}} · branch <span class="mono">{{.SessionEntry.WorktreeBranch}}</span>{{end}}
     {{if and (not .HasWorktree) (or .SessionEntry.IsCaseClosed (eq $lab "done") (eq $lab "abandoned") .SessionEntry.AllPRsTerminal)}} · <span class="muted">worktree cleaned</span>{{end}}
   </p>
-  {{if and .RunBusy .CanControlSession}}
-  {{/* Button-only form is the sanctioned live-region exception: it holds no typed
-       input, so an SSE swap between render and submit at worst flashes "no active run".
-       Never place text/textarea inputs inside a live region — refreshes wipe them. */}}
-  <form method="post" action="/sessions/{{.ThreadID}}/cancel" style="margin:0.6rem 0 0">
-    {{template "csrf" $}}
-    <button type="submit" id="btn-cancel-run" class="btn-danger btn-compact">Cancel run</button>
-  </form>
-  {{end}}
   {{if .SessionEntry.Goal}}
   <p style="margin:0.85rem 0 0"><span class="bubble-label" style="display:block">Goal</span>{{.SessionEntry.Goal}}</p>
-  {{end}}
-  {{if .QueueItems}}
-  <p style="margin:0.85rem 0 0.25rem"><span class="bubble-label" style="display:block">Queue ({{len .QueueItems}})</span></p>
-  <ul class="queue-list" style="margin:0;padding-left:1.25rem">
-    {{range .QueueItems}}
-    <li>
-      <span class="mono muted">#{{.Position}}</span>
-      {{if .AuthorName}}<strong>{{.AuthorName}}</strong>{{end}}
-      {{if .Intent}}<span class="muted">— {{.Intent}}</span>{{end}}
-      {{if and $.CanStartSession (or (eq .AuthorID $.UserID) $.CanControlSession)}}
-      <form method="post" action="/sessions/{{$.ThreadID}}/queue/remove" style="display:inline;margin-left:0.4rem">
-        {{template "csrf" $}}
-        <input type="hidden" name="task_id" value="{{.TaskID}}">
-        <button type="submit" class="btn-danger btn-compact">Remove</button>
-      </form>
-      {{end}}
-    </li>
-    {{end}}
-  </ul>
   {{end}}
   {{if .SessionEntry.PRs}}
   <p style="margin:0.85rem 0 0.25rem"><span class="bubble-label" style="display:block">Pull requests</span></p>
@@ -525,46 +496,26 @@
     {{end}}
   </ul>
   {{end}}
-  {{if .RunBusy}}
-  {{if .RunPhases}}<p class="mono" style="margin:0.85rem 0 0">{{.RunPhases}}</p>{{end}}
-  {{if .RunActivity}}<p class="muted" style="margin:0.35rem 0 0"><em>{{.RunActivity}}</em></p>{{end}}
-  {{else}}
-  <p class="muted" style="margin:0.85rem 0 0">No active {{.AgentLabel}} run.</p>
-  {{end}}
+</div>
+
+<div class="live-region"
+     id="live-session-run"
+     hx-get="/partials/sessions/{{.ThreadID}}/run{{if .NavProject}}?project={{urlquery .NavProject}}{{else if .Project}}?project={{urlquery .Project}}{{end}}"
+     hx-trigger="sse:dashboard"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML show:none focus-scroll:false"
+     hx-sync="this:queue last">
+  {{template "session_run" .}}
 </div>
 
 <div class="section">
   {{$done := len .Thread.Turns}}
-  <h2>Turns <span class="muted" style="font-weight:500;font-size:0.9rem">({{if .RunBusy}}{{add $done 1}}{{else}}{{$done}}{{end}})</span></h2>
-  {{if or .Thread.Turns .RunBusy}}
+  <h2>Turns <span class="muted" style="font-weight:500;font-size:0.9rem">({{$done}})</span></h2>
+  {{if .Thread.Turns}}
   <div class="turns" id="turns">
-    {{/* Newest first: the live/latest turn sits at the top next to the page
-         header, so long histories never bury it. #N stays chronological.
-         Within a turn the agent reply is above the user prompt.
-         The docked composer is position-pinned, so it needs no scrolling. */}}
-    {{if .RunBusy}}
-    <article class="turn turn-live" id="turn-live">
-      <header class="turn-meta">
-        <span class="mono muted">#{{add $done 1}}</span>
-        <span class="badge live">streaming</span>
-        {{if .RunElapsed}}<span class="mono muted">{{.RunElapsed}}</span>{{end}}
-      </header>
-      <div class="bubble assistant">
-        <div class="bubble-label">{{.AgentLabel}} <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">(live)</span></div>
-        {{if .RunLiveText}}
-        <div class="bubble-body md" id="live-stream-body">{{githubMarkdown .Project .RunLiveText}}</div>
-        {{else}}
-        <div class="bubble-body muted" id="live-stream-body">streaming…</div>
-        {{end}}
-      </div>
-      {{if .RunPrompt}}
-      <div class="bubble user">
-        <div class="bubble-label">User</div>
-        <div class="bubble-body md">{{githubMarkdown .Project .RunPrompt}}</div>
-      </div>
-      {{end}}
-    </article>
-    {{end}}
+    {{/* Newest first. #N stays chronological. Within a turn the agent reply
+         is above the user prompt. The docked composer is position-pinned. */}}
     {{$turns := .Thread.Turns}}
     {{$n := len $turns}}
     {{range $i, $_ := $turns}}
@@ -599,4 +550,81 @@
   <div class="empty">No turns yet.</div>
   {{end}}
 </div>
+{{end}}
+
+{{define "session_run"}}
+{{if or .RunBusy .QueueItems}}
+<div class="section card">
+  {{if .RunBusy}}
+  <p class="sub" style="margin:0">
+    <span class="badge live">running</span>
+    {{if .RunElapsed}} <span class="mono muted">{{.RunElapsed}}</span>{{end}}
+  </p>
+  {{if .CanControlSession}}
+  {{/* Button-only form is the sanctioned live-region exception: it holds no typed
+       input, so an SSE swap between render and submit at worst flashes "no active run".
+       Never place text/textarea inputs inside a live region — refreshes wipe them. */}}
+  <form method="post" action="/sessions/{{.ThreadID}}/cancel" style="margin:0.6rem 0 0">
+    {{template "csrf" $}}
+    <button type="submit" id="btn-cancel-run" class="btn-danger btn-compact">Cancel run</button>
+  </form>
+  {{end}}
+  {{end}}
+  {{if .QueueItems}}
+  <p style="margin:0.85rem 0 0.25rem"><span class="bubble-label" style="display:block">Queue ({{len .QueueItems}})</span></p>
+  <ul class="queue-list" style="margin:0;padding-left:1.25rem">
+    {{range .QueueItems}}
+    <li>
+      <span class="mono muted">#{{.Position}}</span>
+      {{if .AuthorName}}<strong>{{.AuthorName}}</strong>{{end}}
+      {{if .Intent}}<span class="muted">— {{.Intent}}</span>{{end}}
+      {{if and $.CanStartSession (or (eq .AuthorID $.UserID) $.CanControlSession)}}
+      <form method="post" action="/sessions/{{$.ThreadID}}/queue/remove" style="display:inline;margin-left:0.4rem">
+        {{template "csrf" $}}
+        <input type="hidden" name="task_id" value="{{.TaskID}}">
+        <button type="submit" class="btn-danger btn-compact">Remove</button>
+      </form>
+      {{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+  {{if .RunBusy}}
+  {{if .RunPhases}}<p class="mono" style="margin:0.85rem 0 0">{{.RunPhases}}</p>{{end}}
+  {{if .RunActivity}}<p class="muted" style="margin:0.35rem 0 0"><em>{{.RunActivity}}</em></p>{{end}}
+  {{else}}
+  <p class="muted" style="margin:0.85rem 0 0">No active {{.AgentLabel}} run.</p>
+  {{end}}
+</div>
+{{else}}
+<div class="section">
+  <p class="muted" style="margin:0">No active {{.AgentLabel}} run.</p>
+</div>
+{{end}}
+{{if .RunBusy}}
+{{$done := len .Thread.Turns}}
+<div class="section">
+<article class="turn turn-live" id="turn-live">
+  <header class="turn-meta">
+    <span class="mono muted">#{{add $done 1}}</span>
+    <span class="badge live">streaming</span>
+    {{if .RunElapsed}}<span class="mono muted">{{.RunElapsed}}</span>{{end}}
+  </header>
+  <div class="bubble assistant">
+    <div class="bubble-label">{{.AgentLabel}} <span class="muted" style="font-weight:500;text-transform:none;letter-spacing:0">(live)</span></div>
+    {{if .RunLiveText}}
+    <div class="bubble-body md" id="live-stream-body">{{githubMarkdown .Project .RunLiveText}}</div>
+    {{else}}
+    <div class="bubble-body muted" id="live-stream-body">streaming…</div>
+    {{end}}
+  </div>
+  {{if .RunPrompt}}
+  <div class="bubble user">
+    <div class="bubble-label">User</div>
+    <div class="bubble-body md">{{githubMarkdown .Project .RunPrompt}}</div>
+  </div>
+  {{end}}
+</article>
+</div>
+{{end}}
 {{end}}
