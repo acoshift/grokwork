@@ -199,6 +199,56 @@ func TestInboxBellHiddenAuthOff(t *testing.T) {
 	assertNavActive(t, getBody(t, srv.Handler(), "/inbox"), "Inbox")
 }
 
+// Desktop parks the bell in the profile grid (avatar | identity | inbox);
+// the phone bar keeps it as a sibling of the avatar, not inside the pop.
+func TestInboxBellLivesInProfile(t *testing.T) {
+	srv, _, _ := authOnServer(t)
+	sid, _, err := srv.LoginAs("admin-1", "Admin", config.WebRoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	body := w.Body.String()
+
+	userStart := strings.Index(body, `<div class="side-user">`)
+	if userStart < 0 {
+		t.Fatal("profile section missing")
+	}
+	popStart := strings.Index(body[userStart:], `<div class="side-user-pop" id="user-menu">`)
+	if popStart < 0 {
+		t.Fatal("account pop missing")
+	}
+	beforePop := body[userStart : userStart+popStart]
+	if !strings.Contains(beforePop, `class="inbox-bell`) {
+		t.Fatal("inbox bell must sit in the profile, outside the account pop")
+	}
+	popEndRel := strings.Index(body[userStart+popStart:], "</div>")
+	if popEndRel < 0 {
+		t.Fatal("account pop not closed")
+	}
+	pop := body[userStart+popStart : userStart+popStart+popEndRel]
+	if strings.Contains(pop, `class="inbox-bell`) {
+		t.Fatal("inbox bell inside the account pop would vanish from the phone top bar")
+	}
+
+	footStart := strings.Index(body, `<div class="side-foot">`)
+	if footStart < 0 || footStart > userStart {
+		t.Fatal("profile must live inside the footer")
+	}
+	between := body[footStart:userStart]
+	if strings.Contains(between, `class="inbox-bell`) {
+		t.Fatal("inbox bell still sits above the profile instead of in it")
+	}
+
+	nav := navLinksChunk(t, body)
+	if strings.Contains(nav, `data-icon="inbox"`) {
+		t.Fatal("signed-in desktop nav must not duplicate Inbox; the profile bell is the entry")
+	}
+}
+
 func TestFpInboxIsolatedPerActor(t *testing.T) {
 	srv := twoProjectAuthServer(t)
 	if err := srv.bot.QueueInbox("member-1", inbox.KindRunDone, "m", "", "", "", ""); err != nil {

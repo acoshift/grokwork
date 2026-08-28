@@ -836,12 +836,15 @@
       position: relative;
       display: inline-flex;
       align-items: center;
-      gap: 0.4rem;
+      justify-content: center;
+      width: 1.7rem;
+      height: 1.7rem;
       color: var(--muted);
       text-decoration: none;
       flex-shrink: 0;
+      border-radius: 50%;
     }
-    .inbox-bell:hover { color: var(--text); text-decoration: none; }
+    .inbox-bell:hover { color: var(--text); text-decoration: none; background: var(--surface-l2); }
     .inbox-bell.active { color: var(--text); }
     .inbox-bell > .nav-icon { width: 1.15rem; height: 1.15rem; }
     .inbox-bell > .nav-count:not([hidden]) {
@@ -849,8 +852,9 @@
       align-items: center;
       justify-content: center;
       position: absolute;
-      top: -0.25rem;
-      left: 0.65rem;
+      top: -0.12rem;
+      right: -0.12rem;
+      left: auto;
       min-width: 1.05rem;
       height: 1.05rem;
       padding: 0 0.28rem;
@@ -858,7 +862,7 @@
       line-height: 1.05rem;
       z-index: 1;
     }
-    .inbox-bell-label { font-size: 0.8rem; font-weight: 600; }
+    .inbox-bell-label { display: none; }
     .card.inbox-unread { border-color: var(--border-strong); }
     button.linkish {
       background: none;
@@ -870,13 +874,18 @@
       text-align: left;
       text-decoration: underline;
     }
-    /* Desktop shape: avatar | name+role on row 1, Log out spanning row 2.
-       A grid (not a flex column) so .side-user-pop can be display:contents and
-       hand its two children straight to this grid — the same markup collapses
-       into an anchored menu on phones (see the max-width:920px block). */
+    /* Desktop shape: avatar | name+role | inbox on row 1, Log out spanning
+       row 2. A grid (not a flex column) so .side-user-pop can be display:contents
+       and hand its children straight to this grid — the same markup collapses
+       into an anchored menu on phones (see the max-width:920px block). The
+       inbox bell is a grid item of .side-user, not of the pop, so it stays
+       visible in the phone top bar rather than hiding inside the menu. */
     .side-user {
       display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas:
+        "avatar meta bell"
+        "logout logout logout";
       align-items: center;
       column-gap: 0.55rem;
       row-gap: 1rem;
@@ -887,6 +896,7 @@
     .side-user-pop { display: contents; }
     /* Bare circle on desktop — it only becomes a real trigger on phones. */
     .side-user-btn {
+      grid-area: avatar;
       padding: 0;
       height: auto;
       min-width: 0;
@@ -917,7 +927,8 @@
       background: transparent;
       text-transform: none;
     }
-    .side-user-meta { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+    .side-user-meta { grid-area: meta; display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+    .side-user .inbox-bell { grid-area: bell; align-self: center; }
     .side-user-name {
       font-size: 0.85rem;
       font-weight: 550;
@@ -942,7 +953,7 @@
     }
     .side-user-account:hover { color: var(--text); text-decoration: underline; }
     /* Row 2 of .side-user's grid (side padding comes from that box). */
-    .logout-form { grid-column: 1 / -1; margin: 0; padding: 0; }
+    .logout-form { grid-area: logout; margin: 0; padding: 0; }
     .logout-form button {
       width: 100%;
       height: 2rem;
@@ -4673,7 +4684,6 @@
         flex-shrink: 1;
         min-width: 0;
       }
-      .inbox-bell-label { display: none; }
       /* Dot + short state only — no "live · 3:45:12 PM" clock (see setStatus). */
       #sse-status {
         max-width: 4.5rem;
@@ -4684,15 +4694,21 @@
          everything else moves into a menu anchored under it. .side-user-pop
          drops display:contents here, so meta + form become one panel. */
       .side-user {
-        display: block;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 0.45rem;
         position: relative;
         border-top: none;
         padding: 0;
       }
-      /* 1.7rem avatar is a poor thumb target — ::after grows the hit box to
-         ~46px without moving anything in the bar (its neighbours are inert). */
+      /* Keep the pre-nest order: bell, then avatar, then the pop (absolute). */
+      .side-user .inbox-bell { order: -1; align-self: center; }
+      /* 1.7rem avatar is a poor thumb target — ::after grows the hit box
+         vertically and to the free side. left stays 0 so it does not cover
+         the inbox bell sitting immediately before the avatar. */
       .side-user-btn { cursor: pointer; position: relative; }
-      .side-user-btn::after { content: ""; position: absolute; inset: -0.6rem; }
+      .side-user-btn::after { content: ""; position: absolute; inset: -0.6rem -0.6rem -0.6rem 0; }
       .side-user.is-open .avatar { border-color: var(--focus-border); }
       .side-user-pop {
         display: none;
@@ -5319,7 +5335,12 @@
         <a href="{{route "sessions"}}" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">{{template "navIcon" "sessions"}}Sessions</a>
         <a href="{{route "worktrees"}}" data-icon="worktrees" class="{{if .IsWorktrees}}active{{end}}">{{template "navIcon" "worktrees"}}Worktrees</a>
         <a href="{{route "spend"}}" data-icon="spend" class="{{if .IsSpend}}active{{end}}">{{template "navIcon" "spend"}}Spend</a>
+        {{/* Inbox lives on the profile bell. Hide this row only when that
+             bell actually rendered (name + id); a UserID with no profile
+             would otherwise have no chrome entry at all. */}}
+        {{if not (and .UserName .UserID)}}
         <a href="{{route "inbox"}}" data-icon="inbox" class="{{if .IsInbox}}active{{end}}">{{template "navIcon" "inbox"}}{{template "navCount" "inbox"}}Inbox</a>
+        {{end}}
         {{if .IsAdmin}}<a href="{{route "config"}}" data-icon="config" class="{{if .IsConfig}}active{{end}}">{{template "navIcon" "config"}}Config</a>{{end}}
         {{end}}
         </div>
@@ -5360,16 +5381,15 @@
       </nav>
       <div class="side-foot">
         <span id="sse-status" title="Live updates">connecting…</span>
-        {{if and .AuthEnabled .UserID}}
-        <a href="{{route "inbox"}}" class="inbox-bell{{if .IsInbox}} active{{end}}" data-icon="inbox" aria-label="Inbox">{{template "navCount" "inbox"}}{{template "navIcon" "inbox"}}<span class="inbox-bell-label">Inbox</span></a>
-        {{end}}
         {{if .AuthEnabled}}
-          {{/* One markup, two shapes. Desktop: a grid — avatar + name/role on
-               row 1, Log out spanning row 2 (.side-user-pop is display:contents
-               so its children join that grid). Phone: the top bar has no room
-               for a Log out button, so the avatar becomes the trigger and the
-               pop is an anchored menu carrying the identity + Log out. The JS
-               toggle only runs at phone widths (see the account-menu script). */}}
+          {{/* One markup, two shapes. Desktop: a grid — avatar + name/role +
+               inbox on row 1, Log out spanning row 2 (.side-user-pop is
+               display:contents so its children join that grid). Phone: the top
+               bar has no room for a Log out button, so the avatar becomes the
+               trigger and the pop is an anchored menu carrying the identity +
+               Log out. The inbox bell sits on .side-user, not in the pop, so
+               the phone bar keeps the icon. The JS toggle only runs at phone
+               widths (see the account-menu script). */}}
           {{if .UserName}}
           <div class="side-user">
             <button type="button" class="side-user-btn" id="user-menu-btn" title="{{.UserID}} · {{.UserRole}}" aria-label="Account" aria-controls="user-menu">
@@ -5379,6 +5399,9 @@
               <span class="avatar" aria-hidden="true">{{printf "%.1s" .UserName}}</span>
               {{end}}
             </button>
+            {{if .UserID}}
+            <a href="{{route "inbox"}}" class="inbox-bell{{if .IsInbox}} active{{end}}" data-icon="inbox" title="Inbox" aria-label="Inbox">{{template "navCount" "inbox"}}{{template "navIcon" "inbox"}}<span class="inbox-bell-label">Inbox</span></a>
+            {{end}}
             <div class="side-user-pop" id="user-menu">
               <span class="side-user-meta">
                 <span class="side-user-name">{{.UserName}}</span>
@@ -7100,7 +7123,7 @@
     }
     function updateNavActive() {
       var path = location.pathname || "/";
-      document.querySelectorAll(".nav-links > a[href]").forEach(function (a) {
+      document.querySelectorAll(".nav-links > a[href], .inbox-bell[href]").forEach(function (a) {
         var href = a.getAttribute("href") || "";
         a.classList.toggle("active", !!navActiveFor(path, href));
       });
