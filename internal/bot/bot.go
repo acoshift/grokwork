@@ -51,6 +51,8 @@ type runJob struct {
 	prompt string
 	// liveText is the accumulating assistant reply while the run is in flight.
 	liveText string
+	// attachments are the files this run was started with (web session view + serve).
+	attachments []savedAttachment
 }
 
 type taskItem struct {
@@ -263,8 +265,9 @@ type ActiveRun struct {
 	Phases   string    `json:"phases,omitempty"`
 	// Prompt and LiveText power the session-detail streaming turn (like Discord).
 	// Omitted from SSE JSON (can be large); web session handlers read them in-process.
-	Prompt   string `json:"-"`
-	LiveText string `json:"-"`
+	Prompt      string               `json:"-"`
+	LiveText    string               `json:"-"`
+	Attachments []history.Attachment `json:"-"`
 }
 
 // StatusSnapshot is a point-in-time view of bot activity for the web dashboard/SSE.
@@ -330,17 +333,19 @@ func (b *Bot) StatusSnapshot() StatusSnapshot {
 		job.mu.Lock()
 		activity, phases := job.activity, job.phases
 		prompt, liveText := job.prompt, job.liveText
+		atts := attachmentMeta(job.attachments)
 		job.mu.Unlock()
 		snap.ActiveRuns = append(snap.ActiveRuns, ActiveRun{
-			ThreadID: threadID,
-			Project:  job.project,
-			Started:  job.start,
-			Elapsed:  formatElapsed(now.Sub(job.start)),
-			QueueLen: qlen,
-			Activity: activity,
-			Phases:   phases,
-			Prompt:   prompt,
-			LiveText: liveText,
+			ThreadID:    threadID,
+			Project:     job.project,
+			Started:     job.start,
+			Elapsed:     formatElapsed(now.Sub(job.start)),
+			QueueLen:    qlen,
+			Activity:    activity,
+			Phases:      phases,
+			Prompt:      prompt,
+			LiveText:    liveText,
+			Attachments: atts,
 		})
 		snap.QueuedTotal += qlen
 		return true
@@ -1845,6 +1850,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	})
 
 	prompt := parsed.Prompt
+	var runFiles []savedAttachment
 
 	// Single-apply ReferencedPrompt: never resolve live if journal already has it.
 	var related *discordgo.Message
@@ -1876,13 +1882,13 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		if b.cfg != nil {
 			defer removeWebStagedAttachments(b.cfg.DataDir, item.attachmentPaths)
 		}
-		var files []savedAttachment
-		for _, p := range item.attachmentPaths {
-			if _, stErr := os.Stat(p); stErr != nil {
+		runFiles = attachmentsFromPaths(item.attachmentPaths)
+		for _, f := range runFiles {
+			if _, stErr := os.Stat(f.Path); stErr != nil {
 				streamer.Stop()
 				close(stopProgress)
 				progressWG.Wait()
-				log.Printf("error: durable attachment missing %s: %v", p, stErr)
+				log.Printf("error: durable attachment missing %s: %v", f.Path, stErr)
 				msg := "Attachments were lost before the run could start. Please re-send the task with files attached."
 				if present && statusID != "" {
 					if editErr := discordEditComponents(s, threadID, statusID, "Failed · attachments", actionBarDone(threadID, b.sessionWebURL(threadID)), true); editErr != nil {
@@ -1897,10 +1903,10 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 				}
 				return
 			}
-			files = append(files, savedAttachment{Path: p, Filename: filepath.Base(p)})
 		}
-		prompt = promptWithAttachments(prompt, files)
-		log.Printf("task: using %d pre-attached path(s)", len(files))
+		prompt = promptWithAttachments(prompt, runFiles)
+		b.publishRunAttachments(threadID, runFiles)
+		log.Printf("task: using %d pre-attached path(s)", len(runFiles))
 	} else if present && m != nil {
 		attachments := collectAttachments(m.Attachments, related)
 		if len(attachments) > 0 {
@@ -1929,8 +1935,13 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 				}
 				return
 			}
-			prompt = promptWithAttachments(prompt, files)
-			log.Printf("task: saved %d attachment(s)", len(files))
+			runFiles = make([]savedAttachment, len(files))
+			for i, f := range files {
+				runFiles[i] = completeAttachment(f)
+			}
+			prompt = promptWithAttachments(prompt, runFiles)
+			b.publishRunAttachments(threadID, runFiles)
+			log.Printf("task: saved %d attachment(s)", len(runFiles))
 		}
 	}
 
@@ -2275,7 +2286,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	if histM == nil && item.triggerMsgID != "" {
 		histM = &discordgo.MessageCreate{Message: &discordgo.Message{ID: item.triggerMsgID}}
 	}
-	b.recordTurnActorPolicy(threadID, actor, histM, proj.Name, parsed.Prompt, result, elapsed, pol)
+	b.recordTurnActorPolicy(threadID, actor, histM, proj.Name, parsed.Prompt, result, elapsed, pol, runFiles)
 	// Durable per-unit record. Outside the !result.Cancelled branch below on
 	// purpose: a cancelled run is exactly the case whose output history drops.
 	b.recordRunTimeline(threadID, streamer.Text(), result, elapsed)
@@ -2423,10 +2434,10 @@ func (b *Bot) recordTurn(threadID string, m *discordgo.MessageCreate, project, u
 }
 
 func (b *Bot) recordTurnActor(threadID string, actor Actor, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration) {
-	b.recordTurnActorPolicy(threadID, actor, m, project, userPrompt, result, elapsed, RunPolicy{})
+	b.recordTurnActorPolicy(threadID, actor, m, project, userPrompt, result, elapsed, RunPolicy{}, nil)
 }
 
-func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration, pol RunPolicy) {
+func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration, pol RunPolicy, files []savedAttachment) {
 	if b.history == nil {
 		return
 	}
@@ -2463,14 +2474,14 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 		response = response[:maxResponse] + "\n…(truncated)"
 	}
 	prompt := userPrompt
-	if prompt == "" {
+	if prompt == "" && len(files) == 0 {
 		prompt = "(empty prompt)"
 	}
 	// Agent + model are resolved through threadCLI, the single place that decides
 	// what a run on this thread uses, so the name a spend rollup prices can never
 	// disagree with the CLI that was actually billed.
 	cli := b.threadCLI(threadID)
-	if err := b.history.Append(threadID, history.Turn{
+	if err := b.history.AppendFiles(threadID, history.Turn{
 		User:      user,
 		UserID:    userID,
 		Prompt:    prompt,
@@ -2488,7 +2499,7 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 		Agent:     cli.Agent.String(),
 		Model:     cli.Model,
 		Usage:     turnUsage(result),
-	}); err != nil {
+	}, historyFiles(files)); err != nil {
 		log.Printf("error: history append thread=%s: %v", threadID, err)
 	}
 }

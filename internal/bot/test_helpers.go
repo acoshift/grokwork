@@ -91,6 +91,14 @@ func SeedActiveRunForTest(b *Bot, threadID, project, prompt, liveText string) er
 	return nil
 }
 
+// PublishRunAttachmentsForTest stamps in-flight files onto a seeded run.
+func PublishRunAttachmentsForTest(b *Bot, threadID string, paths []string) {
+	if b == nil {
+		return
+	}
+	b.publishRunAttachments(threadID, attachmentsFromPaths(paths))
+}
+
 // FinishRunForTest clears the active job for a thread (test cleanup).
 func FinishRunForTest(b *Bot, threadID string) {
 	if b == nil {

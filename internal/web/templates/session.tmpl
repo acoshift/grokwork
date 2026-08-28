@@ -538,10 +538,31 @@
         <div class="bubble-body muted">(no response text yet)</div>
         {{end}}
       </div>
+      {{if or $t.Prompt $t.Attachments}}
       <div class="bubble user">
         <div class="bubble-label">User</div>
+        {{if $t.Prompt}}
         <div class="bubble-body md">{{githubMarkdown $.Project $t.Prompt}}</div>
+        {{end}}
+        {{if $t.Attachments}}
+        <div class="turn-atts">
+          {{range $a := $t.Attachments}}
+          {{$href := sessionFile $.ThreadID (add $ri 1) $a.Name}}
+          {{if $a.IsImage}}
+          <a class="turn-att-img" href="{{$href}}" hx-boost="false">
+            <img src="{{$href}}" alt="{{$a.Name}}">
+          </a>
+          {{else}}
+          <a class="turn-att-chip" href="{{$href}}" hx-boost="false">
+            <span class="turn-att-name">{{$a.Name}}</span>
+            {{if $a.SizeLabel}}<span class="turn-att-size">{{$a.SizeLabel}}</span>{{end}}
+          </a>
+          {{end}}
+          {{end}}
+        </div>
+        {{end}}
       </div>
+      {{end}}
     </article>
     {{end}}
     {{end}}
@@ -618,10 +639,29 @@
     <div class="bubble-body muted" id="live-stream-body">streaming…</div>
     {{end}}
   </div>
-  {{if .RunPrompt}}
+  {{if or .RunPrompt .RunAttachments}}
   <div class="bubble user">
     <div class="bubble-label">User</div>
+    {{if .RunPrompt}}
     <div class="bubble-body md">{{githubMarkdown .Project .RunPrompt}}</div>
+    {{end}}
+    {{if .RunAttachments}}
+    <div class="turn-atts">
+      {{range $a := .RunAttachments}}
+      {{$href := sessionRunFile $.ThreadID $a.Name}}
+      {{if $a.IsImage}}
+      <a class="turn-att-img" href="{{$href}}" hx-boost="false">
+        <img src="{{$href}}" alt="{{$a.Name}}">
+      </a>
+      {{else}}
+      <a class="turn-att-chip" href="{{$href}}" hx-boost="false">
+        <span class="turn-att-name">{{$a.Name}}</span>
+        {{if $a.SizeLabel}}<span class="turn-att-size">{{$a.SizeLabel}}</span>{{end}}
+      </a>
+      {{end}}
+      {{end}}
+    </div>
+    {{end}}
   </div>
   {{end}}
 </article>

@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"net"
 	"net/http"
 	"os"
@@ -310,8 +313,14 @@ func TestPreviewServer(t *testing.T) {
 	// the state it is actually hard in: the rail's actions (escalate, close)
 	// sit past a screen-height of turns and are only reachable through the
 	// action sheet.
+	shotPath := filepath.Join(cfg.DataDir, "preview-shot.png")
+	writePreviewShot(t, shotPath)
+	logPath := filepath.Join(cfg.DataDir, "preview-webhook.log")
+	if err := os.WriteFile(logPath, []byte("2026-08-28T09:12:04Z charge.updated order=9313 evt=evt_1\n2026-08-28T09:12:04Z charge.updated order=9313 evt=evt_2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for i := 1; i <= 14; i++ {
-		if err := hist.Append("1390000000000000022", history.Turn{
+		turn := history.Turn{
 			User: "mint#0",
 			Prompt: fmt.Sprintf("Round %d: narrow the duplicate-settle window — check the debounce key, "+
 				"the webhook dedupe table and the retry backoff for order #9313.", i),
@@ -325,7 +334,15 @@ func TestPreviewServer(t *testing.T) {
 			Project: "webapp", SessionID: "case-b",
 			Agent: "claude", Model: "claude-sonnet-5",
 			Usage: claudeUsage(700+i*40, 30_000+i*9_000, 8_000+i*400, 2_100+i*90, 24_000+i*7_000),
-		}); err != nil {
+		}
+		var files []history.File
+		if i == 1 {
+			files = []history.File{
+				{Path: shotPath, Name: "checkout-timeout.png", ContentType: "image/png"},
+				{Path: logPath, Name: "webhook-burst.log", ContentType: "text/plain"},
+			}
+		}
+		if err := hist.AppendFiles("1390000000000000022", turn, files); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -345,6 +362,9 @@ func TestPreviewServer(t *testing.T) {
 		"Reproduced: two settle jobs enqueue for order #9313 when webhooks burst…"); err != nil {
 		t.Fatal(err)
 	}
+	liveShot := filepath.Join(cfg.DataDir, "preview-live.png")
+	writePreviewShot(t, liveShot)
+	bot.PublishRunAttachmentsForTest(srv.bot, "1390000000000000022", []string{liveShot, logPath})
 	if previewAuth {
 		sid, _, err := srv.LoginAs("111111111111111111", "mint", config.WebRoleAdmin)
 		if err != nil {
@@ -767,6 +787,36 @@ func previewMinutes(n int) *int { return &n }
 
 func previewStamp(d time.Duration) string {
 	return time.Now().UTC().Add(d).Format(time.RFC3339)
+}
+
+func writePreviewShot(t *testing.T, path string) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 480, 270))
+	for y := range 270 {
+		for x := range 480 {
+			if y < 36 {
+				img.SetRGBA(x, y, color.RGBA{R: 28, G: 28, B: 32, A: 255})
+			} else {
+				img.SetRGBA(x, y, color.RGBA{R: 246, G: 245, B: 242, A: 255})
+			}
+		}
+	}
+	for y := 88; y < 128; y++ {
+		for x := 24; x < 456; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: 196, G: 64, B: 64, A: 255})
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // seedPreviewDeploys fills the run store so /deploys (the cross-project board)

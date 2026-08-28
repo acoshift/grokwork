@@ -3,11 +3,15 @@ package bot
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/runjournal"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -295,6 +299,68 @@ func (b *Bot) publishRunActivity(threadID string, activity, phases string) {
 	st.job.activity = activity
 	st.job.phases = phases
 	st.job.mu.Unlock()
+}
+
+// publishRunAttachments stores the files this in-flight turn was started with
+// so the session page can show and serve them while the run is live.
+func (b *Bot) publishRunAttachments(threadID string, files []savedAttachment) {
+	if b == nil || threadID == "" {
+		return
+	}
+	v, ok := b.states.Load(threadID)
+	if !ok {
+		return
+	}
+	st := v.(*threadState)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.job == nil {
+		return
+	}
+	st.job.mu.Lock()
+	st.job.attachments = slices.Clone(files)
+	st.job.mu.Unlock()
+}
+
+// OpenRunAttachment opens a file from the in-flight run. name must match a
+// published attachment's basename; anything else is not found.
+func (b *Bot) OpenRunAttachment(threadID, name string) (*os.File, history.Attachment, error) {
+	name = filepath.Base(strings.TrimSpace(name))
+	if b == nil || threadID == "" || name == "" || name == "." || name == ".." {
+		return nil, history.Attachment{}, os.ErrNotExist
+	}
+	v, ok := b.states.Load(threadID)
+	if !ok {
+		return nil, history.Attachment{}, os.ErrNotExist
+	}
+	st := v.(*threadState)
+	st.mu.Lock()
+	job := st.job
+	st.mu.Unlock()
+	if job == nil {
+		return nil, history.Attachment{}, os.ErrNotExist
+	}
+	job.mu.Lock()
+	files := slices.Clone(job.attachments)
+	job.mu.Unlock()
+	for _, f := range files {
+		if f.Filename != name || f.Path == "" {
+			continue
+		}
+		if filepath.Base(f.Path) != name {
+			continue
+		}
+		fh, err := os.Open(f.Path)
+		if err != nil {
+			return nil, history.Attachment{}, err
+		}
+		return fh, history.Attachment{
+			Name:        f.Filename,
+			ContentType: f.ContentType,
+			Size:        f.Size,
+		}, nil
+	}
+	return nil, history.Attachment{}, os.ErrNotExist
 }
 
 // publishRunPrompt stores the user-facing prompt for the in-flight turn (web session view).

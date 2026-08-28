@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"unicode"
 
 	"github.com/bwmarrin/discordgo"
+
+	"github.com/acoshift/grokwork/internal/history"
 )
 
 const (
@@ -279,6 +282,66 @@ func sanitizeFilename(name string) string {
 		name = base + ext
 	}
 	return name
+}
+
+func completeAttachment(sa savedAttachment) savedAttachment {
+	if sa.Filename == "" {
+		sa.Filename = filepath.Base(sa.Path)
+	}
+	if sa.Size == 0 && sa.Path != "" {
+		if fi, err := os.Stat(sa.Path); err == nil {
+			sa.Size = fi.Size()
+		}
+	}
+	if sa.ContentType == "" {
+		sa.ContentType = mime.TypeByExtension(filepath.Ext(sa.Filename))
+	}
+	return sa
+}
+
+func attachmentsFromPaths(paths []string) []savedAttachment {
+	out := make([]savedAttachment, 0, len(paths))
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, completeAttachment(savedAttachment{
+			Path:     p,
+			Filename: filepath.Base(p),
+		}))
+	}
+	return out
+}
+
+func historyFiles(files []savedAttachment) []history.File {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]history.File, 0, len(files))
+	for _, f := range files {
+		out = append(out, history.File{
+			Path:        f.Path,
+			Name:        f.Filename,
+			ContentType: f.ContentType,
+		})
+	}
+	return out
+}
+
+func attachmentMeta(files []savedAttachment) []history.Attachment {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]history.Attachment, 0, len(files))
+	for _, f := range files {
+		out = append(out, history.Attachment{
+			Name:        f.Filename,
+			ContentType: f.ContentType,
+			Size:        f.Size,
+		})
+	}
+	return out
 }
 
 func uniqueFilename(name string, used map[string]int) string {

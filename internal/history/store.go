@@ -2,6 +2,7 @@ package history
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,6 +43,24 @@ type Turn struct {
 	// Usage is the token accounting for this turn's run. Nil on records written
 	// before spend tracking, and on runs whose CLI reported nothing.
 	Usage *Usage `json:"usage,omitempty"`
+	// Attachments are files the user handed this turn (Discord/web). Bytes live
+	// under data/history/<threadId>/<n>/; this slice is the allowlist the
+	// session page serves from. Older records omit it.
+	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+// Attachment is one file persisted with a turn.
+type Attachment struct {
+	Name        string `json:"name"`
+	ContentType string `json:"contentType,omitempty"`
+	Size        int64  `json:"size,omitzero"`
+}
+
+// File is a source path to copy into a turn's durable files dir.
+type File struct {
+	Path        string
+	Name        string
+	ContentType string
 }
 
 // Usage is what one turn's run cost in tokens, plus how full the context window
@@ -165,6 +184,13 @@ func New(dataDir string) (*Store, error) {
 
 // Append records a completed turn for a thread.
 func (s *Store) Append(threadID string, turn Turn) error {
+	return s.AppendFiles(threadID, turn, nil)
+}
+
+// AppendFiles records a completed turn and copies files into the thread's
+// durable files dir. A copy failure for one file skips that file rather than
+// dropping the turn — the transcript is the record; attachments are extras.
+func (s *Store) AppendFiles(threadID string, turn Turn, files []File) error {
 	if !validThreadID(threadID) {
 		return fmt.Errorf("invalid thread id")
 	}
@@ -187,6 +213,10 @@ func (s *Store) Append(threadID string, turn Turn) error {
 	}
 	if turn.Project != "" {
 		th.Project = turn.Project
+	}
+	turnN := len(th.Turns) + 1
+	if atts := copyTurnFiles(s.filesDir(threadID, turnN), files); len(atts) > 0 {
+		turn.Attachments = atts
 	}
 	th.Turns = append(th.Turns, turn)
 	return s.saveLocked(th)
@@ -306,18 +336,22 @@ func (s *Store) Walk(fn func(Thread) error) error {
 	return nil
 }
 
-// Delete removes a thread's history file (e.g. optional cleanup).
+// Delete removes a thread's history file and its attachment files dir.
 func (s *Store) Delete(threadID string) error {
 	if !validThreadID(threadID) {
 		return fmt.Errorf("invalid thread id")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	err := os.Remove(s.path(threadID))
-	if os.IsNotExist(err) {
-		return nil
+	jsonErr := os.Remove(s.path(threadID))
+	if os.IsNotExist(jsonErr) {
+		jsonErr = nil
 	}
-	return err
+	dirErr := os.RemoveAll(s.filesRoot(threadID))
+	if os.IsNotExist(dirErr) {
+		dirErr = nil
+	}
+	return errors.Join(jsonErr, dirErr)
 }
 
 func (s *Store) path(threadID string) string {

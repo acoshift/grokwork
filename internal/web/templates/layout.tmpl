@@ -4088,6 +4088,53 @@
     .turn-live .bubble.assistant .bubble-body {
       border-color: hsl(var(--blue-500) / 30%);
     }
+    .turn-atts {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 0.4rem;
+      margin-top: 0.4rem;
+    }
+    .bubble.user > .turn-atts:first-child { margin-top: 0; }
+    .turn-att-img {
+      display: block;
+      max-width: 100%;
+      border-radius: 0.85rem;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      line-height: 0;
+    }
+    .turn-att-img img {
+      display: block;
+      max-width: min(20rem, 100%);
+      max-height: 16rem;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
+    .turn-att-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      max-width: 100%;
+      padding: 0.28rem 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.78rem;
+    }
+    .turn-att-chip:hover { border-color: var(--focus-border); }
+    .turn-att-name {
+      font-family: var(--mono);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 16rem;
+    }
+    .turn-att-size { color: var(--muted-soft); flex-shrink: 0; }
 
     /* ── Session composer (docked conversation input) ────────────────
        Desktop: sticky at the bottom of the conversation column with a soft

@@ -837,6 +837,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 				d.RunQueue = r.QueueLen
 				d.RunPrompt = r.Prompt
 				d.RunLiveText = r.LiveText
+				d.RunAttachments = r.Attachments
 				break
 			}
 		}

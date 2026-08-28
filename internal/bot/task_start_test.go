@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -661,6 +662,21 @@ func TestExecuteTaskWithAttachmentPaths(t *testing.T) {
 	}
 	if th.Turns[0].UserID != "u-att" {
 		t.Fatalf("user=%q", th.Turns[0].UserID)
+	}
+	if len(th.Turns[0].Attachments) != 1 || th.Turns[0].Attachments[0].Name != "note.txt" {
+		t.Fatalf("attachments=%+v", th.Turns[0].Attachments)
+	}
+	f, meta, err := b.history.OpenFile(threadID, 1, "note.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(f)
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "payload" || meta.Name != "note.txt" {
+		t.Fatalf("open=%q meta=%+v", raw, meta)
 	}
 }
 
