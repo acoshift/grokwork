@@ -55,7 +55,7 @@
   </ol>
   {{end}}
   {{if .Completed}}
-  <div class="live-region" id="job-log-{{.ID}}"
+  <div class="live-region" id="job-log-{{.ID}}" hx-preserve="true"
        hx-get="/projects/{{$.Project}}/actions/runs/{{$.ActionsRun.ID}}/job?job={{.ID}}&amp;owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}"
        hx-trigger="intersect once"
        hx-target="this" hx-select="unset" hx-swap="innerHTML"

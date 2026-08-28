@@ -564,7 +564,7 @@ func TestActionsRunPageJobLogResponsive(t *testing.T) {
 	for _, want := range []string{
 		`id="page-actions-run"`,
 		`class="section card job-card"`,
-		`id="job-log-1"`,
+		`id="job-log-1" hx-preserve="true"`,
 		`/actions/runs/99/job?job=1`,
 	} {
 		if !strings.Contains(body, want) {
