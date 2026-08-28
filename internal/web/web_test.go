@@ -387,6 +387,7 @@ func TestPagesRender(t *testing.T) {
 			{"/partials/home/projects", `id="proj-grid"`, "dashboard"},
 			{"/partials/home/runs", `id="runs-wrap"`, "dashboard"},
 			{"/partials/projects/pulse?project=proj", `id="pulse"`, "dashboard"},
+			{"/partials/projects/pulse/runs?project=proj", `id="project-runs"`, "dashboard"},
 			{"/partials/ship/stats", "CI failing", "ship"},
 			{"/partials/ship/table", "Pull requests", "ship"},
 			{"/partials/cases/pipeline?project=proj", `id="case-pipeline"`, "cases"},

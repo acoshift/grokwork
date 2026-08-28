@@ -194,6 +194,29 @@ func (s *Server) partialHomeProjects(ctx *hime.Context) error {
 	return s.viewFragment(ctx, "home", "home_projects", d)
 }
 
+// homeProjectCount is one launcher card's live badges. Zero is meaningful
+// (JS hides that badge), so these fields must not use omitzero.
+type homeProjectCount struct {
+	Running       int `json:"running"`
+	Queued        int `json:"queued"`
+	OpenPRs       int `json:"openPRs"`
+	ChecksFailing int `json:"checksFailing"`
+}
+
+func (s *Server) partialHomeCounts(ctx *hime.Context) error {
+	cards := s.buildProjectCards(ctx)
+	out := make(map[string]homeProjectCount, len(cards))
+	for _, c := range cards {
+		out[c.Name] = homeProjectCount{
+			Running:       c.Running,
+			Queued:        c.Queued,
+			OpenPRs:       c.OpenPRs,
+			ChecksFailing: c.ChecksFailing,
+		}
+	}
+	return ctx.NoCache().JSON(out)
+}
+
 func (s *Server) partialHomeRuns(ctx *hime.Context) error {
 	d := s.basePage(ctx)
 	d.Status = s.statusVisible(ctx)
@@ -308,6 +331,55 @@ func (s *Server) partialProjectPulse(ctx *hime.Context) error {
 		return forbiddenProject(ctx, err)
 	}
 	return s.viewFragment(ctx, "project_overview", "project_pulse", s.projectPulseData(ctx, project))
+}
+
+func (s *Server) partialProjectPulseRuns(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.FormValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	return s.viewFragment(ctx, "project_overview", "project_pulse_runs", s.projectPulseData(ctx, project))
+}
+
+// projectPulseCounts is the overview number-card payload. Zero is meaningful
+// (JS paints "0" and toggles hints), so these fields must not use omitzero.
+type projectPulseCounts struct {
+	Running       int `json:"running"`
+	Queued        int `json:"queued"`
+	OpenPRs       int `json:"openPRs"`
+	ChecksFailing int `json:"checksFailing"`
+	CasesOpen     int `json:"casesOpen"`
+	Investigate   int `json:"investigate"`
+	Engineering   int `json:"engineering"`
+	Draft         int `json:"draft"`
+	Closed        int `json:"closed"`
+	Intake        int `json:"intake"`
+	Answered      int `json:"answered"`
+	Fixing        int `json:"fixing"`
+	Shipping      int `json:"shipping"`
+}
+
+func (s *Server) partialProjectPulseCounts(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.FormValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	d := s.projectPulseData(ctx, project)
+	return ctx.NoCache().JSON(projectPulseCounts{
+		Running:       d.Status.ActiveCount,
+		Queued:        d.Status.QueuedTotal,
+		OpenPRs:       d.Ship.Open,
+		ChecksFailing: d.Ship.ChecksFailing,
+		CasesOpen:     d.Cases.OpenTotal,
+		Investigate:   d.Cases.Investigate,
+		Engineering:   d.Cases.Fixing + d.Cases.Shipping,
+		Draft:         d.Ship.Draft,
+		Closed:        d.Cases.Closed,
+		Intake:        d.Cases.Intake,
+		Answered:      d.Cases.Answered,
+		Fixing:        d.Cases.Fixing,
+		Shipping:      d.Cases.Shipping,
+	})
 }
 
 // shipScoped is the workspace ship board (state filter only; project fixed).

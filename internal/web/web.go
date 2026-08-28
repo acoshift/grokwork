@@ -262,24 +262,27 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"sse":                                "/events",
 		// Live partials (htmx SSE domain swaps) — separate URLs so each region
 		// can refresh independently. Fragments render via View("page#define").
-		"partial.home.projects":   "/partials/home/projects",
-		"partial.home.runs":       "/partials/home/runs",
-		"partial.project.pulse":   "/partials/projects/pulse",
-		"partial.ship.stats":      "/partials/ship/stats",
-		"partial.ship.table":      "/partials/ship/table",
-		"partial.cases.counts":    "/partials/cases/counts",
-		"partial.cases.pipeline":  "/partials/cases/pipeline",
-		"partial.cases.list":      "/partials/cases/list",
-		"partial.history.table":   "/partials/history/table",
-		"partial.history.turns":   "/partials/history/turns/",
-		"partial.session":         "/partials/sessions/",
-		"partial.worktrees.table": "/partials/worktrees/table",
-		"partial.deploys.board":   "/partials/deploys/board",
-		"partial.issues.table":    "/partials/issues/table",
-		"partial.nav.counts":      "/partials/nav/counts",
-		"partial.pr.gates":        "/partials/prs/",
-		"partial.config.lists":    "/partials/config/lists",
-		"partial.config.channels": "/partials/config/channels",
+		"partial.home.projects":        "/partials/home/projects",
+		"partial.home.counts":          "/partials/home/counts",
+		"partial.home.runs":            "/partials/home/runs",
+		"partial.project.pulse":        "/partials/projects/pulse",
+		"partial.project.pulse.counts": "/partials/projects/pulse/counts",
+		"partial.project.pulse.runs":   "/partials/projects/pulse/runs",
+		"partial.ship.stats":           "/partials/ship/stats",
+		"partial.ship.table":           "/partials/ship/table",
+		"partial.cases.counts":         "/partials/cases/counts",
+		"partial.cases.pipeline":       "/partials/cases/pipeline",
+		"partial.cases.list":           "/partials/cases/list",
+		"partial.history.table":        "/partials/history/table",
+		"partial.history.turns":        "/partials/history/turns/",
+		"partial.session":              "/partials/sessions/",
+		"partial.worktrees.table":      "/partials/worktrees/table",
+		"partial.deploys.board":        "/partials/deploys/board",
+		"partial.issues.table":         "/partials/issues/table",
+		"partial.nav.counts":           "/partials/nav/counts",
+		"partial.pr.gates":             "/partials/prs/",
+		"partial.config.lists":         "/partials/config/lists",
+		"partial.config.channels":      "/partials/config/channels",
 	})
 
 	app.TemplateFunc("add", func(a, b int) int { return a + b })
@@ -605,8 +608,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postCommitReview))))
 	mux.Handle("GET /events", s.requireAuth(http.HandlerFunc(s.sse)))
 	mux.Handle("GET /partials/home/projects", s.requireAuth(hime.Handler(s.partialHomeProjects)))
+	mux.Handle("GET /partials/home/counts", s.requireAuth(hime.Handler(s.partialHomeCounts)))
 	mux.Handle("GET /partials/home/runs", s.requireAuth(hime.Handler(s.partialHomeRuns)))
 	mux.Handle("GET /partials/projects/pulse", s.requireAuth(hime.Handler(s.partialProjectPulse)))
+	mux.Handle("GET /partials/projects/pulse/counts", s.requireAuth(hime.Handler(s.partialProjectPulseCounts)))
+	mux.Handle("GET /partials/projects/pulse/runs", s.requireAuth(hime.Handler(s.partialProjectPulseRuns)))
 	mux.Handle("GET /partials/ship/stats", s.requireAuth(hime.Handler(s.partialShipStats)))
 	mux.Handle("GET /partials/ship/table", s.requireAuth(hime.Handler(s.partialShipTable)))
 	mux.Handle("GET /partials/cases/pipeline", s.requireAuth(hime.Handler(s.partialCasesPipeline)))

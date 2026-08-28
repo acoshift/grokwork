@@ -10,16 +10,32 @@
 <p class="sub">Browse <a href="/projects/{{.Project}}/issues">issues</a>{{if .NavLinearEnabled}}, <a href="/projects/{{.Project}}/linear">Linear</a>{{end}}{{if .NavClickUpEnabled}}, <a href="/projects/{{.Project}}/clickup">ClickUp</a>{{end}}{{if .NavErrorsEnabled}}, <a href="/projects/{{.Project}}/errors">errors</a>{{end}}
   or <a href="/projects/{{.Project}}/commits">commits</a> to start from existing work.</p>
 
-{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
+{{/* .badge sets display:inline-flex, which would otherwise beat [hidden]. */}}
+<style>
+  #pulse [hidden] { display: none; }
+</style>
+{{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page.
+     Number cards swap none (JSON painted in place); the running table still innerHTML-swaps. */}}
 <div class="live-region"
      id="live-project-pulse"
-     hx-get="{{route "partial.project.pulse"}}?project={{urlquery .Project}}"
+     data-pulse-counts
+     hx-get="{{route "partial.project.pulse.counts"}}?project={{urlquery .Project}}"
      hx-trigger="sse:dashboard, sse:ship, sse:cases"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="none"
+     hx-sync="this:queue last">
+  {{template "project_pulse" .}}
+</div>
+<div class="live-region"
+     id="live-project-runs"
+     hx-get="{{route "partial.project.pulse.runs"}}?project={{urlquery .Project}}"
+     hx-trigger="sse:dashboard"
      hx-target="this"
      hx-select="unset"
      hx-swap="innerHTML"
      hx-sync="this:queue last">
-  {{template "project_pulse" .}}
+  {{template "project_pulse_runs" .}}
 </div>
 
 {{/* Phone-only: workspace sections without a bottom tab (the scoped footer
@@ -130,46 +146,121 @@
   <div class="empty">No sessions in this project yet.{{if .CanStartSession}} <a href="/projects/{{.Project}}/start">Start one</a>.{{end}}</div>
   {{end}}
 </div>
+<script>
+(function () {
+  function setOnOffHint(name, on) {
+    var el = document.querySelector('[data-pulse-hint="' + name + '"]');
+    if (!el) return;
+    var yes = el.querySelector("[data-pulse-on]");
+    var no = el.querySelector("[data-pulse-off]");
+    if (yes) yes.hidden = !on;
+    if (no) no.hidden = !!on;
+  }
+  function applyPulseCounts(data) {
+    if (!data || typeof data !== "object") return;
+    document.querySelectorAll("[data-pulse]").forEach(function (el) {
+      var key = el.getAttribute("data-pulse");
+      if (!Object.prototype.hasOwnProperty.call(data, key)) return;
+      var n = data[key];
+      if (typeof n !== "number" || !isFinite(n)) return;
+      el.textContent = String(Math.floor(n));
+    });
+    setOnOffHint("running", data.running > 0);
+    setOnOffHint("checksFailing", data.checksFailing > 0);
+    var closed = document.querySelector('[data-pulse-hint="closed"]');
+    if (closed) closed.hidden = !(data.closed > 0);
+  }
+  function countsPath(d) {
+    var raw = "";
+    if (d) {
+      if (d.xhr && d.xhr.responseURL) raw = d.xhr.responseURL;
+      else if (d.pathInfo) raw = d.pathInfo.finalRequestPath || d.pathInfo.requestPath || "";
+      else if (d.requestConfig) raw = d.requestConfig.path || "";
+    }
+    try { return new URL(raw, location.origin).pathname; }
+    catch (err) { return raw; }
+  }
+  function parseCountsJSON(d) {
+    if (!d || !d.xhr) return null;
+    if (d.successful === false) return null;
+    var st = d.xhr.status;
+    if (st < 200 || st >= 300) return null;
+    try { return JSON.parse(d.xhr.responseText); }
+    catch (err) { return null; }
+  }
+  function onPulseCountsLoaded(e) {
+    if (countsPath(e.detail || {}) !== "/partials/projects/pulse/counts") return;
+    applyPulseCounts(parseCountsJSON(e.detail || {}));
+  }
+  if (!window.__gwPulseCountsBound) {
+    window.__gwPulseCountsBound = true;
+    document.body.addEventListener("htmx:afterOnLoad", onPulseCountsLoaded);
+    document.body.addEventListener("htmx:afterRequest", onPulseCountsLoaded);
+  }
+  var host = document.querySelector("[data-pulse-counts]");
+  if (!host) return;
+  var url = host.getAttribute("hx-get") || "/partials/projects/pulse/counts";
+  fetch(url, {
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { Accept: "application/json" }
+  }).then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!document.querySelector("[data-pulse-counts]")) return;
+      applyPulseCounts(data);
+    }).catch(function () {});
+})();
+</script>
 {{end}}
 
 {{define "project_pulse"}}
 <div class="grid" id="pulse">
   <div class="card">
     <div class="label">Running</div>
-    <div class="value" id="pulse-running">{{.Status.ActiveCount}}</div>
-    <div class="hint">{{if gt .Status.ActiveCount 0}}<span class="badge live">running</span>{{else}}idle{{end}}</div>
+    <div class="value" id="pulse-running" data-pulse="running">{{.Status.ActiveCount}}</div>
+    <div class="hint" data-pulse-hint="running">
+      <span class="badge live" data-pulse-on{{if eq .Status.ActiveCount 0}} hidden{{end}}>running</span>
+      <span data-pulse-off{{if gt .Status.ActiveCount 0}} hidden{{end}}>idle</span>
+    </div>
   </div>
   <div class="card">
     <div class="label">Queued</div>
-    <div class="value" id="pulse-queued">{{.Status.QueuedTotal}}</div>
+    <div class="value" id="pulse-queued" data-pulse="queued">{{.Status.QueuedTotal}}</div>
     <div class="hint">follow-ups</div>
   </div>
   <div class="card">
     <div class="label">Open PRs</div>
-    <div class="value" id="pulse-open">{{.Ship.Open}}</div>
-    <div class="hint"><a href="/projects/{{.Project}}/ship">{{.Ship.Draft}} draft · ship board</a></div>
+    <div class="value" id="pulse-open" data-pulse="openPRs">{{.Ship.Open}}</div>
+    <div class="hint"><a href="/projects/{{.Project}}/ship"><span data-pulse="draft">{{.Ship.Draft}}</span> draft · ship board</a></div>
   </div>
   <div class="card">
     <div class="label">CI failing</div>
-    <div class="value" id="pulse-failing">{{.Ship.ChecksFailing}}</div>
-    <div class="hint">{{if gt .Ship.ChecksFailing 0}}<span class="badge status-error">needs attention</span>{{else}}all green{{end}}</div>
+    <div class="value" id="pulse-failing" data-pulse="checksFailing">{{.Ship.ChecksFailing}}</div>
+    <div class="hint" data-pulse-hint="checksFailing">
+      <span class="badge status-error" data-pulse-on{{if eq .Ship.ChecksFailing 0}} hidden{{end}}>needs attention</span>
+      <span data-pulse-off{{if gt .Ship.ChecksFailing 0}} hidden{{end}}>all green</span>
+    </div>
   </div>
   <div class="card">
     <div class="label">Open cases</div>
-    <div class="value" id="pulse-cases-open">{{.Cases.OpenTotal}}</div>
-    <div class="hint"><a href="/projects/{{.Project}}/cases">case board</a>{{if gt .Cases.Closed 0}} · {{.Cases.Closed}} closed{{end}}</div>
+    <div class="value" id="pulse-cases-open" data-pulse="casesOpen">{{.Cases.OpenTotal}}</div>
+    <div class="hint"><a href="/projects/{{.Project}}/cases">case board</a><span data-pulse-hint="closed"{{if eq .Cases.Closed 0}} hidden{{end}}> · <span data-pulse="closed">{{.Cases.Closed}}</span> closed</span></div>
   </div>
   <div class="card">
     <div class="label">Looking into it</div>
-    <div class="value" id="pulse-cases-investigate">{{.Cases.Investigate}}</div>
-    <div class="hint">{{.Cases.Intake}} intake · {{.Cases.Answered}} answered</div>
+    <div class="value" id="pulse-cases-investigate" data-pulse="investigate">{{.Cases.Investigate}}</div>
+    <div class="hint"><span data-pulse="intake">{{.Cases.Intake}}</span> intake · <span data-pulse="answered">{{.Cases.Answered}}</span> answered</div>
   </div>
   <div class="card">
     <div class="label">With engineering</div>
-    <div class="value" id="pulse-cases-eng">{{add .Cases.Fixing .Cases.Shipping}}</div>
-    <div class="hint">{{.Cases.Fixing}} fixing · {{.Cases.Shipping}} shipping</div>
+    <div class="value" id="pulse-cases-eng" data-pulse="engineering">{{add .Cases.Fixing .Cases.Shipping}}</div>
+    <div class="hint"><span data-pulse="fixing">{{.Cases.Fixing}}</span> fixing · <span data-pulse="shipping">{{.Cases.Shipping}}</span> shipping</div>
   </div>
 </div>
+{{end}}
+
+{{define "project_pulse_runs"}}
+<div id="project-runs">
 {{if .Status.ActiveRuns}}
 <div class="m-rows" style="margin-bottom:1.5rem">
   {{range .Status.ActiveRuns}}
@@ -200,4 +291,5 @@
 </table>
 </div>
 {{end}}
+</div>
 {{end}}

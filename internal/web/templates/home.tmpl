@@ -5,16 +5,22 @@
 {{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
 {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
 
+{{/* .badge sets display:inline-flex, which would otherwise beat [hidden]. */}}
+<style>
+  .proj-card-stats > [data-home-stat][hidden] { display: none; }
+</style>
 {{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page.
+     hx-swap=none: counts are JSON painted in place; remounting the grid dropped focus and replayed enter animation.
      hx-sync queue last (not replace): SSE can tick every 2s while a run is active; replace aborts the
      in-flight XHR and htmx console.errors htmx:sendAbort / htmx:afterRequest on every abort. */}}
 <div class="live-region"
      id="live-home-projects"
-     hx-get="{{route "partial.home.projects"}}"
+     data-home-counts
+     hx-get="{{route "partial.home.counts"}}"
      hx-trigger="sse:dashboard, sse:ship, sse:history"
      hx-target="this"
      hx-select="unset"
-     hx-swap="innerHTML"
+     hx-swap="none"
      hx-sync="this:queue last">
   {{template "home_projects" .}}
 </div>
@@ -54,22 +60,107 @@
     {{template "home_runs" .}}
   </div>
 </div>
+<script>
+(function () {
+  function homeStatText(key, n) {
+    if (key === "running") return n + " running";
+    if (key === "queued") return n + " queued";
+    if (key === "openPRs") return n + " open PR" + (n === 1 ? "" : "s");
+    if (key === "checksFailing") return n + " CI failing";
+    if (key === "idle") return "idle";
+    return String(n);
+  }
+  function num(v) {
+    var n = Number(v);
+    if (!isFinite(n) || n < 0) return 0;
+    return Math.floor(n);
+  }
+  function applyHomeCounts(data) {
+    if (!data || typeof data !== "object") return;
+    document.querySelectorAll("[data-home-counts] .proj-card[data-project]").forEach(function (card) {
+      var name = card.getAttribute("data-project");
+      if (!Object.prototype.hasOwnProperty.call(data, name)) return;
+      var counts = data[name];
+      if (!counts || typeof counts !== "object") return;
+      var running = num(counts.running);
+      var queued = num(counts.queued);
+      var openPRs = num(counts.openPRs);
+      var failing = num(counts.checksFailing);
+      var idle = running === 0 && queued === 0 && openPRs === 0;
+      card.querySelectorAll("[data-home-stat]").forEach(function (el) {
+        var key = el.getAttribute("data-home-stat");
+        if (key === "idle") {
+          el.hidden = !idle;
+          return;
+        }
+        var n = key === "running" ? running : key === "queued" ? queued : key === "openPRs" ? openPRs : key === "checksFailing" ? failing : 0;
+        if (n <= 0) {
+          el.hidden = true;
+          el.textContent = "";
+          return;
+        }
+        el.hidden = false;
+        el.textContent = homeStatText(key, n);
+      });
+    });
+  }
+  function countsPath(d) {
+    var raw = "";
+    if (d) {
+      if (d.xhr && d.xhr.responseURL) raw = d.xhr.responseURL;
+      else if (d.pathInfo) raw = d.pathInfo.finalRequestPath || d.pathInfo.requestPath || "";
+      else if (d.requestConfig) raw = d.requestConfig.path || "";
+    }
+    try { return new URL(raw, location.origin).pathname; }
+    catch (err) { return raw; }
+  }
+  function parseCountsJSON(d) {
+    if (!d || !d.xhr) return null;
+    if (d.successful === false) return null;
+    var st = d.xhr.status;
+    if (st < 200 || st >= 300) return null;
+    try { return JSON.parse(d.xhr.responseText); }
+    catch (err) { return null; }
+  }
+  function onHomeCountsLoaded(e) {
+    if (countsPath(e.detail || {}) !== "/partials/home/counts") return;
+    applyHomeCounts(parseCountsJSON(e.detail || {}));
+  }
+  if (!window.__gwHomeCountsBound) {
+    window.__gwHomeCountsBound = true;
+    document.body.addEventListener("htmx:afterOnLoad", onHomeCountsLoaded);
+    document.body.addEventListener("htmx:afterRequest", onHomeCountsLoaded);
+  }
+  var host = document.querySelector("[data-home-counts]");
+  if (!host) return;
+  var url = host.getAttribute("hx-get") || "/partials/home/counts";
+  fetch(url, {
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { Accept: "application/json" }
+  }).then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!document.querySelector("[data-home-counts]")) return;
+      applyHomeCounts(data);
+    }).catch(function () {});
+})();
+</script>
 {{end}}
 
 {{define "home_projects"}}
 <div class="proj-grid" id="proj-grid">
   {{range .ProjectCards}}
-  <a class="proj-card" href="/projects/{{.Name}}">
+  <a class="proj-card" href="/projects/{{.Name}}" data-project="{{.Name}}">
     <span class="proj-card-head">
       <span class="proj-mark" aria-hidden="true">{{printf "%.1s" .Name}}</span>
       <span class="proj-card-name">{{.Name}}</span>
     </span>
     <span class="proj-card-stats">
-      {{if gt .Running 0}}<span class="badge live">{{.Running}} running</span>{{end}}
-      {{if gt .Queued 0}}<span class="badge">{{.Queued}} queued</span>{{end}}
-      {{if gt .OpenPRs 0}}<span class="badge">{{.OpenPRs}} open PR{{if gt .OpenPRs 1}}s{{end}}</span>{{end}}
-      {{if gt .ChecksFailing 0}}<span class="badge status-error">{{.ChecksFailing}} CI failing</span>{{end}}
-      {{if and (eq .Running 0) (eq .Queued 0) (eq .OpenPRs 0)}}<span class="badge">idle</span>{{end}}
+      <span class="badge live" data-home-stat="running"{{if eq .Running 0}} hidden{{end}}>{{if gt .Running 0}}{{.Running}} running{{end}}</span>
+      <span class="badge" data-home-stat="queued"{{if eq .Queued 0}} hidden{{end}}>{{if gt .Queued 0}}{{.Queued}} queued{{end}}</span>
+      <span class="badge" data-home-stat="openPRs"{{if eq .OpenPRs 0}} hidden{{end}}>{{if gt .OpenPRs 0}}{{.OpenPRs}} open PR{{if gt .OpenPRs 1}}s{{end}}{{end}}</span>
+      <span class="badge status-error" data-home-stat="checksFailing"{{if eq .ChecksFailing 0}} hidden{{end}}>{{if gt .ChecksFailing 0}}{{.ChecksFailing}} CI failing{{end}}</span>
+      <span class="badge" data-home-stat="idle"{{if not (and (eq .Running 0) (eq .Queued 0) (eq .OpenPRs 0))}} hidden{{end}}>idle</span>
     </span>
     <span class="proj-card-foot">
       <span>{{if .LastActivity}}{{.Sessions}} session{{if ne .Sessions 1}}s{{end}} · {{.LastActivity}}{{else}}no activity yet{{end}}</span>
