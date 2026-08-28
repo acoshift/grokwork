@@ -22,6 +22,9 @@ const (
 	DefaultWorktreeIdleTTLDays = 30
 	// DefaultTerminalSessionTTLDays: unset config means disabled (0).
 	DefaultTerminalSessionTTLDays = 0
+	// DefaultLogTailLines is how many trailing lines of data/stdout.log and
+	// data/stderr.log the daily trimmer keeps. 0 disables.
+	DefaultLogTailLines = 100_000
 	// DefaultRepoFetchIntervalMinutes is used when a project omits
 	// repoFetchIntervalMinutes. Idle background git fetch is throttled to at
 	// most once per this many minutes per main checkout. Worktree create uses
@@ -122,6 +125,9 @@ type Config struct {
 	// TerminalSessionTTLDays is days since last update before deleting
 	// done/abandoned session tombstones. nil/omitted → 0 (disabled). 0 disables.
 	TerminalSessionTTLDays *int `json:"terminalSessionTTLDays,omitempty"`
+	// LogTailLines is how many trailing lines of data/stdout.log and
+	// data/stderr.log to keep. nil/omitted → DefaultLogTailLines. 0 disables.
+	LogTailLines *int `json:"logTailLines,omitempty"`
 	// HTTPListen is the address for the private-network web UI (e.g. ":8787", "0.0.0.0:8787").
 	// Empty uses default ":8787". Override with GROK_WORK_HTTP_LISTEN.
 	HTTPListen string `json:"httpListen,omitempty"`
@@ -516,6 +522,33 @@ func (c *Config) TerminalSessionTTL() time.Duration {
 	return time.Duration(days) * 24 * time.Hour
 }
 
+// LogTailLinesValue is how many trailing lines of data/stdout.log and
+// data/stderr.log the daily trimmer keeps. Omitted config uses
+// DefaultLogTailLines; 0 disables.
+func (c *Config) LogTailLinesValue() int {
+	if c == nil {
+		return DefaultLogTailLines
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.LogTailLines == nil || *c.LogTailLines < 0 {
+		return DefaultLogTailLines
+	}
+	return *c.LogTailLines
+}
+
+// SetLogTailLines sets the process-log tail length and persists. 0 disables
+// automatic trim. Negative values are rejected.
+func (c *Config) SetLogTailLines(n int) error {
+	if n < 0 {
+		return fmt.Errorf("logTailLines must be >= 0 (0 disables trim)")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.LogTailLines = new(n)
+	return c.saveLocked()
+}
+
 // RiskyPathGlobsConfigured reports whether riskyPathGlobs was set in config
 // (including explicitly empty). Unset (nil) means use bot defaults.
 func (c *Config) RiskyPathGlobsConfigured() bool {
@@ -901,6 +934,7 @@ func (c *Config) saveLocked() error {
 		WorktreeDir               string               `json:"worktreeDir,omitempty"`
 		WorktreeIdleTTLDays       *int                 `json:"worktreeIdleTTLDays,omitempty"`
 		TerminalSessionTTLDays    *int                 `json:"terminalSessionTTLDays,omitempty"`
+		LogTailLines              *int                 `json:"logTailLines,omitempty"`
 		HTTPListen                string               `json:"httpListen,omitempty"`
 		WebPublicBaseURL          string               `json:"webPublicBaseURL,omitempty"`
 		DiscordGuildID            string               `json:"discordGuildId,omitempty"`
@@ -950,6 +984,7 @@ func (c *Config) saveLocked() error {
 		WorktreeDir:               strings.TrimSpace(c.WorktreeDir),
 		WorktreeIdleTTLDays:       cloneIntPtr(c.WorktreeIdleTTLDays),
 		TerminalSessionTTLDays:    cloneIntPtr(c.TerminalSessionTTLDays),
+		LogTailLines:              cloneIntPtr(c.LogTailLines),
 		HTTPListen:                c.HTTPListen,
 		WebPublicBaseURL:          c.WebPublicBaseURL,
 		DiscordGuildID:            c.DiscordGuildID,

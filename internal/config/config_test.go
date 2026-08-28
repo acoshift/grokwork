@@ -403,6 +403,46 @@ func TestWorktreeIdleTTLDays(t *testing.T) {
 	}
 }
 
+func TestLogTailLines(t *testing.T) {
+	cfg := &Config{
+		Projects:   ProjectsMap{},
+		Channels:   map[string]string{},
+		ConfigPath: filepath.Join(t.TempDir(), "config.json"),
+	}
+	if cfg.LogTailLinesValue() != DefaultLogTailLines {
+		t.Fatalf("default=%d", cfg.LogTailLinesValue())
+	}
+	if err := cfg.SetLogTailLines(5000); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LogTailLinesValue() != 5000 {
+		t.Fatalf("value=%d", cfg.LogTailLinesValue())
+	}
+	if err := cfg.SetLogTailLines(0); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LogTailLinesValue() != 0 {
+		t.Fatal("0 should disable")
+	}
+	if err := cfg.SetLogTailLines(-1); err == nil {
+		t.Fatal("expected error for negative")
+	}
+
+	disk, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		LogTailLines *int `json:"logTailLines"`
+	}
+	if err := json.Unmarshal(disk, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.LogTailLines == nil || *parsed.LogTailLines != 0 {
+		t.Fatalf("disk=%v", parsed.LogTailLines)
+	}
+}
+
 func TestWorktreesRoot(t *testing.T) {
 	cfgDir := t.TempDir()
 	cfg := &Config{

@@ -154,8 +154,8 @@ type Bot struct {
 	agent *agentPlane
 
 	// Background workers (idle sweep, idle fetch, PR poller, board digest,
-	// gateway watch) share this context. Stop cancels it so they exit instead
-	// of racing a restarted process on the same worktrees.
+	// gateway watch, process-log trim) share this context. Stop cancels it so
+	// they exit instead of racing a restarted process on the same worktrees.
 	bgCtx    context.Context
 	bgCancel context.CancelFunc
 
@@ -165,6 +165,7 @@ type Bot struct {
 	prStatusOnce      sync.Once
 	boardDigestOnce   sync.Once
 	gatewayWatchOnce  sync.Once
+	logTrimOnce       sync.Once
 }
 
 func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) *Bot {
@@ -216,6 +217,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) 
 	b.startIdleWorktreeCleanup()
 	b.startIdleRepoFetch()
 	b.startPRStatusPoller()
+	b.startLogTrim()
 	return b
 }
 
@@ -693,6 +695,7 @@ func (b *Bot) onReady(s *discordgo.Session, r *discordgo.Ready) {
 	b.startIdleWorktreeCleanup()
 	b.startIdleRepoFetch()
 	b.startPRStatusPoller()
+	b.startLogTrim()
 	b.startBoardDigest(s)
 	b.startGatewayWatch()
 	// READY after a re-IDENTIFY means the resume failed and the gap was not

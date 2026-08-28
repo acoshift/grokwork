@@ -429,7 +429,7 @@ rm -f ~/Library/LaunchAgents/com.acoshift.grokwork.plist
 
 - Prefer modern `bootstrap` / `bootout` / `kickstart` over legacy `launchctl load` / `unload`.
 - `WorkingDirectory` must be the repo root so relative `config.json` and `data/` resolve correctly (or set `GROK_WORK_CONFIG` in `EnvironmentVariables`).
-- Logs grow without rotation; truncate or rotate `data/stdout.log` / `data/stderr.log` if needed.
+- Process logs (`data/stdout.log`, `data/stderr.log`) are trimmed in place daily to the last `logTailLines` lines (default 100000; `0` disables). Truncation is in-place so launchd’s still-open FDs keep writing to the same file.
 - Do not put secrets in the plist; keep tokens in `config.json` (gitignored) or env vars you inject carefully.
 
 ## Env vars

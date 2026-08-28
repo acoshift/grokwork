@@ -35,6 +35,7 @@ func TestSaveLockedPreservesWave1RootFields(t *testing.T) {
 	cfg.MaxConcurrentRuns = new(4)
 	cfg.MaxConcurrentRunsUser = new(2)
 	cfg.GrokEnvDenylist = []string{"CUSTOM_SECRET_"}
+	cfg.LogTailLines = new(5000)
 
 	cfg.mu.Lock()
 	err = cfg.saveLocked()
@@ -59,5 +60,8 @@ func TestSaveLockedPreservesWave1RootFields(t *testing.T) {
 	}
 	if len(again.GrokEnvDenylist) != 1 || again.GrokEnvDenylist[0] != "CUSTOM_SECRET_" {
 		t.Fatalf("GrokEnvDenylist lost: %v", again.GrokEnvDenylist)
+	}
+	if again.LogTailLines == nil || *again.LogTailLines != 5000 {
+		t.Fatalf("LogTailLines lost: %+v", again.LogTailLines)
 	}
 }

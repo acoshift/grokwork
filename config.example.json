@@ -138,6 +138,7 @@
   "worktreeIsolation": true,
   "worktreeDir": "",
   "worktreeIdleTTLDays": 30,
+  "logTailLines": 100000,
   "resumeActiveRuns": true,
   "httpListen": ":8787",
   "webPublicBaseURL": "",
