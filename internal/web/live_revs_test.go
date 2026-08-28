@@ -3,6 +3,7 @@ package web
 import (
 	"testing"
 
+	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -96,5 +97,56 @@ func TestLiveRevsStableAndChange(t *testing.T) {
 	}
 	if g.Ship != beforeShip {
 		t.Fatal("ship rev should not change on a case phase transition")
+	}
+}
+
+// TestHistoryRevMovesOnRunIdleAndSessionChrome pins the session-detail live
+// region: #live-session listens on history, so a turn finishing (and the
+// Work unit chrome patched after history.Append) must move that rev — without
+// ticking on in-flight stream text the way dashboard does.
+func TestHistoryRevMovesOnRunIdleAndSessionChrome(t *testing.T) {
+	srv, _, _ := testServer(t)
+	idle := srv.fpHistory()
+
+	if err := bot.SeedActiveRunForTest(srv.bot, "thread-99", "proj", "prompt", "live so far"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { bot.FinishRunForTest(srv.bot, "thread-99") })
+
+	running := srv.fpHistory()
+	if running == idle {
+		t.Fatal("history rev should change when a run starts")
+	}
+	again := srv.fpHistory()
+	if again != running {
+		t.Fatal("history rev must stay put while a run is in flight (elapsed/live text are dashboard)")
+	}
+
+	bot.FinishRunForTest(srv.bot, "thread-99")
+	after := srv.fpHistory()
+	if after == running {
+		t.Fatal("history rev should change when a run ends")
+	}
+
+	beforePR := after
+	if _, _, err := srv.sessions.Patch("thread-99", func(e *sessionstore.Entry) {
+		e.PRs = []sessionstore.TrackedPR{{
+			Number: 7, State: "OPEN", Title: "feat", Owner: "acme", Repo: "app",
+		}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if srv.fpHistory() == beforePR {
+		t.Fatal("history rev should change when Work unit PR chrome is patched")
+	}
+
+	beforeVerify := srv.fpHistory()
+	if _, _, err := srv.sessions.Patch("thread-99", func(e *sessionstore.Entry) {
+		e.LastVerify = &sessionstore.LastVerify{Name: "unit", OK: true, At: "2026-08-28T00:00:00Z"}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if srv.fpHistory() == beforeVerify {
+		t.Fatal("history rev should change when last-verify chrome is patched")
 	}
 }

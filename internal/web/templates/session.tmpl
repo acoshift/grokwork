@@ -60,7 +60,9 @@
 
 {{/* Record region: work-unit chrome + sealed turns. Dashboard (elapsed +
      stream) is nested in #live-session-run — fpDashboard includes elapsed, so a
-     host-wide 2s tick must not remount every sealed turn. */}}
+     host-wide 2s tick must not remount every sealed turn. fpHistory also folds
+     run idle + session chrome (PRs, label, dossier) so this remounts when a
+     turn finishes, not only when the history file grows. */}}
 <div class="live-region"
      id="live-session"
      hx-get="/partials/sessions/{{.ThreadID}}{{if .NavProject}}?project={{urlquery .NavProject}}{{else if .Project}}?project={{urlquery .Project}}{{end}}"

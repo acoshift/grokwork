@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/acoshift/grokwork/internal/bot"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
 // live domain event names (htmx hx-trigger="sse:<name>").
@@ -143,16 +144,58 @@ func (s *Server) fpHistory() string {
 	if err != nil {
 		return hashFingerprint("err", err.Error())
 	}
-	threads = mergeSessionRows(threads, s.sessions.List())
+	var sessions []sessionstore.Listed
+	if s.sessions != nil {
+		sessions = s.sessions.List()
+	}
+	threads = mergeSessionRows(threads, sessions)
+	// Running is the idle/busy edge. history.Append lands before refreshPR /
+	// postCompletion / finishRun, and Patch does not stamp UpdatedAt, so a
+	// TurnCount-only fingerprint fires too early (or not again) and the
+	// session page keeps stale Work unit / completion / case chrome.
+	annotateSessionRunning(threads, s.bot)
 	var b strings.Builder
 	for _, t := range threads {
 		// Goal is patched without stamping UpdatedAt (title summarize, /goal).
 		// The session live region listens on history, so omitting it would leave
 		// the generated title invisible until the next navigation.
-		fmt.Fprintf(&b, "%s|%s|%d|%s|%s|%s|%s\n",
-			t.ThreadID, t.Project, t.TurnCount, t.UpdatedAt, t.LastUser, t.LastStatus, t.Goal)
+		fmt.Fprintf(&b, "%s|%s|%d|%s|%s|%s|%s|%v\n",
+			t.ThreadID, t.Project, t.TurnCount, t.UpdatedAt, t.LastUser, t.LastStatus, t.Goal, t.Running)
 	}
+	appendSessionLiveChrome(&b, sessions)
 	return hashFingerprint(b.String())
+}
+
+// appendSessionLiveChrome folds the session-detail record region into the
+// history fingerprint: Work unit (label, PRs, issues, branch), case dossier,
+// last verify. None of these stamp UpdatedAt (Patch never invents it).
+func appendSessionLiveChrome(b *strings.Builder, sessions []sessionstore.Listed) {
+	for _, se := range sessions {
+		e := se.Entry
+		e.NormalizePRs()
+		fmt.Fprintf(b, "s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
+			se.ThreadID, e.EffectiveLabel(), e.Mode, e.CasePhase(), e.Resolution,
+			e.WorktreeBranch, e.OwnerName, e.CustomerTitle, e.CustomerUpdate)
+		for _, key := range e.RelatedCases {
+			fmt.Fprintf(b, "|r|%s", key)
+		}
+		for _, pr := range e.PRs {
+			fmt.Fprintf(b, "|p|%d|%s|%s|%v", pr.Number, pr.State, pr.Title, pr.IsDraft)
+		}
+		for _, iss := range e.Issues {
+			fmt.Fprintf(b, "|i|%s|%s", iss.DisplayRef(), iss.EffectiveKeyword())
+		}
+		if e.LastVerify != nil {
+			fmt.Fprintf(b, "|v|%s|%v|%s", e.LastVerify.At, e.LastVerify.OK, e.LastVerify.Name)
+		}
+		if e.Dossier != nil {
+			fmt.Fprintf(b, "|d|%s|%s", e.Dossier.UpdatedAt, e.Dossier.Summary)
+			for _, a := range e.Dossier.NextActions {
+				fmt.Fprintf(b, "|n|%s", a)
+			}
+		}
+		b.WriteByte('\n')
+	}
 }
 
 func (s *Server) fpWorktrees() string {
