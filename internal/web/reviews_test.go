@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/identity"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 )
 
@@ -250,5 +251,111 @@ func TestRequestReviewRejectsInvestigator(t *testing.T) {
 	bucket := srv.bot.Reviews().ListForPR("acme", "app", 9)
 	if len(bucket.Requests) != 0 {
 		t.Fatalf("investigator request must not be saved: %+v", bucket.Requests)
+	}
+}
+
+func TestReviewerOptionsIncludesGoogleBuilder(t *testing.T) {
+	srv, cfg := reviewEnabledServer(t)
+	if err := cfg.AddProjectAllowedUser("proj", "google:alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectCapabilityByUser("proj", "google:alice", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	opts := srv.reviewerOptions("proj")
+	got := map[string]bool{}
+	for _, o := range opts {
+		got[o.ID] = true
+	}
+	if !got["google:alice"] {
+		t.Fatalf("google-only builder missing: %+v", opts)
+	}
+}
+
+func TestRequestReviewStoresCanonicalAndInboxes(t *testing.T) {
+	srv, cfg := reviewEnabledServer(t)
+	if err := cfg.AddProjectAllowedUser("proj", "google:alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectCapabilityByUser("proj", "google:alice", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{
+		"reviewerId": {"google:alice"}, "note": {"please"}, "headSha": {"abc1234"},
+		"csrf": {csrf}, "project": {"proj"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/prs/acme/app/9/review-requests", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	bucket := srv.bot.Reviews().ListForPR("acme", "app", 9)
+	if len(bucket.Requests) != 1 || bucket.Requests[0].ReviewerID != "google:alice" {
+		t.Fatalf("stored %+v", bucket.Requests)
+	}
+	items, err := srv.bot.Inbox().List("google:alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Kind != "review.requested" {
+		t.Fatalf("inbox %+v", items)
+	}
+}
+
+func TestMyReviewsSeesLegacySnowflakeRequest(t *testing.T) {
+	srv, cfg := reviewEnabledServer(t)
+	const (
+		account   = "google:alice"
+		snowflake = "999888777666555444"
+	)
+	if err := cfg.AddProjectAllowedUser("proj", account); err != nil {
+		t.Fatal(err)
+	}
+	ids := srv.identity
+	if ids == nil {
+		var err error
+		ids, err = identity.New(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv.identity = ids
+		srv.bot.SetIdentity(ids)
+	}
+	if err := ids.Link(snowflake, account, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.bot.Reviews().RequestReview(reviewstore.Request{
+		Owner: "acme", Repo: "app", Number: 9, Project: "proj",
+		RequesterID: "member-1", ReviewerID: snowflake,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sid, _, err := srv.LoginAs(account, "Alice", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/reviews", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "acme/app") && !strings.Contains(w.Body.String(), "#9") {
+		t.Fatalf("legacy snowflake request not shown: %s", w.Body.String()[:min(800, len(w.Body.String()))])
+	}
+	_, got, body := getNavCounts(t, srv, "/partials/nav/counts", &http.Cookie{Name: sessionCookieName, Value: sid})
+	if got["reviews"] != 1 {
+		t.Fatalf("reviews badge=%d want 1: %s", got["reviews"], body)
 	}
 }

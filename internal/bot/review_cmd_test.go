@@ -4,11 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/acoshift/grokwork/internal/identity"
+	"github.com/acoshift/grokwork/internal/inbox"
+	"github.com/acoshift/grokwork/internal/sessionstore"
 )
+
+type countMessagePosts struct {
+	n  int
+	rt http.RoundTripper
+}
+
+func (c *countMessagePosts) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/messages") {
+		c.n++
+	}
+	return c.rt.RoundTrip(r)
+}
 
 func TestParseReviewArgs(t *testing.T) {
 	id, rest := parseReviewArgs("/review <@123456> please focus on auth")
@@ -34,6 +49,51 @@ func TestIsReviewCommand(t *testing.T) {
 	}
 	if isReviewCommand("review the flaky test") {
 		t.Fatal("bare review must stay a task")
+	}
+}
+
+func TestHandleReviewInboxesWithoutSecondPing(t *testing.T) {
+	b, _ := testBotWithData(t)
+	const reviewer = "999888777666555444"
+	if err := b.cfg.AddProjectAllowedUser("app", reviewer); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.sessions.Set("th-1", sessionstore.Entry{
+		Project: "app",
+		PRs: []sessionstore.TrackedPR{{
+			Owner: "acme", Repo: "app", Number: 9, State: "OPEN",
+			URL: "https://github.com/acme/app/pull/9",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sess := auditTestSession(t)
+	counter := &countMessagePosts{rt: sess.Client.Transport}
+	sess.Client.Transport = counter
+	m := auditTestMessage("th-1", "u1", "<@botid> /review <@"+reviewer+">")
+	parsed := ParseMessage(m.Content, "botid")
+	if parsed.Kind != KindReview {
+		t.Fatalf("parsed kind=%v", parsed.Kind)
+	}
+	b.handleReview(sess, m, parsed)
+
+	if counter.n != 1 {
+		t.Fatalf("discord /messages POSTs = %d, want 1 (the command reply, no extra NotifyThread)", counter.n)
+	}
+	items, err := b.inbox.List(reviewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Kind != inbox.KindReviewRequested {
+		t.Fatalf("inbox = %+v", items)
+	}
+	if items[0].URL != "/prs/acme/app/9?project=app" {
+		t.Fatalf("url=%q", items[0].URL)
+	}
+	bucket := b.reviews.ListForPR("acme", "app", 9)
+	if len(bucket.Requests) != 1 || bucket.Requests[0].ReviewerID != reviewer {
+		t.Fatalf("stored request %+v", bucket.Requests)
 	}
 }
 

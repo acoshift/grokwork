@@ -193,6 +193,24 @@ func TestListForReviewerProjectFilter(t *testing.T) {
 	}
 }
 
+func TestListForReviewerAnyMatchesLegacySnowflake(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestReview(Request{
+		Owner: "o", Repo: "r", Number: 3, Project: "alpha",
+		RequesterID: "a", ReviewerID: "999888777666555444",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := s.ListForReviewerAny([]string{"google:alice", "999888777666555444"}, "", StatusPending)
+	if len(got) != 1 || got[0].Number != 3 {
+		t.Fatalf("%+v", got)
+	}
+}
+
 func TestPersistenceRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	s1, err := New(dir)

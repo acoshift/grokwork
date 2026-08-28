@@ -454,13 +454,39 @@ func (s *Store) ListForReviewer(userID, projectFilter, statusFilter string) []Re
 		statusFilter = StatusPending
 	}
 
+	return s.ListForReviewerAny([]string{userID}, projectFilter, statusFilter)
+}
+
+// ListForReviewerAny is ListForReviewer matching any of ids. Used so a
+// google-canonical session still sees a legacy request stored under its
+// Discord snowflake.
+func (s *Store) ListForReviewerAny(ids []string, projectFilter, statusFilter string) []Request {
+	if s == nil {
+		return nil
+	}
+	want := map[string]struct{}{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			want[id] = struct{}{}
+		}
+	}
+	if len(want) == 0 {
+		return nil
+	}
+	projectFilter = strings.TrimSpace(projectFilter)
+	statusFilter = strings.ToLower(strings.TrimSpace(statusFilter))
+	if statusFilter == "" {
+		statusFilter = StatusPending
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var out []Request
 	for _, b := range s.buckets {
 		for _, req := range b.Requests {
-			if req.ReviewerID != userID {
+			if _, ok := want[req.ReviewerID]; !ok {
 				continue
 			}
 			if projectFilter != "" && !strings.EqualFold(req.Project, projectFilter) {

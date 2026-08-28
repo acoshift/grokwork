@@ -315,9 +315,10 @@ func (s *Server) finishOAuthLink(ctx *hime.Context, key string, sess *Session, i
 	// Auto-absorb: the alias may already own grants, threads and cases from
 	// before the link. They are the same person's, and the alias is never minted
 	// again, so anything still naming it would be orphaned.
-	grants, units, revoked, err := s.absorbActor(alias, canonical)
+	grants, units, inboxItems, revoked, err := s.absorbActor(alias, canonical)
 	detail["grants"] = grants
 	detail["units"] = units
+	detail["inbox"] = inboxItems
 	detail["sessionsRevoked"] = revoked
 	if err != nil {
 		// The link stands; say what did not move. Linking again repeats the
@@ -339,27 +340,35 @@ func (s *Server) finishOAuthLink(ctx *hime.Context, key string, sess *Session, i
 // first pass no longer appears anywhere. Sessions are revoked last, and only
 // after the rewrites, because a session carrying the alias is precisely the
 // thing that could still be acting under the old id while the rewrite runs.
-func (s *Server) absorbActor(alias, canonical string) (grants, units, revoked int, err error) {
+func (s *Server) absorbActor(alias, canonical string) (grants, units, inboxItems, revoked int, err error) {
 	same := func(id string) bool { return config.SameActor(id, alias) }
 	if s.cfg != nil {
 		grants, err = s.cfg.RewriteActorID(alias, canonical)
 		if err != nil {
-			return grants, 0, 0, err
+			return grants, 0, 0, 0, err
 		}
 	}
 	if s.sessions != nil {
 		units, err = s.sessions.RewriteActor(same, canonical)
 		if err != nil {
-			return grants, units, 0, err
+			return grants, units, 0, 0, err
+		}
+	}
+	if s.bot != nil {
+		if ib := s.bot.Inbox(); ib != nil {
+			inboxItems, err = ib.RewriteActor(alias, canonical)
+			if err != nil {
+				return grants, units, inboxItems, 0, err
+			}
 		}
 	}
 	if s.webSessions != nil {
 		revoked, err = s.webSessions.RevokeActor(alias)
 		if err != nil {
-			return grants, units, revoked, err
+			return grants, units, inboxItems, revoked, err
 		}
 	}
-	return grants, units, revoked, nil
+	return grants, units, inboxItems, revoked, nil
 }
 
 // postAccountUnlink detaches one login from the signed-in account.

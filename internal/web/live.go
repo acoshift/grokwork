@@ -23,6 +23,7 @@ const (
 	sseEventWorktrees = "worktrees"
 	sseEventConfig    = "config"
 	sseEventDeploy    = "deploy"
+	sseEventInbox     = "inbox"
 )
 
 // liveRevs are content fingerprints for each live domain.
@@ -35,6 +36,33 @@ type liveRevs struct {
 	Worktrees string `json:"worktrees"`
 	Config    string `json:"config"`
 	Deploy    string `json:"deploy"`
+	Inbox     string `json:"inbox,omitempty"`
+}
+
+// fpInbox is this connection's inbox fingerprint. computeLiveRevs stays
+// host-wide; stuffing a per-viewer value in there would make
+// TestLiveRevsStableAndChange compare two users' feeds.
+func (s *Server) fpInbox(r *http.Request) string {
+	if r == nil || s == nil || s.bot == nil {
+		return ""
+	}
+	if s.cfg != nil && !s.cfg.WebAuthEnabled() {
+		return ""
+	}
+	sess := sessionFromContext(r.Context())
+	if sess == nil {
+		sess = s.sessionFromRequest(r)
+	}
+	if sess == nil || strings.TrimSpace(sess.DiscordUserID) == "" {
+		return ""
+	}
+	store := s.bot.Inbox()
+	if store == nil {
+		return ""
+	}
+	id := sess.DiscordUserID
+	cur := store.ReadCursor(id)
+	return hashFingerprint(fmt.Sprintf("%d:%d:%v", store.LastSeq(id), cur.Through, cur.Read))
 }
 
 func hashFingerprint(parts ...string) string {
@@ -292,6 +320,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 	// Include full revs for reconnect catch-up (client compares to last seen).
 	// StatusSnapshot is ACL-filtered so members do not learn other projects' runs.
 	prev := s.computeLiveRevs()
+	prev.Inbox = s.fpInbox(r)
 	snap := s.statusVisibleHTTP(r)
 	if !writeEvent("", sseEvent{
 		Domain:         "hello",
@@ -313,6 +342,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 			tick++
 			curr := s.computeLiveRevs()
+			curr.Inbox = s.fpInbox(r)
 			type pair struct {
 				name string
 				rev  string
@@ -326,6 +356,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 				{sseEventWorktrees, curr.Worktrees, prev.Worktrees},
 				{sseEventConfig, curr.Config, prev.Config},
 				{sseEventDeploy, curr.Deploy, prev.Deploy},
+				{sseEventInbox, curr.Inbox, prev.Inbox},
 			} {
 				if p.rev == p.prev {
 					continue

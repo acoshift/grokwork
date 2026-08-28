@@ -13,6 +13,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/inbox"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -474,6 +475,63 @@ func TestLinkAbsorbsGrantsAndOwnership(t *testing.T) {
 	}
 	if ev.Detail["grants"] == nil || ev.Detail["units"] == nil {
 		t.Fatalf("audit detail must carry the rewrite counts: %+v", ev.Detail)
+	}
+}
+
+func TestLinkAbsorbsInboxByTime(t *testing.T) {
+	f, sid := absorbFixture(t)
+	store := f.srv.bot.Inbox()
+	if store == nil {
+		t.Fatal("inbox store missing")
+	}
+	if _, err := store.Append("admin-1", inbox.Item{Subject: "canonical-old", At: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append("admin-1", inbox.Item{Subject: "canonical-new", At: "2026-01-03T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Append("github:999", inbox.Item{Subject: "from-alias", At: "2026-01-02T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+
+	w := linkVia(t, f, config.ActorKindGitHub, "h-admin", sid)
+	if msg := redirectErr(t, w); msg != "" {
+		t.Fatalf("link refused: %q", msg)
+	}
+
+	items, err := store.List("admin-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("account feed = %d, want 3", len(items))
+	}
+	got := []string{items[0].Subject, items[1].Subject, items[2].Subject}
+	want := []string{"canonical-new", "from-alias", "canonical-old"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("order = %v, want %v (alias must not look newest)", got, want)
+		}
+	}
+	alias, err := store.List("github:999")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(alias) != 0 {
+		t.Fatalf("alias feed still has %d items", len(alias))
+	}
+	ev := lastAudit(t, f, audit.ActionIdentityLink)
+	switch n := ev.Detail["inbox"].(type) {
+	case int:
+		if n != 1 {
+			t.Fatalf("audit inbox count = %d", n)
+		}
+	case float64:
+		if n != 1 {
+			t.Fatalf("audit inbox count = %v", n)
+		}
+	default:
+		t.Fatalf("audit inbox count = %v (%T)", ev.Detail["inbox"], ev.Detail["inbox"])
 	}
 }
 

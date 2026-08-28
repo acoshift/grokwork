@@ -167,12 +167,17 @@ func (b *Bot) notifyRecipients(threadID, authorID string, outcome runOutcome, el
 // policy). Keeps refusing web-unit ids: those are not Discord channels, and posting
 // to one is a guaranteed 4xx every poll.
 func (b *Bot) notifyRunDoneSend(threadID, authorID string, result grokrun.Result, elapsed time.Duration, send notifySend) {
-	if b == nil || send == nil || threadID == "" || !b.hasDiscordSurface(threadID) {
+	if b == nil || threadID == "" || !b.hasDiscordSurface(threadID) {
 		return
 	}
 	outcome := classifyRunOutcome(result)
 	ids := b.notifyRecipients(threadID, authorID, outcome, elapsed)
 	if len(ids) == 0 {
+		return
+	}
+	// Durable record first: a failed Discord send must not mean nobody was told.
+	b.deliverInbox(ids, threadID, outcome, elapsed)
+	if send == nil {
 		return
 	}
 	// Recipients are accounts; a mention needs the Discord login behind one. An
@@ -199,32 +204,23 @@ type dmSend func(userID, content string) error
 // notifyRunDoneDM is notifyRunDoneSend for web-native units: same policy, but one
 // DM per recipient because there is no shared channel.
 func (b *Bot) notifyRunDoneDM(threadID, authorID string, result grokrun.Result, elapsed time.Duration, dm dmSend) {
-	if b == nil || dm == nil || threadID == "" {
+	if b == nil || threadID == "" {
 		return
 	}
 	outcome := classifyRunOutcome(result)
 	ids := b.notifyRecipients(threadID, authorID, outcome, elapsed)
-	// A web session's actor id is a Discord snowflake only when the viewer logged in
-	// through Discord OAuth. Anyone else cannot be DMed — but "cannot push to them"
-	// must not mean "never tell them", which is what dropping the id did. They get
-	// an inbox entry instead, and only Discord-shaped ids go on to the DM fan-out.
-	// A Discord LOGIN linked to this account is a valid DM target even when the
-	// account id itself is not snowflake-shaped (discordDMTarget); the inbox
-	// entry, by contrast, stays keyed on the account.
-	var unreachable []string
-	targets := make([]string, 0, len(ids))
+	// Inbox is the durable record for every recipient, keyed on the account.
+	// Discord DMs are extra: only a Discord login can receive one, and a failed
+	// or capped DM must not erase the inbox row.
+	b.deliverInbox(ids, threadID, outcome, elapsed)
+	var targets []string
 	for _, id := range ids {
 		if dmID, ok := b.discordDMTarget(id); ok {
 			targets = append(targets, dmID)
-			continue
 		}
-		unreachable = append(unreachable, id)
 	}
 	ids = targets
-	if len(unreachable) > 0 {
-		b.deliverInbox(unreachable, threadID, outcome, elapsed)
-	}
-	if len(ids) == 0 {
+	if dm == nil || len(ids) == 0 {
 		return
 	}
 	if len(ids) > maxNotifyDMs {

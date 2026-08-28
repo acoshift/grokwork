@@ -289,6 +289,23 @@
   </form>
   {{end}}
 </div>
+{{if and $.AuthEnabled $.UserID $.HasSession}}
+<div class="rail-group" id="session-watch">
+  <div class="rail-group-title">Watch</div>
+  <p class="rail-note">Get an inbox ping when a run on this session finishes.</p>
+  {{if .SessionEntry.IsWatcher $.UserID}}
+  <form method="post" action="/sessions/{{.ThreadID}}/unwatch">
+    {{template "csrf" $}}
+    <div class="form-actions"><button type="submit" id="btn-unwatch" class="btn-secondary">Unwatch</button></div>
+  </form>
+  {{else}}
+  <form method="post" action="/sessions/{{.ThreadID}}/watch">
+    {{template "csrf" $}}
+    <div class="form-actions"><button type="submit" id="btn-watch" class="btn-secondary">Watch</button></div>
+  </form>
+  {{end}}
+</div>
+{{end}}
 {{else if .CanStartSession}}
 <div class="rail-group">
   <div class="rail-group-title">Actions</div>

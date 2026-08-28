@@ -795,3 +795,39 @@ func TestSessionRailHiddenForViewer(t *testing.T) {
 		}
 	}
 }
+
+func TestWebWatchUnwatch(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	seedOwned(t, srv, "w_watch1", "member-1", "Member One")
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/sessions/w_watch1/watch", sid, csrf, nil)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("watch status=%d body=%s", w.Code, w.Body.String())
+	}
+	e, ok := srv.sessions.Get("w_watch1")
+	if !ok || !e.IsWatcher("member-1") {
+		t.Fatalf("not watching: ok=%v watchers=%v", ok, e.WatcherIDs)
+	}
+	assertAuditAction(t, srv, audit.ActionSessionWatch, true)
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/w_watch1", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	rw := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rw, req)
+	if !strings.Contains(rw.Body.String(), `id="btn-unwatch"`) {
+		t.Fatal("session page should show Unwatch")
+	}
+
+	w = postFix(t, srv, "/sessions/w_watch1/unwatch", sid, csrf, nil)
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("unwatch status=%d", w.Code)
+	}
+	e, ok = srv.sessions.Get("w_watch1")
+	if !ok || e.IsWatcher("member-1") {
+		t.Fatalf("still watching: %v", e.WatcherIDs)
+	}
+	assertAuditAction(t, srv, audit.ActionSessionUnwatch, true)
+}

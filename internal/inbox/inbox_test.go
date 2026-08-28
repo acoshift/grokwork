@@ -101,6 +101,12 @@ func TestOversizeBodyTruncated(t *testing.T) {
 	}
 }
 
+func TestKindConstants(t *testing.T) {
+	if KindRunDone != "run.done" || KindReviewRequested != "review.requested" {
+		t.Fatalf("kind constants drifted: %q %q", KindRunDone, KindReviewRequested)
+	}
+}
+
 func TestSeqSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 	st, err := New(dir)

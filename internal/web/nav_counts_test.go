@@ -52,7 +52,7 @@ func TestNavCountPlaceholders(t *testing.T) {
 	}
 	body := w.Body.String()
 	nav := navLinksChunk(t, body)
-	for _, key := range []string{"ship", "cases", "reviews"} {
+	for _, key := range []string{"ship", "cases", "reviews", "inbox"} {
 		needle := `data-nav-count="` + key + `"`
 		if !strings.Contains(nav, needle) {
 			t.Fatalf("global nav missing %s", needle)
@@ -109,14 +109,15 @@ func TestNavOobSkipsSameScope(t *testing.T) {
 }
 
 // TestNavCountsLiveOnSSE pins the path that refreshes sidebar pills when a
-// PR merges (sse:ship) or a case board count moves (sse:cases): EventSource
-// named events plus reconnect catch-up, local JSON only (no GitHub re-hit).
+// PR merges (sse:ship), a case board count moves (sse:cases), or an inbox
+// unread count moves (sse:inbox): EventSource named events plus reconnect
+// catch-up, local JSON only (no GitHub re-hit).
 func TestNavCountsLiveOnSSE(t *testing.T) {
 	srv, _, _ := testServer(t)
 	body := getBody(t, srv.Handler(), "/")
 	for _, want := range []string{
-		`if (name === "ship" || name === "cases") loadNavCounts(true)`,
-		`if (changed.ship || changed.cases) loadNavCounts(true)`,
+		`if (name === "ship" || name === "cases" || name === "inbox") loadNavCounts(true)`,
+		`if (changed.ship || changed.cases || changed.inbox) loadNavCounts(true)`,
 		`function loadNavCounts(localOnly)`,
 		`if (localOnly) return`,
 		`if (remote && key !== "issues" && key !== "errors") return`,
@@ -187,6 +188,12 @@ func TestNavCountsLocalBoards(t *testing.T) {
 	code, got, body := getNavCounts(t, srv, "/partials/nav/counts", nil)
 	if code != http.StatusOK {
 		t.Fatalf("global status=%d body=%s", code, body)
+	}
+	if _, ok := got["inbox"]; !ok {
+		t.Fatalf("inbox key missing: %s", body)
+	}
+	if got["inbox"] != 0 {
+		t.Fatalf("global inbox=%d want 0 (%v)", got["inbox"], got)
 	}
 	if got["ship"] != 1 {
 		t.Fatalf("global ship=%d want 1 (%v)", got["ship"], got)

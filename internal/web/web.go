@@ -280,6 +280,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"partial.deploys.board":        "/partials/deploys/board",
 		"partial.issues.table":         "/partials/issues/table",
 		"partial.nav.counts":           "/partials/nav/counts",
+		"partial.inbox.list":           "/partials/inbox/list",
+		"inbox.read":                   "/inbox/read",
 		"partial.pr.gates":             "/partials/prs/",
 		"partial.config.lists":         "/partials/config/lists",
 		"partial.config.channels":      "/partials/config/channels",
@@ -418,6 +420,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// ACL-filtered before they are ranked — see search.go.
 	mux.Handle("GET /search", s.requireAuth(hime.Handler(s.searchPage)))
 	mux.Handle("GET /inbox", s.requireAuth(hime.Handler(s.inboxPage)))
+	mux.Handle("POST /inbox/read", s.requireAuth(hime.Handler(s.postInboxRead)))
+	mux.Handle("GET /partials/inbox/list", s.requireAuth(hime.Handler(s.partialInboxList)))
 	mux.Handle("GET /worktrees", s.requireAuth(hime.Handler(s.worktreesPage)))
 	// Cross-project deploy board. Read-only and global — triggering stays on
 	// /projects/{p}/deploys, where the manifest and the environment gates are.
@@ -591,6 +595,10 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionGoal))))
 	mux.Handle("POST /sessions/{threadID}/claim",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionClaim))))
+	mux.Handle("POST /sessions/{threadID}/watch",
+		s.requireMember(hime.Handler(s.postSessionWatch)))
+	mux.Handle("POST /sessions/{threadID}/unwatch",
+		s.requireMember(hime.Handler(s.postSessionUnwatch)))
 	// Case phase actions (Mode=case) — feature gate startSessions so members can act;
 	// per-action caps checked in handlers (investigate vs escalate vs draft).
 	mux.Handle("POST /sessions/{threadID}/case/escalate",

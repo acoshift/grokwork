@@ -9,36 +9,23 @@ import (
 	"github.com/acoshift/grokwork/internal/reviewstore"
 )
 
-func TestTeamReviewNotifyMentionVsInbox(t *testing.T) {
+func TestTeamReviewMention(t *testing.T) {
 	t.Parallel()
-	// Discord actor + Discord thread → mention, no inbox.
-	snow, inbox := teamReviewNotify("123456789012345678", "999888777666555444", "", false)
-	if snow != "999888777666555444" || inbox {
-		t.Fatalf("discord thread: snow=%q inbox=%v", snow, inbox)
+	if got := teamReviewMention(true, "999888777666555444", ""); got != "999888777666555444" {
+		t.Fatalf("discord actor: %q", got)
 	}
-	// Web unit → inbox even for a Discord actor.
-	snow, inbox = teamReviewNotify("w_abcdef", "999888777666555444", "", false)
-	if snow != "" || !inbox {
-		t.Fatalf("web unit: snow=%q inbox=%v", snow, inbox)
+	if got := teamReviewMention(false, "999888777666555444", ""); got != "" {
+		t.Fatalf("web unit must not mention: %q", got)
 	}
-	// Empty thread → inbox.
-	snow, inbox = teamReviewNotify("", "999888777666555444", "", false)
-	if snow != "" || !inbox {
-		t.Fatalf("empty: snow=%q inbox=%v", snow, inbox)
+	if got := teamReviewMention(true, "google:alice", ""); got != "" {
+		t.Fatalf("google only: %q", got)
 	}
-	// Google-canonical with no Discord subject → inbox.
-	snow, inbox = teamReviewNotify("123456789012345678", "google:alice", "", false)
-	if snow != "" || !inbox {
-		t.Fatalf("google only: snow=%q inbox=%v", snow, inbox)
-	}
-	// Google-canonical with linked Discord subject → mention.
-	snow, inbox = teamReviewNotify("123456789012345678", "google:alice", "111222333444555666", true)
-	if snow != "111222333444555666" || inbox {
-		t.Fatalf("linked: snow=%q inbox=%v", snow, inbox)
+	if got := teamReviewMention(true, "google:alice", "111222333444555666"); got != "111222333444555666" {
+		t.Fatalf("linked: %q", got)
 	}
 }
 
-func TestNotifyTeamReviewRequestedInboxForWebUnit(t *testing.T) {
+func TestNotifyTeamReviewRequestedInboxesWebUnit(t *testing.T) {
 	dir := t.TempDir()
 	ib, err := inbox.New(dir)
 	if err != nil {
@@ -53,7 +40,7 @@ func TestNotifyTeamReviewRequestedInboxForWebUnit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].Kind != "review.requested" {
+	if len(items) != 1 || items[0].Kind != inbox.KindReviewRequested {
 		t.Fatalf("%+v", items)
 	}
 	if !strings.Contains(items[0].Subject, "acme/app#9") {
@@ -62,16 +49,18 @@ func TestNotifyTeamReviewRequestedInboxForWebUnit(t *testing.T) {
 	if items[0].Body != "please" || items[0].UnitID != "w_unit1" || items[0].Project != "proj" {
 		t.Fatalf("%+v", items[0])
 	}
+	if items[0].URL != "/prs/acme/app/9?project=proj" {
+		t.Fatalf("url=%q", items[0].URL)
+	}
 }
 
-func TestNotifyTeamReviewRequestedMentionSkipsInbox(t *testing.T) {
+func TestNotifyTeamReviewRequestedInboxesAndMentions(t *testing.T) {
 	dir := t.TempDir()
 	ib, err := inbox.New(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	b := &Bot{inbox: ib}
-	// Discord snowflake reviewer + Discord thread: mention path, no inbox.
 	b.NotifyTeamReviewRequested(reviewstore.Request{
 		Owner: "acme", Repo: "app", Number: 4, Project: "proj",
 		ThreadID: "1350013711103823954", ReviewerID: "999888777666555444",
@@ -80,12 +69,12 @@ func TestNotifyTeamReviewRequestedMentionSkipsInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("mention path must not inbox: %+v", items)
+	if len(items) != 1 {
+		t.Fatalf("want inbox even when Discord can mention: %+v", items)
 	}
 }
 
-func TestNotifyTeamReviewRequestedLinkedDiscordMentions(t *testing.T) {
+func TestNotifyTeamReviewRequestedLinkedDiscordInboxesCanonical(t *testing.T) {
 	dir := t.TempDir()
 	ib, err := inbox.New(dir)
 	if err != nil {
@@ -108,7 +97,10 @@ func TestNotifyTeamReviewRequestedLinkedDiscordMentions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("linked Discord must mention, not inbox: %+v", items)
+	if len(items) != 1 {
+		t.Fatalf("canonical inbox = %+v", items)
+	}
+	if n := ib.Count("999888777666555444"); n != 0 {
+		t.Fatalf("alias file has %d items", n)
 	}
 }

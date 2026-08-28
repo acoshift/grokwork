@@ -1,21 +1,49 @@
 {{define "content"}}
 <div id="page-inbox">
   <h1>Inbox</h1>
-  <p class="muted">Run notifications land here, including Discord DMs that could not be delivered.</p>
-  {{if .InboxItems}}
-  <div class="card-list">
-    {{range .InboxItems}}
-    <article class="card">
-      <header class="meta">
-        <span class="badge">{{.Kind}}</span>
-        {{if .Project}}<span class="mono">{{.Project}}</span>{{end}}
-        <span class="muted mono">{{.At}}</span>
-      </header>
-      <div>{{if .URL}}<a href="{{.URL}}">{{.Subject}}</a>{{else}}{{.Subject}}{{end}}</div>
-      {{if .Body}}<div class="muted">{{.Body}}</div>{{end}}
-    </article>
-    {{end}}
+  <p class="muted">Things that need you — review requests, finished runs you watch or authored.</p>
+  <div class="live-region"
+       id="live-inbox"
+       hx-get="{{route "partial.inbox.list"}}"
+       hx-trigger="sse:inbox"
+       hx-target="this"
+       hx-select="unset"
+       hx-swap="innerHTML show:none focus-scroll:false">
+    {{template "inbox_list" .}}
   </div>
+</div>
+{{end}}
+
+{{define "inbox_list"}}
+{{if and .InboxItems .CSRF}}
+<form method="post" action="{{route "inbox.read"}}" class="inline" style="margin:0 0 0.75rem">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="all" value="1">
+  <button type="submit" class="btn-secondary">Mark all read</button>
+</form>
+{{end}}
+<div class="card-list" id="inbox-list">
+  {{range .InboxItems}}
+  <article class="card{{if .Unread}} inbox-unread{{end}}">
+    <header class="meta">
+      <span class="badge">{{.Kind}}</span>
+      {{if .Project}}<span class="mono">{{.Project}}</span>{{end}}
+      <span class="muted mono">{{.At}}</span>
+      {{if .Unread}}<span class="badge live">unread</span>{{end}}
+    </header>
+    <div>
+      {{if and .URL .Unread $.CSRF}}
+      <form method="post" action="{{route "inbox.read"}}" class="inline" style="display:inline">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input type="hidden" name="seq" value="{{.Seq}}">
+        <input type="hidden" name="next" value="{{.URL}}">
+        <button type="submit" class="linkish">{{.Subject}}</button>
+      </form>
+      {{else if .URL}}<a href="{{.URL}}">{{.Subject}}</a>
+      {{else}}{{.Subject}}{{end}}
+    </div>
+    {{if .Body}}<div class="muted">{{.Body}}</div>{{end}}
+  </article>
   {{else}}
   <div class="empty">Nothing queued.</div>
   {{end}}

@@ -1,6 +1,8 @@
 package bot
 
 import (
+	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -8,6 +10,8 @@ import (
 	"github.com/acoshift/grokwork/internal/inbox"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
+
+var errNotifyBoom = errors.New("discord down")
 
 func newRouteBot(t *testing.T) *Bot {
 	t.Helper()
@@ -58,10 +62,12 @@ func TestUnreachableRecipientGoesToInbox(t *testing.T) {
 	if items[0].UnitID != "w_unit1" {
 		t.Errorf("unit = %q", items[0].UnitID)
 	}
+	if items[0].URL != "/sessions/w_unit1?project=proj" {
+		t.Errorf("url = %q, want a root-relative session path", items[0].URL)
+	}
 }
 
-// TestDiscordRecipientStillDMed keeps the existing path intact: a Discord actor
-// gets a DM and must NOT also get an inbox copy, or every ping is doubled.
+// TestDiscordRecipientStillDMed: Discord DM is extra, not instead of the inbox.
 func TestDiscordRecipientStillDMed(t *testing.T) {
 	b := newRouteBot(t)
 	if err := b.sessions.Set("w_unit1", sessionstore.Entry{
@@ -77,8 +83,8 @@ func TestDiscordRecipientStillDMed(t *testing.T) {
 	if len(dmed) != 1 || dmed[0] != "123456789012345678" {
 		t.Fatalf("dmed = %v, want the one Discord recipient", dmed)
 	}
-	if n := b.inbox.Count("123456789012345678"); n != 0 {
-		t.Errorf("inbox got %d items for a DMed recipient — notification doubled", n)
+	if n := b.inbox.Count("123456789012345678"); n != 1 {
+		t.Errorf("inbox count = %d, want 1 (DM does not replace the feed)", n)
 	}
 }
 
@@ -100,7 +106,7 @@ func TestMixedRecipientsSplitByReachability(t *testing.T) {
 	if len(dmed) != 1 || dmed[0] != "123456789012345678" {
 		t.Errorf("dmed = %v, want only the Discord id", dmed)
 	}
-	for _, id := range []string{"oidc:alice", "web:bob"} {
+	for _, id := range []string{"123456789012345678", "oidc:alice", "web:bob"} {
 		if n := b.inbox.Count(id); n != 1 {
 			t.Errorf("inbox count for %s = %d, want 1", id, n)
 		}
@@ -138,11 +144,86 @@ func TestInThreadPingStaysASingleMessage(t *testing.T) {
 	if len(gotIDs) != 2 {
 		t.Errorf("recipients on the single message = %v, want both watchers", gotIDs)
 	}
-	// And no inbox copies: they were reached in the thread.
 	for _, id := range gotIDs {
-		if n := b.inbox.Count(id); n != 0 {
-			t.Errorf("inbox got %d for %s — thread recipients must not be doubled", n, id)
+		if n := b.inbox.Count(id); n != 1 {
+			t.Errorf("inbox count for %s = %d, want 1 on the account (and still one Discord send)", id, n)
 		}
+	}
+}
+
+func TestInboxWrittenBeforeFailedDiscordSend(t *testing.T) {
+	b := newRouteBot(t)
+	const thread = "111222333444555666"
+	if err := b.sessions.Set(thread, sessionstore.Entry{
+		Project: "proj", WatcherIDs: []string{"123456789012345678"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.notifyRunDoneSend(thread, "", grokrun.Result{}, time.Second,
+		func(string, string, []string) error { return errNotifyBoom })
+	if n := b.inbox.Count("123456789012345678"); n != 1 {
+		t.Fatalf("inbox after failed send = %d, want 1", n)
+	}
+}
+
+func TestWebWatcherGetsRunDoneThenUnwatchStops(t *testing.T) {
+	b := newRouteBot(t)
+	const unit = "w_watch"
+	if err := b.sessions.Set(unit, sessionstore.Entry{
+		Project: "proj", WatcherIDs: []string{"oidc:alice"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.notifyRunDoneDM(unit, "someone-else", grokrun.Result{}, time.Second,
+		func(string, string) error { return nil })
+	if n := b.inbox.Count("oidc:alice"); n != 1 {
+		t.Fatalf("watcher inbox after run = %d", n)
+	}
+	if _, ok, err := b.sessions.Patch(unit, func(e *sessionstore.Entry) {
+		e.RemoveWatcher("oidc:alice")
+	}); err != nil || !ok {
+		t.Fatalf("unwatch: ok=%v err=%v", ok, err)
+	}
+	b.notifyRunDoneDM(unit, "someone-else", grokrun.Result{}, time.Second,
+		func(string, string) error { return nil })
+	if n := b.inbox.Count("oidc:alice"); n != 1 {
+		t.Fatalf("unwatched watcher got another item: %d", n)
+	}
+}
+
+func TestDMCapStillInboxesEveryone(t *testing.T) {
+	b := newRouteBot(t)
+	watchers := make([]string, maxNotifyDMs+2)
+	for i := range watchers {
+		watchers[i] = "1234567890123456" + strconv.Itoa(10+i)
+	}
+	if err := b.sessions.Set("w_cap", sessionstore.Entry{
+		Project: "proj", WatcherIDs: watchers,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var dmed int
+	b.notifyRunDoneDM("w_cap", "", grokrun.Result{}, time.Second,
+		func(string, string) error { dmed++; return nil })
+	if dmed != maxNotifyDMs {
+		t.Fatalf("DMs = %d, want cap %d", dmed, maxNotifyDMs)
+	}
+	for _, id := range watchers {
+		if n := b.inbox.Count(id); n != 1 {
+			t.Fatalf("inbox for %s = %d, cap must not drop the feed", id, n)
+		}
+	}
+}
+
+func TestInboxSessionPathIsRootRelative(t *testing.T) {
+	if got := inboxSessionPath("w_1", "proj"); got != "/sessions/w_1?project=proj" {
+		t.Fatalf("got %q", got)
+	}
+	if got := inboxSessionPath("abc", ""); got != "/sessions/abc" {
+		t.Fatalf("no project: %q", got)
+	}
+	if inboxSessionPath("", "proj") != "" {
+		t.Fatal("empty unit")
 	}
 }
 

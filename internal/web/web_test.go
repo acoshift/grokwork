@@ -368,7 +368,7 @@ func TestPagesRender(t *testing.T) {
 				// Mid-session SSE reconnect catch-up (rev compare → partial refresh).
 				`lastLiveRevs`,
 				`applyLiveRevs`,
-				// Sidebar count pills refetch on sse:ship / sse:cases.
+				// Sidebar count pills refetch on sse:ship / sse:cases / sse:inbox.
 				`loadNavCounts(true)`,
 			} {
 				if !strings.Contains(body, live) {
@@ -1140,6 +1140,9 @@ func TestSessionDetailStreamsLiveTurn(t *testing.T) {
 		}
 		if strings.Contains(partial, "session-continue-form") {
 			t.Fatal("continue form must not be in live partial")
+		}
+		if strings.Contains(partial, "session-watch") || strings.Contains(partial, "btn-watch") {
+			t.Fatal("watch form must not be in live partial")
 		}
 	}
 	assertTurnAgentAboveUser(t, body)

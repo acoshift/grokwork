@@ -179,12 +179,11 @@ func TestNotifyDMFollowsTheDiscordAlias(t *testing.T) {
 	if len(dmed) != 1 || dmed[0] != snowflake {
 		t.Fatalf("dmed = %v, want the linked Discord login %q", dmed, snowflake)
 	}
-	// Reached on Discord means no inbox copy — under either id.
-	if n := b.inbox.Count(account); n != 0 {
-		t.Errorf("inbox got %d for the account — the ping is doubled", n)
+	if n := b.inbox.Count(account); n != 1 {
+		t.Errorf("inbox count for the account = %d, want 1", n)
 	}
 	if n := b.inbox.Count(snowflake); n != 0 {
-		t.Errorf("inbox got %d for the alias", n)
+		t.Errorf("inbox got %d for the alias — the feed is keyed on the account", n)
 	}
 }
 

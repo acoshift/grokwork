@@ -2,6 +2,8 @@ package bot
 
 import (
 	"log"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,8 +30,10 @@ func (b *Bot) Inbox() *inbox.Store {
 //	dm      → one message per recipient          (per actor)
 //	inbox   → one entry per recipient            (per actor, always reachable)
 //
-// Ordering is: a live thread takes the whole set; otherwise each recipient goes
-// to the best channel that can reach them, falling back to the inbox.
+// Ordering is: inbox is written for every recipient first (the durable record),
+// then a live thread takes the whole set as one message; otherwise each
+// recipient is DMed if Discord can reach them. A failed or capped Discord send
+// must not mean the inbox row is missing.
 
 // canDM reports whether a recipient id can receive a Discord DM. Only a Discord
 // actor can: a web-only login has no DM channel to open.
@@ -37,9 +41,37 @@ func canDM(actorID string) bool {
 	return looksLikeDiscordUserID(actorID)
 }
 
-// deliverInbox queues a run-finished notification for recipients no push channel
-// can reach. Per actor, since an inbox entry addressed to one person must not
-// name the others.
+// inboxSessionPath is the in-app link stored on a run.done row. It is
+// root-relative so it works without webPublicBaseURL (sessionWebURL returns
+// empty when that is unset).
+func inboxSessionPath(threadID, project string) string {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return ""
+	}
+	u := "/sessions/" + url.PathEscape(threadID)
+	if p := strings.TrimSpace(project); p != "" {
+		u += "?project=" + url.QueryEscape(p)
+	}
+	return u
+}
+
+// inboxPRPath is the in-app link stored on a review.requested row.
+func inboxPRPath(owner, repo string, number int, project string) string {
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if owner == "" || repo == "" || number <= 0 {
+		return ""
+	}
+	u := "/prs/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/" + strconv.Itoa(number)
+	if p := strings.TrimSpace(project); p != "" {
+		u += "?project=" + url.QueryEscape(p)
+	}
+	return u
+}
+
+// deliverInbox queues a run-finished notification for each recipient. Per actor,
+// since an inbox entry addressed to one person must not name the others.
 func (b *Bot) deliverInbox(actorIDs []string, unitID string, outcome runOutcome, elapsed time.Duration) {
 	if b == nil || b.inbox == nil || len(actorIDs) == 0 {
 		return
@@ -56,10 +88,10 @@ func (b *Bot) deliverInbox(actorIDs []string, unitID string, outcome runOutcome,
 		subject += " · " + project
 	}
 	item := inbox.Item{
-		Kind:    "run.done",
+		Kind:    inbox.KindRunDone,
 		Subject: subject,
 		Body:    truncateRunes(goal, 200),
-		URL:     b.sessionWebURL(unitID),
+		URL:     inboxSessionPath(unitID, project),
 		UnitID:  unitID,
 		Project: project,
 	}

@@ -24,6 +24,13 @@ import (
 	"time"
 )
 
+// Kinds written by the bot. Other strings are still stored (deploy.done) so a
+// typo at a call site is a row nobody filters on, not a rejected write.
+const (
+	KindRunDone         = "run.done"
+	KindReviewRequested = "review.requested"
+)
+
 // Item is one delivered notification.
 type Item struct {
 	Seq     int64  `json:"seq"`
@@ -44,9 +51,10 @@ const (
 )
 
 type Store struct {
-	mu   sync.Mutex
-	dir  string
-	seqs map[string]int64
+	mu      sync.Mutex
+	dir     string
+	seqs    map[string]int64
+	cursors map[string]Cursor
 }
 
 func New(dataDir string) (*Store, error) {
@@ -54,7 +62,7 @@ func New(dataDir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	return &Store{dir: dir, seqs: map[string]int64{}}, nil
+	return &Store{dir: dir, seqs: map[string]int64{}, cursors: map[string]Cursor{}}, nil
 }
 
 // actorFileName maps an actor id to a safe filename. Actor ids are namespaced
@@ -96,6 +104,29 @@ func (s *Store) path(actorID string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(s.dir, name), nil
+}
+
+func (s *Store) cursorPath(actorID string) (string, error) {
+	name, err := actorFileName(actorID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(s.dir, strings.TrimSuffix(name, ".jsonl")+".cursor.json"), nil
+}
+
+// LastSeq is the highest seq written for actorID, or 0 if none / invalid.
+func (s *Store) LastSeq(actorID string) int64 {
+	p, err := s.path(actorID)
+	if err != nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, err := s.lastSeqLocked(actorID, p)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // Append delivers one item to an actor's feed.

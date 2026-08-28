@@ -354,7 +354,7 @@ func (s *Server) renderMyReviews(ctx *hime.Context, projectScope string) error {
 				listFilter = "" // ignore unauthorized ?project=
 			}
 		}
-		reqs := store.ListForReviewer(userID, listFilter, statusFilter)
+		reqs := store.ListForReviewerAny(s.reviewerLookupIDs(userID), listFilter, statusFilter)
 		for _, req := range reqs {
 			if !s.reviewRequestVisible(ctx, req.Project) {
 				continue
@@ -401,12 +401,26 @@ func (s *Server) pendingReviewCount(ctx *hime.Context, projectFilter string) int
 		return 0
 	}
 	n := 0
-	for _, req := range store.ListForReviewer(userID, listFilter, reviewstore.StatusPending) {
+	for _, req := range store.ListForReviewerAny(s.reviewerLookupIDs(userID), listFilter, reviewstore.StatusPending) {
 		if s.reviewRequestVisible(ctx, req.Project) {
 			n++
 		}
 	}
 	return n
+}
+
+func (s *Server) reviewerLookupIDs(userID string) []string {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil
+	}
+	ids := []string{userID}
+	if s.identity != nil {
+		if sub, ok := s.identity.DiscordSubjectFor(userID); ok && sub != "" && sub != userID {
+			ids = append(ids, sub)
+		}
+	}
+	return ids
 }
 
 // canRequestReviewer reports whether reviewerID may be assigned a team review.
@@ -451,12 +465,22 @@ func (s *Server) reviewerOnProject(project, userID string) bool {
 	return s.cfg.CanAccessProject(project, userID, config.WebRoleMember)
 }
 
-func (s *Server) displayNameFor(discordID string) string {
+func (s *Server) displayNameFor(actorID string) string {
 	if s.webUsers == nil {
 		return ""
 	}
 	names := s.webUsers.displayNames()
-	return names[discordID]
+	if n := names[actorID]; n != "" {
+		return n
+	}
+	if s.identity != nil {
+		if sub, ok := s.identity.DiscordSubjectFor(actorID); ok {
+			if n := names[sub]; n != "" {
+				return n
+			}
+		}
+	}
+	return ""
 }
 
 func (s *Server) reviewerOptions(project string) []reviewerOption {
@@ -466,23 +490,21 @@ func (s *Server) reviewerOptions(project string) []reviewerOption {
 	// a team is just as pickable, and reading the direct list alone made every
 	// team-only builder invisible to the reviewer dropdown.
 	//
-	// Discord actors only, reduced to the bare snowflake: a review request is
-	// announced by mentioning that id (the "discord:%s" note line) and
-	// reviewstore compares reviewer ids verbatim, so a non-Discord actor would
-	// be a request nobody is ever told about. The GitHub half no longer argues
-	// for this — a linked GitHub login belongs to the *account*
-	// (bot.ResolveLinkedGitHubLogin), whatever provider it signs in with — but
-	// the Discord notification still does.
+	// Canonical actor ids, including Google/GitHub-only builders: inbox is how
+	// they are told. Discord mention still uses DiscordSubjectFor at notify time.
 	collect := func(p config.ProjectItem) {
 		for _, id := range p.MemberIDs {
-			// Ask the identity store rather than testing the shape of the id.
-			// After a link, a member's stored id is their canonical one, which
-			// may be "google:…" even though they are reachable in Discord
-			// through a linked alias — filtering on shape here would drop a
-			// builder from the reviewer list the moment they linked a login.
-			if sub, ok := s.identity.DiscordSubjectFor(id); ok {
-				ids[sub] = struct{}{}
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
 			}
+			// Discord-first accounts are bare snowflakes at runtime; keep that
+			// spelling so the dropdown value matches the session actor. Google/
+			// GitHub-only builders stay namespaced — that is their account id.
+			if config.IsDiscordActor(id) {
+				id = config.ActorSubject(id)
+			}
+			ids[id] = struct{}{}
 		}
 	}
 	if project != "" {
@@ -517,6 +539,9 @@ func (s *Server) reviewerOptions(project string) []reviewerOption {
 			continue
 		}
 		name := names[id]
+		if name == "" {
+			name = s.displayNameFor(id)
+		}
 		if name == "" {
 			name = id
 		}

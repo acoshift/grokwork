@@ -201,3 +201,66 @@ func (s *Server) postSessionClaim(ctx *hime.Context) error {
 	}
 	return s.sessionRedirect(ctx, threadID, "You now own this session.", "")
 }
+
+func (s *Server) postSessionWatch(ctx *hime.Context) error {
+	return s.postSessionWatchToggle(ctx, true)
+}
+
+func (s *Server) postSessionUnwatch(ctx *hime.Context) error {
+	return s.postSessionWatchToggle(ctx, false)
+}
+
+func (s *Server) postSessionWatchToggle(ctx *hime.Context, watch bool) error {
+	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
+	action := audit.ActionSessionWatch
+	if !watch {
+		action = audit.ActionSessionUnwatch
+	}
+	if threadID == "" {
+		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
+	}
+	if _, err := s.ensureThreadAccess(ctx, threadID); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	actor := s.fixActor(ctx)
+	if strings.TrimSpace(actor.ID) == "" {
+		err := errors.New("watch requires a signed-in identity")
+		s.auditAction(ctx, action, err, map[string]any{"threadId": threadID})
+		return ctx.Status(http.StatusBadRequest).Error(err.Error())
+	}
+	var changed bool
+	e, ok, err := s.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+		if watch {
+			changed = ent.AddWatcher(actor.ID)
+		} else {
+			changed = ent.RemoveWatcher(actor.ID)
+		}
+	})
+	detail := map[string]any{"threadId": threadID, "watchers": len(e.WatcherIDs)}
+	if watch {
+		detail["added"] = changed
+	} else {
+		detail["removed"] = changed
+	}
+	auditErr := err
+	if auditErr == nil && !ok {
+		auditErr = errors.New("no session")
+	}
+	s.auditAction(ctx, action, auditErr, detail)
+	if err != nil {
+		return s.sessionRedirect(ctx, threadID, "", err.Error())
+	}
+	if !ok {
+		return s.sessionRedirect(ctx, threadID, "", "No session for this thread yet.")
+	}
+	switch {
+	case watch && changed:
+		return s.sessionRedirect(ctx, threadID, "Watching this session.", "")
+	case watch:
+		return s.sessionRedirect(ctx, threadID, "Already watching.", "")
+	case changed:
+		return s.sessionRedirect(ctx, threadID, "Stopped watching.", "")
+	default:
+		return s.sessionRedirect(ctx, threadID, "You were not watching.", "")
+	}
+}

@@ -154,6 +154,9 @@ func (b *Bot) handleReview(s *discordgo.Session, m *discordgo.MessageCreate, par
 		GitHubLogin: ghLogin,
 		GitHubErr:   ghErr,
 	})
+	// Inbox first. Do not call NotifyTeamReviewRequested — that would @ the
+	// reviewer a second time in this thread.
+	b.queueReviewInbox(req)
 	if _, err := discordReply(s, m.ChannelID, msg, ref(m)); err != nil {
 		log.Printf("error: reply review-ok: %v", err)
 	}

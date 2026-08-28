@@ -6,25 +6,23 @@ import (
 	"strings"
 
 	"github.com/acoshift/grokwork/internal/config"
-	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/inbox"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 )
 
-// teamReviewNotify decides how a team-review request reaches the reviewer.
-// mentionSnowflake is the Discord subject to <@ping> when a live Discord thread exists.
-// inbox is true when that mention cannot be sent.
-func teamReviewNotify(threadID, reviewerID, discordSubject string, hasDiscordSubject bool) (mentionSnowflake string, inbox bool) {
-	snowflake := ""
-	if hasDiscordSubject {
-		snowflake = strings.TrimSpace(discordSubject)
+// teamReviewMention is the Discord snowflake to <@ping> when a live Discord
+// thread exists. Empty means no thread ping (inbox still happens separately).
+func teamReviewMention(hasDiscord bool, reviewerID, discordSubject string) string {
+	if !hasDiscord {
+		return ""
 	}
-	if snowflake == "" && config.IsDiscordActor(reviewerID) {
-		snowflake = config.ActorSubject(reviewerID)
+	if sub := strings.TrimSpace(discordSubject); sub != "" {
+		return sub
 	}
-	if strings.TrimSpace(threadID) != "" && !gitworktree.IsWebUnitID(threadID) && snowflake != "" {
-		return snowflake, false
+	if config.IsDiscordActor(reviewerID) {
+		return config.ActorSubject(reviewerID)
 	}
-	return "", true
+	return ""
 }
 
 func formatTeamReviewMention(snowflake, owner, repo string, number int, note, prURL string) string {
@@ -38,31 +36,39 @@ func formatTeamReviewMention(snowflake, owner, repo string, number int, note, pr
 	return msg
 }
 
+func (b *Bot) queueReviewInbox(req reviewstore.Request) {
+	if b == nil {
+		return
+	}
+	if err := b.QueueInbox(req.ReviewerID, inbox.KindReviewRequested,
+		fmt.Sprintf("Review requested · %s/%s#%d", req.Owner, req.Repo, req.Number),
+		req.Note, inboxPRPath(req.Owner, req.Repo, req.Number, req.Project),
+		req.ThreadID, req.Project); err != nil {
+		log.Printf("warn: inbox review request reviewer=%s: %v", req.ReviewerID, err)
+	}
+}
+
 // NotifyTeamReviewRequested pings the reviewer like the web review button:
-// Discord thread mention when a snowflake is reachable, otherwise inbox.
+// always queue inbox, and mention on a live Discord thread when a snowflake exists.
 func (b *Bot) NotifyTeamReviewRequested(req reviewstore.Request) {
 	if b == nil {
 		return
 	}
+	b.queueReviewInbox(req)
 	sub, ok := "", false
 	if id := b.Identity(); id != nil {
 		sub, ok = id.DiscordSubjectFor(req.ReviewerID)
 	}
-	snowflake, needInbox := teamReviewNotify(req.ThreadID, req.ReviewerID, sub, ok)
+	if !ok {
+		sub = ""
+	}
+	snowflake := teamReviewMention(b.hasDiscordSurface(req.ThreadID), req.ReviewerID, sub)
+	if snowflake == "" {
+		return
+	}
 	prURL := ""
 	if b.cfg != nil {
 		prURL = b.cfg.DiscordPRDisplayURL(req.Owner, req.Repo, req.Number, "")
 	}
-	if snowflake != "" {
-		// Best-effort after the request is durable — same as the web handler.
-		go b.NotifyThread(req.ThreadID, formatTeamReviewMention(snowflake, req.Owner, req.Repo, req.Number, req.Note, prURL))
-	}
-	if !needInbox {
-		return
-	}
-	if err := b.QueueInbox(req.ReviewerID, "review.requested",
-		fmt.Sprintf("Review requested · %s/%s#%d", req.Owner, req.Repo, req.Number),
-		req.Note, prURL, req.ThreadID, req.Project); err != nil {
-		log.Printf("warn: inbox review request reviewer=%s: %v", req.ReviewerID, err)
-	}
+	go b.NotifyThread(req.ThreadID, formatTeamReviewMention(snowflake, req.Owner, req.Repo, req.Number, req.Note, prURL))
 }
