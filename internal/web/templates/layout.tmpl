@@ -683,6 +683,40 @@
       border-color: var(--border);
       box-shadow: var(--shadow-1);
     }
+    /* Async active-item counts. Placeholder sits *before* the label so
+       assertNavActive still sees a suffix of "Ship" / "Cases" / …; flex
+       order parks it on the trailing edge. Hidden until JS fills it. */
+    .nav-count {
+      flex-shrink: 0;
+      box-sizing: border-box;
+      min-width: 1.2rem;
+      height: 1.15rem;
+      padding: 0 0.38rem;
+      border-radius: 999px;
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0;
+      line-height: 1.15rem;
+      text-align: center;
+      background: var(--text);
+      color: var(--bg);
+      pointer-events: none;
+      user-select: none;
+    }
+    .nav-links > a > .nav-count:not([hidden]) {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: auto;
+      order: 1;
+      animation: nav-count-in 0.16s ease;
+    }
+    @keyframes nav-count-in {
+      from { opacity: 0; transform: scale(0.85); }
+      to { opacity: 1; transform: scale(1); }
+    }
 
 
     /* Sidebar section caption (global shell: cross-project lead views). */
@@ -4519,11 +4553,27 @@
         letter-spacing: 0.01em;
         color: var(--muted);
         text-decoration: none;
+        position: relative;
       }
       .tabbar > a > .nav-icon {
         width: 1.42rem;
         height: 1.42rem;
         opacity: 0.85;
+      }
+      .tabbar > a > .nav-count:not([hidden]) {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        top: -0.12rem;
+        left: calc(50% + 0.28rem);
+        min-width: 1.05rem;
+        height: 1.05rem;
+        padding: 0 0.28rem;
+        font-size: 0.56rem;
+        line-height: 1.05rem;
+        z-index: 1;
+        animation: nav-count-in 0.16s ease;
       }
       .tabbar > a.active { color: var(--text); }
       .tabbar > a.active > .nav-icon { opacity: 1; }
@@ -5134,7 +5184,7 @@
            workspace project (navScopeFromURL); the layout JS re-derives it on
            history restores and reloads on mismatch. Swapped whole via the
            shell's hx-select-oob="#side-nav" on every boosted navigation. */}}
-      <nav id="side-nav" data-scope="{{.NavProject}}">
+      <nav id="side-nav" data-scope="{{.NavProject}}" data-counts="{{route "partial.nav.counts"}}">
         {{if .NavProject}}
         <details class="proj-switch">
           <summary>
@@ -5153,13 +5203,13 @@
         {{if .NavProject}}
         <a href="/projects/{{.NavProject}}" data-icon="overview" class="{{if .IsOverview}}active{{end}}">{{template "navIcon" "overview"}}Overview</a>
         <a href="/projects/{{.NavProject}}/start" data-icon="start" class="{{if .IsStart}}active{{end}}">{{template "navIcon" "start"}}Start task</a>
-        <a href="/projects/{{.NavProject}}/ship" data-icon="ship" class="{{if .IsShip}}active{{end}}">{{template "navIcon" "ship"}}Ship</a>
-        <a href="/projects/{{.NavProject}}/cases" data-icon="cases" class="{{if .IsCases}}active{{end}}">{{template "navIcon" "cases"}}Cases</a>
-        <a href="/projects/{{.NavProject}}/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">{{template "navIcon" "reviews"}}Reviews</a>
-        <a href="/projects/{{.NavProject}}/issues" data-icon="issues" class="{{if .IsIssues}}active{{end}}">{{template "navIcon" "issues"}}Issues</a>
+        <a href="/projects/{{.NavProject}}/ship" data-icon="ship" class="{{if .IsShip}}active{{end}}">{{template "navIcon" "ship"}}{{template "navCount" "ship"}}Ship</a>
+        <a href="/projects/{{.NavProject}}/cases" data-icon="cases" class="{{if .IsCases}}active{{end}}">{{template "navIcon" "cases"}}{{template "navCount" "cases"}}Cases</a>
+        <a href="/projects/{{.NavProject}}/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">{{template "navIcon" "reviews"}}{{template "navCount" "reviews"}}Reviews</a>
+        <a href="/projects/{{.NavProject}}/issues" data-icon="issues" class="{{if .IsIssues}}active{{end}}">{{template "navIcon" "issues"}}{{template "navCount" "issues"}}Issues</a>
         {{if .NavLinearEnabled}}<a href="/projects/{{.NavProject}}/linear" data-icon="linear" class="{{if .IsLinear}}active{{end}}">{{template "navIcon" "linear"}}Linear</a>{{end}}
         {{if .NavClickUpEnabled}}<a href="/projects/{{.NavProject}}/clickup" data-icon="clickup" class="{{if .IsClickUp}}active{{end}}">{{template "navIcon" "clickup"}}ClickUp</a>{{end}}
-        {{if .NavErrorsEnabled}}<a href="/projects/{{.NavProject}}/errors" data-icon="errors" class="{{if .IsErrors}}active{{end}}">{{template "navIcon" "errors"}}Errors</a>{{end}}
+        {{if .NavErrorsEnabled}}<a href="/projects/{{.NavProject}}/errors" data-icon="errors" class="{{if .IsErrors}}active{{end}}">{{template "navIcon" "errors"}}{{template "navCount" "errors"}}Errors</a>{{end}}
         <a href="/projects/{{.NavProject}}/commits" data-icon="commits" class="{{if .IsCommits}}active{{end}}">{{template "navIcon" "commits"}}Commits</a>
         <a href="/projects/{{.NavProject}}/files" data-icon="files" class="{{if .IsFiles}}active{{end}}">{{template "navIcon" "files"}}Files</a>
         <a href="/projects/{{.NavProject}}/deploys" data-icon="deploys" class="{{if .IsDeploys}}active{{end}}">{{template "navIcon" "deploys"}}Deploys</a>
@@ -5171,9 +5221,9 @@
         {{else}}
         <a href="{{route "home"}}" data-icon="projects" class="{{if .IsDashboard}}active{{end}}">{{template "navIcon" "projects"}}Projects</a>
         <span class="nav-label">Across projects</span>
-        <a href="{{route "ship"}}" data-icon="ship" class="{{if .IsShip}}active{{end}}">{{template "navIcon" "ship"}}Ship</a>
-        <a href="{{route "cases"}}" data-icon="cases" class="{{if .IsCases}}active{{end}}">{{template "navIcon" "cases"}}Cases</a>
-        <a href="/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">{{template "navIcon" "reviews"}}Reviews</a>
+        <a href="{{route "ship"}}" data-icon="ship" class="{{if .IsShip}}active{{end}}">{{template "navIcon" "ship"}}{{template "navCount" "ship"}}Ship</a>
+        <a href="{{route "cases"}}" data-icon="cases" class="{{if .IsCases}}active{{end}}">{{template "navIcon" "cases"}}{{template "navCount" "cases"}}Cases</a>
+        <a href="/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">{{template "navIcon" "reviews"}}{{template "navCount" "reviews"}}Reviews</a>
         {{/* Mirrors the workspace order (Deploys immediately before Sessions).
              /deploys carries no project segment, so navScopeFromURL and its JS
              mirror both leave the shell global with no rule of their own. */}}
@@ -5196,16 +5246,16 @@
         <div class="tabbar" id="tab-bar">
           {{if .NavProject}}
           <a href="/projects/{{.NavProject}}" data-icon="overview" class="{{if .IsOverview}}active{{end}}">{{template "navIcon" "overview"}}Overview</a>
-          <a href="/projects/{{.NavProject}}/ship" data-icon="ship" class="{{if .IsShip}}active{{end}}">{{template "navIcon" "ship"}}Ship</a>
-          <a href="/projects/{{.NavProject}}/cases" data-icon="cases" class="{{if .IsCases}}active{{end}}">{{template "navIcon" "cases"}}Cases</a>
+          <a href="/projects/{{.NavProject}}/ship" data-icon="ship" class="{{if .IsShip}}active{{end}}">{{template "navIcon" "ship"}}{{template "navCount" "ship"}}Ship</a>
+          <a href="/projects/{{.NavProject}}/cases" data-icon="cases" class="{{if .IsCases}}active{{end}}">{{template "navIcon" "cases"}}{{template "navCount" "cases"}}Cases</a>
           <a href="/projects/{{.NavProject}}/sessions" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">{{template "navIcon" "sessions"}}Sessions</a>
-          <a href="/projects/{{.NavProject}}/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">{{template "navIcon" "reviews"}}Reviews</a>
+          <a href="/projects/{{.NavProject}}/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">{{template "navIcon" "reviews"}}{{template "navCount" "reviews"}}Reviews</a>
           {{else}}
           <a href="{{route "home"}}" data-icon="projects" class="{{if .IsDashboard}}active{{end}}">{{template "navIcon" "projects"}}Projects</a>
-          <a href="{{route "ship"}}" data-icon="ship" class="{{if .IsShip}}active{{end}}">{{template "navIcon" "ship"}}Ship</a>
-          <a href="{{route "cases"}}" data-icon="cases" class="{{if .IsCases}}active{{end}}">{{template "navIcon" "cases"}}Cases</a>
+          <a href="{{route "ship"}}" data-icon="ship" class="{{if .IsShip}}active{{end}}">{{template "navIcon" "ship"}}{{template "navCount" "ship"}}Ship</a>
+          <a href="{{route "cases"}}" data-icon="cases" class="{{if .IsCases}}active{{end}}">{{template "navIcon" "cases"}}{{template "navCount" "cases"}}Cases</a>
           <a href="{{route "sessions"}}" data-icon="sessions" class="{{if .IsSessions}}active{{end}}">{{template "navIcon" "sessions"}}Sessions</a>
-          <a href="/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">{{template "navIcon" "reviews"}}Reviews</a>
+          <a href="/reviews" data-icon="reviews" class="{{if .IsReviews}}active{{end}}">{{template "navIcon" "reviews"}}{{template "navCount" "reviews"}}Reviews</a>
           {{end}}
         </div>
         {{if .NavProject}}
@@ -6975,6 +7025,7 @@
       var have = nav.getAttribute("data-scope") || "";
       if (want === have) {
         updateNavActive();
+        loadNavCounts();
         return;
       }
       // Server may render a narrower scope than the URL implies (unknown or
@@ -6985,6 +7036,74 @@
         sessionStorage.setItem(key, "1");
       } catch (e) { updateNavActive(); return; }
       location.reload();
+    });
+
+    // Active-item badges on Ship / Cases / Reviews / Issues / Errors. The
+    // counts endpoint is JSON so one fetch paints both the desktop list and
+    // the phone tab bar. Placeholders start hidden; 0 stays hidden.
+    var navCountsAbort = null;
+    var navCountsSeq = 0;
+    function applyNavCounts(data) {
+      if (!data || typeof data !== "object") return;
+      document.querySelectorAll("[data-nav-count]").forEach(function (el) {
+        var key = el.getAttribute("data-nav-count");
+        if (!Object.prototype.hasOwnProperty.call(data, key)) return;
+        var n = data[key];
+        var link = el.parentElement;
+        if (typeof n !== "number" || !isFinite(n) || n <= 0) {
+          el.hidden = true;
+          el.textContent = "";
+          if (link && link.hasAttribute("aria-label")) link.removeAttribute("aria-label");
+          return;
+        }
+        var shown = n > 99 ? "99+" : String(Math.floor(n));
+        el.hidden = false;
+        el.textContent = shown;
+        if (link && link.getAttribute("data-icon")) {
+          var name = link.getAttribute("data-icon");
+          name = name.charAt(0).toUpperCase() + name.slice(1);
+          link.setAttribute("aria-label", name + ", " + shown);
+        }
+      });
+    }
+    function fetchNavCounts(url, project, seq, signal) {
+      return fetch(url, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: signal
+      }).then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (data) {
+        if (seq !== navCountsSeq) return;
+        var now = document.getElementById("side-nav");
+        if (!now || (now.getAttribute("data-scope") || "") !== project) return;
+        applyNavCounts(data);
+      }).catch(function () {});
+    }
+    function loadNavCounts() {
+      var nav = document.getElementById("side-nav");
+      if (!nav || !nav.querySelector("[data-nav-count]")) return;
+      var project = nav.getAttribute("data-scope") || "";
+      var base = nav.getAttribute("data-counts") || "/partials/nav/counts";
+      var url = base;
+      if (project) {
+        url += (base.indexOf("?") >= 0 ? "&" : "?") + "project=" + encodeURIComponent(project);
+      }
+      if (navCountsAbort) navCountsAbort.abort();
+      var ac = new AbortController();
+      navCountsAbort = ac;
+      var seq = ++navCountsSeq;
+      fetchNavCounts(url, project, seq, ac.signal);
+      // Issues / errors hit GitHub and error sources; a second request keeps
+      // Ship / Cases / Reviews from waiting on those.
+      if (project && nav.querySelector('[data-nav-count="issues"], [data-nav-count="errors"]')) {
+        fetchNavCounts(url + "&remote=1", project, seq, ac.signal);
+      }
+    }
+    loadNavCounts();
+    document.body.addEventListener("htmx:afterSettle", function (e) {
+      if (e.detail && e.detail.boosted) loadNavCounts();
     });
 
     // Workspace switcher: close the dropdown when clicking elsewhere.
@@ -7412,6 +7531,9 @@
   </button>
 </div>
 {{end}}
+{{/* Count placeholder. Lives before the label so assertNavActive still
+     suffixes the visible word; CSS order/absolute parks it visually. */}}
+{{define "navCount"}}<span class="nav-count" data-nav-count="{{.}}" hidden aria-hidden="true"></span>{{end}}
 {{/* Inline nav glyphs. Stroke/fill stay off the <svg> root — Safari 27
      paints the viewBox as a frame when those sit on an SVG-as-image. */}}
 {{define "navIcon"}}<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">{{if eq . "clickup"}}<path fill="currentColor" d="M2 18.439l3.69-2.828c1.961 2.56 4.044 3.739 6.363 3.739 2.307 0 4.33-1.166 6.203-3.704L22 18.405C19.298 22.065 15.941 24 12.053 24 8.178 24 4.788 22.078 2 18.439zM12.04 6.15l-6.568 5.66-3.036-3.52L12.055 0l9.543 8.296-3.05 3.509z"/>{{else}}<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{{if eq . "projects"}}<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>{{else if eq . "overview"}}<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>{{else if eq . "start"}}<circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>{{else if eq . "ship"}}<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>{{else if eq . "cases"}}<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"/><line x1="14.83" y1="14.83" x2="19.07" y2="19.07"/><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"/><line x1="4.93" y1="19.07" x2="9.17" y2="14.83"/>{{else if eq . "issues"}}<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>{{else if eq . "reviews"}}<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="m9 15 2 2 4-4"/>{{else if eq . "linear"}}<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>{{else if eq . "errors"}}<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>{{else if eq . "commits"}}<circle cx="12" cy="12" r="4"/><line x1="1.5" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="22.5" y2="12"/>{{else if eq . "files"}}<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 11v6"/><path d="M9 14h6"/>{{else if eq . "deploys"}}<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>{{else if eq . "actions"}}<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>{{else if eq . "sessions"}}<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>{{else if eq . "worktrees"}}<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>{{else if eq . "spend"}}<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><line x1="9.5" y1="7.5" x2="14.5" y2="7.5"/><line x1="9.5" y1="11.5" x2="14.5" y2="11.5"/><line x1="9.5" y1="15.5" x2="12.5" y2="15.5"/>{{else if eq . "config"}}<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>{{end}}</g>{{end}}</svg>{{end}}

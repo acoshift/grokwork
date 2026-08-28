@@ -98,6 +98,9 @@ type Server struct {
 	// Short-TTL GitHub issue list cache (page shell + partial share one gh call).
 	issueListMu sync.Mutex
 	issueLists  map[string]issueListCacheEntry
+	// Short-TTL production-error count cache for nav badges.
+	errorCountMu sync.Mutex
+	errorCounts  map[string]errorCountCacheEntry
 	// Short-TTL GitHub Actions caches (run list + workflows list).
 	actionsRunsMu      sync.Mutex
 	actionsRuns        map[string]actionsRunsCacheEntry
@@ -272,6 +275,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"partial.worktrees.table": "/partials/worktrees/table",
 		"partial.deploys.board":   "/partials/deploys/board",
 		"partial.issues.table":    "/partials/issues/table",
+		"partial.nav.counts":      "/partials/nav/counts",
 		"partial.pr.gates":        "/partials/prs/",
 		"partial.config.lists":    "/partials/config/lists",
 		"partial.config.channels": "/partials/config/channels",
@@ -612,6 +616,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/worktrees/table", s.requireAuth(hime.Handler(s.partialWorktreesTable)))
 	mux.Handle("GET /partials/deploys/board", s.requireAuth(hime.Handler(s.partialDeploysBoard)))
 	mux.Handle("GET /partials/issues/table", s.requireAuth(hime.Handler(s.partialIssuesTable)))
+	mux.Handle("GET /partials/nav/counts", s.requireAuth(hime.Handler(s.partialNavCounts)))
 	mux.Handle("GET /partials/prs/{owner}/{repo}/{n}/gates", s.requireAuth(hime.Handler(s.partialPRGates)))
 	mux.Handle("GET /partials/config/lists", s.requireAdmin(hime.Handler(s.partialConfigLists)))
 	mux.Handle("GET /partials/config/channels", s.requireAdmin(hime.Handler(s.partialConfigChannels)))

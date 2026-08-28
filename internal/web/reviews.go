@@ -356,16 +356,8 @@ func (s *Server) renderMyReviews(ctx *hime.Context, projectScope string) error {
 		}
 		reqs := store.ListForReviewer(userID, listFilter, statusFilter)
 		for _, req := range reqs {
-			if req.Project != "" {
-				if err := s.ensureProjectAccess(ctx, req.Project); err != nil {
-					continue
-				}
-			} else {
-				// No project on the request — only admins see it (same as threads).
-				_, role := s.sessionIdentity(ctx)
-				if !config.RoleAtLeast(role, config.WebRoleAdmin) {
-					continue
-				}
+			if !s.reviewRequestVisible(ctx, req.Project) {
+				continue
 			}
 			bucket := store.ListForPR(req.Owner, req.Repo, req.Number)
 			head := bucket.LastHeadSHA
@@ -377,24 +369,44 @@ func (s *Server) renderMyReviews(ctx *hime.Context, projectScope string) error {
 				Stale:   req.HeadSHA != "" && head != "" && !strings.EqualFold(req.HeadSHA, head),
 			})
 		}
-		// Pending badge: recompute from ACL-visible pending rows (not the raw store count).
-		for _, req := range store.ListForReviewer(userID, listFilter, reviewstore.StatusPending) {
-			if req.Project != "" {
-				if err := s.ensureProjectAccess(ctx, req.Project); err != nil {
-					continue
-				}
-			} else {
-				_, role := s.sessionIdentity(ctx)
-				if !config.RoleAtLeast(role, config.WebRoleAdmin) {
-					continue
-				}
-			}
-			pending++
-		}
+		pending = s.pendingReviewCount(ctx, listFilter)
 	}
 	d.ReviewRequests = rows
 	d.ReviewPendingCount = pending
 	return s.viewPage(ctx, "reviews", d)
+}
+
+// reviewRequestVisible is the ACL for a team-review request row: a named
+// project must be one the session can open; a request with no project is
+// admin-only (same as threads with no project).
+func (s *Server) reviewRequestVisible(ctx *hime.Context, project string) bool {
+	project = strings.TrimSpace(project)
+	if project != "" {
+		return s.ensureProjectAccess(ctx, project) == nil
+	}
+	_, role := s.sessionIdentity(ctx)
+	return config.RoleAtLeast(role, config.WebRoleAdmin)
+}
+
+// pendingReviewCount is ACL-visible pending requests for the signed-in user
+// (not the raw store count). projectFilter empty means every visible project.
+func (s *Server) pendingReviewCount(ctx *hime.Context, projectFilter string) int {
+	userID, _ := s.sessionIdentity(ctx)
+	store := s.reviewsStore()
+	if store == nil || userID == "" {
+		return 0
+	}
+	listFilter := strings.TrimSpace(projectFilter)
+	if listFilter != "" && s.ensureProjectAccess(ctx, listFilter) != nil {
+		return 0
+	}
+	n := 0
+	for _, req := range store.ListForReviewer(userID, listFilter, reviewstore.StatusPending) {
+		if s.reviewRequestVisible(ctx, req.Project) {
+			n++
+		}
+	}
+	return n
 }
 
 // canRequestReviewer reports whether reviewerID may be assigned a team review.
