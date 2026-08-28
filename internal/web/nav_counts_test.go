@@ -85,6 +85,29 @@ func TestNavCountPlaceholders(t *testing.T) {
 	assertNavActive(t, body, "Overview")
 }
 
+// TestNavOobSkipsSameScope pins the shell contract that keeps count pills
+// mounted: hx-select-oob still offers #side-nav (scope change must remount),
+// but same-scope boost cancels that swap and does not refetch counts.
+func TestNavOobSkipsSameScope(t *testing.T) {
+	srv, _, _ := testServer(t)
+	body := getBody(t, srv.Handler(), "/")
+	for _, want := range []string{
+		`hx-select-oob="#side-nav"`,
+		`htmx:oobBeforeSwap`,
+		`d.shouldSwap = false`,
+		`e.preventDefault()`,
+		`htmx:oobAfterSwap`,
+		`function oobNavElement(frag)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("layout missing %q", want)
+		}
+	}
+	if strings.Contains(body, "if (e.detail && e.detail.boosted) loadNavCounts()") {
+		t.Fatal("same-scope boosted nav must not refetch counts")
+	}
+}
+
 func navLinksChunk(t *testing.T, body string) string {
 	t.Helper()
 	start := strings.Index(body, `id="nav-links"`)

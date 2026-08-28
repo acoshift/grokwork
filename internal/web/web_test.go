@@ -328,8 +328,11 @@ func TestPagesRender(t *testing.T) {
 				`hx-boost="true"`,
 				`hx-target="#live-root"`,
 				`hx-select="#live-root"`,
-				// Scope-aware sidebar swaps with every boosted response.
+				// Scope-aware sidebar is offered as OOB; same-scope nav
+				// cancels the swap so count pills are not remounted.
 				`hx-select-oob="#side-nav"`,
+				`htmx:oobBeforeSwap`,
+				`htmx:oobAfterSwap`,
 				`id="side-nav"`,
 				`data-scope=`,
 				`hx-swap="outerHTML show:none focus-scroll:false"`,

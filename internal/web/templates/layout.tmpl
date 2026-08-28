@@ -5144,8 +5144,10 @@
        (nav, table rows, back links, form redirects). target=_blank is not boosted.
        hx-inherit="*" re-enables shell attrs for descendants under disableInheritance.
        hx-select-oob="#side-nav": the sidebar is scope-aware (global vs project
-       workspace) and lives outside #live-root, so every boosted response also
-       swaps in its server-rendered nav. Partials contain no #side-nav → no-op.
+       workspace) and lives outside #live-root. A boosted full page still offers
+       the nav as OOB so a scope change can remount it; layout JS cancels that
+       swap when data-scope matches, which is what keeps count pills from
+       flashing empty on every click. Partials contain no #side-nav → no-op.
        Live-region partials set their own hx-target/hx-select (not inherited by children)
        so SSE swaps into the region instead of wiping #live-root. */}}
   <div class="wrap{{if .IsLogin}} is-login{{end}}"
@@ -5164,11 +5166,10 @@
         <span class="brand-name">Grok Work</span>
       </div>
       {{/* One box over the whole record (see internal/web/search.go). It sits
-           OUTSIDE #side-nav on purpose: the sidebar is replaced wholesale by the
-           shell's hx-select-oob on every boosted navigation, which would wipe
-           whatever has been typed and drop focus mid-word. Out here the element
-           is never swapped, so a query survives navigating through its own
-           results.
+           OUTSIDE #side-nav on purpose: a scope-changing oob swap still replaces
+           the nav wholesale, which would wipe whatever has been typed and drop
+           focus mid-word. Out here the element is never swapped, so a query
+           survives navigating through its own results.
 
            It searches every project the viewer can open, even from inside a
            workspace: the reason to reach for search is usually not remembering
@@ -5182,8 +5183,9 @@
       </form>
       {{/* Scope-aware sidebar. data-scope mirrors the server's URL-derived
            workspace project (navScopeFromURL); the layout JS re-derives it on
-           history restores and reloads on mismatch. Swapped whole via the
-           shell's hx-select-oob="#side-nav" on every boosted navigation. */}}
+           history restores and reloads on mismatch. hx-select-oob offers this
+           node on every boosted full page; oobBeforeSwap keeps it when
+           data-scope would not change. */}}
       <nav id="side-nav" data-scope="{{.NavProject}}" data-counts="{{route "partial.nav.counts"}}">
         {{if .NavProject}}
         <details class="proj-switch">
@@ -5238,11 +5240,11 @@
         {{/* Phone tab bar (fixed bottom, hidden on desktop). Scope-aware:
              inside a workspace the footer becomes that project's primary
              sections (back to Projects lives in the top bar); global scope
-             keeps the cross-project tabs. Lives inside #side-nav so the oob
-             swap keeps items and active states server-fresh; layout JS
-             re-syncs on history restores (see updateNavActive). Same anchor
-             conventions as .nav-links: data-icon first, class last, bare
-             label. */}}
+             keeps the cross-project tabs. Lives inside #side-nav so a
+             scope-changing oob swap keeps items server-fresh; same-scope nav
+             and history restores re-sync .active in updateNavActive. Same
+             anchor conventions as .nav-links: data-icon first, class last,
+             bare label. */}}
         <div class="tabbar" id="tab-bar">
           {{if .NavProject}}
           <a href="/projects/{{.NavProject}}" data-icon="overview" class="{{if .IsOverview}}active{{end}}">{{template "navIcon" "overview"}}Overview</a>
@@ -6964,12 +6966,13 @@
       }
     });
 
-    // The sidebar (#side-nav) is server-rendered per navigation via the
-    // shell's hx-select-oob, so active classes and scope are normally always
-    // correct. Browser back/forward restores from htmx's history cache swap
-    // only #live-root, so JS must (a) re-derive the workspace scope from the
-    // URL — mirror of Go navScopeFromURL — and reload once on mismatch, and
-    // (b) re-sync active classes when the scope matches.
+    // The sidebar (#side-nav) is server-rendered on first load and when
+    // oobBeforeSwap lets a scope-changing oob through. Same-scope boosted
+    // nav keeps the node; updateNavActive retints .active on
+    // pushedIntoHistory. Browser back/forward restores from htmx's history
+    // cache swap only #live-root, so JS must (a) re-derive the workspace
+    // scope from the URL — mirror of Go navScopeFromURL — and reload once
+    // on mismatch, and (b) re-sync active classes when the scope matches.
     function navScopeOf(pathname, search) {
       var seg = pathname.replace(/^\/+|\/+$/g, "").split("/");
       try {
@@ -7008,9 +7011,9 @@
         var href = a.getAttribute("href") || "";
         a.classList.toggle("active", !!navActiveFor(path, href));
       });
-      // Phone tab bar: its items are scope-aware server-side (oob swap), and
-      // a scope mismatch on history restore reloads (below), so the anchors
-      // always belong to the current scope — plain href matching suffices.
+      // Phone tab bar: items change only with scope (oob swap or reload),
+      // so the anchors always belong to the current scope — plain href
+      // matching suffices.
       document.querySelectorAll("#tab-bar > a[href]").forEach(function (a) {
         var href = a.getAttribute("href") || "";
         a.classList.toggle("active", !!navActiveFor(path, href));
@@ -7102,8 +7105,37 @@
       }
     }
     loadNavCounts();
-    document.body.addEventListener("htmx:afterSettle", function (e) {
-      if (e.detail && e.detail.boosted) loadNavCounts();
+    // Incoming OOB fragment is a clone of <nav id="side-nav">. Compare its
+    // data-scope (server, access-checked) to the live node — not the URL —
+    // so a forbidden/unknown project that rendered global does not remount
+    // an already-global nav. shouldSwap=false skips the remount (empty
+    // placeholders + nav-count-in). preventDefault is also required:
+    // shouldSwap=false still fires oobAfterSwap, which would refetch.
+    function oobNavElement(frag) {
+      if (!frag) return null;
+      if (frag.id === "side-nav") return frag;
+      if (frag.querySelector) {
+        var el = frag.querySelector("#side-nav");
+        if (el) return el;
+      }
+      var first = frag.firstElementChild;
+      return first && first.id === "side-nav" ? first : null;
+    }
+    document.body.addEventListener("htmx:oobBeforeSwap", function (e) {
+      var d = e.detail;
+      if (!d || !d.target || d.target.id !== "side-nav") return;
+      var incoming = oobNavElement(d.fragment);
+      if (!incoming) return;
+      var have = d.target.getAttribute("data-scope") || "";
+      var want = incoming.getAttribute("data-scope") || "";
+      if (have !== want) return;
+      d.shouldSwap = false;
+      e.preventDefault();
+    });
+    document.body.addEventListener("htmx:oobAfterSwap", function (e) {
+      var d = e.detail;
+      if (!d || !d.target || d.target.id !== "side-nav") return;
+      loadNavCounts();
     });
 
     // Workspace switcher: close the dropdown when clicking elsewhere.

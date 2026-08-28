@@ -18,7 +18,8 @@ import (
 // views) or project workspace (scoped nav + switcher). The mode is derived
 // from the URL alone — never from page data — so the layout JS can recompute
 // it identically after an htmx history restore (the sidebar lives outside
-// #live-root and is synced via hx-select-oob on boosted requests).
+// #live-root; hx-select-oob offers it on boosted full pages, and the layout
+// JS keeps the existing node when data-scope would not change).
 
 // navScopeFromURL derives the workspace project from the URL. Path wins:
 // /projects/{p}/… and /config/projects/{p}. Detail pages whose canonical URL
