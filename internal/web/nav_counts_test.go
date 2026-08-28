@@ -108,6 +108,28 @@ func TestNavOobSkipsSameScope(t *testing.T) {
 	}
 }
 
+// TestNavCountsLiveOnSSE pins the path that refreshes sidebar pills when a
+// PR merges (sse:ship) or a case board count moves (sse:cases): EventSource
+// named events plus reconnect catch-up, local JSON only (no GitHub re-hit).
+func TestNavCountsLiveOnSSE(t *testing.T) {
+	srv, _, _ := testServer(t)
+	body := getBody(t, srv.Handler(), "/")
+	for _, want := range []string{
+		`if (name === "ship" || name === "cases") loadNavCounts(true)`,
+		`if (changed.ship || changed.cases) loadNavCounts(true)`,
+		`function loadNavCounts(localOnly)`,
+		`if (localOnly) return`,
+		`if (remote && key !== "issues" && key !== "errors") return`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("layout missing %q", want)
+		}
+	}
+	if strings.Contains(body, "if (e.detail && e.detail.boosted) loadNavCounts()") {
+		t.Fatal("same-scope boosted nav must not refetch counts")
+	}
+}
+
 func navLinksChunk(t *testing.T, body string) string {
 	t.Helper()
 	start := strings.Index(body, `id="nav-links"`)

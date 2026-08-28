@@ -368,6 +368,8 @@ func TestPagesRender(t *testing.T) {
 				// Mid-session SSE reconnect catch-up (rev compare → partial refresh).
 				`lastLiveRevs`,
 				`applyLiveRevs`,
+				// Sidebar count pills refetch on sse:ship / sse:cases.
+				`loadNavCounts(true)`,
 			} {
 				if !strings.Contains(body, live) {
 					t.Fatalf("path %s missing live marker %q", tc.path, live)

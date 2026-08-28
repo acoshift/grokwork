@@ -6717,6 +6717,9 @@
               select: el.getAttribute("hx-select") || "unset"
             });
           });
+          // Sidebar pills are not a live-region (OOB nav must not remount
+          // them). Paint from the same JSON endpoint the mount path uses.
+          if (changed.ship || changed.cases) loadNavCounts(true);
         }
       }
       lastLiveRevs = revs;
@@ -6740,6 +6743,7 @@
             if (!data || !data.rev) return;
             if (!lastLiveRevs) lastLiveRevs = {};
             lastLiveRevs[name] = data.rev;
+            if (name === "ship" || name === "cases") loadNavCounts(true);
           } catch (err) { /* ignore malformed */ }
         });
       });
@@ -7091,12 +7095,19 @@
     // Active-item badges on Ship / Cases / Reviews / Issues / Errors. The
     // counts endpoint is JSON so one fetch paints both the desktop list and
     // the phone tab bar. Placeholders start hidden; 0 stays hidden.
+    // sse:ship / sse:cases refetch local boards in place (no nav remount).
+    // Issues / errors stay mount-only so a PR merge does not re-hit GitHub.
     var navCountsAbort = null;
     var navCountsSeq = 0;
-    function applyNavCounts(data) {
+    var navCountsRemoteAbort = null;
+    var navCountsRemoteSeq = 0;
+    function applyNavCounts(data, remote) {
       if (!data || typeof data !== "object") return;
       document.querySelectorAll("[data-nav-count]").forEach(function (el) {
         var key = el.getAttribute("data-nav-count");
+        // Remote payload repeats local counts; applying them would clobber a
+        // newer sse:ship paint that landed while GitHub was still listing.
+        if (remote && key !== "issues" && key !== "errors") return;
         if (!Object.prototype.hasOwnProperty.call(data, key)) return;
         var n = data[key];
         var link = el.parentElement;
@@ -7116,7 +7127,7 @@
         }
       });
     }
-    function fetchNavCounts(url, project, seq, signal) {
+    function fetchNavCounts(url, project, seq, signal, remote) {
       return fetch(url, {
         credentials: "same-origin",
         cache: "no-store",
@@ -7125,13 +7136,13 @@
       }).then(function (r) {
         return r.ok ? r.json() : null;
       }).then(function (data) {
-        if (seq !== navCountsSeq) return;
+        if (seq !== (remote ? navCountsRemoteSeq : navCountsSeq)) return;
         var now = document.getElementById("side-nav");
         if (!now || (now.getAttribute("data-scope") || "") !== project) return;
-        applyNavCounts(data);
+        applyNavCounts(data, remote);
       }).catch(function () {});
     }
-    function loadNavCounts() {
+    function loadNavCounts(localOnly) {
       var nav = document.getElementById("side-nav");
       if (!nav || !nav.querySelector("[data-nav-count]")) return;
       var project = nav.getAttribute("data-scope") || "";
@@ -7144,11 +7155,16 @@
       var ac = new AbortController();
       navCountsAbort = ac;
       var seq = ++navCountsSeq;
-      fetchNavCounts(url, project, seq, ac.signal);
+      fetchNavCounts(url, project, seq, ac.signal, false);
+      if (localOnly) return;
+      if (navCountsRemoteAbort) navCountsRemoteAbort.abort();
+      var rseq = ++navCountsRemoteSeq;
       // Issues / errors hit GitHub and error sources; a second request keeps
       // Ship / Cases / Reviews from waiting on those.
       if (project && nav.querySelector('[data-nav-count="issues"], [data-nav-count="errors"]')) {
-        fetchNavCounts(url + "&remote=1", project, seq, ac.signal);
+        var rac = new AbortController();
+        navCountsRemoteAbort = rac;
+        fetchNavCounts(url + "&remote=1", project, rseq, rac.signal, true);
       }
     }
     loadNavCounts();
