@@ -287,6 +287,27 @@ func TestPostCaseClose(t *testing.T) {
 	if !e.IsCaseClosed() {
 		t.Fatalf("want closed: %+v", e)
 	}
+	if e.ResolutionNote != "kb article" {
+		t.Fatalf("resolution note=%q", e.ResolutionNote)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/t-close", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("session page status=%d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`id="session-case-resolution-note"`,
+		"Resolution note",
+		"kb article",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("closed case page missing %q", want)
+		}
+	}
 }
 
 func TestPostCaseCustomerUpdate(t *testing.T) {
@@ -384,7 +405,7 @@ func TestClosedCaseHidesContinueAndRejectsPost(t *testing.T) {
 	if strings.Contains(body, "Reopen is not implemented") {
 		t.Fatal("closed case page still claims reopen is not implemented")
 	}
-	for _, hide := range []string{"btn-case-investigate", "btn-case-escalate", "btn-case-answer", "btn-case-close"} {
+	for _, hide := range []string{"btn-case-investigate", "btn-case-escalate", "btn-case-answer", "btn-case-close", `id="session-case-resolution-note"`} {
 		if strings.Contains(body, hide) {
 			t.Fatalf("closed case page should hide %q", hide)
 		}

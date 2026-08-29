@@ -149,4 +149,21 @@ func TestHistoryRevMovesOnRunIdleAndSessionChrome(t *testing.T) {
 	if srv.fpHistory() == beforeVerify {
 		t.Fatal("history rev should change when last-verify chrome is patched")
 	}
+
+	if _, _, err := srv.sessions.Patch("thread-99", func(e *sessionstore.Entry) {
+		e.Mode = "case"
+		e.Phase = sessionstore.PhaseClosed
+		e.Resolution = "fixed"
+	}); err != nil {
+		t.Fatal(err)
+	}
+	beforeNote := srv.fpHistory()
+	if _, _, err := srv.sessions.Patch("thread-99", func(e *sessionstore.Entry) {
+		e.ResolutionNote = "shipped in 4.2.3"
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if srv.fpHistory() == beforeNote {
+		t.Fatal("history rev should change when the close note is patched")
+	}
 }

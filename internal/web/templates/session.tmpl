@@ -423,6 +423,9 @@
     {{if .SessionEntry.IntakeSource}} · via <span class="mono">{{.SessionEntry.IntakeSource}}</span>{{end}}
     {{if .SessionEntry.Resolution}} · resolution <span class="mono">{{.SessionEntry.Resolution}}</span>{{end}}
   </p>
+  {{if .SessionEntry.ResolutionNote}}
+  <p style="margin:0.85rem 0 0" id="session-case-resolution-note"><span class="bubble-label" style="display:block">Resolution note</span>{{.SessionEntry.ResolutionNote}}</p>
+  {{end}}
   {{if .SessionEntry.CustomerUpdate}}
   <p style="margin:0.85rem 0 0"><span class="bubble-label" style="display:block">Customer update</span>{{.SessionEntry.CustomerUpdate}}</p>
   {{end}}

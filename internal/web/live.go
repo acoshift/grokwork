@@ -201,8 +201,8 @@ func appendSessionLiveChrome(b *strings.Builder, sessions []sessionstore.Listed)
 	for _, se := range sessions {
 		e := se.Entry
 		e.NormalizePRs()
-		fmt.Fprintf(b, "s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
-			se.ThreadID, e.EffectiveLabel(), e.Mode, e.CasePhase(), e.Resolution,
+		fmt.Fprintf(b, "s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
+			se.ThreadID, e.EffectiveLabel(), e.Mode, e.CasePhase(), e.Resolution, e.ResolutionNote,
 			e.WorktreeBranch, e.OwnerName, e.CustomerTitle, e.CustomerUpdate)
 		for _, key := range e.RelatedCases {
 			fmt.Fprintf(b, "|r|%s", key)
