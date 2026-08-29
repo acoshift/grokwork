@@ -1,8 +1,10 @@
 package bot
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"mime"
 	"os"
@@ -174,12 +176,12 @@ func prepareWorktreeUploads(worktreeRoot string, paths []string) (ok []preparedU
 	for _, p := range paths {
 		abs, err := resolveWorktreeUploadPath(worktreeRoot, p)
 		if err != nil {
-			notes = append(notes, fmt.Sprintf("skip %q: %s", displayUploadPath(p), err.Error()))
+			notes = append(notes, skipStoreNote(displayUploadPath(p), err))
 			continue
 		}
 		st, err := os.Stat(abs)
 		if err != nil {
-			notes = append(notes, fmt.Sprintf("skip %q: %s", displayUploadPath(p), err.Error()))
+			notes = append(notes, skipStoreNote(displayUploadPath(p), err))
 			continue
 		}
 		if st.Size() > maxUploadBytes {
@@ -210,6 +212,29 @@ func prepareWorktreeUploads(worktreeRoot string, paths []string) (ok []preparedU
 		})
 	}
 	return ok, notes
+}
+
+func skipStoreNote(label string, err error) string {
+	reason := "could not store"
+	if err != nil {
+		var pe *fs.PathError
+		if !errors.As(err, &pe) {
+			msg := err.Error()
+			if msg != "" && !strings.ContainsAny(msg, `/\`) {
+				reason = msg
+			}
+		}
+	}
+	return fmt.Sprintf("skip %q: %s", label, reason)
+}
+
+func discordArtifactBatch(files []history.Attachment) (send []history.Attachment, extra []string) {
+	if len(files) <= maxUploadFiles {
+		return files, nil
+	}
+	return files[:maxUploadFiles], []string{
+		fmt.Sprintf("Discord attached the first %d of %d files; the rest are on the web session.", maxUploadFiles, len(files)),
+	}
 }
 
 func displayUploadPath(p string) string {
@@ -268,7 +293,7 @@ func (b *Bot) ingestWorktreeArtifacts(threadID, worktreeRoot, text string) []str
 			ContentType: f.MIME,
 			Rel:         f.RelLabel,
 		}); err != nil {
-			notes = append(notes, fmt.Sprintf("skip %q: %s", f.RelLabel, err.Error()))
+			notes = append(notes, skipStoreNote(f.RelLabel, err))
 			log.Printf("upload: persist %s: %v", f.RelLabel, err)
 		}
 	}
@@ -454,6 +479,9 @@ func (b *Bot) discordSendSessionArtifacts(s *discordgo.Session, channelID string
 	for _, n := range notes {
 		log.Printf("upload: %s", n)
 	}
+	var extra []string
+	files, extra = discordArtifactBatch(files)
+	notes = append(notes, extra...)
 	if len(files) == 0 {
 		if len(notes) == 0 {
 			return

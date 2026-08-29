@@ -1,12 +1,15 @@
 package history
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/acoshift/grokwork/internal/atomicfile"
 )
 
 // OpenFile opens a persisted turn attachment. turnN is 1-based (matching the
@@ -62,6 +65,10 @@ func (s *Store) artifactsDir(threadID string) string {
 	return filepath.Join(s.filesRoot(threadID), "out")
 }
 
+func (s *Store) artifactsIndexPath(threadID string) string {
+	return filepath.Join(s.filesRoot(threadID), "artifacts.json")
+}
+
 const (
 	maxArtifactBytes        = 25 << 20
 	maxArtifactsPerSession  = 50
@@ -69,8 +76,8 @@ const (
 )
 
 // PutArtifact copies src into the session artifact store and records it on
-// the thread allowlist. Name collisions get a _N suffix. Host-absolute Rel
-// values are dropped — only a worktree-relative label is stored.
+// the sidecar allowlist. The turn log is not rewritten. Name collisions get
+// a _N suffix. Host-absolute Rel values are dropped.
 func (s *Store) PutArtifact(threadID string, src File) (Attachment, error) {
 	if s == nil {
 		return Attachment{}, fmt.Errorf("not found")
@@ -89,7 +96,7 @@ func (s *Store) PutArtifact(threadID string, src File) (Attachment, error) {
 	if size == 0 && src.Path != "" {
 		st, err := os.Stat(src.Path)
 		if err != nil {
-			return Attachment{}, err
+			return Attachment{}, fmt.Errorf("file not found")
 		}
 		if st.IsDir() {
 			return Attachment{}, fmt.Errorf("path is a directory, not a file")
@@ -100,41 +107,59 @@ func (s *Store) PutArtifact(threadID string, src File) (Attachment, error) {
 		return Attachment{}, fmt.Errorf("file is %s (max %s)", formatFileSize(size), formatFileSize(maxArtifactBytes))
 	}
 
+	dir := s.artifactsDir(threadID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return Attachment{}, fmt.Errorf("could not store")
+	}
+	tmp, err := os.CreateTemp(dir, ".put-*")
+	if err != nil {
+		return Attachment{}, fmt.Errorf("could not store")
+	}
+	tmpPath := tmp.Name()
+	n, err := writeArtifactTo(tmp, src)
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(tmpPath)
+		return Attachment{}, fmt.Errorf("could not store")
+	}
+	if n > maxArtifactBytes {
+		_ = os.Remove(tmpPath)
+		return Attachment{}, fmt.Errorf("file is %s (max %s)", formatFileSize(n), formatFileSize(maxArtifactBytes))
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	th, err := s.loadLocked(threadID)
+	arts, err := s.artifactsForLocked(threadID)
 	if err != nil {
-		return Attachment{}, err
+		_ = os.Remove(tmpPath)
+		return Attachment{}, fmt.Errorf("could not store")
 	}
-	if th.ThreadID == "" {
-		th.ThreadID = threadID
-	}
-	if len(th.Artifacts) >= maxArtifactsPerSession {
+	if len(arts) >= maxArtifactsPerSession {
+		_ = os.Remove(tmpPath)
 		return Attachment{}, fmt.Errorf("session already has %d files (max %d)", maxArtifactsPerSession, maxArtifactsPerSession)
 	}
 	var total int64
-	taken := make(map[string]struct{}, len(th.Artifacts)+1)
-	for _, a := range th.Artifacts {
+	taken := make(map[string]struct{}, len(arts)+1)
+	for _, a := range arts {
 		total += a.Size
 		taken[a.Name] = struct{}{}
 	}
-	if total+size > maxArtifactBytesSession {
+	if total+n > maxArtifactBytesSession {
+		_ = os.Remove(tmpPath)
 		return Attachment{}, fmt.Errorf("session file budget reached")
 	}
 	name = unusedFileName(name, taken)
-
-	dir := s.artifactsDir(threadID)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return Attachment{}, err
-	}
 	dest := filepath.Join(dir, name)
 	if filepath.Dir(dest) != dir {
-		return Attachment{}, fmt.Errorf("not found")
+		_ = os.Remove(tmpPath)
+		return Attachment{}, fmt.Errorf("could not store")
 	}
-	n, err := writeArtifactFile(dest, src)
-	if err != nil {
-		return Attachment{}, err
+	if err := os.Rename(tmpPath, dest); err != nil {
+		_ = os.Remove(tmpPath)
+		return Attachment{}, fmt.Errorf("could not store")
 	}
 	att := Attachment{
 		Name:        name,
@@ -142,17 +167,17 @@ func (s *Store) PutArtifact(threadID string, src File) (Attachment, error) {
 		Size:        n,
 		Rel:         safeRelLabel(src.Rel),
 	}
-	th.Artifacts = append(th.Artifacts, att)
-	if err := s.saveLocked(th); err != nil {
+	arts = append(arts, att)
+	if err := s.saveArtifactsLocked(threadID, arts); err != nil {
 		_ = os.Remove(dest)
-		return Attachment{}, err
+		return Attachment{}, fmt.Errorf("could not store")
 	}
 	return att, nil
 }
 
 // OpenArtifact opens a persisted session artifact. name must equal an
-// Attachment.Name on the thread allowlist — a file that happens to sit in
-// the dir but is not in the JSON is not served.
+// Attachment.Name on the session allowlist — a file that happens to sit in
+// the dir but is not in the index is not served.
 func (s *Store) OpenArtifact(threadID, name string) (*os.File, Attachment, error) {
 	if s == nil {
 		return nil, Attachment{}, fmt.Errorf("not found")
@@ -166,12 +191,12 @@ func (s *Store) OpenArtifact(threadID, name string) (*os.File, Attachment, error
 	}
 
 	s.mu.Lock()
-	th, err := s.loadLocked(threadID)
+	arts, err := s.artifactsForLocked(threadID)
 	s.mu.Unlock()
 	if err != nil {
-		return nil, Attachment{}, err
+		return nil, Attachment{}, fmt.Errorf("not found")
 	}
-	att, ok := lookupAttachment(th.Artifacts, name)
+	att, ok := lookupAttachment(arts, name)
 	if !ok {
 		return nil, Attachment{}, fmt.Errorf("not found")
 	}
@@ -182,9 +207,75 @@ func (s *Store) OpenArtifact(threadID, name string) (*os.File, Attachment, error
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, Attachment{}, err
+		return nil, Attachment{}, fmt.Errorf("not found")
 	}
 	return f, att, nil
+}
+
+func (s *Store) artifactsForLocked(threadID string) ([]Attachment, error) {
+	arts, err := s.loadArtifactsLocked(threadID)
+	if err != nil {
+		return nil, err
+	}
+	if len(arts) > 0 {
+		return arts, nil
+	}
+	th, err := s.loadLocked(threadID)
+	if err != nil {
+		return nil, err
+	}
+	return th.Artifacts, nil
+}
+
+func (s *Store) attachArtifactsLocked(th *Thread) {
+	if th == nil || th.ThreadID == "" {
+		return
+	}
+	arts, err := s.loadArtifactsLocked(th.ThreadID)
+	if err != nil || len(arts) == 0 {
+		return
+	}
+	th.Artifacts = arts
+}
+
+func (s *Store) loadArtifactsLocked(threadID string) ([]Attachment, error) {
+	raw, err := os.ReadFile(s.artifactsIndexPath(threadID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var arts []Attachment
+	if err := json.Unmarshal(raw, &arts); err != nil {
+		return nil, err
+	}
+	return arts, nil
+}
+
+func (s *Store) saveArtifactsLocked(threadID string, arts []Attachment) error {
+	if err := os.MkdirAll(s.filesRoot(threadID), 0o700); err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(arts, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	return atomicfile.Write(s.artifactsIndexPath(threadID), raw, 0o600)
+}
+
+func writeArtifactTo(w io.Writer, src File) (int64, error) {
+	if len(src.Bytes) > 0 {
+		n, err := w.Write(src.Bytes)
+		return int64(n), err
+	}
+	in, err := os.Open(src.Path)
+	if err != nil {
+		return 0, err
+	}
+	defer in.Close()
+	return io.Copy(w, in)
 }
 
 func lookupAttachment(atts []Attachment, name string) (Attachment, bool) {
@@ -231,25 +322,6 @@ func copyTurnFiles(dir string, files []File) []Attachment {
 		return nil
 	}
 	return out
-}
-
-func writeArtifactFile(dst string, src File) (int64, error) {
-	if len(src.Bytes) > 0 {
-		out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
-		if err != nil {
-			return 0, err
-		}
-		n, err := out.Write(src.Bytes)
-		if closeErr := out.Close(); err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			_ = os.Remove(dst)
-			return 0, err
-		}
-		return int64(n), nil
-	}
-	return copyFile(src.Path, dst)
 }
 
 func safeRelLabel(rel string) string {

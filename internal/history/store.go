@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/acoshift/grokwork/internal/atomicfile"
 )
 
 // Turn is one user→assistant exchange in a Discord thread.
@@ -144,7 +146,9 @@ type Thread struct {
 	Project  string `json:"project,omitempty"`
 	Turns    []Turn `json:"turns"`
 	// Artifacts is the session-level allowlist of agent-sent files. Bytes live
-	// under data/history/<threadId>/out/. Older records omit it.
+	// under data/history/<threadId>/out/; the allowlist is data/history/<threadId>/artifacts.json.
+	// Filled on read (sidecar, or a legacy artifacts field on this JSON). Never
+	// written back onto the turn log — a mid-run file must not rewrite turns.
 	Artifacts []Attachment `json:"artifacts,omitempty"`
 }
 
@@ -242,7 +246,12 @@ func (s *Store) Get(threadID string) (Thread, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.loadLocked(threadID)
+	th, err := s.loadLocked(threadID)
+	if err != nil {
+		return Thread{}, err
+	}
+	s.attachArtifactsLocked(&th)
+	return th, nil
 }
 
 // List returns thread summaries newest-first.
@@ -390,12 +399,22 @@ func (s *Store) loadLocked(threadID string) (Thread, error) {
 }
 
 func (s *Store) saveLocked(th Thread) error {
+	// One-release migrate: c85ee47 wrote Artifacts onto this file. Move them
+	// to the sidecar before stripping so a later Get still sees them.
+	if len(th.Artifacts) > 0 {
+		if arts, err := s.loadArtifactsLocked(th.ThreadID); err == nil && len(arts) == 0 {
+			if err := s.saveArtifactsLocked(th.ThreadID, th.Artifacts); err != nil {
+				return err
+			}
+		}
+	}
+	th.Artifacts = nil
 	raw, err := json.MarshalIndent(th, "", "  ")
 	if err != nil {
 		return err
 	}
 	raw = append(raw, '\n')
-	return os.WriteFile(s.path(th.ThreadID), raw, 0o600)
+	return atomicfile.Write(s.path(th.ThreadID), raw, 0o600)
 }
 
 func validThreadID(id string) bool {

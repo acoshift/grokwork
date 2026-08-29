@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -171,5 +172,37 @@ func TestIngestWorktreeArtifactsPersists(t *testing.T) {
 	}
 	if len(th.Artifacts) != 1 {
 		t.Fatalf("artifacts=%+v", th.Artifacts)
+	}
+}
+
+func TestSkipStoreNoteOmitsPaths(t *testing.T) {
+	got := skipStoreNote("report.xlsx", &os.PathError{Op: "open", Path: "/Users/me/data/history/t1/out/report.xlsx", Err: os.ErrPermission})
+	if strings.Contains(got, "/") || strings.Contains(got, `Users`) {
+		t.Fatalf("path leaked: %q", got)
+	}
+	if got != `skip "report.xlsx": could not store` {
+		t.Fatalf("got=%q", got)
+	}
+	got = skipStoreNote("ok.xlsx", fmt.Errorf("file is 30.0 MiB (max 25.0 MiB)"))
+	if !strings.Contains(got, "30.0 MiB") {
+		t.Fatalf("size reason dropped: %q", got)
+	}
+}
+
+func TestDiscordArtifactBatchCapsAtTen(t *testing.T) {
+	files := make([]history.Attachment, 12)
+	for i := range files {
+		files[i].Name = fmt.Sprintf("f%d.xlsx", i)
+	}
+	send, extra := discordArtifactBatch(files)
+	if len(send) != 10 {
+		t.Fatalf("send=%d", len(send))
+	}
+	if len(extra) != 1 || !strings.Contains(extra[0], "first 10 of 12") {
+		t.Fatalf("extra=%v", extra)
+	}
+	send, extra = discordArtifactBatch(files[:3])
+	if len(send) != 3 || extra != nil {
+		t.Fatalf("small batch send=%d extra=%v", len(send), extra)
 	}
 }

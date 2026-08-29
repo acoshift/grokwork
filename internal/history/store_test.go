@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -280,6 +281,92 @@ func TestPutAndOpenArtifact(t *testing.T) {
 	}
 	if _, _, err := s.OpenArtifact("t1", "report.xlsx"); err == nil {
 		t.Fatal("deleted artifact must not open")
+	}
+}
+
+func TestPutArtifactDoesNotRewriteTurnLog(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Append("t1", Turn{Prompt: "do it", Response: "done", Status: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	jsonPath := filepath.Join(dir, "history", "t1.json")
+	before, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(before), `"artifacts"`) {
+		t.Fatal("turn log must not carry artifacts")
+	}
+	if _, err := s.PutArtifact("t1", File{Bytes: []byte("xlsx"), Name: "a.xlsx"}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("PutArtifact must not rewrite the turn log")
+	}
+	th, err := s.Get("t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Turns) != 1 || th.Turns[0].Prompt != "do it" {
+		t.Fatalf("turns clobbered: %+v", th.Turns)
+	}
+	if len(th.Artifacts) != 1 || th.Artifacts[0].Name != "a.xlsx" {
+		t.Fatalf("sidecar not visible on Get: %+v", th.Artifacts)
+	}
+}
+
+func TestLegacyJSONArtifactsMigrateOnSave(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := []byte(`{
+  "threadId": "t1",
+  "turns": [{"at": "2026-01-01T00:00:00Z", "prompt": "old", "status": "done"}],
+  "artifacts": [{"name": "legacy.xlsx", "size": 3, "rel": "out/legacy.xlsx"}]
+}
+`)
+	if err := os.MkdirAll(filepath.Join(dir, "history"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "history", "t1.json"), legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	th, err := s.Get("t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Artifacts) != 1 || th.Artifacts[0].Name != "legacy.xlsx" {
+		t.Fatalf("legacy Get: %+v", th.Artifacts)
+	}
+	if err := s.Append("t1", Turn{Prompt: "next", Status: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "history", "t1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"artifacts"`) {
+		t.Fatalf("migrated turn log still has artifacts: %s", raw)
+	}
+	th, err = s.Get("t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Artifacts) != 1 || th.Artifacts[0].Name != "legacy.xlsx" {
+		t.Fatalf("sidecar after migrate: %+v", th.Artifacts)
+	}
+	if len(th.Turns) != 2 {
+		t.Fatalf("turns=%d", len(th.Turns))
 	}
 }
 
