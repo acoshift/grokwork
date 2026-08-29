@@ -52,6 +52,7 @@ func (b *Bot) initAgentPlane() {
 		Reviews:  b.reviews,
 		Storage:  storage,
 		Bot:      b,
+		Files:    b,
 		Audit:    b.audit,
 		EligibleReviewer: func(project, reviewerID string) bool {
 			return b.eligibleTeamReviewer(project, reviewerID)
@@ -457,6 +458,11 @@ func agentMCPPromptContract(caps agentauth.Caps) string {
 	} else {
 		lines = append(lines,
 			"This run is read-only on grokwork workflow state: do not mark the session done or abandon it.",
+		)
+	}
+	if caps.SessionFiles {
+		lines = append(lines,
+			"Send deliverable files to this session with session_send_file (path inside the worktree, or name+content). They are downloadable from the web UI.",
 		)
 	}
 	if caps.StorageRead {

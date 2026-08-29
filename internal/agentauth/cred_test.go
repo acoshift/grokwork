@@ -67,8 +67,11 @@ func TestDefaultInvestigateCapsAreReadOnly(t *testing.T) {
 		!c.GCPErrorsRead || !c.SentryRead || !c.DeploysErrorsRead {
 		t.Fatalf("missing reads: %+v", c)
 	}
+	if !c.SessionFiles {
+		t.Fatal("investigate may send files to the bound session")
+	}
 	if c.SessionDone || c.SessionAbandon || c.ReviewRequest || c.StorageWrite {
-		t.Fatalf("writes must be off: %+v", c)
+		t.Fatalf("workflow writes must be off: %+v", c)
 	}
 }
 

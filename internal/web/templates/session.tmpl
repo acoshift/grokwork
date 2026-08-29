@@ -467,6 +467,24 @@
     {{if .SessionEntry.WorktreeBranch}} · branch <span class="mono">{{.SessionEntry.WorktreeBranch}}</span>{{end}}
     {{if and (not .HasWorktree) (or .SessionEntry.IsCaseClosed (eq $lab "done") (eq $lab "abandoned") .SessionEntry.AllPRsTerminal)}} · <span class="muted">worktree cleaned</span>{{end}}
   </p>
+  {{if .Thread.Artifacts}}
+  <p style="margin:0.85rem 0 0.25rem"><span class="bubble-label" style="display:block">Files</span></p>
+  <div class="turn-atts turn-atts-out">
+    {{range $a := .Thread.Artifacts}}
+    {{$href := sessionArtifact $.ThreadID $a.Name}}
+    {{if $a.IsImage}}
+    <a class="turn-att-img" href="{{$href}}" hx-boost="false">
+      <img src="{{$href}}" alt="{{$a.Name}}">
+    </a>
+    {{else}}
+    <a class="turn-att-chip" href="{{$href}}" hx-boost="false" download>
+      <span class="turn-att-name">{{$a.Name}}</span>
+      {{if $a.SizeLabel}}<span class="turn-att-size">{{$a.SizeLabel}}</span>{{end}}
+    </a>
+    {{end}}
+    {{end}}
+  </div>
+  {{end}}
   {{if .SessionEntry.Goal}}
   <p style="margin:0.85rem 0 0"><span class="bubble-label" style="display:block">Goal</span>{{.SessionEntry.Goal}}</p>
   {{end}}
@@ -558,6 +576,23 @@
         <div class="bubble-note muted">Recovered from the run record — this run ended without a final reply.</div>
         {{else}}
         <div class="bubble-body muted">(no response text yet)</div>
+        {{end}}
+        {{if $t.Artifacts}}
+        <div class="turn-atts turn-atts-out">
+          {{range $a := $t.Artifacts}}
+          {{$href := sessionArtifact $.ThreadID $a.Name}}
+          {{if $a.IsImage}}
+          <a class="turn-att-img" href="{{$href}}" hx-boost="false">
+            <img src="{{$href}}" alt="{{$a.Name}}">
+          </a>
+          {{else}}
+          <a class="turn-att-chip" href="{{$href}}" hx-boost="false" download>
+            <span class="turn-att-name">{{$a.Name}}</span>
+            {{if $a.SizeLabel}}<span class="turn-att-size">{{$a.SizeLabel}}</span>{{end}}
+          </a>
+          {{end}}
+          {{end}}
+        </div>
         {{end}}
       </div>
       {{if or $t.Prompt $t.Attachments}}
@@ -659,6 +694,23 @@
     <div class="bubble-body md" id="live-stream-body">{{githubMarkdown .Project .RunLiveText}}</div>
     {{else}}
     <div class="bubble-body muted" id="live-stream-body">streaming…</div>
+    {{end}}
+    {{if .RunArtifacts}}
+    <div class="turn-atts turn-atts-out">
+      {{range $a := .RunArtifacts}}
+      {{$href := sessionArtifact $.ThreadID $a.Name}}
+      {{if $a.IsImage}}
+      <a class="turn-att-img" href="{{$href}}" hx-boost="false">
+        <img src="{{$href}}" alt="{{$a.Name}}">
+      </a>
+      {{else}}
+      <a class="turn-att-chip" href="{{$href}}" hx-boost="false" download>
+        <span class="turn-att-name">{{$a.Name}}</span>
+        {{if $a.SizeLabel}}<span class="turn-att-size">{{$a.SizeLabel}}</span>{{end}}
+      </a>
+      {{end}}
+      {{end}}
+    </div>
     {{end}}
   </div>
   {{if or .RunPrompt .RunAttachments}}

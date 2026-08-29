@@ -17,6 +17,7 @@ const (
 	ToolSessionGet        = "session_get"
 	ToolSessionDone       = "session_done"
 	ToolSessionAbandon    = "session_abandon"
+	ToolSessionSendFile   = "session_send_file"
 	ToolPRsList           = "prs_list"
 	ToolIssuesList        = "issues_list"
 	ToolReviewRequest     = "review_request"
@@ -57,6 +58,9 @@ func ToolDefs() []ToolDef {
 	num := map[string]any{"type": "integer"}
 	return []ToolDef{
 		{Name: ToolSessionGet, Description: "Get this bound session (goal, label, PRs).", InputSchema: obj(nil)},
+		{Name: ToolSessionSendFile, Description: "Send a file to this session for web download. Prefer path (worktree-relative). Or pass name + content (encoding text or base64).", InputSchema: obj(map[string]any{
+			"path": str, "name": str, "content": str, "contentType": str, "encoding": str,
+		})},
 		{Name: ToolSessionDone, Description: "Mark this session done (manual board label).", InputSchema: obj(nil)},
 		{Name: ToolSessionAbandon, Description: "Soft-abandon this session (label + clear queue; keeps worktree).", InputSchema: obj(map[string]any{"reason": str})},
 		{Name: ToolPRsList, Description: "List tracked PRs for session or project.", InputSchema: obj(map[string]any{"scope": str})},
@@ -90,6 +94,8 @@ func toolAllowed(name string, c agentauth.Caps) bool {
 	switch name {
 	case ToolSessionGet:
 		return c.SessionRead
+	case ToolSessionSendFile:
+		return c.SessionFiles
 	case ToolSessionDone:
 		return c.SessionDone
 	case ToolSessionAbandon:
@@ -154,6 +160,8 @@ func Call(ctx context.Context, svc *agentapi.Service, token, name string, args m
 	switch name {
 	case ToolSessionGet:
 		return svc.SessionGet(token)
+	case ToolSessionSendFile:
+		return svc.SessionSendFile(token, strArg(args, "path"), strArg(args, "name"), strArg(args, "content"), strArg(args, "contentType"), strArg(args, "encoding"))
 	case ToolSessionDone:
 		return map[string]string{"status": "ok"}, svc.SessionDone(token)
 	case ToolSessionAbandon:

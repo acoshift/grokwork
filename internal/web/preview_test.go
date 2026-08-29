@@ -346,6 +346,26 @@ func TestPreviewServer(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	xlsx := filepath.Join(cfg.DataDir, "preview-report.xlsx")
+	if err := os.WriteFile(xlsx, []byte("xlsx-demo"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	att, err := hist.PutArtifact("1390000000000000022", history.File{
+		Path: xlsx, Name: "settle-dupes.xlsx", ContentType: "application/vnd.ms-excel", Rel: "notes/settle-dupes.xlsx",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hist.Append("1390000000000000022", history.Turn{
+		User: "mint#0", Prompt: "Export the duplicate-settle cases as a spreadsheet.",
+		Response: "Wrote notes/settle-dupes.xlsx — download it from this session.",
+		Status:   "done", Elapsed: "1m12s", Project: "webapp", SessionID: "case-b",
+		Agent: "claude", Model: "claude-sonnet-5",
+		Usage:     claudeUsage(640, 22_000, 6_400, 1_800, 31_000),
+		Artifacts: []history.Attachment{att},
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Repo catalog so the commits browser and PR diff resolve without gh.
 	if err := cfg.SetProjectGitHubRepos("webapp", []config.GitHubRepoRef{{Owner: "acme", Repo: "webapp"}}); err != nil {

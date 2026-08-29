@@ -162,7 +162,7 @@ func TestPlanPromptPrefixContract(t *testing.T) {
 		"PLAN_ISSUE:",
 		"<!-- grokwork:tasklist -->",
 		"do not push",
-		"file-inspection",
+		"ARTIFACT:",
 	} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("missing %q in:\n%s", want, p)

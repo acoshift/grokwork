@@ -47,20 +47,30 @@ type Turn struct {
 	// under data/history/<threadId>/<n>/; this slice is the allowlist the
 	// session page serves from. Older records omit it.
 	Attachments []Attachment `json:"attachments,omitempty"`
+	// Artifacts are files the agent sent to this session during this turn.
+	// Bytes live under data/history/<threadId>/out/; Thread.Artifacts is the
+	// session allowlist the download route serves from. This slice is the
+	// subset to render on the turn's assistant bubble.
+	Artifacts []Attachment `json:"artifacts,omitempty"`
 }
 
-// Attachment is one file persisted with a turn.
+// Attachment is one file persisted with a turn or the session.
 type Attachment struct {
 	Name        string `json:"name"`
 	ContentType string `json:"contentType,omitempty"`
 	Size        int64  `json:"size,omitzero"`
+	// Rel is a worktree-relative label for display (never a host-absolute path).
+	Rel string `json:"rel,omitempty"`
 }
 
-// File is a source path to copy into a turn's durable files dir.
+// File is a source to copy into a turn's durable files dir or the session
+// artifact store. Bytes, when set, are used instead of Path (MCP content).
 type File struct {
 	Path        string
 	Name        string
 	ContentType string
+	Rel         string
+	Bytes       []byte
 }
 
 // Usage is what one turn's run cost in tokens, plus how full the context window
@@ -133,6 +143,9 @@ type Thread struct {
 	ThreadID string `json:"threadId"`
 	Project  string `json:"project,omitempty"`
 	Turns    []Turn `json:"turns"`
+	// Artifacts is the session-level allowlist of agent-sent files. Bytes live
+	// under data/history/<threadId>/out/. Older records omit it.
+	Artifacts []Attachment `json:"artifacts,omitempty"`
 }
 
 // Summary is a list-row view of a thread log.

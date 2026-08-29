@@ -169,7 +169,7 @@ func TestRecordTurnPersistsUsageAndModel(t *testing.T) {
 	}
 	b := New(cfg, store, hist)
 	b.recordTurnActorPolicy("t1", Actor{ID: "u1", DisplayName: "alice"}, nil,
-		"app", "fix the flaky test", res, 42*time.Second, RunPolicy{}, nil)
+		"app", "fix the flaky test", res, 42*time.Second, RunPolicy{}, nil, nil)
 
 	th, err := hist.Get("t1")
 	if err != nil {

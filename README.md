@@ -325,7 +325,7 @@ While a task is running, the bot updates the status message every few seconds wi
 
 **Attachments (user → Grok):** files on the `@Grok` message are downloaded under `data/attachments/<messageId>/`, absolute paths are added to the prompt, and the directory is deleted when the run finishes. Limits: 10 files, 25 MiB each, 50 MiB total. A mention with only attachments (no text) still starts a task.
 
-**Uploads (Grok → Discord):** when the thread has an isolated git worktree, Grok can attach artifacts by ending its reply with a `DISCORD_UPLOAD:` block listing paths **inside that worktree** (e.g. APK, Excel). Paths outside the worktree are rejected. Limits: 10 files, 25 MiB each. Requires the bot **Attach Files** permission (included in the Config page install URL).
+**Session files (agent → session):** in every mode that has a worktree (investigate, plan, ship, …) the agent can send files back by writing them under the worktree and ending the reply with an `ARTIFACT:` block (or the older `DISCORD_UPLOAD:` alias), or by calling grokwork MCP `session_send_file`. Files are copied onto the session (downloadable from the web session page) and, when the unit has a Discord thread, attached there too. Paths outside the worktree are rejected. Limits: 10 files per run, 25 MiB each, 50 files / 200 MiB per session. Discord attach still needs the bot **Attach Files** permission (included in the Config page install URL).
 
 **Replies:** if you **reply** to another Discord message when tagging Grok (e.g. someone posts a screenshot, then you reply `@Grok what's wrong?`), the bot includes that referenced message’s text and downloads its attachments as well. A bare `@Grok` reply (no extra text) still starts a review task.
 

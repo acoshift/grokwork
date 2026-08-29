@@ -15,6 +15,7 @@ import (
 	"github.com/acoshift/grokwork/internal/errsrc/gcperr"
 	"github.com/acoshift/grokwork/internal/errsrc/sentry"
 	"github.com/acoshift/grokwork/internal/ghpr"
+	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/projstore"
 	"github.com/acoshift/grokwork/internal/reviewstore"
@@ -27,6 +28,12 @@ type SoftAbandoner interface {
 	SetSessionLabel(threadID, label string) error
 }
 
+// SessionFileSink stores an agent-sent file on the bound session.
+type SessionFileSink interface {
+	ReceiveSessionFileBytes(threadID, name, contentType, rel string, content []byte) (history.Attachment, error)
+	ReceiveSessionFileFromWorktree(threadID, path string) (history.Attachment, error)
+}
+
 // Service is the host control plane.
 type Service struct {
 	Auth     *agentauth.Store
@@ -34,6 +41,7 @@ type Service struct {
 	Reviews  *reviewstore.Store
 	Storage  *projstore.Store
 	Bot      SoftAbandoner
+	Files    SessionFileSink
 	Audit    *audit.Logger
 	// EligibleReviewer mirrors web canRequestReviewer / eligibleReviewer.
 	EligibleReviewer func(project, reviewerID string) bool
@@ -453,6 +461,62 @@ func (s *Service) StoragePut(token, key, content, contentType, encoding string) 
 	meta, err := s.Storage.Put(cred.Project, key, raw, contentType, cred.ThreadID, cred.ActorID)
 	s.deny(cred, audit.ActionAgentStoragePut, err, map[string]any{"key": key, "size": meta.Size})
 	return meta, err
+}
+
+// SessionFile is the compact result of session_send_file.
+type SessionFile struct {
+	Name string `json:"name"`
+	Rel  string `json:"rel,omitempty"`
+	Size int64  `json:"size,omitzero"`
+	Type string `json:"contentType,omitempty"`
+}
+
+// SessionSendFile stores a deliverable on the bound session.
+// Pass a worktree path, or name+content (encoding text or base64). Never both
+// with disagreement: a path is preferred so large files do not travel through JSON.
+func (s *Service) SessionSendFile(token, path, name, content, contentType, encoding string) (SessionFile, error) {
+	cred, err := s.verify(token)
+	if err != nil {
+		return SessionFile{}, err
+	}
+	if !cred.Caps.SessionFiles {
+		err = fmt.Errorf("forbidden: session files")
+		s.deny(cred, audit.ActionAgentSessionFile, err, map[string]any{"name": name})
+		return SessionFile{}, err
+	}
+	if s.Files == nil {
+		return SessionFile{}, fmt.Errorf("session files unavailable")
+	}
+	path = strings.TrimSpace(path)
+	name = strings.TrimSpace(name)
+	var att history.Attachment
+	if path != "" {
+		att, err = s.Files.ReceiveSessionFileFromWorktree(cred.ThreadID, path)
+	} else {
+		if name == "" {
+			err = fmt.Errorf("name is required when content is sent")
+			s.deny(cred, audit.ActionAgentSessionFile, err, nil)
+			return SessionFile{}, err
+		}
+		var raw []byte
+		switch strings.ToLower(strings.TrimSpace(encoding)) {
+		case "", "text", "utf8", "utf-8":
+			raw = []byte(content)
+		case "base64", "b64":
+			raw, err = base64.StdEncoding.DecodeString(content)
+			if err != nil {
+				return SessionFile{}, fmt.Errorf("invalid base64 content: %w", err)
+			}
+		default:
+			return SessionFile{}, fmt.Errorf("unknown encoding %q (use text or base64)", encoding)
+		}
+		att, err = s.Files.ReceiveSessionFileBytes(cred.ThreadID, name, contentType, "", raw)
+	}
+	s.deny(cred, audit.ActionAgentSessionFile, err, map[string]any{"name": att.Name, "size": att.Size})
+	if err != nil {
+		return SessionFile{}, err
+	}
+	return SessionFile{Name: att.Name, Rel: att.Rel, Size: att.Size, Type: att.ContentType}, nil
 }
 
 // StorageGet reads a project blob (content base64).

@@ -13,14 +13,16 @@ import (
 
 // Caps are snapshotted at mint time.
 type Caps struct {
-	SessionRead       bool
-	SessionDone       bool
-	SessionAbandon    bool
-	PRsList           bool
-	IssuesList        bool
-	ReviewRequest     bool
-	StorageRead       bool
-	StorageWrite      bool
+	SessionRead    bool
+	SessionDone    bool
+	SessionAbandon bool
+	PRsList        bool
+	IssuesList     bool
+	ReviewRequest  bool
+	StorageRead    bool
+	StorageWrite   bool
+	// SessionFiles is sending a file to the bound session (not project storage).
+	SessionFiles      bool
 	ClickUpRead       bool
 	LinearRead        bool
 	GCPErrorsRead     bool
@@ -39,6 +41,7 @@ func DefaultShipCaps() Caps {
 		ReviewRequest:     true,
 		StorageRead:       true,
 		StorageWrite:      true,
+		SessionFiles:      true,
 		ClickUpRead:       true,
 		LinearRead:        true,
 		GCPErrorsRead:     true,
@@ -47,15 +50,18 @@ func DefaultShipCaps() Caps {
 	}
 }
 
-// DefaultInvestigateCaps is the read-only tool set for Claude investigate
-// attach. Write/lifecycle tools stay off so a diagnosis run cannot mark the
-// board or mutate project storage.
+// DefaultInvestigateCaps is the diagnose tool set for Claude investigate
+// attach. Board/lifecycle writes and project storage writes stay off so a
+// diagnosis run cannot mark the session done or mutate shared project
+// storage. SessionFiles is on: sending a deliverable to this session is
+// not a workflow-state mutation.
 func DefaultInvestigateCaps() Caps {
 	return Caps{
 		SessionRead:       true,
 		PRsList:           true,
 		IssuesList:        true,
 		StorageRead:       true,
+		SessionFiles:      true,
 		ClickUpRead:       true,
 		LinearRead:        true,
 		GCPErrorsRead:     true,

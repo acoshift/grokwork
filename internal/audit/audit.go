@@ -106,6 +106,7 @@ const (
 	ActionAgentReviewRequest  = "agent.review.request"
 	ActionAgentStoragePut     = "agent.storage.put"
 	ActionAgentStorageDelete  = "agent.storage.delete"
+	ActionAgentSessionFile    = "agent.session.file"
 )
 
 // ActorAnonymous is used when web auth is off or no session is present.

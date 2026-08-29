@@ -215,7 +215,7 @@ func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 	base := PolicyInput{ForceInvestigate: true}
 
 	grokPol := BuildRunPolicy(base)
-	if grokPol.Tools == nil || *grokPol.Tools != "read_file,grep" {
+	if grokPol.Tools == nil || *grokPol.Tools != "read_file,grep,write_file" {
 		t.Fatalf("grok file-only tools=%v", grokPol.Tools)
 	}
 	if grokPol.InvestigateShell {
@@ -224,7 +224,7 @@ func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 
 	base.Agent = grokrun.AgentClaude
 	claudePol := BuildRunPolicy(base)
-	if claudePol.Tools == nil || *claudePol.Tools != "Read,Grep,Glob" {
+	if claudePol.Tools == nil || *claudePol.Tools != "Read,Grep,Glob,Write" {
 		t.Fatalf("claude file-only tools=%v", claudePol.Tools)
 	}
 
@@ -233,7 +233,7 @@ func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 		ForceInvestigate: true,
 		Caps:             config.BuiltinCapabilityTemplates["operator"],
 	}
-	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep" || pol.InvestigateShell {
+	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep,write_file" || pol.InvestigateShell {
 		t.Fatalf("operator must stay file-only: tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
 	}
 
@@ -242,11 +242,11 @@ func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 		ForceInvestigate: true,
 		Caps:             config.BuiltinCapabilityTemplates["investigator"],
 	}
-	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep,run_terminal_command" || !pol.InvestigateShell {
+	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep,write_file,run_terminal_command" || !pol.InvestigateShell {
 		t.Fatalf("investigator grok tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
 	}
 	base.Agent = grokrun.AgentClaude
-	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "Read,Grep,Glob,Bash" || !pol.InvestigateShell {
+	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "Read,Grep,Glob,Write,Bash" || !pol.InvestigateShell {
 		t.Fatalf("investigator claude tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
 	}
 
@@ -255,7 +255,7 @@ func TestBuildRunPolicyInvestigateToolsFollowAgent(t *testing.T) {
 		ForceInvestigate: true,
 		Caps:             config.BuiltinCapabilityTemplates["builder"],
 	}
-	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep,run_terminal_command" || !pol.InvestigateShell {
+	if pol := BuildRunPolicy(base); pol.Tools == nil || *pol.Tools != "read_file,grep,write_file,run_terminal_command" || !pol.InvestigateShell {
 		t.Fatalf("builder grok tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
 	}
 }
@@ -269,7 +269,7 @@ func TestBuildRunPolicyIgnoresForeignToolOverride(t *testing.T) {
 		ForceInvestigate: true,
 		InvestigateTools: "read_file,grep,run_terminal_command",
 	}
-	if pol := BuildRunPolicy(in); pol.Tools == nil || *pol.Tools != "read_file,grep" || pol.InvestigateShell {
+	if pol := BuildRunPolicy(in); pol.Tools == nil || *pol.Tools != "read_file,grep,write_file" || pol.InvestigateShell {
 		t.Fatalf("zero caps must stay file-only despite override: tools=%v shell=%v", pol.Tools, pol.InvestigateShell)
 	}
 
@@ -285,7 +285,7 @@ func TestBuildRunPolicyIgnoresForeignToolOverride(t *testing.T) {
 
 	in.Agent = grokrun.AgentClaude
 	pol := BuildRunPolicy(in)
-	if pol.Tools == nil || *pol.Tools != "Read,Grep,Glob,Bash" {
+	if pol.Tools == nil || *pol.Tools != "Read,Grep,Glob,Write,Bash" {
 		t.Fatalf("claude should fall back to its own shell default, got %v", pol.Tools)
 	}
 }

@@ -53,6 +53,12 @@ type runJob struct {
 	liveText string
 	// attachments are the files this run was started with (web session view + serve).
 	attachments []savedAttachment
+	// artifacts are files the agent sent to this session during the live run.
+	artifacts []history.Attachment
+	// cwd is the run worktree (or project cwd). Set once the worktree resolves
+	// so MCP session_send_file can copy from disk before the session entry
+	// is stamped at run end.
+	cwd string
 }
 
 type taskItem struct {
@@ -270,6 +276,7 @@ type ActiveRun struct {
 	Prompt      string               `json:"-"`
 	LiveText    string               `json:"-"`
 	Attachments []history.Attachment `json:"-"`
+	Artifacts   []history.Attachment `json:"-"`
 }
 
 // StatusSnapshot is a point-in-time view of bot activity for the web dashboard/SSE.
@@ -336,6 +343,7 @@ func (b *Bot) StatusSnapshot() StatusSnapshot {
 		activity, phases := job.activity, job.phases
 		prompt, liveText := job.prompt, job.liveText
 		atts := attachmentMeta(job.attachments)
+		arts := slices.Clone(job.artifacts)
 		job.mu.Unlock()
 		snap.ActiveRuns = append(snap.ActiveRuns, ActiveRun{
 			ThreadID:    threadID,
@@ -348,6 +356,7 @@ func (b *Bot) StatusSnapshot() StatusSnapshot {
 			Prompt:      prompt,
 			LiveText:    liveText,
 			Attachments: atts,
+			Artifacts:   arts,
 		})
 		snap.QueuedTotal += qlen
 		return true
@@ -1233,15 +1242,7 @@ func remoteWorkPromptPrefixMode(branch string, direct bool, primary string) stri
 				prCreate,
 			)
 		}
-		lines = append(lines,
-			"",
-			"Uploading files to Discord: only files inside THIS worktree can be attached.",
-			"If the user wants a build artifact, report, APK, Excel, etc. shared back, write the file under the worktree, then end your reply with:",
-			"DISCORD_UPLOAD:",
-			"path/relative/to/worktree/file.apk",
-			"(one path per line; relative paths preferred; max 10 files, 25 MiB each).",
-			"Do not list paths outside this worktree — they will be rejected.",
-		)
+		lines = append(lines, artifactPromptLines(true)...)
 	} else {
 		lines = append(lines,
 			"When you make code changes in a git repository you MUST:",
@@ -1250,10 +1251,8 @@ func remoteWorkPromptPrefixMode(branch string, direct bool, primary string) stri
 			"3. Commit on that branch.",
 			"4. Push the branch and open a pull request with `gh pr create` (or update an existing PR).",
 			"If this is not a git repository, skip PR steps and say so.",
-			"",
-			"File upload to Discord is only available for threads with an isolated git worktree.",
-			"Do not promise Discord attachments when there is no worktree.",
 		)
+		lines = append(lines, artifactPromptLines(false)...)
 	}
 	// Full pre-ship review contract (skill load + procedure + required reply marker).
 	lines = append(lines, scrutinizeBeforeShipContract()...)
@@ -1847,6 +1846,16 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	} else {
 		log.Printf("task: no worktree isolation cwd=%s", runCwd)
 	}
+	if v, ok := b.states.Load(threadID); ok {
+		st := v.(*threadState)
+		st.mu.Lock()
+		if st.job != nil {
+			st.job.mu.Lock()
+			st.job.cwd = runCwd
+			st.job.mu.Unlock()
+		}
+		st.mu.Unlock()
+	}
 	b.patchJournal(threadID, func(j *runjournal.Journal) {
 		j.WorktreeCwd = runCwd
 		j.Branch = wtBranch
@@ -2266,30 +2275,30 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			b.appendTimeline(threadID, timeline.KindNotice, timeline.Notice{Level: "warn", Text: "stderr:\n" + errText})
 			sendChunks(s, threadID, "stderr:\n```\n"+errText+"\n```")
 		}
+	}
 
-		// Attach files requested via DISCORD_UPLOAD: markers — worktree only.
-		if pol.AllowUpload && wtBranch != "" && !result.Cancelled {
-			uploadText := result.Text
-			if uploadText == "" {
-				uploadText = streamer.Text()
-			}
-			// Record what was requested before attempting delivery: on a
-			// web-native unit the upload is a no-op, so the artifact list was the
-			// only thing lost.
-			if paths := parseUploadPaths(uploadText); len(paths) > 0 {
-				b.appendTimeline(threadID, timeline.KindArtifact, timeline.Notice{
-					Text: "artifacts requested: " + strings.Join(paths, ", "),
-				})
-			}
-			uploadWorktreeFiles(s, threadID, runCwd, uploadText)
+	var artifactNotes []string
+	if pol.AllowUpload && wtBranch != "" {
+		uploadText := result.Text
+		if uploadText == "" {
+			uploadText = streamer.Text()
 		}
+		artifactNotes = b.ingestWorktreeArtifacts(threadID, runCwd, uploadText)
+	}
+	runArts := b.runArtifacts(threadID)
+	if present {
+		b.discordSendSessionArtifacts(s, threadID, runArts, artifactNotes)
+	} else if len(artifactNotes) > 0 && len(runArts) == 0 {
+		b.appendTimeline(threadID, timeline.KindNotice, timeline.Notice{
+			Level: "warn", Text: strings.Join(artifactNotes, "\n"),
+		})
 	}
 
 	histM := m
 	if histM == nil && item.triggerMsgID != "" {
 		histM = &discordgo.MessageCreate{Message: &discordgo.Message{ID: item.triggerMsgID}}
 	}
-	b.recordTurnActorPolicy(threadID, actor, histM, proj.Name, parsed.Prompt, result, elapsed, pol, runFiles)
+	b.recordTurnActorPolicy(threadID, actor, histM, proj.Name, parsed.Prompt, result, elapsed, pol, runFiles, runArts)
 	// Durable per-unit record. Outside the !result.Cancelled branch below on
 	// purpose: a cancelled run is exactly the case whose output history drops.
 	b.recordRunTimeline(threadID, streamer.Text(), result, elapsed)
@@ -2437,10 +2446,10 @@ func (b *Bot) recordTurn(threadID string, m *discordgo.MessageCreate, project, u
 }
 
 func (b *Bot) recordTurnActor(threadID string, actor Actor, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration) {
-	b.recordTurnActorPolicy(threadID, actor, m, project, userPrompt, result, elapsed, RunPolicy{}, nil)
+	b.recordTurnActorPolicy(threadID, actor, m, project, userPrompt, result, elapsed, RunPolicy{}, nil, nil)
 }
 
-func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration, pol RunPolicy, files []savedAttachment) {
+func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration, pol RunPolicy, files []savedAttachment, artifacts []history.Attachment) {
 	if b.history == nil {
 		return
 	}
@@ -2502,6 +2511,7 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 		Agent:     cli.Agent.String(),
 		Model:     cli.Model,
 		Usage:     turnUsage(result),
+		Artifacts: artifacts,
 	}, historyFiles(files)); err != nil {
 		log.Printf("error: history append thread=%s: %v", threadID, err)
 	}

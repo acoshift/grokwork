@@ -3,12 +3,14 @@ package agentmcp
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/acoshift/grokwork/internal/agentapi"
 	"github.com/acoshift/grokwork/internal/agentauth"
+	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/projstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -17,6 +19,21 @@ type nopBot struct{}
 
 func (nopBot) SoftAbandonSession(string, string) (string, error) { return "ok", nil }
 func (nopBot) SetSessionLabel(string, string) error              { return nil }
+
+type fileSink struct {
+	name    string
+	payload []byte
+}
+
+func (f *fileSink) ReceiveSessionFileBytes(_ string, name, contentType, _ string, content []byte) (history.Attachment, error) {
+	f.name = name
+	f.payload = content
+	return history.Attachment{Name: name, Size: int64(len(content)), ContentType: contentType}, nil
+}
+
+func (f *fileSink) ReceiveSessionFileFromWorktree(string, string) (history.Attachment, error) {
+	return history.Attachment{}, fmt.Errorf("no worktree")
+}
 
 func TestCallSessionGetAndStorage(t *testing.T) {
 	dir := t.TempDir()
@@ -128,7 +145,7 @@ func TestToolDefsForInvestigateOmitsWrites(t *testing.T) {
 	for _, d := range defs {
 		got[d.Name] = true
 	}
-	for _, name := range []string{ToolSessionGet, ToolPRsList, ToolIssuesList, ToolStorageGet, ToolStorageList, ToolClickUpGetTask, ToolLinearGetIssue, ToolDeploysErrorsGet, ToolDeploysErrorsList} {
+	for _, name := range []string{ToolSessionGet, ToolSessionSendFile, ToolPRsList, ToolIssuesList, ToolStorageGet, ToolStorageList, ToolClickUpGetTask, ToolLinearGetIssue, ToolDeploysErrorsGet, ToolDeploysErrorsList} {
 		if !got[name] {
 			t.Fatalf("missing read tool %s: %+v", name, defs)
 		}
@@ -179,6 +196,40 @@ func TestCallSessionDoneForbiddenOnInvestigateCaps(t *testing.T) {
 	}
 	if _, err := Call(t.Context(), svc, raw, ToolSessionDone, nil); err == nil {
 		t.Fatal("session_done must be forbidden")
+	}
+}
+
+func TestCallSessionSendFileOnInvestigateCaps(t *testing.T) {
+	auth := agentauth.NewStore()
+	sink := &fileSink{}
+	svc := &agentapi.Service{Auth: auth, Files: sink}
+	raw, _, err := auth.Mint("t1", "app", "a", "", agentauth.DefaultInvestigateCaps(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := Call(t.Context(), svc, raw, ToolSessionSendFile, map[string]any{
+		"name": "note.txt", "content": "hello", "encoding": "text", "contentType": "text/plain",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := out.(agentapi.SessionFile)
+	if !ok || got.Name != "note.txt" || got.Size != 5 {
+		t.Fatalf("%T %+v", out, out)
+	}
+	if sink.name != "note.txt" || string(sink.payload) != "hello" {
+		t.Fatalf("sink=%q %q", sink.name, sink.payload)
+	}
+	b64 := base64.StdEncoding.EncodeToString([]byte("bin"))
+	out, err = Call(t.Context(), svc, raw, ToolSessionSendFile, map[string]any{
+		"name": "a.bin", "content": b64, "encoding": "base64",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok = out.(agentapi.SessionFile)
+	if !ok || got.Name != "a.bin" || got.Size != 3 {
+		t.Fatalf("b64 %+v", out)
 	}
 }
 

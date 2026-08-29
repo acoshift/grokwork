@@ -174,7 +174,7 @@ func TestAgentMCPPromptContractDeploys(t *testing.T) {
 func TestAgentMCPPromptContractInvestigateOmitsWrites(t *testing.T) {
 	t.Parallel()
 	p := agentMCPPromptContract(agentauth.DefaultInvestigateCaps())
-	for _, name := range []string{"session_get", "prs_list", "clickup_get_task", "linear_get_issue", "storage_get"} {
+	for _, name := range []string{"session_get", "session_send_file", "prs_list", "clickup_get_task", "linear_get_issue", "storage_get"} {
 		if !strings.Contains(p, name) {
 			t.Fatalf("missing %q in %s", name, p)
 		}

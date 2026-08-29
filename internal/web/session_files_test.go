@@ -177,6 +177,99 @@ func TestSessionFileSVGIsDownload(t *testing.T) {
 	}
 }
 
+func TestSessionPageShowsAndServesArtifacts(t *testing.T) {
+	srv, _, dir := testServer(t)
+	src := filepath.Join(dir, "report.xlsx")
+	if err := os.WriteFile(src, []byte("sheet-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	att, err := srv.history.PutArtifact("thread-99", history.File{
+		Path: src, Name: "report.xlsx", ContentType: "application/vnd.ms-excel", Rel: "dist/report.xlsx",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.history.Append("thread-99", history.Turn{
+		User: "alice#0", Prompt: "export the sheet",
+		Response: "Here is the spreadsheet.", Status: "done", Project: "proj",
+		Artifacts: []history.Attachment{att},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	h := srv.Handler()
+	body := getBody(t, h, "/sessions/thread-99")
+	for _, want := range []string{
+		`class="turn-atts turn-atts-out"`,
+		`href="/sessions/thread-99/artifacts/report.xlsx"`,
+		"report.xlsx",
+		"Files",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("session page missing %q", want)
+		}
+	}
+
+	hist := getBody(t, h, "/history/thread-99")
+	if !strings.Contains(hist, `href="/sessions/thread-99/artifacts/report.xlsx"`) {
+		t.Fatal("history detail missing artifact")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99/artifacts/report.xlsx", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("xlsx status=%d body=%s", w.Code, w.Body.String())
+	}
+	if w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatal("missing nosniff")
+	}
+	if w.Body.String() != "sheet-bytes" {
+		t.Fatalf("body=%q", w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/sessions/thread-99/artifacts/missing.bin", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("missing status=%d", w.Code)
+	}
+}
+
+func TestSessionLiveRunArtifact(t *testing.T) {
+	srv, _, dir := testServer(t)
+	src := filepath.Join(dir, "live.xlsx")
+	if err := os.WriteFile(src, []byte("live-sheet"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	att, err := srv.history.PutArtifact("thread-99", history.File{
+		Path: src, Name: "live.xlsx", ContentType: "application/vnd.ms-excel",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bot.SeedActiveRunForTest(srv.bot, "thread-99", "proj", "export", "streaming…"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { bot.FinishRunForTest(srv.bot, "thread-99") })
+	bot.PublishRunArtifactForTest(srv.bot, "thread-99", att)
+
+	h := srv.Handler()
+	body := getBody(t, h, "/sessions/thread-99")
+	if !strings.Contains(body, `href="/sessions/thread-99/artifacts/live.xlsx"`) {
+		t.Fatalf("live turn missing artifact: %s", body)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99/artifacts/live.xlsx", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("live artifact status=%d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "live-sheet" {
+		t.Fatalf("live body=%q", w.Body.String())
+	}
+}
+
 func TestSessionLivePartialKeepsAttachments(t *testing.T) {
 	srv, _, dir := testServer(t)
 	src := filepath.Join(dir, "a.png")

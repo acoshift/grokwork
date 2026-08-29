@@ -193,6 +193,111 @@ func TestAppendFilesOpenAndDelete(t *testing.T) {
 	}
 }
 
+func TestPutAndOpenArtifact(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "report.xlsx")
+	if err := os.WriteFile(src, []byte("sheet"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	att, err := s.PutArtifact("t1", File{
+		Path: src, Name: "report.xlsx", ContentType: "application/vnd.ms-excel", Rel: "dist/report.xlsx",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if att.Name != "report.xlsx" || att.Size != 5 || att.Rel != "dist/report.xlsx" {
+		t.Fatalf("att=%+v", att)
+	}
+
+	dup, err := s.PutArtifact("t1", File{Bytes: []byte("sheet2"), Name: "report.xlsx", Rel: "/etc/passwd"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dup.Name != "report_2.xlsx" {
+		t.Fatalf("dup name=%q", dup.Name)
+	}
+	if dup.Rel != "" {
+		t.Fatalf("absolute rel must be dropped: %q", dup.Rel)
+	}
+
+	th, err := s.Get("t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Artifacts) != 2 || len(th.Turns) != 0 {
+		t.Fatalf("thread=%+v", th)
+	}
+
+	f, meta, err := s.OpenArtifact("t1", "report.xlsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(f)
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "sheet" || meta.Rel != "dist/report.xlsx" {
+		t.Fatalf("open=%q meta=%+v", raw, meta)
+	}
+
+	if _, _, err := s.OpenArtifact("t1", "missing.bin"); err == nil {
+		t.Fatal("unlisted name must not open")
+	}
+	if _, _, err := s.OpenArtifact("../t1", "report.xlsx"); err == nil {
+		t.Fatal("invalid thread id")
+	}
+
+	if err := s.Append("t1", Turn{Prompt: "build", Status: "done", Artifacts: []Attachment{att}}); err != nil {
+		t.Fatal(err)
+	}
+	th, err = s.Get("t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Artifacts) != 2 {
+		t.Fatalf("append must keep session artifacts: %+v", th.Artifacts)
+	}
+	if len(th.Turns[0].Artifacts) != 1 || th.Turns[0].Artifacts[0].Name != "report.xlsx" {
+		t.Fatalf("turn artifacts=%+v", th.Turns[0].Artifacts)
+	}
+
+	third, err := s.PutArtifact("t1", File{Bytes: []byte("x"), Name: "report.xlsx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.Name != "report_3.xlsx" {
+		t.Fatalf("must skip taken _2 suffix: %q", third.Name)
+	}
+
+	if err := s.Delete("t1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.OpenArtifact("t1", "report.xlsx"); err == nil {
+		t.Fatal("deleted artifact must not open")
+	}
+}
+
+func TestSafeRelLabel(t *testing.T) {
+	if got := safeRelLabel("dist/app.apk"); got != "dist/app.apk" {
+		t.Fatalf("rel=%q", got)
+	}
+	if got := safeRelLabel("/etc/passwd"); got != "" {
+		t.Fatalf("abs=%q", got)
+	}
+	if got := safeRelLabel("../secret"); got != "" {
+		t.Fatalf("escape=%q", got)
+	}
+	if got := safeRelLabel(`C:\Windows\notepad.exe`); got != "" {
+		t.Fatalf("drive=%q", got)
+	}
+}
+
 func TestAttachmentIsImage(t *testing.T) {
 	if !(Attachment{Name: "a.png", ContentType: "image/png"}).IsImage() {
 		t.Fatal("png")

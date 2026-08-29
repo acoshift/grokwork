@@ -232,13 +232,13 @@ func (a Agent) SessionLabel() string { return a.Label() + " session" }
 func (a Agent) DefaultInvestigateTools() string {
 	switch a.Resolve() {
 	case AgentClaude:
-		return "Read,Grep,Glob"
+		return "Read,Grep,Glob,Write"
 	case AgentCursor:
 		// cursor-agent has no --tools flag; the driver maps a non-nil Tools
-		// pointer to --mode ask. These names are for policy/display only.
+		// pointer to --mode ask. Ask mode cannot write, so Write is omitted.
 		return "Read,Grep,Glob"
 	default:
-		return "read_file,grep"
+		return "read_file,grep,write_file"
 	}
 }
 

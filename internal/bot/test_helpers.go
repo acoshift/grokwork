@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/acoshift/grokwork/internal/history"
 )
 
 // FakeThreadAPI is a test double for createWorkflowThread.
@@ -97,6 +99,14 @@ func PublishRunAttachmentsForTest(b *Bot, threadID string, paths []string) {
 		return
 	}
 	b.publishRunAttachments(threadID, attachmentsFromPaths(paths))
+}
+
+// PublishRunArtifactForTest stamps an in-flight agent-sent file onto a seeded run.
+func PublishRunArtifactForTest(b *Bot, threadID string, att history.Attachment) {
+	if b == nil {
+		return
+	}
+	b.publishRunArtifact(threadID, att)
 }
 
 // FinishRunForTest clears the active job for a thread (test cleanup).

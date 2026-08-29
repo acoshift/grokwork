@@ -50,16 +50,16 @@ func TestAgentZeroValueIsGrok(t *testing.T) {
 // Tool names are per-agent vocabulary: grok's read_file means nothing to claude,
 // so an allowlist must never be shared across agents.
 func TestAgentToolVocabularyDiffers(t *testing.T) {
-	if got := AgentGrok.DefaultInvestigateTools(); got != "read_file,grep" {
+	if got := AgentGrok.DefaultInvestigateTools(); got != "read_file,grep,write_file" {
 		t.Errorf("grok file tools=%q", got)
 	}
-	if got := AgentClaude.DefaultInvestigateTools(); got != "Read,Grep,Glob" {
+	if got := AgentClaude.DefaultInvestigateTools(); got != "Read,Grep,Glob,Write" {
 		t.Errorf("claude file tools=%q", got)
 	}
-	if got := AgentGrok.InvestigateTools(true); got != "read_file,grep,run_terminal_command" {
+	if got := AgentGrok.InvestigateTools(true); got != "read_file,grep,write_file,run_terminal_command" {
 		t.Errorf("grok shell tools=%q", got)
 	}
-	if got := AgentClaude.InvestigateTools(true); got != "Read,Grep,Glob,Bash" {
+	if got := AgentClaude.InvestigateTools(true); got != "Read,Grep,Glob,Write,Bash" {
 		t.Errorf("claude shell tools=%q", got)
 	}
 	if got := AgentCursor.DefaultInvestigateTools(); got != "Read,Grep,Glob" {

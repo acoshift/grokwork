@@ -33,6 +33,15 @@ func sessionRunFileURL(threadID, name string) string {
 	return "/sessions/" + url.PathEscape(threadID) + "/run/files/" + url.PathEscape(name)
 }
 
+func sessionArtifactURL(threadID, name string) string {
+	threadID = strings.TrimSpace(threadID)
+	name = strings.TrimSpace(name)
+	if threadID == "" || name == "" {
+		return ""
+	}
+	return "/sessions/" + url.PathEscape(threadID) + "/artifacts/" + url.PathEscape(name)
+}
+
 // sessionTurnFile is GET /sessions/{threadID}/turns/{n}/files/{name}.
 func (s *Server) sessionTurnFile(ctx *hime.Context) error {
 	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
@@ -71,6 +80,26 @@ func (s *Server) sessionRunFile(ctx *hime.Context) error {
 		return ctx.Status(http.StatusNotFound).Error("not found")
 	}
 	f, meta, err := s.bot.OpenRunAttachment(threadID, name)
+	if err != nil {
+		return ctx.Status(http.StatusNotFound).Error("not found")
+	}
+	return serveSessionFile(ctx, f, meta)
+}
+
+// sessionArtifact is GET /sessions/{threadID}/artifacts/{name}.
+func (s *Server) sessionArtifact(ctx *hime.Context) error {
+	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
+	if threadID == "" {
+		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
+	}
+	if err := s.ensureSessionPageAccess(ctx, threadID); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	name := strings.TrimSpace(ctx.PathValue("name"))
+	if s.history == nil {
+		return ctx.Status(http.StatusNotFound).Error("not found")
+	}
+	f, meta, err := s.history.OpenArtifact(threadID, name)
 	if err != nil {
 		return ctx.Status(http.StatusNotFound).Error("not found")
 	}

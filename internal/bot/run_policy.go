@@ -78,7 +78,7 @@ type PolicyInput struct {
 
 // DefaultInvestigateTools is the file-only Wave 1 allowlist (K21) for grok.
 // Prefer grokrun.Agent.InvestigateTools; this constant is kept for older call sites.
-const DefaultInvestigateTools = "read_file,grep"
+const DefaultInvestigateTools = "read_file,grep,write_file"
 
 // investigateTools picks the allowlist for an investigate run.
 //
@@ -177,7 +177,7 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 			RefreshPRWarnOnly:    true,
 			PostCompletion:       "none",
 			RefreshBrief:         false,
-			AllowUpload:          false,
+			AllowUpload:          true,
 			AllowDirectIntegrate: false,
 			DirtyTreeWarn:        true,
 			Coerced:              coerced,
@@ -210,7 +210,7 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 			RefreshPRWarnOnly:    true,
 			PostCompletion:       "dossier",
 			RefreshBrief:         false,
-			AllowUpload:          false,
+			AllowUpload:          true,
 			AllowDirectIntegrate: false,
 			DirtyTreeWarn:        true,
 			Coerced:              coerced,
@@ -367,7 +367,7 @@ func investigatePromptPrefix(branch string, shell bool) string {
 		)
 	} else {
 		lines = append(lines,
-			"You have file-inspection tools only (no shell). Prefer reading code and summarizing root cause.",
+			"You have file tools (read, plus write for session deliverables only — do not edit application source as a fix). Prefer reading code and summarizing root cause.",
 		)
 	}
 	lines = append(lines,
@@ -377,8 +377,8 @@ func investigatePromptPrefix(branch string, shell bool) string {
 		"",
 		"Filesystem scope: stay inside this unit's cwd/worktree and the project repo for code inspection.",
 		"Do NOT scan the user's home directory or protected folders for secrets.",
-		"",
 	)
+	lines = append(lines, artifactPromptLines(branch != "")...)
 	if branch != "" {
 		lines = append([]string{
 			"Isolated git worktree for this workflow unit / thread.",
@@ -407,7 +407,7 @@ func planPromptPrefix(branch string) string {
 		"Mode: PLAN — produce an implementation plan only. Do NOT implement, commit, push, open a pull request, or modify the remote.",
 		"Do NOT create or edit GitHub issues yourself. The host files the issue from your PLAN_ISSUE block.",
 		"Do NOT merge. Do NOT edit application source or config.",
-		"You have file-inspection tools only (no shell). Read the repo; do not invent files you have not seen.",
+		"You have file tools (read, plus write for a plan deliverable). Do not invent files you have not seen.",
 		"",
 		"If you are unsure about a product or design choice, emit a DECISION block and stop. Do not invent a choice. Do not emit PLAN_ISSUE or SESSION_DONE while questions are open.",
 		"Format (examples indented so quoting this contract does not trigger the host):",
@@ -436,8 +436,8 @@ func planPromptPrefix(branch string) string {
 		"",
 		"Filesystem scope: stay inside this unit's cwd/worktree and the project repo for code inspection.",
 		"Do NOT scan the user's home directory or protected folders for secrets.",
-		"",
 	}
+	lines = append(lines, artifactPromptLines(branch != "")...)
 	if branch != "" {
 		lines = append([]string{
 			"Isolated git worktree for this workflow unit / thread.",

@@ -125,8 +125,12 @@ func (s *Server) fpDashboard() string {
 		// LiveText/activity drive session-detail streaming; fingerprint length + a short tail hash
 		// so the domain rev moves as the reply grows without hashing multi-100k bodies.
 		liveFP := liveTextFingerprint(r.LiveText)
-		fmt.Fprintf(&b, "%s|%s|%s|%d|%s|%s|%s\n",
+		fmt.Fprintf(&b, "%s|%s|%s|%d|%s|%s|%s",
 			r.ThreadID, r.Project, r.Elapsed, r.QueueLen, r.Activity, r.Phases, liveFP)
+		for _, a := range r.Artifacts {
+			fmt.Fprintf(&b, "|a|%s", a.Name)
+		}
+		b.WriteByte('\n')
 	}
 	return hashFingerprint(b.String())
 }

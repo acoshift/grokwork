@@ -302,6 +302,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	app.TemplateFunc("trackedIssueHref", trackedIssueHref)
 	app.TemplateFunc("sessionFile", sessionFileURL)
 	app.TemplateFunc("sessionRunFile", sessionRunFileURL)
+	app.TemplateFunc("sessionArtifact", sessionArtifactURL)
 	// Spend report formatting. cost/models take a whole row rather than a number
 	// because an unpriced row must render "—" and not "$0.00" — the decision needs
 	// the row's Priced/Unpriced counts, so it cannot live in the template.
@@ -412,6 +413,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /sessions/{threadID}/diff/file", s.requireAuth(hime.Handler(s.sessionDiffFile)))
 	mux.Handle("GET /sessions/{threadID}/turns/{n}/files/{name}", s.requireAuth(hime.Handler(s.sessionTurnFile)))
 	mux.Handle("GET /sessions/{threadID}/run/files/{name}", s.requireAuth(hime.Handler(s.sessionRunFile)))
+	mux.Handle("GET /sessions/{threadID}/artifacts/{name}", s.requireAuth(hime.Handler(s.sessionArtifact)))
 	mux.Handle("GET /sessions/{threadID}", s.requireAuth(hime.Handler(s.sessionPage)))
 	mux.Handle("GET /ship", s.requireAuth(hime.Handler(s.shipPage)))
 	mux.Handle("GET /cases", s.requireAuth(hime.Handler(s.casesGlobal)))
@@ -1050,6 +1052,7 @@ type pageData struct {
 	RunPrompt      string
 	RunLiveText    string
 	RunAttachments []history.Attachment
+	RunArtifacts   []history.Attachment
 	// RunTranscript is the newest run's output from the per-unit timeline. Used
 	// as the fallback when a turn has no recorded response (cancelled / max
 	// turns), which is the only copy a web-native unit ever had.

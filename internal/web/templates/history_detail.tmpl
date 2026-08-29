@@ -90,6 +90,23 @@
       {{else}}
       <div class="bubble-body muted">(no response text)</div>
       {{end}}
+      {{if $t.Artifacts}}
+      <div class="turn-atts turn-atts-out">
+        {{range $a := $t.Artifacts}}
+        {{$href := sessionArtifact $.Thread.ThreadID $a.Name}}
+        {{if $a.IsImage}}
+        <a class="turn-att-img" href="{{$href}}" hx-boost="false">
+          <img src="{{$href}}" alt="{{$a.Name}}">
+        </a>
+        {{else}}
+        <a class="turn-att-chip" href="{{$href}}" hx-boost="false" download>
+          <span class="turn-att-name">{{$a.Name}}</span>
+          {{if $a.SizeLabel}}<span class="turn-att-size">{{$a.SizeLabel}}</span>{{end}}
+        </a>
+        {{end}}
+        {{end}}
+      </div>
+      {{end}}
     </div>
   </article>
   {{end}}

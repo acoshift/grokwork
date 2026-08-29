@@ -838,6 +838,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 				d.RunPrompt = r.Prompt
 				d.RunLiveText = r.LiveText
 				d.RunAttachments = r.Attachments
+				d.RunArtifacts = r.Artifacts
 				break
 			}
 		}

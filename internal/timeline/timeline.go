@@ -83,6 +83,16 @@ type Notice struct {
 	Text  string `json:"text"`
 }
 
+// Artifact is one agent-sent file recorded on the unit. Name is the
+// downloadable basename; Rel is worktree-relative display only — never a
+// host-absolute path (those must not reach Discord or the timeline).
+type Artifact struct {
+	Name        string `json:"name"`
+	Rel         string `json:"rel,omitempty"`
+	ContentType string `json:"contentType,omitempty"`
+	Size        int64  `json:"size,omitzero"`
+}
+
 const (
 	// maxDataBytes caps one event's payload. A single sealed chunk is bounded by
 	// the Discord message cap in practice; this guards a pathological run.

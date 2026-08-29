@@ -148,8 +148,8 @@ func TestInvestigatePromptNoPR(t *testing.T) {
 	if strings.Contains(p, "psql") {
 		t.Fatal("file-only investigate prompt must not offer shell diagnostics")
 	}
-	if !strings.Contains(p, "file-inspection") {
-		t.Fatal("file-only prompt should say file-inspection tools only")
+	if !strings.Contains(p, "session deliverables") {
+		t.Fatal("file-only prompt should allow write for session deliverables")
 	}
 
 	withShell := investigatePromptPrefix("grok/discord/1", true)
