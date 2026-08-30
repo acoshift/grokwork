@@ -22,4 +22,5 @@
 {{end}}
 {{if and (eq .Mode "case") (ne .Phase "closed") .Phase}}<span class="badge">{{.Phase}}</span>{{end}}
 {{if .Running}}<span class="badge live">running</span>{{end}}
+{{if eq .SessionKind "imported_pr"}}<span class="badge">imported</span>{{end}}
 {{end}}

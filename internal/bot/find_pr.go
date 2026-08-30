@@ -10,6 +10,8 @@ import (
 // Terminal labels excluded unless includeTerminal. Order matches FindByIssue.
 // Agentic PR-review units (SessionKindPRReview) are always excluded — they bind
 // the PR for the detail Sessions list only, never for Address reuse.
+// Imported shells (SessionKindImportedPR) are included so Address reuses the
+// tracker instead of minting a second unit.
 func (b *Bot) FindByPR(project, owner, repo string, number int, includeTerminal bool) []IssueSessionHit {
 	return b.findPRHits(project, owner, repo, number, includeTerminal, false)
 }

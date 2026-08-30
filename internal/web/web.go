@@ -2635,6 +2635,7 @@ func applySessionOverlay(row *history.Summary, se sessionstore.Listed) {
 	row.Goal = goal
 	row.Label = e.EffectiveLabel()
 	row.Mode = strings.TrimSpace(e.Mode)
+	row.SessionKind = strings.TrimSpace(e.SessionKind)
 	row.Phase = e.CasePhase()
 	row.Resolution = strings.TrimSpace(e.Resolution)
 	row.HasPRs = e.HasAnyPR()

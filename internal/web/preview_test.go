@@ -193,6 +193,15 @@ func TestPreviewServer(t *testing.T) {
 				Owner: "acme", Repo: "webapp",
 			}},
 		},
+		// Imported GitHub PR grokwork did not open — ship board "imported" badge.
+		"w_preview_imported": {
+			Project: "webapp", SessionKind: sessionstore.SessionKindImportedPR,
+			OwnerName: "kai", Goal: "Docs: mention the rate-limit headers",
+			PRs: []sessionstore.TrackedPR{{
+				URL: "https://github.com/acme/webapp/pull/140", Number: 140, State: "OPEN",
+				Title: "Docs: mention the rate-limit headers", Owner: "acme", Repo: "webapp",
+			}},
+		},
 		"1390000000000000004": {
 			SessionID: "sess-d4", Project: "api", LastUser: "beam#0",
 			OwnerName: "beam", Origin: "discord",

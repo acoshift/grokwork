@@ -58,9 +58,10 @@ func (b *Bot) runPRStatusPoller() {
 func (b *Bot) runPRStatusPollCycle(reason string) {
 	log.Printf("bg: pr-status poll start reason=%s", reason)
 	start := time.Now()
+	imported := b.importOpenGitHubPRs()
 	stats := b.pollPRStatuses(b.Discord())
-	log.Printf("bg: pr-status poll done reason=%s sessions=%d with_pr=%d open=%d busy=%d updated=%d elapsed=%s",
-		reason, stats.Sessions, stats.WithPR, stats.Open, stats.Busy, stats.Updated,
+	log.Printf("bg: pr-status poll done reason=%s imported=%d sessions=%d with_pr=%d open=%d busy=%d updated=%d elapsed=%s",
+		reason, imported, stats.Sessions, stats.WithPR, stats.Open, stats.Busy, stats.Updated,
 		time.Since(start).Round(time.Millisecond))
 }
 
@@ -346,13 +347,17 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 		if _, _, pErr := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
 			ent.NormalizePRs()
 			ent.UpsertPR(pr)
-			ent.ApplyAutoLabel(ent.SuggestAutoLabel(false))
+			if !ent.IsImportedPR() {
+				ent.ApplyAutoLabel(ent.SuggestAutoLabel(false))
+			}
 		}); pErr != nil {
 			return pErr
 		}
 	} else if e.Project != "" || e.SessionID != "" {
 		e.UpsertPR(pr)
-		e.ApplyAutoLabel(e.SuggestAutoLabel(false))
+		if !e.IsImportedPR() {
+			e.ApplyAutoLabel(e.SuggestAutoLabel(false))
+		}
 		if sErr := b.sessions.Set(threadID, e); sErr != nil {
 			return sErr
 		}

@@ -352,6 +352,23 @@ func TestMergeShipRows(t *testing.T) {
 		}
 	})
 
+	t.Run("imported shell loses session pick to a grokwork unit", func(t *testing.T) {
+		imp := base("t-import", "✓ 3", "2026-07-25T12:00:00Z")
+		imp.Imported, imp.OwnerName, imp.Goal = true, "zoe", "Human PR"
+		work := base("t-work", "✓ 1", "2026-07-25T10:00:00Z")
+		work.OwnerName, work.Goal = "alice", "address CI"
+		got := mergeShipRows([]ShipPRRow{imp, work})
+		if len(got) != 1 {
+			t.Fatalf("want 1, got %d", len(got))
+		}
+		if got[0].ThreadID != "t-work" || got[0].Imported || got[0].OwnerName != "alice" {
+			t.Fatalf("grokwork unit must win session facts: %+v", got[0])
+		}
+		if got[0].Checks != "✓ 3" {
+			t.Fatalf("idle imported PR facts should win: checks=%q", got[0].Checks)
+		}
+	})
+
 	t.Run("owner/repo and URL forms of the same PR merge", func(t *testing.T) {
 		byURL := base("t-url", "✓ 1", "2026-07-25T10:00:00Z")
 		byRef := ShipPRRow{

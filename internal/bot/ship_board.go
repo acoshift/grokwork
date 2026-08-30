@@ -55,6 +55,9 @@ type ShipPRRow struct {
 	// SessionCount is how many work units bind this PR. Always ≥1; >1 means the
 	// row is a merge and its session-side fields name only the primary unit.
 	SessionCount int
+
+	// Imported is true when the primary unit is an import shell (no grokwork run yet).
+	Imported bool
 }
 
 // ShipBoard is a lead-facing view of all bot-tracked PRs.
@@ -243,6 +246,7 @@ func shipRowFrom(threadID string, e sessionstore.Entry, pr sessionstore.TrackedP
 		ReviewApproved:     review == "APPROVED",
 		GHChangesRequested: review == "CHANGES_REQUESTED",
 		GHReviewApproved:   review == "APPROVED",
+		Imported:           e.IsImportedPR(),
 	}
 	if row.RawState == "" && !ghpr.IsTerminal(display) {
 		row.RawState = "OPEN"
@@ -325,6 +329,7 @@ func mergeShipGroup(group []ShipPRRow) ShipPRRow {
 	row := fresh
 	row.ThreadID = primary.ThreadID
 	row.OwnerID, row.OwnerName, row.Goal = primary.OwnerID, primary.OwnerName, primary.Goal
+	row.Imported = primary.Imported
 	// Distinct units, not rows: one entry listing the same PR twice is one
 	// session, and the badge says "sessions".
 	units := make(map[string]struct{}, len(group))
@@ -379,6 +384,9 @@ func livelierSession(a, b ShipPRRow) bool {
 	}
 	if at, bt := sessionstore.IsTerminalLabel(a.Label), sessionstore.IsTerminalLabel(b.Label); at != bt {
 		return !at
+	}
+	if a.Imported != b.Imported {
+		return !a.Imported
 	}
 	return a.ThreadID < b.ThreadID
 }

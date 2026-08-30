@@ -1693,6 +1693,49 @@ func TestShipBoardRendersPRs(t *testing.T) {
 	}
 }
 
+func TestShipBoardRendersImportedPR(t *testing.T) {
+	srv, _, _ := testServer(t)
+	if err := srv.sessions.Set("w_imported_pr", sessionstore.Entry{
+		Project:     "proj",
+		SessionKind: sessionstore.SessionKindImportedPR,
+		OwnerName:   "zoe",
+		Goal:        "Human opened this",
+		PRs: []sessionstore.TrackedPR{{
+			URL:    "https://github.com/acme/proj/pull/42",
+			Number: 42,
+			State:  "OPEN",
+			Title:  "Human opened this",
+			Owner:  "acme",
+			Repo:   "proj",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/ship", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="page-ship"`,
+		"Human opened this",
+		"acme/proj#42",
+		"imported",
+		"zoe",
+		"including PRs opened outside grokwork",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("imported ship row missing %q in %s", want, body)
+		}
+	}
+	if strings.Contains(body, "w_imported_pr") {
+		t.Fatalf("ship board leaked unit id in %s", body)
+	}
+}
+
 // TestCasesBoard pins the support case board: phase lanes with plain-language
 // labels, severity ordering, closed hidden by default, filters, and rows
 // linking into the session workspace.

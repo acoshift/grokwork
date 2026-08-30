@@ -48,6 +48,11 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 	if !ok {
 		return
 	}
+	// Import shells have never been a grokwork run. Digest + auto-fix would
+	// start an agent on a human PR the moment CI is red.
+	if e.IsImportedPR() {
+		return
+	}
 	e.NormalizePRs()
 	repoDir := prRepoDir(e)
 	if repoDir == "" {

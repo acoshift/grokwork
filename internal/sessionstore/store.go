@@ -94,9 +94,10 @@ type Entry struct {
 	// Orthogonal to ShipMode (K27). Empty = eng fix default for capable actors.
 	Mode string `json:"mode,omitempty"`
 
-	// SessionKind marks specialized units that bind a PR/issue for display but
-	// must not join the Address/Fix reuse pickers. Empty is ordinary work.
-	// See SessionKindPRReview.
+	// SessionKind marks specialized units. Empty is ordinary work.
+	// SessionKindPRReview binds a PR for the Sessions list but is excluded
+	// from Address/Fix reuse. SessionKindImportedPR is a tracker shell for a
+	// GitHub PR grokwork did not open — included in Address reuse, no run yet.
 	SessionKind string `json:"sessionKind,omitempty"`
 
 	// Agent and Model are pinned when the session is created and never change.

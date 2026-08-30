@@ -164,11 +164,12 @@ type Summary struct {
 	LastStatus string
 
 	// Optional sessionstore overlay for sessions list/detail chrome.
-	Goal       string // sticky session goal (list identity; not from history)
-	Label      string // effective lifecycle label (open, done, …)
-	Mode       string // case | fix | …
-	Phase      string // case phase (incl. closed)
-	Resolution string // case resolution when closed
+	Goal        string // sticky session goal (list identity; not from history)
+	Label       string // effective lifecycle label (open, done, …)
+	Mode        string // case | fix | …
+	SessionKind string // imported_pr / pr_review / empty ordinary work
+	Phase       string // case phase (incl. closed)
+	Resolution  string // case resolution when closed
 	// Primary tracked PR (if any) for list badges/links.
 	PRNumber int
 	PRState  string // OPEN | MERGED | CLOSED

@@ -57,6 +57,7 @@
         <td>
           <a href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}&amp;back={{urlquery $.PRBackURL}}">{{if .Goal}}{{.Goal}}{{else}}{{.ThreadID}}{{end}}</a>
           {{if eq .SessionKind "pr_review"}}<span class="badge">review</span>{{end}}
+          {{if eq .SessionKind "imported_pr"}}<span class="badge">imported</span>{{end}}
         </td>
         <td>
           {{if eq .Label "done"}}

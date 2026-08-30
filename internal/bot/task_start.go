@@ -273,11 +273,26 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 	}
 	if !claimed {
 		cancel()
+		b.clearImportedPRKind(threadID)
 		return pos, nil
 	}
+	b.clearImportedPRKind(threadID)
 	b.drainWG.Add(1)
 	go b.drainTaskQueue(ctx, cancel, item, job)
 	return 0, nil
+}
+
+// clearImportedPRKind drops SessionKindImportedPR once a real run is on the unit
+// so auto-label and CI auto-fix apply like any other grokwork session.
+func (b *Bot) clearImportedPRKind(threadID string) {
+	if b == nil || b.sessions == nil || threadID == "" {
+		return
+	}
+	_, _, _ = b.sessions.Patch(threadID, func(e *sessionstore.Entry) {
+		if e.SessionKind == sessionstore.SessionKindImportedPR {
+			e.SessionKind = ""
+		}
+	})
 }
 
 // publishRunActivity stores phase/activity on the live run job for StatusSnapshot.

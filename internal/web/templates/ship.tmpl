@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1 id="page-ship">{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· ship</span>{{else}}Ship board{{end}}</h1>
-<p class="sub">{{if .Project}}Tracked pull requests in this project.{{else}}All tracked pull requests.{{end}} Status is cached from the session store, not a live <span class="mono">gh</span> call.</p>
+<p class="sub">{{if .Project}}Tracked pull requests in this project, including PRs opened outside grokwork.{{else}}All tracked pull requests, including PRs opened outside grokwork.{{end}} Status is cached from the session store, not a live <span class="mono">gh</span> call.</p>
 
 {{/* hx-target/hx-select override shell boost (#live-root) so SSE partials swap into the region, not wipe the page. */}}
 <div class="live-region"
@@ -98,6 +98,7 @@
           {{else if .State}}<span class="badge">{{.State}}</span>{{end}}
           {{if .Running}}<span class="badge live">running</span>{{end}}
           {{if gt .SessionCount 1}}<span class="badge">{{.SessionCount}} sessions</span>{{end}}
+          {{if .Imported}}<span class="badge">imported</span>{{end}}
           {{if .ChecksFailing}}<span class="badge status-error">CI failing</span>{{end}}
           {{if eq .TeamRollup "changes_requested"}}<span class="badge status-warn">changes requested</span>
           {{else if eq .TeamRollup "approved"}}<span class="badge status-done">approved</span>
@@ -153,6 +154,7 @@
           {{if .Running}} <span class="badge live">running</span>{{end}}
           {{if gt .Queue 0}} <span class="badge">queue {{.Queue}}</span>{{end}}
           {{if gt .SessionCount 1}} <span class="badge" title="{{.SessionCount}} work units bind this PR — the row shows the most active">{{.SessionCount}} sessions</span>{{end}}
+          {{if .Imported}} <span class="badge" title="Opened outside grokwork; no session run yet">imported</span>{{end}}
           {{if .FromCase}} <span class="badge" title="{{if .CaseTitle}}{{.CaseTitle}}{{else}}support case{{end}}{{if .CasePhase}} · {{.CasePhase}}{{end}}">from case{{if .CasePhase}} · {{.CasePhase}}{{end}}</span>{{end}}
         </td>
         <td class="mono">
@@ -194,8 +196,9 @@
         {{if not $.Project}}<td>{{if .Project}}<a href="/projects/{{.Project}}">{{.Project}}</a>{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
         <td>{{if .OwnerName}}{{.OwnerName}}{{else if .OwnerID}}<span class="mono">{{.OwnerID}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
         <td>
-          <span class="badge">{{.Label}}</span>
+          {{if .Label}}<span class="badge">{{.Label}}</span>{{end}}
           {{if .LabelManual}} <span class="muted" style="font-size:0.75rem;">manual</span>{{end}}
+          {{if and .Imported (not .Label)}}<span class="muted">—</span>{{end}}
         </td>
         <td class="mono">{{shortTime .UpdatedAt}}</td>
       </tr>
@@ -206,7 +209,7 @@
   {{else}}
   <div class="empty">
     {{if eq .Ship.Total 0}}
-    No PRs{{if .Ship.ProjectFilter}} for <span class="mono">{{.Ship.ProjectFilter}}</span>{{end}}. PRs appear after Grok opens or links one.
+    No PRs{{if .Ship.ProjectFilter}} for <span class="mono">{{.Ship.ProjectFilter}}</span>{{end}}. PRs appear after Grok opens one, or after the poller imports an open GitHub PR.
     {{else}}
     No PRs match this filter ({{.Ship.Total}} tracked{{if .Ship.ProjectFilter}} in {{.Ship.ProjectFilter}}{{end}}).
     {{end}}
