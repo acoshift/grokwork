@@ -39,7 +39,7 @@
           <div class="muted mono">{{.ID}}</div></td>
         <td>{{if .Status}}<span class="badge">{{.Status}}</span>{{end}}</td>
         <td class="mono">{{if .Count}}{{.Count}}×{{end}}</td>
-        <td class="mono">{{if not .LastSeen.IsZero}}{{.LastSeen.UTC.Format "2006-01-02 15:04"}} UTC{{end}}</td>
+        <td class="mono">{{relativeAge .LastSeen}}</td>
         <td class="mono">{{if .Location}}{{.Location}}{{end}}{{if .Resource}} / {{.Resource}}{{end}}</td>
       </tr>
     {{end}}

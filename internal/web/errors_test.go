@@ -108,6 +108,12 @@ func TestErrorsDeploysListAndDetail(t *testing.T) {
 	if !strings.Contains(body, "nil map") || !strings.Contains(body, "location=gke.cluster-rcf2") || !strings.Contains(body, "name=api") {
 		t.Fatalf("list row href missing locator:\n%s", body)
 	}
+	if !strings.Contains(body, "2h ago") {
+		t.Fatalf("last seen should be relative age:\n%s", body)
+	}
+	if strings.Contains(body, " UTC") {
+		t.Fatalf("last seen should not be an absolute UTC timestamp:\n%s", body)
+	}
 	assertNavActive(t, body, "Errors")
 
 	code, miss := errorsStatusBody(t, srv, "/projects/proj/errors/deploys/missing?location=gke.cluster-rcf2&name=api")
@@ -128,6 +134,9 @@ func TestErrorsDeploysListAndDetail(t *testing.T) {
 	}
 	if !strings.Contains(detail, `id="error-sample"`) {
 		t.Fatal("sample marker")
+	}
+	if !strings.Contains(detail, "last 2h ago") {
+		t.Fatalf("detail last seen should be relative age:\n%s", detail)
 	}
 
 	code, body404 := errorsStatusBody(t, srv, "/projects/proj/errors/deploys/no-such?location=gke.cluster-rcf2&name=api")
@@ -317,7 +326,7 @@ func deploysErrorsFixture(t *testing.T) (*Server, *int) {
 					"issues": []map[string]any{{
 						"id": "iss_go_nilmap", "deployment": "api", "location": "gke.cluster-rcf2",
 						"title": "nil map", "status": "open", "count": 4,
-						"lastSeen": time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC),
+						"lastSeen": time.Now().UTC().Add(-2 * time.Hour),
 					}},
 				},
 			})
@@ -334,6 +343,7 @@ func deploysErrorsFixture(t *testing.T) (*Server, *int) {
 					"issue": map[string]any{
 						"id": "iss_go_nilmap", "deployment": "api", "location": "gke.cluster-rcf2",
 						"title": "nil map", "status": "open", "count": 4,
+						"lastSeen":      time.Now().UTC().Add(-2 * time.Hour),
 						"sampleMessage": "panic: assignment to entry in nil map",
 					},
 				},

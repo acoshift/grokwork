@@ -119,14 +119,31 @@ func (s *Server) buildProjectCards(ctx *hime.Context) []projectCard {
 	return cards
 }
 
-// relativeAge renders an RFC3339 timestamp as a coarse age ("2h ago").
-func relativeAge(rfc3339 string) string {
-	if rfc3339 == "" {
+// relativeAge renders a time.Time or RFC3339 timestamp as a coarse age ("2h ago").
+func relativeAge(v any) string {
+	var t time.Time
+	switch x := v.(type) {
+	case time.Time:
+		t = x
+	case *time.Time:
+		if x == nil {
+			return ""
+		}
+		t = *x
+	case string:
+		if x == "" {
+			return ""
+		}
+		parsed, err := time.Parse(time.RFC3339, x)
+		if err != nil {
+			return x
+		}
+		t = parsed
+	default:
 		return ""
 	}
-	t, err := time.Parse(time.RFC3339, rfc3339)
-	if err != nil {
-		return rfc3339
+	if t.IsZero() {
+		return ""
 	}
 	d := time.Since(t)
 	if d < 0 {

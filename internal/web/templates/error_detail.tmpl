@@ -13,7 +13,7 @@
 <div class="pr-meta">
   {{if .ErrorDetail.Status}}<span class="badge">{{.ErrorDetail.Status}}</span>{{end}}
   {{if .ErrorDetail.Count}}<span class="mono">{{.ErrorDetail.Count}}×</span>{{end}}
-  {{if not .ErrorDetail.LastSeen.IsZero}}<span class="mono">last {{.ErrorDetail.LastSeen.UTC.Format "2006-01-02 15:04"}} UTC</span>{{end}}
+  {{if not .ErrorDetail.LastSeen.IsZero}}<span class="mono">last {{relativeAge .ErrorDetail.LastSeen}}</span>{{end}}
   {{if .ErrorDetail.Culprit}}<span class="mono">{{.ErrorDetail.Culprit}}</span>{{end}}
   {{if .ErrorDetail.Location}}<span class="mono">{{.ErrorDetail.Location}}{{if .ErrorDetail.Resource}} / {{.ErrorDetail.Resource}}{{end}}</span>{{end}}
 </div>

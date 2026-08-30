@@ -296,6 +296,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// shortTime formats a time.Time or RFC3339 string as "2006-01-02 15:04"
 	// (same layout as the commits list Date column).
 	app.TemplateFunc("shortTime", shortTime)
+	// relativeAge formats a time.Time or RFC3339 string as a coarse age ("2h ago").
+	app.TemplateFunc("relativeAge", relativeAge)
 	// runBucketBadge maps ghpr.RunBucket → layout badge CSS class.
 	app.TemplateFunc("runBucketBadge", runBucketBadge)
 	// Bound-issue list on the session page (GitHub / Linear / ClickUp).
