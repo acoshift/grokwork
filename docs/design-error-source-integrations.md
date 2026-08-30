@@ -636,14 +636,14 @@ Do **not** add error groups to `/search` in L1. Bound sessions remain searchable
 | Channel | Send `X-Deploys-Channel: grokwork` (`api.HeaderChannel`) so the **raw request** names us. Their `NormalizeAuditChannel` only knows `console\|mcp\|cli\|api` and **stores `api`** for `grokwork` (the fold happens before insert; the raw header is **not** what the audit log records). Do not send `mcp` (that is *their* MCP). |
 | List | `project` required; `location`+`name` scopes one deployment; omit `name` for project-wide; `status` default `open` (`open\|resolved\|muted\|all`); `limit` default 50 max 200; `cursor` opaque; `sort` `lastSeen\|firstSeen\|count`. |
 | Get | `project+location+name+id` (`ErrorGet.Valid`). Detail adds `sampleMessage` (≤ 16 KiB server-side) + `recentEvents[]` (pod, ts, object, offset). |
-| Permissions | token must hold `error.list` and `error.get`. |
+| Permissions | token must hold `error.list` and `error.get`. Resolve/Reopen also needs `error.update`. |
 | Ids | opaque (`iss_go_nilmap` in their mock). Single path segment. **Not unique across deployments.** |
 
 **Minting a token (operator docs on the Integrations card):**
 
-1. Prefer a deploys.app **service account** on the target project, granted only `error.list` + `error.get`, then set `DEPLOYS_AUTH_USER_<PROJECT>` + `DEPLOYS_AUTH_PASS_<PROJECT>` (Basic).
+1. Prefer a deploys.app **service account** on the target project, granted `error.list` + `error.get` + `error.update`, then set `DEPLOYS_AUTH_USER_<PROJECT>` + `DEPLOYS_AUTH_PASS_<PROJECT>` (Basic).
 2. Or paste a Bearer token from `deploys login` + `deploys auth token` into the form / `DEPLOYS_API_TOKEN_<PROJECT>`. That env name is grokwork’s `ProjectEnvKeySuffix` form — **not** the CLI’s unsuffixed `DEPLOYS_TOKEN`. Session tokens last **7 days** and cannot be refreshed — rotate or use a service account.
-3. **Generate token** on the Integrations card runs `deploys me generate-token -permissions error.list,error.get -ttl 31536000` with the host CLI login and stores the bearer. TTL is 1 year (deploys.app’s generate-token max). Prefer a service account for a credential that should outlive that window. The minted value is never written to a flash, audit row, or error string.
+3. **Generate token** on the Integrations card runs `deploys me generate-token -permissions error.list,error.get,error.update -ttl 31536000` with the host CLI login and stores the bearer. TTL is 1 year (deploys.app’s generate-token max). Prefer a service account for a credential that should outlive that window. The minted value is never written to a flash, audit row, or error string. Tokens minted before this slice lack `error.update` until regenerated.
 
 Thin client (`internal/errsrc/deploys`):
 
@@ -731,7 +731,7 @@ Public v1beta1. **No Cloud client library.**
 
 `order`: `COUNT_DESC` (default), `LAST_SEEN_DESC`, `CREATED_DESC`, `AFFECTED_USERS_DESC`.
 
-IAM: `roles/errorreporting.user` or `errorreporting.viewer` on the GCP project.
+IAM: `roles/errorreporting.user` or `errorreporting.viewer` on the GCP project. Resolve/Reopen needs `errorreporting.groups.update` (`roles/errorreporting.user`); Viewer-only ADC will 403.
 
 **OAuth scopes (documented on the REST methods):**
 
@@ -1070,3 +1070,18 @@ Incremental, independently reviewable **in order**. Each PR is mergeable to `mai
 - Extract `internal/gcpauth` and optionally migrate `gdrive.JWTBearer`
 - Webhooks → Discord (Linear L3 analogue)
 - Stamp Investigate-from-error onto Claude — **out of scope** (resolved no)
+
+---
+
+## Amendment: web Resolve / Reopen (L2 slice, 2026-08-30)
+
+Shipped as a web-only write-back on the error detail rail. Not the rest of PR 6.
+
+| In | Out |
+|----|-----|
+| `POST /projects/{p}/errors/{src}/{id}/resolve` with `status=resolved\|open` | MCP `*_resolve` / `agentauth` `*Write` caps |
+| All three providers, detail rail only | Discord, mute, resolve-in-release, list-row / bulk |
+| Reopen as the inverse (misclick recovery) | Auto-resolve when a Fix session ships |
+| Mux `requireFeature("startSessions")` + `requireMember`; handler `CanShip()` | New webAuth feature or capability template flag |
+
+Provider contracts: deploys `error.update`; Sentry org-scoped `PUT …/issues/{id}/` after the same project-slug post-check as GET (no PUT on mismatch); GCP `groups.get` then full-replace `PUT` so `trackingIssues` is not wiped. grokwork stores nothing — the provider is source of truth. Audit `ActionErrorResolve` (`project`, `provider`, `errorId`, `status`); no stack/title/token. Hidden button is not a gate.

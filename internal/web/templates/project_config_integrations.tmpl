@@ -154,8 +154,10 @@
 <div class="section card" id="project-errors-gcp">
   <h2>GCP Error Reporting</h2>
   <p class="sub" style="margin-top:0">
-    Read-only list/get of Cloud Error Reporting groups. Credentials are a <strong>path</strong> to a service-account JSON key, never the key contents.
+    List/get of Cloud Error Reporting groups, plus Resolve/Reopen from the Errors page.
+    Credentials are a <strong>path</strong> to a service-account JSON key, never the key contents.
     Empty path uses host ADC (<span class="mono">gcloud auth application-default login</span> or metadata).
+    Resolve needs <span class="mono">errorreporting.groups.update</span> (<span class="mono">roles/errorreporting.user</span>); Viewer-only ADC will 403.
   </p>
   <form method="post" action="{{route "config.setProjectErrorsGCP"}}">
     {{template "csrf" $}}
@@ -192,7 +194,9 @@
 <div class="section card" id="project-errors-sentry">
   <h2>Sentry</h2>
   <p class="sub" style="margin-top:0">
-    Read-only issue list/get. Use an org or user token with <span class="mono">event:read</span> and <span class="mono">project:read</span> — not a DSN.
+    Issue list/get plus Resolve/Reopen from the Errors page. Use an org or user token with
+    <span class="mono">event:read</span> and <span class="mono">project:read</span> — not a DSN.
+    Resolve needs <span class="mono">event:write</span>; a read-only token still lists issues and then fail-visibles on Resolve.
     {{if .ProjectItem.SentryAuthTokenSet}}<span class="badge status-done">token set</span>{{else}}<span class="badge">no token</span>{{end}}
     · env alternative: <span class="mono">{{.ProjectItem.SentryEnvHint}}</span>
   </p>
@@ -233,16 +237,16 @@
 <div class="section card" id="project-errors-deploys">
   <h2>deploys.app errors</h2>
   <p class="sub" style="margin-top:0">
-    Read-only <span class="mono">error.list</span> / <span class="mono">error.get</span> on a deploys.app project. This is not grokwork’s own Deploy pipeline.
+    <span class="mono">error.list</span> / <span class="mono">error.get</span> / <span class="mono">error.update</span> on a deploys.app project. This is not grokwork’s own Deploy pipeline.
     {{if .ProjectItem.DeploysAPITokenSet}}<span class="badge status-done">credentials set</span>{{else}}<span class="badge">no credentials</span>{{end}}
     · env alternative: <span class="mono">{{.ProjectItem.DeploysEnvHint}}</span>
   </p>
   <p class="sub">
-    Prefer a service account granted only <span class="mono">error.list</span> + <span class="mono">error.get</span>, then set
+    Prefer a service account granted <span class="mono">error.list</span> + <span class="mono">error.get</span> + <span class="mono">error.update</span>, then set
     <span class="mono">DEPLOYS_AUTH_USER_&lt;PROJECT&gt;</span> + <span class="mono">DEPLOYS_AUTH_PASS_&lt;PROJECT&gt;</span> (HTTP Basic).
     A Bearer token from <span class="mono">deploys auth token</span> lasts 7 days — use the suffixed env, not the CLI’s unsuffixed <span class="mono">DEPLOYS_TOKEN</span>.
     <strong>Generate token</strong> runs <span class="mono">deploys me generate-token</span> on this host
-    (<span class="mono">error.list</span> + <span class="mono">error.get</span>, 1 year) using the operator’s CLI login, then stores it.
+    (<span class="mono">error.list</span> + <span class="mono">error.get</span> + <span class="mono">error.update</span>, 1 year) using the operator’s CLI login, then stores it.
   </p>
   <form method="post" action="{{route "config.setProjectErrorsDeploys"}}">
     {{template "csrf" $}}
@@ -278,7 +282,7 @@
       <button type="submit">Save deploys.app errors</button>
       <button type="submit" class="btn-secondary"
         formaction="{{route "config.generateDeploysErrorsToken"}}"
-        data-confirm="Mint a 1-year deploys.app token (error.list + error.get) using this host’s deploys CLI login and store it?"
+        data-confirm="Mint a 1-year deploys.app token (error.list + error.get + error.update) using this host’s deploys CLI login and store it?"
         data-confirm-title="Generate token"
         data-confirm-ok="Generate">Generate token</button>
     </div>

@@ -3,6 +3,7 @@
 package gcperr
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,6 +46,10 @@ func (c *Client) endpoint() string {
 }
 
 func (c *Client) get(ctx context.Context, path string, query url.Values, dest any) error {
+	return c.do(ctx, http.MethodGet, path, query, nil, dest)
+}
+
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, body any, dest any) error {
 	if c == nil || strings.TrimSpace(c.ProjectID) == "" {
 		return fmt.Errorf("gcp: projectId required")
 	}
@@ -59,11 +64,22 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, dest an
 	if len(query) > 0 {
 		u += "?" + query.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	var rdr io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		rdr = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, rdr)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+tok)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.http().Do(req)
 	if err != nil {
 		return err
@@ -89,8 +105,9 @@ type groupStatsResp struct {
 
 type groupStat struct {
 	Group struct {
-		GroupID string `json:"groupId"`
-		Name    string `json:"name"`
+		GroupID          string `json:"groupId"`
+		Name             string `json:"name"`
+		ResolutionStatus string `json:"resolutionStatus"`
 	} `json:"group"`
 	Count              string    `json:"count"`
 	AffectedUsersCount string    `json:"affectedUsersCount"`
@@ -124,12 +141,39 @@ func (g groupStat) toGroup(projectID string) errsrc.Group {
 		ID:        g.Group.GroupID,
 		Title:     title,
 		Culprit:   g.Representative.Service.Service,
+		Status:    gcpStatus(g.Group.ResolutionStatus),
 		Count:     parseInt64String(g.Count),
 		UserCount: parseInt64String(g.AffectedUsersCount),
 		FirstSeen: g.FirstSeenTime,
 		LastSeen:  g.LastSeenTime,
 		Resource:  g.Representative.Service.Service,
 		URL:       permalink,
+	}
+}
+
+func gcpStatus(s string) string {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "RESOLVED":
+		return "resolved"
+	case "ACKNOWLEDGED":
+		return "acknowledged"
+	case "MUTED":
+		return "muted"
+	case "OPEN", "RESOLUTION_STATUS_UNSPECIFIED", "":
+		return "open"
+	default:
+		return strings.ToLower(strings.TrimSpace(s))
+	}
+}
+
+func gcpResolutionStatus(status string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "resolved":
+		return "RESOLVED", nil
+	case "open":
+		return "OPEN", nil
+	default:
+		return "", fmt.Errorf("gcp: status must be resolved or open")
 	}
 }
 
@@ -231,4 +275,30 @@ func (c *Client) Get(ctx context.Context, groupID, period string) (errsrc.GroupD
 		})
 	}
 	return detail, nil
+}
+
+// UpdateResolution GETs the ErrorGroup then PUTs it with resolutionStatus set.
+// A PUT of only groupId+status would wipe trackingIssues (the API is a full replace).
+func (c *Client) UpdateResolution(ctx context.Context, groupID, status string) error {
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" {
+		return fmt.Errorf("gcp: group id required")
+	}
+	if strings.Contains(groupID, "/") {
+		return fmt.Errorf("gcp: group id must be a single path segment")
+	}
+	native, err := gcpResolutionStatus(status)
+	if err != nil {
+		return err
+	}
+	path := "/projects/" + url.PathEscape(c.ProjectID) + "/groups/" + url.PathEscape(groupID)
+	var g map[string]any
+	if err := c.get(ctx, path, nil, &g); err != nil {
+		return err
+	}
+	if len(g) == 0 {
+		return fmt.Errorf("gcp: group %s not found", groupID)
+	}
+	g["resolutionStatus"] = native
+	return c.do(ctx, http.MethodPut, path, nil, g, nil)
 }

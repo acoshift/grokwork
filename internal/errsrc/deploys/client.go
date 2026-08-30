@@ -1,6 +1,7 @@
-// Package deploys is a thin HTTP client for deploys.app error.list / error.get,
-// plus a CLI wrapper that mints a 1-year token via `deploys me generate-token`.
-// It is not grokwork's own deploy pipeline (see internal/deploy).
+// Package deploys is a thin HTTP client for deploys.app error.list / error.get /
+// error.update, plus a CLI wrapper that mints a 1-year token via
+// `deploys me generate-token`. It is not grokwork's own deploy pipeline
+// (see internal/deploy).
 package deploys
 
 import (
@@ -78,6 +79,16 @@ type GetReq struct {
 	Location string `json:"location"`
 	Name     string `json:"name"`
 	ID       string `json:"id"`
+}
+
+// UpdateReq is error.update. All four locator fields are required — no default fill.
+// Status is "resolved" or "open" (reopen). Mute is out of scope.
+type UpdateReq struct {
+	Project  string `json:"project"`
+	Location string `json:"location"`
+	Name     string `json:"name"`
+	ID       string `json:"id"`
+	Status   string `json:"status"`
 }
 
 type listResult struct {
@@ -168,6 +179,22 @@ func (c *Client) Get(ctx context.Context, in GetReq) (errsrc.GroupDetail, error)
 		}
 	}
 	return detail, nil
+}
+
+// Update posts error.update. Missing locator fields fail locally — no default fill.
+func (c *Client) Update(ctx context.Context, in UpdateReq) error {
+	in.Project = strings.TrimSpace(in.Project)
+	in.Location = strings.TrimSpace(in.Location)
+	in.Name = strings.TrimSpace(in.Name)
+	in.ID = strings.TrimSpace(in.ID)
+	in.Status = strings.ToLower(strings.TrimSpace(in.Status))
+	if in.Project == "" || in.Location == "" || in.Name == "" || in.ID == "" {
+		return fmt.Errorf("deploys: project, location, name, and id are required")
+	}
+	if in.Status != "resolved" && in.Status != "open" {
+		return fmt.Errorf("deploys: status must be resolved or open")
+	}
+	return c.invoke(ctx, "error.update", in, nil)
 }
 
 func occurrenceExtra(ev occurrence) string {

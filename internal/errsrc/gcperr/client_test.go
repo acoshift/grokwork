@@ -2,6 +2,7 @@ package gcperr
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -121,5 +122,80 @@ func TestParseConsoleURL(t *testing.T) {
 	}
 	if _, ok := ParseURL("https://console.cloud.google.com/errors/detail/a/b"); ok {
 		t.Fatal("slash in id")
+	}
+}
+
+func TestGroupStatsMapsResolutionStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/groupStats") {
+			io.WriteString(w, `{"errorGroupStats":[{"group":{"groupId":"g1","resolutionStatus":"RESOLVED"},"count":"1","representative":{"message":"boom"}}]}`)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/events") {
+			io.WriteString(w, `{"errorEvents":[]}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{ProjectID: "acme", Tokens: staticTok("t"), HTTP: srv.Client(), Endpoint: srv.URL}
+	got, err := c.Get(t.Context(), "g1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "resolved" {
+		t.Fatalf("status=%q", got.Status)
+	}
+}
+
+func TestUpdateResolutionGetThenPutKeepsTrackingIssues(t *testing.T) {
+	var putBody map[string]any
+	var methods []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method+" "+r.URL.Path)
+		if !strings.HasSuffix(r.URL.Path, "/projects/acme/groups/g1") {
+			t.Errorf("path=%s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			io.WriteString(w, `{"name":"projects/acme/groups/g1","groupId":"g1","resolutionStatus":"OPEN","trackingIssues":[{"url":"https://example.com/1"}]}`)
+		case http.MethodPut:
+			if err := json.NewDecoder(r.Body).Decode(&putBody); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{ProjectID: "acme", Tokens: staticTok("t"), HTTP: srv.Client(), Endpoint: srv.URL}
+	if err := c.UpdateResolution(t.Context(), "g1", "resolved"); err != nil {
+		t.Fatal(err)
+	}
+	if len(methods) != 2 || methods[0] != "GET /projects/acme/groups/g1" || methods[1] != "PUT /projects/acme/groups/g1" {
+		t.Fatalf("methods=%v", methods)
+	}
+	if putBody["resolutionStatus"] != "RESOLVED" {
+		t.Fatalf("status=%v", putBody["resolutionStatus"])
+	}
+	issues, ok := putBody["trackingIssues"].([]any)
+	if !ok || len(issues) != 1 {
+		t.Fatalf("trackingIssues=%v", putBody["trackingIssues"])
+	}
+}
+
+func TestUpdateResolutionRejectsSlashID(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits++ }))
+	t.Cleanup(srv.Close)
+	c := &Client{ProjectID: "acme", Tokens: staticTok("t"), HTTP: srv.Client(), Endpoint: srv.URL}
+	if err := c.UpdateResolution(t.Context(), "a/b", "resolved"); err == nil || !strings.Contains(err.Error(), "single path segment") {
+		t.Fatalf("err=%v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("hits=%d", hits)
 	}
 }

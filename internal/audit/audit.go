@@ -62,6 +62,7 @@ const (
 	ActionSessionUnwatch         = "session.unwatch"
 	ActionSessionIssueLink       = "session.issue.link"   // bind a GitHub/Linear ticket to a unit
 	ActionSessionIssueUnlink     = "session.issue.unlink" // drop one binding (or all, detail.scope=all)
+	ActionErrorResolve           = "error.resolve"        // web write-back: provider status resolved|open
 	ActionCommitReviewStart      = "commit.review.start"
 	ActionPRReviewStart          = "pr.review.start" // agentic PR review → PR comment
 	ActionGitFetch               = "git.fetch"

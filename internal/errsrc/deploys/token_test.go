@@ -21,7 +21,7 @@ func TestGenerateTokenArgsAndParse(t *testing.T) {
     "token": "minted-secret",
     "expiresAt": "2026-08-25T12:00:00Z",
     "project": "acme",
-    "permissions": ["error.list", "error.get"]
+    "permissions": ["error.list", "error.get", "error.update"]
 }`), nil
 	}
 	tok, err := GenerateToken(t.Context(), run, " acme ")
@@ -34,7 +34,7 @@ func TestGenerateTokenArgsAndParse(t *testing.T) {
 	wantArgs := []string{
 		"me", "generate-token",
 		"-project", "acme",
-		"-permissions", "error.list,error.get",
+		"-permissions", "error.list,error.get,error.update",
 		"-ttl", "31536000",
 		"-label", "grokwork:errors",
 		"-output", "json",

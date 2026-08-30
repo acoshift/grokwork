@@ -110,6 +110,49 @@ func TestParseURLShapes(t *testing.T) {
 	}
 }
 
+func TestUpdateStatusOrgScopedPUT(t *testing.T) {
+	var method, path, rawBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/api/0/issues/") && !strings.Contains(r.URL.Path, "/organizations/") {
+			t.Errorf("unscoped issues path: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		method = r.Method
+		path = r.URL.Path
+		b, _ := io.ReadAll(r.Body)
+		rawBody = string(b)
+		if r.Header.Get("Authorization") != "Bearer tok" {
+			t.Errorf("auth %q", r.Header.Get("Authorization"))
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	c := New("tok", "acme", "web", "https://sentry.test")
+	c.HTTP = &http.Client{Transport: rewriteHost{base: srv.URL}}
+	if err := c.UpdateStatus(t.Context(), "9", "resolved"); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPut {
+		t.Fatalf("method=%s", method)
+	}
+	if path != "/api/0/organizations/acme/issues/9/" {
+		t.Fatalf("path=%s", path)
+	}
+	if rawBody != `{"status":"resolved"}` {
+		t.Fatalf("body=%q", rawBody)
+	}
+	if err := c.UpdateStatus(t.Context(), "9", "open"); err != nil {
+		t.Fatal(err)
+	}
+	if rawBody != `{"status":"unresolved"}` {
+		t.Fatalf("open body=%q", rawBody)
+	}
+	if err := c.UpdateStatus(t.Context(), "9", "muted"); err == nil || !strings.Contains(err.Error(), "status") {
+		t.Fatalf("muted err=%v", err)
+	}
+}
+
 func TestBaseURLRejectsHTTP(t *testing.T) {
 	c := New("tok", "acme", "web", "http://sentry.example")
 	if _, err := c.base(); err == nil {

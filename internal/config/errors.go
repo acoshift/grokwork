@@ -34,7 +34,7 @@ type ProjectSentryConfig struct {
 	BaseURL   string `json:"baseURL,omitempty"`
 }
 
-// ProjectDeploysErrorsConfig is deploys.app error.list / error.get settings.
+// ProjectDeploysErrorsConfig is deploys.app error.list / error.get / error.update settings.
 // This is not grokwork's own deploy pipeline (see ProjectDeployConfig).
 type ProjectDeploysErrorsConfig struct {
 	Enabled    bool   `json:"enabled,omitempty"`

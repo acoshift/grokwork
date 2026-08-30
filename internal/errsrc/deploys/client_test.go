@@ -119,6 +119,58 @@ func TestListAndGetHappyPath(t *testing.T) {
 	}
 }
 
+func TestUpdateHappyPath(t *testing.T) {
+	t.Parallel()
+	var sawAction, sawAuth, sawChannel string
+	var got UpdateReq
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawChannel = r.Header.Get(headerChannel)
+		sawAuth = r.Header.Get("Authorization")
+		sawAction = strings.TrimPrefix(r.URL.Path, "/")
+		body, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{}})
+	}))
+	t.Cleanup(srv.Close)
+	c := New(Options{Token: "tok-secret", Endpoint: srv.URL, HTTP: srv.Client()})
+	if err := c.Update(t.Context(), UpdateReq{
+		Project: "acme", Location: "gke.cluster-rcf2", Name: "api", ID: "iss_go_nilmap", Status: "resolved",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if sawAction != "error.update" {
+		t.Fatalf("action=%q", sawAction)
+	}
+	if sawAuth != "Bearer tok-secret" {
+		t.Fatalf("auth=%q", sawAuth)
+	}
+	if sawChannel != channelValue {
+		t.Fatalf("channel=%q", sawChannel)
+	}
+	if got.Project != "acme" || got.Location != "gke.cluster-rcf2" || got.Name != "api" || got.ID != "iss_go_nilmap" || got.Status != "resolved" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestUpdateMissingLocatorFailsLocally(t *testing.T) {
+	t.Parallel()
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits++ }))
+	t.Cleanup(srv.Close)
+	c := New(Options{Token: "tok", Endpoint: srv.URL, HTTP: srv.Client()})
+	if err := c.Update(t.Context(), UpdateReq{Project: "acme", ID: "iss1", Status: "resolved"}); err == nil || !strings.Contains(err.Error(), "location") {
+		t.Fatalf("err=%v", err)
+	}
+	if err := c.Update(t.Context(), UpdateReq{Project: "acme", Location: "loc", Name: "api", ID: "iss1", Status: "muted"}); err == nil || !strings.Contains(err.Error(), "status") {
+		t.Fatalf("muted err=%v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("http hits=%d", hits)
+	}
+}
+
 func TestGetWithoutLocationOrNameFailsLocally(t *testing.T) {
 	t.Parallel()
 	hits := 0

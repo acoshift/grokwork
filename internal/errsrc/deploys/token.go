@@ -15,7 +15,7 @@ import (
 
 const (
 	generateTokenBin     = "deploys"
-	generateTokenPerms   = "error.list,error.get"
+	generateTokenPerms   = "error.list,error.get,error.update"
 	generateTokenTTL     = 365 * 24 * 60 * 60 // 1 year; deploys.app MaxGenerateTokenTTLSeconds
 	generateTokenLabel   = "grokwork:errors"
 	generateTokenTimeout = 20 * time.Second
@@ -33,7 +33,7 @@ type GeneratedToken struct {
 // the minted token.
 type CLIRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
 
-// GenerateToken mints a 1-year error.list+error.get bearer via
+// GenerateToken mints a 1-year error.list+error.get+error.update bearer via
 // `deploys me generate-token` using the host CLI login. The value is returned
 // once; callers must store it. stdout from a failed run is discarded so the
 // token cannot leak through an error string.

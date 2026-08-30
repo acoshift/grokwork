@@ -137,6 +137,37 @@
   {{end}}
   <p class="rail-note">Fix is the primary action and attaches grokwork MCP. Investigate does not embed the stack.</p>
 </div>
+
+{{if .CanStartFixMode}}
+<div class="rail-group" id="error-triage">
+  <div class="rail-group-title">Triage</div>
+  {{if eq .ErrorDetail.Status "resolved"}}
+  <form method="post" action="/projects/{{.Project}}/errors/{{.ErrorSrc}}/{{.ErrorDetail.ID}}/resolve"
+        data-confirm="Reopens this error in {{.ErrorProviderLabel}}. Later events will show as open again."
+        data-confirm-title="Reopen" data-confirm-ok="Reopen">
+    {{template "csrf" $}}
+    <input type="hidden" name="status" value="open">
+    {{if .ErrorLocation}}<input type="hidden" name="location" value="{{.ErrorLocation}}">{{end}}
+    {{if .ErrorName}}<input type="hidden" name="name" value="{{.ErrorName}}">{{end}}
+    <div class="form-actions">
+      <button type="submit" id="btn-reopen-error" class="btn-secondary">Reopen</button>
+    </div>
+  </form>
+  {{else}}
+  <form method="post" action="/projects/{{.Project}}/errors/{{.ErrorSrc}}/{{.ErrorDetail.ID}}/resolve"
+        data-confirm="Marks this error resolved in {{.ErrorProviderLabel}}. It does not merge a PR or deploy."
+        data-confirm-title="Resolve" data-confirm-ok="Resolve">
+    {{template "csrf" $}}
+    <input type="hidden" name="status" value="resolved">
+    {{if .ErrorLocation}}<input type="hidden" name="location" value="{{.ErrorLocation}}">{{end}}
+    {{if .ErrorName}}<input type="hidden" name="name" value="{{.ErrorName}}">{{end}}
+    <div class="form-actions">
+      <button type="submit" id="btn-resolve-error">Resolve</button>
+    </div>
+  </form>
+  {{end}}
+</div>
+{{end}}
 {{else}}
 <div class="rail-group">
   <div class="rail-group-title">Actions</div>

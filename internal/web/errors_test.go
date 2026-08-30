@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,9 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/errsrc/deploys"
+	"github.com/acoshift/grokwork/internal/errsrc/gcperr"
+	sentrycli "github.com/acoshift/grokwork/internal/errsrc/sentry"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -368,4 +372,342 @@ func errorsStatusBody(t *testing.T, srv *Server, path string) (int, string) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	return w.Code, w.Body.String()
+}
+
+type staticGCPTok string
+
+func (s staticGCPTok) Token(context.Context) (string, error) { return string(s), nil }
+
+type sentryRewrite struct{ base string }
+
+func (r sentryRewrite) RoundTrip(req *http.Request) (*http.Response, error) {
+	u, err := http.NewRequestWithContext(req.Context(), req.Method, r.base+req.URL.RequestURI(), req.Body)
+	if err != nil {
+		return nil, err
+	}
+	u.Header = req.Header
+	return http.DefaultTransport.RoundTrip(u)
+}
+
+func TestErrorResolveDeploysBuilder(t *testing.T) {
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.StartSessions = true
+	if err := cfg.SetProjectErrorsDeploys("proj", true, "acme", "loc", "api", "tok", false); err != nil {
+		t.Fatal(err)
+	}
+	var updates []deploys.UpdateReq
+	const stack = "panic: assignment to entry in nil map STACK-SHOULD-NOT-AUDIT"
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		switch strings.TrimPrefix(r.URL.Path, "/") {
+		case "error.get":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ok": true,
+				"result": map[string]any{
+					"issue": map[string]any{
+						"id": "iss1", "deployment": "api", "location": "loc",
+						"title": "boom", "status": "open", "sampleMessage": stack,
+					},
+				},
+			})
+		case "error.update":
+			var req deploys.UpdateReq
+			_ = json.Unmarshal(body, &req)
+			updates = append(updates, req)
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+	srv.deploysNew = func(opts deploys.Options) *deploys.Client {
+		c := deploys.New(opts)
+		c.Endpoint = api.URL
+		c.HTTP = api.Client()
+		return c
+	}
+
+	sid, csrf, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail := getAuthed(t, srv, "/projects/proj/errors/deploys/iss1?location=loc&name=api", sid)
+	if !strings.Contains(detail, `id="btn-resolve-error"`) {
+		t.Fatalf("builder resolve button:\n%s", detail)
+	}
+	if strings.Contains(detail, `id="btn-reopen-error"`) {
+		t.Fatal("open error should not show Reopen")
+	}
+	if !strings.Contains(detail, "deploys.app") {
+		t.Fatal("confirm copy should name deploys.app")
+	}
+
+	w := postFix(t, srv, "/projects/proj/errors/deploys/iss1/resolve", sid, csrf, url.Values{
+		"location": {"loc"}, "name": {"api"}, "status": {"resolved"},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "ok=Resolved") {
+		t.Fatalf("Location=%q", loc)
+	}
+	if len(updates) != 1 || updates[0].Project != "acme" || updates[0].ID != "iss1" || updates[0].Status != "resolved" {
+		t.Fatalf("updates=%+v", updates)
+	}
+	if updates[0].Location != "loc" || updates[0].Name != "api" {
+		t.Fatalf("locator=%+v", updates[0])
+	}
+
+	evs, err := srv.audit.ReadDay(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saw bool
+	for _, ev := range evs {
+		if ev.Action != audit.ActionErrorResolve {
+			continue
+		}
+		saw = true
+		if !ev.OK || ev.Actor != "member-1" {
+			t.Fatalf("%+v", ev)
+		}
+		if fmtDetail := fmtAudit(ev.Detail); strings.Contains(fmtDetail, "STACK-SHOULD-NOT-AUDIT") {
+			t.Fatalf("stack in audit: %s", fmtDetail)
+		}
+	}
+	if !saw {
+		t.Fatalf("missing audit: %+v", evs)
+	}
+}
+
+func fmtAudit(d map[string]any) string {
+	b, _ := json.Marshal(d)
+	return string(b)
+}
+
+func TestErrorResolveInvestigatorForbidden(t *testing.T) {
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.StartSessions = true
+	if err := cfg.SetProjectErrorsDeploys("proj", true, "acme", "loc", "api", "tok", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "investigator"); err != nil {
+		t.Fatal(err)
+	}
+	hits := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+			"result": map[string]any{
+				"issue": map[string]any{"id": "iss1", "deployment": "api", "location": "loc", "title": "boom", "status": "open"},
+			},
+		})
+	}))
+	t.Cleanup(api.Close)
+	srv.deploysNew = func(opts deploys.Options) *deploys.Client {
+		c := deploys.New(opts)
+		c.Endpoint = api.URL
+		c.HTTP = api.Client()
+		return c
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "Inv", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getAuthed(t, srv, "/projects/proj/errors/deploys/iss1?location=loc&name=api", sid)
+	if strings.Contains(body, `id="btn-resolve-error"`) {
+		t.Fatal("investigator must not see Resolve")
+	}
+	getHits := hits
+	w := postFix(t, srv, "/projects/proj/errors/deploys/iss1/resolve", sid, csrf, url.Values{
+		"location": {"loc"}, "name": {"api"}, "status": {"resolved"},
+	})
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), errorCannotResolve) {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if hits != getHits {
+		t.Fatalf("POST must not hit provider (hits %d → %d)", getHits, hits)
+	}
+	evs, err := srv.audit.ReadDay(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saw bool
+	for _, ev := range evs {
+		if ev.Action == audit.ActionErrorResolve && !ev.OK {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("denial audit missing: %+v", evs)
+	}
+}
+
+func TestErrorResolveStartSessionsOff404(t *testing.T) {
+	srv, cfg, _ := authOnServer(t) // startSessions false
+	if err := cfg.SetProjectErrorsDeploys("proj", true, "acme", "loc", "api", "tok", false); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/errors/deploys/iss1/resolve", sid, csrf, url.Values{
+		"location": {"loc"}, "name": {"api"}, "status": {"resolved"},
+	})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestErrorResolveOpenLAN404(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	if err := cfg.SetProjectErrorsDeploys("proj", true, "acme", "loc", "api", "tok", false); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/projects/proj/errors/deploys/iss1/resolve", strings.NewReader("status=resolved&location=loc&name=api"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestErrorResolveOtherProjectForbidden(t *testing.T) {
+	srv := twoProjectAuthServer(t)
+	srv.cfg.WebAuth.Features.StartSessions = true
+	if err := srv.cfg.SetProjectErrorsDeploys("secret", true, "acme", "loc", "api", "tok", false); err != nil {
+		t.Fatal(err)
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/secret/errors/deploys/iss1/resolve", sid, csrf, url.Values{
+		"location": {"loc"}, "name": {"api"}, "status": {"resolved"},
+	})
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "forbidden") {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestErrorResolveDisabledSrc404(t *testing.T) {
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.StartSessions = true
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/errors/sentry/x/resolve", sid, csrf, url.Values{"status": {"resolved"}})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d", w.Code)
+	}
+}
+
+func TestErrorResolveDeploysMissingLocator400(t *testing.T) {
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.StartSessions = true
+	if err := cfg.SetProjectErrorsDeploys("proj", true, "acme", "loc", "api", "tok", false); err != nil {
+		t.Fatal(err)
+	}
+	hits := 0
+	api := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits++ }))
+	t.Cleanup(api.Close)
+	srv.deploysNew = func(opts deploys.Options) *deploys.Client {
+		c := deploys.New(opts)
+		c.Endpoint = api.URL
+		c.HTTP = api.Client()
+		return c
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/errors/deploys/iss1/resolve", sid, csrf, url.Values{"status": {"resolved"}})
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "location") {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if hits != 0 {
+		t.Fatalf("hits=%d", hits)
+	}
+}
+
+func TestErrorResolveSentrySlugMismatchNoPUT(t *testing.T) {
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.StartSessions = true
+	if err := cfg.SetProjectErrorsSentry("proj", true, "acme", "web", "tok", "", false); err != nil {
+		t.Fatal(err)
+	}
+	puts := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			puts++
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/events/latest") {
+			io.WriteString(w, `{"dateCreated":"2026-08-01T00:00:00Z","entries":[]}`)
+			return
+		}
+		io.WriteString(w, `{"id":"9","shortId":"APP-1A","title":"boom","count":"1","project":{"slug":"other"}}`)
+	}))
+	t.Cleanup(api.Close)
+	srv.sentryNew = func(token, org, project, baseURL string) *sentrycli.Client {
+		c := sentrycli.New(token, org, project, "https://sentry.test")
+		c.HTTP = &http.Client{Transport: sentryRewrite{base: api.URL}}
+		return c
+	}
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/errors/sentry/9/resolve", sid, csrf, url.Values{"status": {"resolved"}})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if puts != 0 {
+		t.Fatalf("PUT hits=%d", puts)
+	}
+}
+
+func TestErrorResolveGCPReopenButton(t *testing.T) {
+	srv, cfg, _ := authOnServer(t)
+	cfg.WebAuth.Features.StartSessions = true
+	if err := cfg.SetProjectErrorsGCP("proj", true, "acme", "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/groupStats") {
+			io.WriteString(w, `{"errorGroupStats":[{"group":{"groupId":"g1","resolutionStatus":"RESOLVED"},"count":"1","representative":{"message":"boom"}}]}`)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/events") {
+			io.WriteString(w, `{"errorEvents":[]}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(api.Close)
+	srv.gcpNew = func(string) *gcperr.Client {
+		return &gcperr.Client{
+			ProjectID: "acme",
+			Tokens:    staticGCPTok("t"),
+			HTTP:      api.Client(),
+			Endpoint:  api.URL,
+		}
+	}
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getAuthed(t, srv, "/projects/proj/errors/gcp/g1", sid)
+	if !strings.Contains(body, `id="btn-reopen-error"`) {
+		t.Fatalf("want Reopen:\n%s", body)
+	}
+	if strings.Contains(body, `id="btn-resolve-error"`) {
+		t.Fatal("resolved should not show Resolve")
+	}
 }

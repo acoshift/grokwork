@@ -24,9 +24,12 @@ const (
 	errorSourceDisabled    = "Error source not enabled"
 	errorNotFound          = "Error not found"
 	errorDeploysLocator    = "location and name are required"
+	errorCannotResolve     = "cannot resolve error"
 	errorGrokBannerBuilder = "This investigate run is on Grok, which cannot attach grokwork MCP (`--deny MCPTool`). It will not fetch the sample stack. Pick Claude for this session, or use **Fix** (ship/fix attaches MCP)."
 	errorGrokBannerOther   = "This investigate run is on Grok, which cannot attach grokwork MCP. It will not fetch the sample stack. Ask a builder to start this session on Claude, or to Fix it."
 )
+
+var errErrorNotFound = errors.New(errorNotFound)
 
 func (s *Server) deploysClient(project string) *deploys.Client {
 	opts := deploys.Options{
@@ -237,6 +240,7 @@ func (s *Server) errorDetail(ctx *hime.Context) error {
 	d.ShowFixPicker = ctx.FormValue("picker") == "1"
 	d.CanStartSession = s.canStartSession(d)
 	d.CanStartFixMode = d.CanStartSession && s.cfg.ResolveCapabilities(project, d.UserID).CanShip()
+	d.ErrorProviderLabel = errorProviderLabel(src)
 
 	switch src {
 	case errsrc.ProviderDeploys:
@@ -325,6 +329,129 @@ func (s *Server) errorDetail(ctx *hime.Context) error {
 	}
 	s.attachErrorGrokBanner(&d, project, reuse)
 	return s.viewPage(ctx, "error_detail", d)
+}
+
+func (s *Server) postErrorResolve(ctx *hime.Context) error {
+	project := strings.TrimSpace(ctx.PathValue("project"))
+	if err := s.ensureProjectAccess(ctx, project); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	src := strings.ToLower(strings.TrimSpace(ctx.PathValue("src")))
+	id := strings.TrimSpace(ctx.PathValue("id"))
+	loc := strings.TrimSpace(ctx.PostFormValue("location"))
+	name := strings.TrimSpace(ctx.PostFormValue("name"))
+	status := strings.ToLower(strings.TrimSpace(ctx.PostFormValue("status")))
+	detail := map[string]any{"project": project, "provider": src, "errorId": id, "status": status}
+
+	if !validErrorSrc(src) || !s.errorSrcEnabled(project, src) {
+		s.auditAction(ctx, audit.ActionErrorResolve, fmt.Errorf("%s", errorSourceDisabled), detail)
+		return ctx.Status(http.StatusNotFound).Error(errorSourceDisabled)
+	}
+	if id == "" {
+		s.auditAction(ctx, audit.ActionErrorResolve, fmt.Errorf("%s", errorNotFound), detail)
+		return ctx.Status(http.StatusNotFound).Error(errorNotFound)
+	}
+	if status != "resolved" && status != "open" {
+		err := fmt.Errorf("status must be resolved or open")
+		s.auditAction(ctx, audit.ActionErrorResolve, err, detail)
+		return ctx.Status(http.StatusBadRequest).Error(err.Error())
+	}
+	if src == errsrc.ProviderDeploys && (loc == "" || name == "") {
+		s.auditAction(ctx, audit.ActionErrorResolve, fmt.Errorf("%s", errorDeploysLocator), detail)
+		return ctx.Status(http.StatusBadRequest).Error(errorDeploysLocator)
+	}
+	if !s.cfg.ResolveCapabilities(project, s.fixActor(ctx).ID).CanShip() {
+		err := fmt.Errorf("%s", errorCannotResolve)
+		s.auditAction(ctx, audit.ActionErrorResolve, err, detail)
+		return ctx.Status(http.StatusForbidden).Error(errorCannotResolve)
+	}
+
+	err := s.resolveErrorAtProvider(ctx, project, src, id, loc, name, status)
+	s.auditAction(ctx, audit.ActionErrorResolve, err, detail)
+	if errors.Is(err, errErrorNotFound) {
+		return ctx.Status(http.StatusNotFound).Error(errorNotFound)
+	}
+	if err != nil {
+		return ctx.Redirect(errorDetailPath(project, src, id, errorResolveQuery(loc, name, "", err)))
+	}
+	ok := "Resolved"
+	if status == "open" {
+		ok = "Reopened"
+	}
+	return ctx.Redirect(errorDetailPath(project, src, id, errorResolveQuery(loc, name, ok, nil)))
+}
+
+func (s *Server) resolveErrorAtProvider(ctx *hime.Context, project, src, id, loc, name, status string) error {
+	switch src {
+	case errsrc.ProviderDeploys:
+		if !s.cfg.ProjectDeploysErrorsCanResolve(project) {
+			return fmt.Errorf("deploys.app is enabled but no API token or Basic auth")
+		}
+		cfg := s.cfg.ProjectDeploysErrors(project)
+		if cfg == nil || strings.TrimSpace(cfg.Project) == "" {
+			return fmt.Errorf("deploys.app is enabled but no deploys.app project is configured")
+		}
+		return s.deploysClient(project).Update(ctx.Context(), deploys.UpdateReq{
+			Project: cfg.Project, Location: loc, Name: name, ID: id, Status: status,
+		})
+	case errsrc.ProviderSentry:
+		if !s.cfg.ProjectSentryCanResolve(project) {
+			return fmt.Errorf("Sentry is enabled but no auth token")
+		}
+		cli := s.sentryClient(project)
+		got, slug, err := cli.Get(ctx.Context(), id)
+		if err != nil {
+			return errErrorNotFound
+		}
+		want := ""
+		if c := s.cfg.ProjectSentry(project); c != nil {
+			want = c.Project
+		}
+		if !sentrycli.MatchProject(slug, want) {
+			return errErrorNotFound
+		}
+		writeID := got.ID
+		if writeID == "" {
+			writeID = id
+		}
+		return cli.UpdateStatus(ctx.Context(), writeID, status)
+	case errsrc.ProviderGCP:
+		if !s.cfg.ProjectGCPErrorsCanResolve(project) {
+			return fmt.Errorf("GCP Error Reporting is enabled but no project id is configured")
+		}
+		return s.gcpClient(project).UpdateResolution(ctx.Context(), id, status)
+	default:
+		return fmt.Errorf("this error source is enabled but not yet available on this host")
+	}
+}
+
+func errorResolveQuery(loc, name, ok string, err error) url.Values {
+	q := url.Values{}
+	if loc != "" {
+		q.Set("location", loc)
+	}
+	if name != "" {
+		q.Set("name", name)
+	}
+	if err != nil {
+		q.Set("err", err.Error())
+	} else if ok != "" {
+		q.Set("ok", ok)
+	}
+	return q
+}
+
+func errorProviderLabel(src string) string {
+	switch src {
+	case errsrc.ProviderDeploys:
+		return "deploys.app"
+	case errsrc.ProviderSentry:
+		return "Sentry"
+	case errsrc.ProviderGCP:
+		return "GCP"
+	default:
+		return src
+	}
 }
 
 func (s *Server) postErrorInvestigate(ctx *hime.Context) error {

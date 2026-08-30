@@ -2,6 +2,7 @@
 package sentry
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -56,6 +57,10 @@ func (c *Client) base() (string, error) {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, dest any) (http.Header, error) {
+	return c.doJSON(ctx, method, path, query, nil, dest)
+}
+
+func (c *Client) doJSON(ctx context.Context, method, path string, query url.Values, body any, dest any) (http.Header, error) {
 	if c == nil || strings.TrimSpace(c.Token) == "" {
 		return nil, fmt.Errorf("sentry: missing token")
 	}
@@ -67,12 +72,23 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if len(query) > 0 {
 		u += "?" + query.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, method, u, nil)
+	var rdr io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		rdr = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, rdr)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	httpClient := c.HTTP
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -244,6 +260,38 @@ func (c *Client) Get(ctx context.Context, id string) (errsrc.GroupDetail, string
 		}
 	}
 	return detail, iss.Project.Slug, nil
+}
+
+// UpdateStatus sets an issue to resolved or unresolved (open). id may be numeric or shortId.
+// The PUT is org-scoped; callers must post-check project slug before calling when
+// containment matters (the web handler Gets first).
+func (c *Client) UpdateStatus(ctx context.Context, id, status string) error {
+	id = strings.TrimSpace(id)
+	if c == nil || c.Org == "" {
+		return fmt.Errorf("sentry: org required")
+	}
+	if id == "" {
+		return fmt.Errorf("sentry: id required")
+	}
+	native := ""
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "resolved":
+		native = "resolved"
+	case "open":
+		native = "unresolved"
+	default:
+		return fmt.Errorf("sentry: status must be resolved or open")
+	}
+	if looksLikeShortID(id) {
+		resolved, err := c.resolveShortID(ctx, id)
+		if err != nil {
+			return err
+		}
+		id = resolved
+	}
+	body := map[string]string{"status": native}
+	_, err := c.doJSON(ctx, http.MethodPut, "/api/0/organizations/"+url.PathEscape(c.Org)+"/issues/"+url.PathEscape(id)+"/", nil, body, nil)
+	return err
 }
 
 func looksLikeShortID(id string) bool {

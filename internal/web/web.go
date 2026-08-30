@@ -575,6 +575,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postErrorInvestigate))))
 	mux.Handle("POST /projects/{project}/errors/{src}/{id}/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postErrorFix))))
+	mux.Handle("POST /projects/{project}/errors/{src}/{id}/resolve",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postErrorResolve))))
 	// Address CI / Continue / Address review (PR11b–11c)
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/address-ci",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAddressCI))))
@@ -860,6 +862,7 @@ type pageData struct {
 	ClickUpTasks        []clickup.Task
 	ClickUpTask         clickup.Task
 	ErrorSrc            string
+	ErrorProviderLabel  string
 	ErrorGroups         []errsrc.Group
 	ErrorDetail         errsrc.GroupDetail
 	ErrorTabs           []ErrorTab
