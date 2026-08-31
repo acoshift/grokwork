@@ -1,6 +1,7 @@
 package web
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -289,6 +290,8 @@ func TestModelRatesConfigPageAndSave(t *testing.T) {
 		`name="cacheWrite"`,
 		// Unset renders empty, not "0" — saving the form back must not invent rates.
 		`name="input" value="" placeholder="unset"`,
+		`Fill blanks from OpenRouter`,
+		`action="/config/model-rates/openrouter"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("rates page missing %q", want)
@@ -356,6 +359,93 @@ func TestModelRatesConfigPageAndSave(t *testing.T) {
 	}
 	if got := cfg.Snapshot().ModelRatesSet; got != 0 {
 		t.Fatalf("ModelRatesSet=%d want 0", got)
+	}
+}
+
+func TestFillModelRatesFromOpenRouter(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	or := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") != "grokwork" {
+			t.Errorf("User-Agent=%q", r.Header.Get("User-Agent"))
+		}
+		io.WriteString(w, `{
+  "data": [
+    {
+      "id": "x-ai/grok-4.6",
+      "pricing": {"prompt": "0.000002", "completion": "0.000006", "input_cache_read": "0.0000005"}
+    },
+    {
+      "id": "anthropic/claude-opus-5",
+      "pricing": {
+        "prompt": "0.000005",
+        "completion": "0.000025",
+        "input_cache_read": "0.0000005",
+        "input_cache_write": "0.00000625"
+      }
+    }
+  ]
+}`)
+	}))
+	t.Cleanup(or.Close)
+	srv.openRouterHTTP = or.Client()
+	srv.openRouterURL = or.URL
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/config/model-rates", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`Fill blanks from OpenRouter`,
+		`action="/config/model-rates/openrouter"`,
+		`data-confirm-title="Fill from OpenRouter"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("rates page missing %q", want)
+		}
+	}
+
+	post := httptest.NewRequest(http.MethodPost, "/config/model-rates/openrouter", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, post)
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Fatalf("fill status=%d loc=%s body=%s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "ok=") || strings.Contains(loc, "err=") {
+		t.Fatalf("fill must succeed: %q", loc)
+	}
+
+	opus, ok := cfg.ModelRateFor("claude-opus-5")
+	if !ok || opus.InputPerMTok == nil || *opus.InputPerMTok != 5 || opus.CacheWritePerMTok == nil || *opus.CacheWritePerMTok != 6.25 {
+		t.Fatalf("opus-5 not filled: %+v %v", opus, ok)
+	}
+	grok, ok := cfg.ModelRateFor("grok-4.6")
+	if !ok || grok.InputPerMTok == nil || *grok.InputPerMTok != 2 || grok.CacheReadPerMTok == nil || *grok.CacheReadPerMTok != 0.5 {
+		t.Fatalf("grok-4.6 not filled: %+v %v", grok, ok)
+	}
+	if _, ok := cfg.ModelRateFor("composer-2.5"); ok {
+		t.Fatal("cursor model must stay unpriced")
+	}
+
+	// A fetch failure must not wipe rates already saved.
+	fail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "nope", http.StatusBadGateway)
+	}))
+	t.Cleanup(fail.Close)
+	srv.openRouterHTTP = fail.Client()
+	srv.openRouterURL = fail.URL
+	bad := httptest.NewRequest(http.MethodPost, "/config/model-rates/openrouter", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, bad)
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
+		t.Fatalf("failed fetch must redirect with err: %q", loc)
+	}
+	if _, ok := cfg.ModelRateFor("claude-opus-5"); !ok {
+		t.Fatal("failed fetch must not clear existing rates")
 	}
 }
 

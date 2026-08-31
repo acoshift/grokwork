@@ -113,6 +113,33 @@ func (s *Server) updateModelRates(ctx *hime.Context) error {
 	return s.configPageRedirect(ctx, "config.rates", msg, nil)
 }
 
+// fillModelRatesFromOpenRouter copies OpenRouter list prices into empty rate
+// cells. It is a separate POST so an unsaved table edit is not mixed with a
+// network fetch, and so a fetch failure cannot wipe the form the operator was
+// about to save.
+func (s *Server) fillModelRatesFromOpenRouter(ctx *hime.Context) error {
+	cat, err := config.FetchOpenRouterCatalog(ctx.Request.Context(), s.openRouterHTTP, s.openRouterURL)
+	if err != nil {
+		s.auditAction(ctx, audit.ActionConfigSettings, err, map[string]any{"section": "modelRates.openrouter"})
+		return s.configPageRedirect(ctx, "config.rates", "", err)
+	}
+	res, err := s.cfg.FillModelRatesFromOpenRouter(cat)
+	s.auditAction(ctx, audit.ActionConfigSettings, err, map[string]any{
+		"section":   "modelRates.openrouter",
+		"filled":    len(res.Filled),
+		"unmatched": len(res.Unmatched),
+		"skipped":   len(res.Skipped),
+	})
+	if err != nil {
+		return s.configPageRedirect(ctx, "config.rates", "", err)
+	}
+	msg := "No empty OpenRouter-matched cells to fill"
+	if len(res.Filled) > 0 {
+		msg = fmt.Sprintf("Filled rates for %d model(s) from OpenRouter", len(res.Filled))
+	}
+	return s.configPageRedirect(ctx, "config.rates", msg, nil)
+}
+
 // parseModelRateForm reads the rate table out of the form. A bad figure fails the
 // whole save rather than being dropped: a silently ignored typo looks exactly like
 // "not configured", which turns dollars off without telling anyone.

@@ -15,6 +15,14 @@
   free. Fill in only the classes your runs actually produce: a Grok-only setup
   never needs the cache columns.
 </p>
+<p class="sub">
+  OpenRouter publishes a public models API with per-token list prices.
+  <strong>Fill blanks from OpenRouter</strong> copies those into empty cells
+  (converted to dollars per million tokens). grokwork does not route through
+  OpenRouter, so this is a convenience, not a bill — and a figure you already
+  typed is never overwritten. Cursor models are skipped: they are not billed at
+  those list rates.
+</p>
 <div class="section card">
   <form method="post" action="{{route "config.rates"}}">
     {{template "csrf" $}}
@@ -57,6 +65,12 @@
     </p>
     <div class="form-actions">
       <button type="submit">Save</button>
+    </div>
+  </form>
+  <form method="post" action="{{route "config.rates.openrouter"}}" data-confirm="Fill empty rate cells from OpenRouter list prices? Existing figures are left alone. Cursor models are skipped — they are not billed at those rates." data-confirm-title="Fill from OpenRouter" data-confirm-ok="Fill blanks">
+    {{template "csrf" $}}
+    <div class="form-actions">
+      <button type="submit" class="btn-secondary">Fill blanks from OpenRouter</button>
     </div>
   </form>
 </div>

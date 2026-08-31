@@ -87,9 +87,13 @@ type Server struct {
 	deployScanLimit int
 	linearNew       func(apiKey string) *linear.Client
 	clickupNew      func(apiKey string) *clickup.Client
-	deploysNew      func(opts deploys.Options) *deploys.Client
-	sentryNew       func(token, org, project, baseURL string) *sentrycli.Client
-	gcpNew          func(project string) *gcperr.Client
+	// OpenRouter models API (nil/empty → public endpoint + 15s client). Tests
+	// point this at httptest.Server so a fill never hits the network.
+	openRouterHTTP *http.Client
+	openRouterURL  string
+	deploysNew     func(opts deploys.Options) *deploys.Client
+	sentryNew      func(token, org, project, baseURL string) *sentrycli.Client
+	gcpNew         func(project string) *gcperr.Client
 	// Fix-with-Grok rate limit (lazy init).
 	startLimit *startRateLimiter
 	// PR raw-patch cache (page + per-file fragments share one gh pr diff).
@@ -258,6 +262,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.risky":                       "/config/risky",
 		"config.skills":                      "/config/skills",
 		"config.rates":                       "/config/model-rates",
+		"config.rates.openrouter":            "/config/model-rates/openrouter",
 		"config.resume":                      "/config/resume",
 		"issues":                             "/issues",
 		"issues.project":                     "/projects/",
@@ -713,6 +718,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/skills", s.requireAdmin(hime.Handler(s.configSkillsPage)))
 	mux.Handle("GET /config/model-rates", s.requireAdmin(hime.Handler(s.configSubPage("config_rates", "Model rates"))))
 	mux.Handle("POST /config/model-rates", s.requireAdmin(hime.Handler(s.updateModelRates)))
+	mux.Handle("POST /config/model-rates/openrouter", s.requireAdmin(hime.Handler(s.fillModelRatesFromOpenRouter)))
 	mux.Handle("GET /config/storage", s.requireAdmin(hime.Handler(s.storageConfigPage)))
 	mux.Handle("POST /config/storage", s.requireAdmin(hime.Handler(s.setGlobalStorage)))
 	mux.Handle("POST /config/run", s.requireAdmin(hime.Handler(s.updateRunSettings)))
@@ -1036,7 +1042,7 @@ type pageData struct {
 	// including agent-review units and terminal labels. Distinct from FixHits,
 	// which is the Address reuse picker and excludes review-only units.
 	PRSessions []bot.IssueSessionHit
-	PRBackURL string
+	PRBackURL  string
 	// PRAskThreadID is this viewer's throwaway in-page ask on this PR, if any.
 	// Hidden from /sessions; conversation is embedded on the PR page.
 	PRAskThreadID string
