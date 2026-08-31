@@ -349,20 +349,6 @@
     </div>
   </form>
   <p class="rail-note">Always a new session, never one from the dropdown above. Posts findings as a single PR comment — no GitHub issues, no code changes, no merge.</p>
-  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/ask" class="grok-dispatch dispatch-next" id="pr-ask-form">
-    {{template "csrf" $}}
-    <input type="hidden" name="project" value="{{.Project}}">
-    {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
-    <div class="field">
-      <label for="ask-prompt">Ask about this diff</label>
-      <textarea id="ask-prompt" name="prompt" rows="3" required placeholder="What should I look at? Risks? How does X work?"></textarea>
-    </div>
-    <div class="form-actions">
-      <button type="submit" class="btn-secondary" id="btn-ask-pr"
-        {{- if .CanSelectModel}} data-confirm="Read-only. Answers on this page. Does not comment on GitHub, does not open a session." data-confirm-title="Ask about this PR" data-confirm-ok="Ask" data-confirm-select="model" data-confirm-select-label="Model"{{end}}>Ask</button>
-    </div>
-  </form>
-  <p class="rail-note">Throwaway Q&amp;A for this pull request. The answer stays on this page and is not a session.</p>
 </div>
 {{end}}
 
@@ -464,20 +450,23 @@
        hx-sync="this:queue last">
     {{template "pr_ask" .}}
   </div>
+  {{end}}
   {{if .CanStartSession}}
-  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/ask" class="composer" id="pr-ask-followup" style="margin-top:0.85rem">
+  {{/* One composer, outside the live region so SSE cannot wipe a typed question.
+       rows=1 matches the session dock; the rail Ask form is gone. */}}
+  {{$pickModel := and .CanSelectModel (not .PRAskThreadID)}}
+  <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/ask" class="composer" id="pr-ask-form"{{if or .PRAskThreadID .RunBusy .Thread.Turns}} style="margin-top:0.85rem"{{end}}>
     {{template "csrf" $}}
     <input type="hidden" name="project" value="{{.Project}}">
-    <label for="ask-followup" class="sr-only">Follow-up</label>
-    <textarea id="ask-followup" name="prompt" rows="2" required placeholder="Ask a follow-up…"></textarea>
-    <div class="form-actions" style="margin-top:0.5rem">
-      <button type="submit" id="btn-ask-followup">Ask</button>
-    </div>
+    {{if $pickModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
+    <label for="ask-prompt" class="sr-only">Ask about this diff</label>
+    <textarea id="ask-prompt" name="prompt" rows="1" required placeholder="Ask about this diff…"></textarea>
+    <button type="submit" class="composer-send" id="btn-ask-pr" title="Ask" aria-label="Ask"
+      {{- if $pickModel}} data-confirm="Read-only. Answers on this page. Does not comment on GitHub, does not open a session." data-confirm-title="Ask about this PR" data-confirm-ok="Ask" data-confirm-select="model" data-confirm-select-label="Model"{{end}}>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+    </button>
   </form>
-  <p class="muted" style="margin:0.45rem 0 0;font-size:0.8rem">Stay on this page. Read-only — does not comment on GitHub.</p>
-  {{end}}
-  {{else}}
-  <p class="muted" style="margin:0">Ask the agent about this diff — answers stay on this page and are not stored as a session.</p>
+  <p class="composer-hint"><span>Read-only. Answers stay on this page — not a session.</span></p>
   {{end}}
 </div>
 {{end}}

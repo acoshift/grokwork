@@ -185,14 +185,32 @@ func TestPRDetailAskButton(t *testing.T) {
 	}
 	body := getPageBody(t, srv, sid, "/prs/acme/app/9?project=proj")
 	for _, want := range []string{
-		`action="/prs/acme/app/9/ask"`,
-		`id="btn-ask-pr"`,
 		`id="pr-ask"`,
-		">Ask</button>",
-		"Throwaway Q&amp;A",
+		`id="pr-ask-form"`,
+		`id="btn-ask-pr"`,
+		`action="/prs/acme/app/9/ask"`,
+		`rows="1"`,
+		"Ask about this diff",
+		"not a session",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q", want)
+		}
+	}
+	if strings.Count(body, `name="prompt"`) != 1 {
+		t.Fatal("PR detail must render exactly one Ask prompt")
+	}
+	if strings.Contains(body, `id="pr-ask-followup"`) {
+		t.Fatal("follow-up form must not exist; one composer in the body")
+	}
+	rail := body
+	if i := strings.Index(body, `id="pr-address-actions"`); i >= 0 {
+		rail = body[i:]
+		if j := strings.Index(rail, `id="pr-comment-form"`); j >= 0 {
+			rail = rail[:j]
+		}
+		if strings.Contains(rail, `id="pr-ask-form"`) || strings.Contains(rail, `id="btn-ask-pr"`) {
+			t.Fatal("Ask must not live in the Agent rail")
 		}
 	}
 }
