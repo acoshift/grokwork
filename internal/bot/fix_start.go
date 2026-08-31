@@ -386,9 +386,11 @@ func (b *Bot) allocWebNativeUnit(project string, bind func(unitID string) error)
 		}
 	}
 	// Pre-seed WorktreeBranch so cleanup/list see web prefix before first Ensure completes.
+	// PR-ask units are detached checkouts with no managed branch — skip or
+	// resolveRunCwd would EnsureWith a grok/web/… branch the ask must not own.
 	if b.sessions != nil {
 		_, _, _ = b.sessions.Patch(unitID, func(ent *sessionstore.Entry) {
-			if ent.WorktreeBranch == "" {
+			if ent.WorktreeBranch == "" && !ent.IsPRAsk() {
 				ent.WorktreeBranch = gitworktree.BranchNameForUnit(unitID)
 			}
 			if ent.Project == "" {

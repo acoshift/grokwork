@@ -59,9 +59,10 @@ func (b *Bot) runIdleSweepCycle(reason string) {
 	start := time.Now()
 	nWT := b.sweepIdleWorktrees()
 	nSess := b.sweepTerminalSessions()
+	nAsk := b.sweepPRAskUnits()
 	nCP := gitworktree.SweepExpiredCherryPicks(b.bgContext(), b.cfg.DataDir)
-	log.Printf("bg: idle sweep done reason=%s worktrees=%d terminalSessions=%d cherrypickJobs=%d elapsed=%s",
-		reason, nWT, nSess, nCP, time.Since(start).Round(time.Millisecond))
+	log.Printf("bg: idle sweep done reason=%s worktrees=%d terminalSessions=%d prAsks=%d cherrypickJobs=%d elapsed=%s",
+		reason, nWT, nSess, nAsk, nCP, time.Since(start).Round(time.Millisecond))
 }
 
 // sweepIdleWorktrees applies the configured TTL (0 disables).
@@ -393,6 +394,9 @@ func (b *Bot) collectAllWorktrees() []idleCandidate {
 		for _, listed := range b.sessions.List() {
 			e := listed.Entry
 			threadID := listed.ThreadID
+			if listed.IsPRAsk() {
+				continue
+			}
 			if !sessionHasWorktree(e) {
 				continue
 			}
@@ -504,6 +508,98 @@ func (b *Bot) healSessionWorktreeCwd(threadID, newCwd string) {
 	if err != nil {
 		log.Printf("warn: heal session cwd thread=%s: %v", threadID, err)
 	}
+}
+
+// sweepPRAskUnits deletes throwaway PR-ask units that are idle past the
+// worktree TTL, or whose PR is already MERGED/CLOSED on a sibling tracked
+// session. No tombstone: leftover history would reappear on /sessions.
+func (b *Bot) sweepPRAskUnits() int {
+	if b == nil || b.sessions == nil {
+		return 0
+	}
+	ttl := b.cfg.WorktreeIdleTTL()
+	now := time.Now()
+	removed := 0
+	for _, listed := range b.sessions.List() {
+		if !listed.IsPRAsk() {
+			continue
+		}
+		threadID := listed.ThreadID
+		if b.isThreadBusy(threadID) {
+			continue
+		}
+		e := listed.Entry
+		idle := false
+		if ttl > 0 {
+			last := parseRFC3339(e.UpdatedAt)
+			if !last.IsZero() && now.Sub(last) >= ttl {
+				idle = true
+			}
+		}
+		terminal := b.askPRTrackedTerminal(e.Project, e.AskPRKey)
+		if !idle && !terminal {
+			continue
+		}
+		if err := b.deletePRAskUnit(threadID, e); err != nil {
+			log.Printf("warn: pr-ask sweep thread=%s: %v", threadID, err)
+			continue
+		}
+		log.Printf("pr-ask: deleted thread=%s idle=%v terminal=%v last=%s", threadID, idle, terminal, e.UpdatedAt)
+		removed++
+	}
+	return removed
+}
+
+func (b *Bot) askPRTrackedTerminal(project, askKey string) bool {
+	project = strings.TrimSpace(project)
+	askKey = strings.ToLower(strings.TrimSpace(askKey))
+	if project == "" || askKey == "" || b.sessions == nil {
+		return false
+	}
+	for _, listed := range b.sessions.List() {
+		if !strings.EqualFold(listed.Project, project) {
+			continue
+		}
+		if listed.IsPRAsk() {
+			continue
+		}
+		e := listed.Entry
+		e.NormalizePRs()
+		for _, pr := range e.PRs {
+			if sessionstore.FormatAskPRKey(pr.Owner, pr.Repo, pr.Number) != askKey {
+				continue
+			}
+			st := strings.ToUpper(strings.TrimSpace(pr.State))
+			if st == "MERGED" || st == "CLOSED" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (b *Bot) deletePRAskUnit(threadID string, e sessionstore.Entry) error {
+	mainCwd := e.MainCwd
+	if mainCwd == "" {
+		mainCwd, _ = b.resolveProjectRepo(e.Project, "")
+	}
+	path := strings.TrimSpace(e.Cwd)
+	if path == "" && b.cfg != nil {
+		path = gitworktree.PRAskPath(b.cfg.DataDir, e.Project, threadID)
+	}
+	if mainCwd != "" && path != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		if rmErr := gitworktree.Remove(ctx, mainCwd, path, ""); rmErr != nil {
+			log.Printf("warn: pr-ask checkout remove thread=%s: %v", threadID, rmErr)
+		}
+		cancel()
+	}
+	if b.history != nil {
+		if err := b.history.Delete(threadID); err != nil {
+			log.Printf("warn: pr-ask history delete thread=%s: %v", threadID, err)
+		}
+	}
+	return b.sessions.Delete(threadID)
 }
 
 func sessionHasWorktree(e sessionstore.Entry) bool {

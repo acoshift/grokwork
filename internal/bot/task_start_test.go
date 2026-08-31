@@ -160,6 +160,7 @@ func TestPreserveWorkflowFields(t *testing.T) {
 	prev := sessionstore.Entry{
 		Origin: SourceWeb, CreatedBy: "u1", CreatedByName: "Alice", DiscordURL: "https://discord.com/x",
 		OwnerID: "u1", OwnerName: "Alice",
+		SessionKind: sessionstore.SessionKindPRAsk, AskPRKey: "acme/app#9",
 	}
 	next := sessionstore.Entry{SessionID: "s", Project: "app"}
 	preservePRFields(&next, prev)
@@ -168,6 +169,9 @@ func TestPreserveWorkflowFields(t *testing.T) {
 	}
 	if next.OwnerID != "u1" {
 		t.Fatalf("ownership dropped: %+v", next)
+	}
+	if next.SessionKind != sessionstore.SessionKindPRAsk || next.AskPRKey != "acme/app#9" {
+		t.Fatalf("ask identity dropped: kind=%q key=%q", next.SessionKind, next.AskPRKey)
 	}
 	// Explicit next wins
 	next2 := sessionstore.Entry{Origin: SourceDiscord, CreatedBy: "u2"}

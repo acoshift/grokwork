@@ -223,6 +223,9 @@ func (s *Server) runSearch(ctx *hime.Context, q, project string, allowed map[str
 		// Legacy single-PR entries carry their PR only in the mirrored fields.
 		e.NormalizePRs()
 
+		if e.IsPRAsk() {
+			continue
+		}
 		if e.IsCase() {
 			if h, ok := caseSearchHit(listed.ThreadID, e, needle, back); ok {
 				cases = append(cases, h)

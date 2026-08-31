@@ -58,6 +58,19 @@ func parseSessionFilters(ctx *hime.Context, withProject bool) sessionFilters {
 }
 
 // filterSessionRows applies f to merged, visibility-filtered session rows.
+// dropPRAskRows removes throwaway in-page PR asks from session/history lists.
+// They still exist in the store (and fpHistory) so the PR page can stream them.
+func dropPRAskRows(threads []history.Summary) []history.Summary {
+	out := make([]history.Summary, 0, len(threads))
+	for _, t := range threads {
+		if t.SessionKind == sessionstore.SessionKindPRAsk {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 func filterSessionRows(threads []history.Summary, f sessionFilters, now time.Time) []history.Summary {
 	if !f.Filtered() {
 		return threads

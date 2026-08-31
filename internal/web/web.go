@@ -590,6 +590,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// Distinct from POST …/reviews, which records a human team-review verdict.
 	mux.Handle("POST /prs/{owner}/{repo}/{n}/agent-review",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAgentReview))))
+	mux.Handle("POST /prs/{owner}/{repo}/{n}/ask",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postPRAsk))))
 	mux.Handle("POST /sessions/{threadID}/continue",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postSessionContinue))))
 	// Session lifecycle controls (cancel/reset/dequeue/label/goal/claim).
@@ -649,6 +651,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/issues/table", s.requireAuth(hime.Handler(s.partialIssuesTable)))
 	mux.Handle("GET /partials/nav/counts", s.requireAuth(hime.Handler(s.partialNavCounts)))
 	mux.Handle("GET /partials/prs/{owner}/{repo}/{n}/gates", s.requireAuth(hime.Handler(s.partialPRGates)))
+	mux.Handle("GET /partials/prs/{owner}/{repo}/{n}/ask", s.requireAuth(hime.Handler(s.partialPRAsk)))
+	mux.Handle("GET /partials/prs/{owner}/{repo}/{n}/ask/run", s.requireAuth(hime.Handler(s.partialPRAskRun)))
 	mux.Handle("GET /partials/config/lists", s.requireAdmin(hime.Handler(s.partialConfigLists)))
 	mux.Handle("GET /partials/config/channels", s.requireAdmin(hime.Handler(s.partialConfigChannels)))
 
@@ -1032,9 +1036,10 @@ type pageData struct {
 	// including agent-review units and terminal labels. Distinct from FixHits,
 	// which is the Address reuse picker and excludes review-only units.
 	PRSessions []bot.IssueSessionHit
-	// PRBackURL is this PR detail page (?project= included), stamped onto
-	// session row links as ?back= so the session crumb returns here.
 	PRBackURL string
+	// PRAskThreadID is this viewer's throwaway in-page ask on this PR, if any.
+	// Hidden from /sessions; conversation is embedded on the PR page.
+	PRAskThreadID string
 	// IssueTasklist is the parsed GitHub tasklist from the issue body (Phase 2
 	// breakdown). Empty when the body has no checkbox items.
 	IssueTasklist []bot.TasklistItem
@@ -1190,6 +1195,7 @@ func (s *Server) historyList(ctx *hime.Context) error {
 	// Also surface sessions that have no turns yet (legacy / mid-run).
 	threads = mergeSessionRows(threads, s.sessions.List())
 	threads = s.filterThreadsVisible(ctx, threads)
+	threads = dropPRAskRows(threads)
 	d := s.basePage(ctx)
 	d.Title = "History"
 	d.IsHistory = true
@@ -1205,6 +1211,7 @@ func (s *Server) sessionsList(ctx *hime.Context) error {
 	}
 	threads = mergeSessionRows(threads, s.sessions.List())
 	threads = s.filterThreadsVisible(ctx, threads)
+	threads = dropPRAskRows(threads)
 	annotateSessionRunning(threads, s.bot)
 	f := parseSessionFilters(ctx, true)
 	f.Projects = s.filterProjectNames(ctx)
@@ -1414,6 +1421,7 @@ func (s *Server) partialHistoryTable(ctx *hime.Context) error {
 	}
 	threads = mergeSessionRows(threads, s.sessions.List())
 	threads = s.filterThreadsVisible(ctx, threads)
+	threads = dropPRAskRows(threads)
 	d := s.basePage(ctx)
 	d.Threads = threads
 	return s.viewFragment(ctx, "history", "history_table", d)

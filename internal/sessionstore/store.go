@@ -98,7 +98,14 @@ type Entry struct {
 	// SessionKindPRReview binds a PR for the Sessions list but is excluded
 	// from Address/Fix reuse. SessionKindImportedPR is a tracker shell for a
 	// GitHub PR grokwork did not open — included in Address reuse, no run yet.
+	// SessionKindPRAsk is a throwaway per-viewer Q&A embedded on the PR page;
+	// it is hidden from every session list and does not bind PRs[].
 	SessionKind string `json:"sessionKind,omitempty"`
+
+	// AskPRKey identifies the PR an ask unit belongs to ("owner/repo#n").
+	// Scalar lookup only — never copied onto PRs[], so idle cleanup, Address
+	// reuse, the ship board, and FindPRSessions cannot see this unit.
+	AskPRKey string `json:"askPrKey,omitempty"`
 
 	// Agent and Model are pinned when the session is created and never change.
 	// SessionID is issued by one CLI and is meaningless to the other, so the

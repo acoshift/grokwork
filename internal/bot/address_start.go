@@ -126,6 +126,9 @@ func (b *Bot) StartContinue(opts ContinueOpts) (FixStartResult, error) {
 	if !ok {
 		return FixStartResult{}, ErrUnknownThread
 	}
+	if e.IsPRAsk() {
+		return FixStartResult{}, fmt.Errorf("this is a throwaway PR ask — continue from the pull request page")
+	}
 	// Soft prefix so model keeps contract on follow-ups from web. Plan and
 	// direct-to-primary sessions never open a PR — do not tell the continue
 	// prompt otherwise (a "push to main" follow-up plus "do not merge" is

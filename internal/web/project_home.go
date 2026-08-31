@@ -104,7 +104,7 @@ func (s *Server) buildProjectCards(ctx *hime.Context) []projectCard {
 	}
 	if threads, err := s.history.List(); err == nil {
 		var lastAt = make([]string, len(names))
-		for _, t := range mergeSessionRows(threads, s.sessions.List()) {
+		for _, t := range dropPRAskRows(mergeSessionRows(threads, s.sessions.List())) {
 			if i, ok := idx[t.Project]; ok {
 				cards[i].Sessions++
 				if t.UpdatedAt > lastAt[i] {
@@ -306,6 +306,7 @@ func (s *Server) projectThreads(project string) []history.Summary {
 		threads = nil
 	}
 	threads = filterThreadsProject(mergeSessionRows(threads, s.sessions.List()), project)
+	threads = dropPRAskRows(threads)
 	sortThreadsByUpdated(threads)
 	return threads
 }

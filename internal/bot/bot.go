@@ -1166,6 +1166,15 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		return cwd, "", nil
 	}
 
+	if e, ok := b.sessions.Get(threadID); ok && e.IsPRAsk() {
+		path, err := b.ensurePRAskCheckout(ctx, proj, threadID, e)
+		if err != nil {
+			log.Printf("task: pr-ask checkout failed thread=%s: %v — using project cwd", threadID, err)
+			return proj.Cwd, "", nil
+		}
+		return path, "", nil
+	}
+
 	opts := b.ensureOptsForUnit(threadID)
 	if b.cfg != nil {
 		opts.PreferredPrimary = b.cfg.ProjectPrimaryBranch(proj.Name)
@@ -1206,6 +1215,47 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		return "", "", err
 	}
 	return tree.Path, tree.Branch, nil
+}
+
+// ensurePRAskCheckout fetches the PR head and adds a detached worktree at that
+// SHA under data/pr-asks/. Investigate has no GH_TOKEN, so the host must put
+// the agent on the PR tip. Failures are returned to resolveRunCwd, which falls
+// back to the project cwd rather than aborting the ask.
+func (b *Bot) ensurePRAskCheckout(ctx context.Context, proj projectRef, threadID string, e sessionstore.Entry) (string, error) {
+	if b == nil || b.cfg == nil {
+		return "", fmt.Errorf("bot config nil")
+	}
+	owner, repo, n, ok := sessionstore.ParseAskPRKey(e.AskPRKey)
+	if !ok {
+		return "", fmt.Errorf("invalid ask PR key %q", e.AskPRKey)
+	}
+	if !gitworktree.IsRepo(proj.Cwd) {
+		return "", fmt.Errorf("project is not a git repo")
+	}
+	if err := gitworktree.FetchPullHead(ctx, proj.Cwd, n); err != nil {
+		log.Printf("task: pr-ask fetch pull/%d/head: %v", n, err)
+	}
+	sha := ""
+	if owner != "" && repo != "" {
+		selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
+		if detail, err := ghpr.ViewPRDetailWith(ctx, b.ghRun(), proj.Cwd, selector); err == nil {
+			sha = strings.TrimSpace(detail.HeadSHA)
+		}
+	}
+	if sha == "" {
+		return "", fmt.Errorf("no PR head sha")
+	}
+	path := gitworktree.PRAskPath(b.cfg.DataDir, proj.Name, threadID)
+	if err := gitworktree.AddDetached(ctx, proj.Cwd, path, sha); err != nil {
+		return "", err
+	}
+	_, _, _ = b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+		ent.Cwd = path
+		if ent.MainCwd == "" {
+			ent.MainCwd = proj.Cwd
+		}
+	})
+	return path, nil
 }
 
 // ensureOptsForUnit picks managed branch prefix from session WorktreeBranch or unit id form.
@@ -1849,7 +1899,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		streamer = newStreamPosterWith(noopMessenger{}, threadID)
 	}
 	// Seed web session-detail "current turn" before the first delta.
-	b.publishRunPrompt(threadID, parsed.Prompt)
+	b.publishRunPrompt(threadID, b.userFacingPrompt(threadID, parsed.Prompt))
 
 	stopProgress := make(chan struct{})
 	var progressWG sync.WaitGroup
@@ -2334,7 +2384,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	if histM == nil && item.triggerMsgID != "" {
 		histM = &discordgo.MessageCreate{Message: &discordgo.Message{ID: item.triggerMsgID}}
 	}
-	b.recordTurnActorPolicy(threadID, actor, histM, proj.Name, parsed.Prompt, result, elapsed, pol, runFiles, runArts)
+	b.recordTurnActorPolicy(threadID, actor, histM, proj.Name, b.userFacingPrompt(threadID, parsed.Prompt), result, elapsed, pol, runFiles, runArts)
 	// Durable per-unit record. Outside the !result.Cancelled branch below on
 	// purpose: a cancelled run is exactly the case whose output history drops.
 	b.recordRunTimeline(threadID, streamer.Text(), result, elapsed)
@@ -2468,7 +2518,13 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	// is false for those, which is why it is not the only gate. (A *degraded* Discord
 	// thread, where the status message failed to post, still skips: the thread exists
 	// but Discord was refusing writes.)
-	if s != nil && (present || !b.hasDiscordSurface(threadID)) {
+	skipNotify := false
+	if b.sessions != nil {
+		if e, ok := b.sessions.Get(threadID); ok && e.IsPRAsk() {
+			skipNotify = true
+		}
+	}
+	if !skipNotify && s != nil && (present || !b.hasDiscordSurface(threadID)) {
 		b.notifyRunDone(s, threadID, b.taskAuthorID(item, m), result, elapsed)
 	}
 }
@@ -2561,6 +2617,7 @@ func (b *Bot) recordTurnActorPolicy(threadID string, actor Actor, m *discordgo.M
 func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode string, actor Actor, agent grokrun.Agent) RunPolicy {
 	sessionMode := ""
 	sessionPhase := item.snapPhase
+	isAsk := false
 	if b != nil && b.sessions != nil {
 		if e, ok := b.sessions.Get(threadID); ok {
 			sessionMode = e.Mode
@@ -2570,6 +2627,7 @@ func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode
 			if shipMode == "" {
 				shipMode = e.ShipMode
 			}
+			isAsk = e.IsPRAsk()
 		}
 	}
 	// Live capability re-check (K19 tighten).
@@ -2637,6 +2695,18 @@ func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode
 		Agent:            agent,
 	}
 	// When snap fields present, prefer them for allow flags after build (tighten only).
+	applyAsk := func(p RunPolicy) RunPolicy {
+		if !isAsk {
+			return p
+		}
+		p.PostCompletion = "none"
+		p.RefreshBrief = false
+		p.RefreshPR = false
+		p.AllowPR = false
+		p.IncludeGHToken = false
+		return p
+	}
+
 	pol := BuildRunPolicy(in)
 	if item.snapMode != "" || item.snapRunKind != "" {
 		// Re-apply tighten: never expand AllowPR beyond live caps.
@@ -2655,11 +2725,11 @@ func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode
 					Agent:            in.Agent,
 				})
 				pol2.Coerced = true
-				return pol2
+				return applyAsk(pol2)
 			}
 		}
 	}
-	return pol
+	return applyAsk(pol)
 }
 
 func (b *Bot) ensureSessionMode(threadID, mode string) {

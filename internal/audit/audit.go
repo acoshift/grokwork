@@ -65,6 +65,7 @@ const (
 	ActionErrorResolve           = "error.resolve"        // web write-back: provider status resolved|open
 	ActionCommitReviewStart      = "commit.review.start"
 	ActionPRReviewStart          = "pr.review.start" // agentic PR review → PR comment
+	ActionPRAskStart             = "pr.ask.start"    // throwaway in-page PR Q&A; never a session list row
 	ActionGitFetch               = "git.fetch"
 	ActionGitCherryPick          = "git.cherrypick"          // cherry-pick SHAs onto an allowlisted target branch and push
 	ActionGitCherryPickContinue  = "git.cherrypick.continue" // resolve conflict and continue/push

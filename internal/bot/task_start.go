@@ -465,4 +465,13 @@ func preserveWorkflowFields(next *sessionstore.Entry, prev sessionstore.Entry) {
 	if next.DiscordURL == "" {
 		next.DiscordURL = prev.DiscordURL
 	}
+	// SessionKind / AskPRKey are unit identity. The post-run sessions.Set rebuild
+	// (executeTask) constructs a fresh Entry and would otherwise drop a PR-ask
+	// (no PRs[] bind) or turn a PR-review into an Address reuse target.
+	if next.SessionKind == "" {
+		next.SessionKind = prev.SessionKind
+	}
+	if next.AskPRKey == "" {
+		next.AskPRKey = prev.AskPRKey
+	}
 }

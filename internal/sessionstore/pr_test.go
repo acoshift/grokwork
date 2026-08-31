@@ -4,6 +4,23 @@ import (
 	"testing"
 )
 
+func TestFormatParseAskPRKey(t *testing.T) {
+	key := FormatAskPRKey("Acme", "App", 9)
+	if key != "acme/app#9" {
+		t.Fatalf("key=%q", key)
+	}
+	owner, repo, n, ok := ParseAskPRKey(key)
+	if !ok || owner != "acme" || repo != "app" || n != 9 {
+		t.Fatalf("parse %q → %s %s %d ok=%v", key, owner, repo, n, ok)
+	}
+	if FormatAskPRKey("", "app", 1) != "" || FormatAskPRKey("o", "r", 0) != "" {
+		t.Fatal("empty inputs must not format")
+	}
+	if _, _, _, ok := ParseAskPRKey("not-a-key"); ok {
+		t.Fatal("bogus key")
+	}
+}
+
 func TestNormalizeLegacyAndUpsertMulti(t *testing.T) {
 	e := Entry{
 		SessionID: "s",

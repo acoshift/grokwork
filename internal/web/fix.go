@@ -735,6 +735,9 @@ func (s *Server) sessionPage(ctx *hime.Context) error {
 	if err := s.ensureSessionPageAccess(ctx, threadID); err != nil {
 		return forbiddenProject(ctx, err)
 	}
+	if handled, err := s.redirectIfPRAsk(ctx, threadID); handled {
+		return err
+	}
 	d := s.sessionPageData(ctx, threadID)
 	d.Title = "Session · " + threadID
 	d.IsSessions = true
@@ -762,6 +765,9 @@ func (s *Server) partialSession(ctx *hime.Context) error {
 	if err := s.ensureSessionPageAccess(ctx, threadID); err != nil {
 		return forbiddenProject(ctx, err)
 	}
+	if s.refusePRAskPartial(ctx, threadID) {
+		return ctx.Status(http.StatusNotFound).Error("not found")
+	}
 	return s.viewFragment(ctx, "session", "session_live", s.sessionPageData(ctx, threadID))
 }
 
@@ -773,6 +779,9 @@ func (s *Server) partialSessionRun(ctx *hime.Context) error {
 	}
 	if err := s.ensureSessionPageAccess(ctx, threadID); err != nil {
 		return forbiddenProject(ctx, err)
+	}
+	if s.refusePRAskPartial(ctx, threadID) {
+		return ctx.Status(http.StatusNotFound).Error("not found")
 	}
 	return s.viewFragment(ctx, "session", "session_run", s.sessionPageData(ctx, threadID))
 }

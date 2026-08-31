@@ -583,6 +583,7 @@ func (s *Server) prDetailPageData(ctx *hime.Context, full bool) (pageData, error
 			}
 			d.PRBackURL = "/prs/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/" + nStr +
 				"?project=" + url.QueryEscape(project)
+			s.attachPRAsk(&d, project, owner, repo, n)
 		}
 		s.attachModelPicker(&d, project, s.cfg.EffectiveReviewModel())
 		// Mirrors postPRGitHubReview's gate: feature + web role (CanGitHubWrite)

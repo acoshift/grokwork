@@ -153,6 +153,17 @@ func WorktreePath(worktreesRoot, project, unitID string) string {
 	return filepath.Join(worktreesRoot, sanitizePathSegment(project), sanitizePathSegment(unitID))
 }
 
+// PRAskPath is the detached checkout for a throwaway PR-ask unit.
+// Deliberately outside worktreesRoot so ListOnDisk / the idle worktree sweeper
+// cannot treat it as a managed session tree (same reason deploy checkouts live
+// under data/deploys/checkouts/).
+func PRAskPath(dataDir, project, unitID string) string {
+	if strings.TrimSpace(dataDir) == "" {
+		dataDir = "data"
+	}
+	return filepath.Join(dataDir, "pr-asks", sanitizePathSegment(project), sanitizePathSegment(unitID))
+}
+
 // ResolveSessionWorktreePath picks the best on-disk worktree for a unit.
 // Prefer sessionCwd when it is still a real worktree root; otherwise the
 // canonical path under worktreesRoot. This heals sessions that stored absolute

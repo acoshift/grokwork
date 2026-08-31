@@ -168,6 +168,9 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 	if err != nil {
 		return forbiddenProject(ctx, err)
 	}
+	if handled, err := s.redirectIfPRAsk(ctx, threadID); handled {
+		return err
+	}
 	prompt := strings.TrimSpace(ctx.PostFormValue("prompt"))
 	if prompt == "" {
 		return s.sessionRedirect(ctx, threadID, "", "prompt is required")

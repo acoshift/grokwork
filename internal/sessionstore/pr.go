@@ -7,6 +7,34 @@ import (
 	"strings"
 )
 
+// FormatAskPRKey is the lookup key for SessionKindPRAsk units.
+func FormatAskPRKey(owner, repo string, number int) string {
+	owner = strings.ToLower(strings.TrimSpace(owner))
+	repo = strings.ToLower(strings.TrimSpace(repo))
+	if owner == "" || repo == "" || number <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s/%s#%d", owner, repo, number)
+}
+
+// ParseAskPRKey splits a FormatAskPRKey value.
+func ParseAskPRKey(key string) (owner, repo string, number int, ok bool) {
+	key = strings.ToLower(strings.TrimSpace(key))
+	slug, numStr, found := strings.Cut(key, "#")
+	if !found {
+		return "", "", 0, false
+	}
+	owner, repo, found = strings.Cut(slug, "/")
+	if !found || owner == "" || repo == "" || strings.Contains(repo, "/") {
+		return "", "", 0, false
+	}
+	n, err := strconv.Atoi(numStr)
+	if err != nil || n <= 0 {
+		return "", "", 0, false
+	}
+	return owner, repo, n, true
+}
+
 // TrackedPR is one GitHub pull request linked to a Discord thread.
 type TrackedPR struct {
 	URL     string `json:"url,omitempty"`

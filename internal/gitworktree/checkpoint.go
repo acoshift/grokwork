@@ -107,6 +107,15 @@ func FetchOrigin(ctx context.Context, cwd string) error {
 	return runGit(ctx, cwd, "fetch", "origin", "--prune")
 }
 
+// FetchPullHead fetches origin's pull/N/head into FETCH_HEAD so AddDetached
+// can check out a PR that is not a local branch.
+func FetchPullHead(ctx context.Context, cwd string, number int) error {
+	if number <= 0 {
+		return fmt.Errorf("pull number required")
+	}
+	return runGit(ctx, cwd, "fetch", "--no-tags", "origin", fmt.Sprintf("pull/%d/head", number))
+}
+
 // MergeOriginBase merges origin/<base> into the current branch.
 // On conflict returns err with "conflict" substring and leaves conflicted state.
 func MergeOriginBase(ctx context.Context, cwd, base string) error {
