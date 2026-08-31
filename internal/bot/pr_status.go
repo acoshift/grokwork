@@ -20,6 +20,11 @@ import (
 // prStatusPollInterval is how often open-PR sessions are refreshed via gh.
 const prStatusPollInterval = 90 * time.Second
 
+// prImportInterval is how often the poller lists GitHub for PRs grokwork did
+// not open. New human PRs can wait a few minutes; the 90s tick is for CI on
+// PRs we already track.
+const prImportInterval = 10 * time.Minute
+
 // startPRStatusPoller starts the PR poller once. Uses live b.Discord() each cycle
 // so web-native cleanup works before (or without) gateway ready.
 func (b *Bot) startPRStatusPoller() {
@@ -58,11 +63,36 @@ func (b *Bot) runPRStatusPoller() {
 func (b *Bot) runPRStatusPollCycle(reason string) {
 	log.Printf("bg: pr-status poll start reason=%s", reason)
 	start := time.Now()
-	imported := b.importOpenGitHubPRs()
+	imported := 0
+	if b.shouldImportOpenPRs(reason, start) {
+		imported = b.importOpenGitHubPRs()
+		b.notePRImport(start)
+	}
 	stats := b.pollPRStatuses(b.Discord())
 	log.Printf("bg: pr-status poll done reason=%s imported=%d sessions=%d with_pr=%d open=%d busy=%d updated=%d elapsed=%s",
 		reason, imported, stats.Sessions, stats.WithPR, stats.Open, stats.Busy, stats.Updated,
 		time.Since(start).Round(time.Millisecond))
+}
+
+func (b *Bot) shouldImportOpenPRs(reason string, now time.Time) bool {
+	if b == nil {
+		return false
+	}
+	if reason == "initial" {
+		return true
+	}
+	last := b.lastPRImportUnix.Load()
+	if last == 0 {
+		return true
+	}
+	return now.Sub(time.Unix(0, last)) >= prImportInterval
+}
+
+func (b *Bot) notePRImport(now time.Time) {
+	if b == nil || now.IsZero() {
+		return
+	}
+	b.lastPRImportUnix.Store(now.UnixNano())
 }
 
 // prPollStats summarizes one pollPRStatuses pass.
@@ -103,8 +133,13 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) prPollStats {
 			continue
 		}
 
-		// All PRs terminal: eager worktree/session cleanup.
+		// All PRs terminal: eager worktree/session cleanup. Skip once the
+		// worktree is already gone — the session is kept, so a naive loop
+		// re-ran git show-ref / gh / Patch on every historical merged PR.
 		if e.AllPRsTerminal() {
+			if !b.worktreeCleanupPending(threadID, e) {
+				continue
+			}
 			if err := b.cleanupWhenAllPRsDone(threadID); err != nil {
 				log.Printf("pr-status: terminal cleanup thread=%s: %v", threadID, err)
 				continue
@@ -333,6 +368,9 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 		pr.CINotifiedSHA = existing.CINotifiedSHA
 		pr.CIAutoFixCount = existing.CIAutoFixCount
 		pr.CIAutoFixSHA = existing.CIAutoFixSHA
+		if prPollUnchanged(existing, pr) {
+			return nil
+		}
 	}
 
 	card := ghpr.FormatCard(b.withDiscordPRURL(info))
@@ -462,6 +500,22 @@ func (b *Bot) announcePRTimeline(s *discordgo.Session, threadID string, prev ghp
 	log.Printf("pr-status: timeline thread=%s pr=#%d events=%s", threadID, info.Number, strings.Join(kinds, ","))
 }
 
+// prPollUnchanged is the poller's "gh returned the same surface" check.
+// CI debounce fields are copied onto next before this runs, so they match.
+func prPollUnchanged(prev, next sessionstore.TrackedPR) bool {
+	return prev.Number == next.Number &&
+		prev.State == next.State &&
+		prev.Title == next.Title &&
+		prev.Checks == next.Checks &&
+		prev.Review == next.Review &&
+		prev.HeadSHA == next.HeadSHA &&
+		prev.HeadRef == next.HeadRef &&
+		prev.IsDraft == next.IsDraft &&
+		prev.URL == next.URL &&
+		prev.Owner == next.Owner &&
+		prev.Repo == next.Repo
+}
+
 func trackedFromInfo(info ghpr.Info) sessionstore.TrackedPR {
 	pr := sessionstore.TrackedPR{
 		URL:     info.URL,
@@ -514,6 +568,27 @@ func (b *Bot) upsertPRStatusMessage(s *discordgo.Session, threadID, msgID, conte
 //
 // Open (non-closed) cases are skipped: historical terminal PRs must not keep
 // tearing down a reopened unit's worktree. Cleanup runs again after /close.
+// worktreeCleanupPending is true when a terminal-PR session still has a
+// worktree to free (session fields or an on-disk tree). Historical merged
+// units stay in the store, so this is what keeps the 90s poller from
+// re-running git/gh against them forever.
+func (b *Bot) worktreeCleanupPending(threadID string, e sessionstore.Entry) bool {
+	if sessionHasWorktree(e) {
+		return true
+	}
+	if b == nil || b.cfg == nil {
+		return false
+	}
+	project := strings.TrimSpace(e.Project)
+	if project == "" || strings.TrimSpace(threadID) == "" {
+		return false
+	}
+	_, onDisk := gitworktree.ResolveSessionWorktreePath(
+		b.cfg.WorktreesRoot(), project, threadID, e.Cwd, e.MainCwd,
+	)
+	return onDisk
+}
+
 func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 	if b.isThreadBusy(threadID) {
 		return fmt.Errorf("thread busy")
@@ -574,10 +649,12 @@ func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 
 	// Clear worktree pointers so the UI does not claim an on-disk tree we removed.
 	// Keep PRs, label, mode/phase, resolution, and MainCwd for PR view / audit.
-	_, _, _ = b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
-		ent.Cwd = ""
-		ent.WorktreeBranch = ""
-	})
+	if e.Cwd != "" || e.WorktreeBranch != "" {
+		_, _, _ = b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+			ent.Cwd = ""
+			ent.WorktreeBranch = ""
+		})
+	}
 	log.Printf("pr-status: session kept after all PRs terminal thread=%s prs=%d label=%s phase=%s",
 		threadID, len(e.PRs), e.EffectiveLabel(), e.CasePhase())
 	return nil

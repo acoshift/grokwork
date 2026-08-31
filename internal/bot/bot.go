@@ -172,6 +172,10 @@ type Bot struct {
 	boardDigestOnce   sync.Once
 	gatewayWatchOnce  sync.Once
 	logTrimOnce       sync.Once
+
+	// lastPRImportUnix is the last time importOpenGitHubPRs ran (Unix nano).
+	// The 90s PR poller reuses it so listing every GitHub repo is not on that cadence.
+	lastPRImportUnix atomic.Int64
 }
 
 func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store) *Bot {

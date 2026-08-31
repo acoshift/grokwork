@@ -1,11 +1,14 @@
 package bot
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
@@ -35,12 +38,12 @@ func TestApplyPRInfoPreservesUpdatedAt(t *testing.T) {
 		t.Fatal(err)
 	}
 	info := ghpr.Info{
-		Number: 7,
-		URL:    "https://github.com/acme/app/pull/7",
-		Title:  "fix",
-		State:  "OPEN",
-		Owner:  "acme",
-		Repo:   "app",
+		Number:         7,
+		URL:            "https://github.com/acme/app/pull/7",
+		Title:          "fix",
+		State:          "OPEN",
+		Owner:          "acme",
+		Repo:           "app",
 		Checks:         "✓ 1",
 		ReviewDecision: "REVIEW_REQUIRED",
 	}
@@ -215,6 +218,76 @@ func TestPrViewSelectorPrefersURL(t *testing.T) {
 	if sel != "https://github.com/deploys-app/apiserver/pull/244" {
 		t.Fatalf("url sel=%q", sel)
 	}
+}
+
+func TestApplyPRInfoNoOpSkipsStoreWrite(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := New(&config.Config{DataDir: dir}, store, nil)
+	drainBotOnCleanup(t, b)
+	threadID := "w_pr_noop"
+	if err := store.Set(threadID, sessionstore.Entry{SessionID: "s1", Project: "app"}); err != nil {
+		t.Fatal(err)
+	}
+	info := ghpr.Info{
+		Number: 7, URL: "https://github.com/acme/app/pull/7", Title: "fix",
+		State: "OPEN", Owner: "acme", Repo: "app",
+		Checks: "✓ 1", ReviewDecision: "REVIEW_REQUIRED", HeadSHA: "abc",
+	}
+	if err := b.applyPRInfo(nil, threadID, info); err != nil {
+		t.Fatal(err)
+	}
+	rev := store.Rev()
+	if err := b.applyPRInfo(nil, threadID, info); err != nil {
+		t.Fatal(err)
+	}
+	if store.Rev() != rev {
+		t.Fatalf("unchanged poll rewrote sessions.json: rev %d → %d", rev, store.Rev())
+	}
+}
+
+func TestShouldImportOpenPRsThrottle(t *testing.T) {
+	b := New(&config.Config{DataDir: t.TempDir()}, nil, nil)
+	drainBotOnCleanup(t, b)
+	now := time.Date(2026, 8, 31, 15, 0, 0, 0, time.UTC)
+	if !b.shouldImportOpenPRs("initial", now) {
+		t.Fatal("initial poll must list GitHub")
+	}
+	b.notePRImport(now)
+	if b.shouldImportOpenPRs("tick", now.Add(prStatusPollInterval)) {
+		t.Fatal("90s tick must not re-list every repo")
+	}
+	if !b.shouldImportOpenPRs("tick", now.Add(prImportInterval)) {
+		t.Fatal("import interval elapsed must list again")
+	}
+	if !b.shouldImportOpenPRs("initial", now.Add(time.Second)) {
+		t.Fatal("explicit initial still lists")
+	}
+}
+
+func TestMaybeHandleCIFailureDebounceSkipsGH(t *testing.T) {
+	b, store := testBotSessions(t)
+	drainBotOnCleanup(t, b)
+	e := sessionstore.Entry{Project: "app"}
+	e.UpsertPR(sessionstore.TrackedPR{
+		Owner: "acme", Repo: "app", Number: 7, State: "OPEN",
+		URL:     "https://github.com/acme/app/pull/7",
+		HeadSHA: "abc", CINotifiedSHA: "abc", Checks: "✗ 1",
+	})
+	if err := store.Set("w_ci_debounce", e); err != nil {
+		t.Fatal(err)
+	}
+	b.SetGHRunner(func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		t.Fatalf("debounced CI must not exec %s %v", name, args)
+		return nil, nil
+	})
+	b.maybeHandleCIFailure(&discordgo.Session{}, "w_ci_debounce", ghpr.Info{
+		Number: 7, State: "OPEN", Owner: "acme", Repo: "app",
+		URL: "https://github.com/acme/app/pull/7", HeadSHA: "abc", Checks: "✗ 1",
+	})
 }
 
 // Regression: cleanup must not run while the job is still held (executeTask path),

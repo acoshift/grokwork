@@ -199,4 +199,9 @@ func TestPollPRStatusesNilSessionStillCleansTerminal(t *testing.T) {
 	if got.Cwd != "" || got.WorktreeBranch != "" {
 		t.Fatalf("worktree fields should be cleared: cwd=%q branch=%q", got.Cwd, got.WorktreeBranch)
 	}
+	rev := b.sessions.Rev()
+	_ = b.pollPRStatuses(nil)
+	if b.sessions.Rev() != rev {
+		t.Fatal("second poll rewrote sessions for a worktree-less terminal unit")
+	}
 }

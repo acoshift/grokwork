@@ -54,6 +54,25 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 		return
 	}
 	e.NormalizePRs()
+	sel := info.URL
+	if sel == "" {
+		sel = fmt.Sprintf("%d", info.Number)
+	}
+	pr, found := e.FindPR(sel)
+	if !found {
+		pr = trackedFromInfo(info)
+	}
+	headSHA := strings.TrimSpace(info.HeadSHA)
+	if headSHA == "" {
+		headSHA = strings.TrimSpace(pr.HeadSHA)
+	}
+	// Debounce before gh: the poller hits this every 90s for a still-red PR,
+	// and ListChecks is a subprocess. One digest per head SHA is the policy;
+	// checking SHA first is what makes that policy cheap.
+	if headSHA != "" && headSHA == pr.CINotifiedSHA {
+		return
+	}
+
 	repoDir := prRepoDir(e)
 	if repoDir == "" {
 		return
@@ -62,10 +81,6 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	sel := info.URL
-	if sel == "" {
-		sel = fmt.Sprintf("%d", info.Number)
-	}
 	checks, err := ghpr.ListChecks(ctx, repoDir, sel)
 	if err != nil {
 		log.Printf("ci-triage: list checks thread=%s pr=%s: %v", threadID, sel, err)
@@ -76,20 +91,6 @@ func (b *Bot) maybeHandleCIFailure(s *discordgo.Session, threadID string, info g
 	}
 	failed := ghpr.FailedChecks(checks)
 	if len(failed) == 0 && !strings.Contains(info.Checks, "✗") {
-		return
-	}
-
-	headSHA := strings.TrimSpace(info.HeadSHA)
-	pr, found := e.FindPR(sel)
-	if !found {
-		pr = trackedFromInfo(info)
-	}
-	if headSHA == "" {
-		headSHA = strings.TrimSpace(pr.HeadSHA)
-	}
-
-	// Debounce: one digest per head SHA per PR.
-	if headSHA != "" && headSHA == pr.CINotifiedSHA {
 		return
 	}
 
