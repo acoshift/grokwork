@@ -113,29 +113,35 @@ func (s *Server) updateModelRates(ctx *hime.Context) error {
 	return s.configPageRedirect(ctx, "config.rates", msg, nil)
 }
 
-// fillModelRatesFromOpenRouter copies OpenRouter list prices into empty rate
-// cells. It is a separate POST so an unsaved table edit is not mixed with a
-// network fetch, and so a fetch failure cannot wipe the form the operator was
-// about to save.
-func (s *Server) fillModelRatesFromOpenRouter(ctx *hime.Context) error {
-	cat, err := config.FetchOpenRouterCatalog(ctx.Request.Context(), s.openRouterHTTP, s.openRouterURL)
+// fillModelRatesFromOfficial copies list prices from each agent's official
+// docs (xAI, Anthropic, Cursor) onto matched rows. Matched figures are
+// replaced so a price change can be refreshed; unmatched custom names stay.
+func (s *Server) fillModelRatesFromOfficial(ctx *hime.Context) error {
+	cat, err := config.FetchOfficialRates(ctx.Request.Context(), s.officialRateHTTP, s.officialRateURLs)
 	if err != nil {
-		s.auditAction(ctx, audit.ActionConfigSettings, err, map[string]any{"section": "modelRates.openrouter"})
+		s.auditAction(ctx, audit.ActionConfigSettings, err, map[string]any{"section": "modelRates.official"})
 		return s.configPageRedirect(ctx, "config.rates", "", err)
 	}
-	res, err := s.cfg.FillModelRatesFromOpenRouter(cat)
+	res, err := s.cfg.ApplyOfficialRates(cat)
 	s.auditAction(ctx, audit.ActionConfigSettings, err, map[string]any{
-		"section":   "modelRates.openrouter",
-		"filled":    len(res.Filled),
+		"section":   "modelRates.official",
+		"updated":   len(res.Updated),
 		"unmatched": len(res.Unmatched),
-		"skipped":   len(res.Skipped),
+		"sources":   res.Sources,
 	})
 	if err != nil {
 		return s.configPageRedirect(ctx, "config.rates", "", err)
 	}
-	msg := "No empty OpenRouter-matched cells to fill"
-	if len(res.Filled) > 0 {
-		msg = fmt.Sprintf("Filled rates for %d model(s) from OpenRouter", len(res.Filled))
+	msg := "Official docs had no match for the models in the table"
+	if len(res.Updated) > 0 {
+		src := strings.Join(res.Sources, ", ")
+		if src == "" {
+			src = "official docs"
+		}
+		msg = fmt.Sprintf("Updated rates for %d model(s) from %s", len(res.Updated), src)
+	}
+	if len(res.Errors) > 0 && len(res.Updated) > 0 {
+		msg += " · " + res.Errors[0]
 	}
 	return s.configPageRedirect(ctx, "config.rates", msg, nil)
 }

@@ -16,12 +16,11 @@
   never needs the cache columns.
 </p>
 <p class="sub">
-  OpenRouter publishes a public models API with per-token list prices.
-  <strong>Fill blanks from OpenRouter</strong> copies those into empty cells
-  (converted to dollars per million tokens). grokwork does not route through
-  OpenRouter, so this is a convenience, not a bill — and a figure you already
-  typed is never overwritten. Cursor models are skipped: they are not billed at
-  those list rates.
+  <strong>Fill from official docs</strong> pulls list prices from each agent’s
+  own docs (xAI, Anthropic, Cursor) and writes them onto matched rows, including
+  cells that already have a figure. Custom names the docs do not list are left
+  alone. This is a convenience, not a bill — a negotiated rate you want to keep
+  can be typed back after the fill.
 </p>
 <div class="section card">
   <form method="post" action="{{route "config.rates"}}">
@@ -67,10 +66,10 @@
       <button type="submit">Save</button>
     </div>
   </form>
-  <form method="post" action="{{route "config.rates.openrouter"}}" data-confirm="Fill empty rate cells from OpenRouter list prices? Existing figures are left alone. Cursor models are skipped — they are not billed at those rates." data-confirm-title="Fill from OpenRouter" data-confirm-ok="Fill blanks">
+  <form method="post" action="{{route "config.rates.official"}}" data-confirm="Replace matched rows with list prices from the official xAI, Anthropic, and Cursor docs? Custom unmatched models are left alone." data-confirm-title="Fill from official docs" data-confirm-ok="Replace rates">
     {{template "csrf" $}}
     <div class="form-actions">
-      <button type="submit" class="btn-secondary">Fill blanks from OpenRouter</button>
+      <button type="submit" class="btn-secondary">Fill from official docs</button>
     </div>
   </form>
 </div>

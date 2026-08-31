@@ -290,8 +290,8 @@ func TestModelRatesConfigPageAndSave(t *testing.T) {
 		`name="cacheWrite"`,
 		// Unset renders empty, not "0" — saving the form back must not invent rates.
 		`name="input" value="" placeholder="unset"`,
-		`Fill blanks from OpenRouter`,
-		`action="/config/model-rates/openrouter"`,
+		`Fill from official docs`,
+		`action="/config/model-rates/official"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("rates page missing %q", want)
@@ -362,33 +362,38 @@ func TestModelRatesConfigPageAndSave(t *testing.T) {
 	}
 }
 
-func TestFillModelRatesFromOpenRouter(t *testing.T) {
+func TestFillModelRatesFromOfficial(t *testing.T) {
 	srv, cfg, _ := testServer(t)
-	or := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("User-Agent") != "grokwork" {
-			t.Errorf("User-Agent=%q", r.Header.Get("User-Agent"))
-		}
-		io.WriteString(w, `{
-  "data": [
-    {
-      "id": "x-ai/grok-4.6",
-      "pricing": {"prompt": "0.000002", "completion": "0.000006", "input_cache_read": "0.0000005"}
-    },
-    {
-      "id": "anthropic/claude-opus-5",
-      "pricing": {
-        "prompt": "0.000005",
-        "completion": "0.000025",
-        "input_cache_read": "0.0000005",
-        "input_cache_write": "0.00000625"
-      }
-    }
-  ]
-}`)
-	}))
-	t.Cleanup(or.Close)
-	srv.openRouterHTTP = or.Client()
-	srv.openRouterURL = or.URL
+	if err := cfg.SetModelRates(map[string]config.ModelRate{
+		"grok-4.6": {InputPerMTok: ratePtr(9)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	doc := func(body string) *httptest.Server {
+		t.Helper()
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("User-Agent") != "grokwork" {
+				t.Errorf("User-Agent=%q", r.Header.Get("User-Agent"))
+			}
+			io.WriteString(w, body)
+		}))
+		t.Cleanup(s.Close)
+		return s
+	}
+	xai := doc(`| Model | Input / 1M tokens | Cached input / 1M tokens | Output / 1M tokens |
+| --- | --- | --- | --- |
+| grok-4.6 (< 200k prompt tokens) | $2.00 | $0.50 | $6.00 |
+`)
+	anth := doc(`| Model | Base Input Tokens | 5m Cache Writes | Cache Hits & Refreshes | Output Tokens |
+| --- | --- | --- | --- | --- |
+| Claude Opus 5 | $5 / MTok | $6.25 / MTok | $0.50 / MTok | $25 / MTok |
+`)
+	cur := doc(`| Model | Provider | Input | Cache write | Cache read | Output |
+| --- | --- | --- | --- | --- | --- |
+| Composer 2.5 | Cursor | $0.5 | - | $0.2 | $2.5 |
+`)
+	srv.officialRateHTTP = xai.Client()
+	srv.officialRateURLs = config.OfficialRateURLs{XAI: xai.URL, Anthropic: anth.URL, Cursor: cur.URL}
 	h := srv.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/config/model-rates", nil)
@@ -399,16 +404,16 @@ func TestFillModelRatesFromOpenRouter(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, want := range []string{
-		`Fill blanks from OpenRouter`,
-		`action="/config/model-rates/openrouter"`,
-		`data-confirm-title="Fill from OpenRouter"`,
+		`Fill from official docs`,
+		`action="/config/model-rates/official"`,
+		`data-confirm-title="Fill from official docs"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("rates page missing %q", want)
 		}
 	}
 
-	post := httptest.NewRequest(http.MethodPost, "/config/model-rates/openrouter", nil)
+	post := httptest.NewRequest(http.MethodPost, "/config/model-rates/official", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, post)
 	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
@@ -424,21 +429,21 @@ func TestFillModelRatesFromOpenRouter(t *testing.T) {
 		t.Fatalf("opus-5 not filled: %+v %v", opus, ok)
 	}
 	grok, ok := cfg.ModelRateFor("grok-4.6")
-	if !ok || grok.InputPerMTok == nil || *grok.InputPerMTok != 2 || grok.CacheReadPerMTok == nil || *grok.CacheReadPerMTok != 0.5 {
-		t.Fatalf("grok-4.6 not filled: %+v %v", grok, ok)
+	if !ok || grok.InputPerMTok == nil || *grok.InputPerMTok != 2 {
+		t.Fatalf("existing grok-4.6 not replaced: %+v %v", grok, ok)
 	}
-	if _, ok := cfg.ModelRateFor("composer-2.5"); ok {
-		t.Fatal("cursor model must stay unpriced")
+	comp, ok := cfg.ModelRateFor("composer-2.5")
+	if !ok || comp.InputPerMTok == nil || *comp.InputPerMTok != 0.5 {
+		t.Fatalf("cursor composer not filled: %+v %v", comp, ok)
 	}
 
-	// A fetch failure must not wipe rates already saved.
 	fail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "nope", http.StatusBadGateway)
 	}))
 	t.Cleanup(fail.Close)
-	srv.openRouterHTTP = fail.Client()
-	srv.openRouterURL = fail.URL
-	bad := httptest.NewRequest(http.MethodPost, "/config/model-rates/openrouter", nil)
+	srv.officialRateHTTP = fail.Client()
+	srv.officialRateURLs = config.OfficialRateURLs{XAI: fail.URL, Anthropic: fail.URL, Cursor: fail.URL}
+	bad := httptest.NewRequest(http.MethodPost, "/config/model-rates/official", nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, bad)
 	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
