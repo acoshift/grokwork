@@ -40,21 +40,24 @@ func toDriveEntries(in []gdrive.Entry) []Entry {
 	for i, e := range in {
 		out[i] = Entry{
 			Name: e.Name, IsDir: e.IsDir, Size: e.Size,
-			Updated: e.Updated, ContentType: e.ContentType,
+			Updated: e.Updated, ContentType: e.ContentType, OpenURL: e.OpenURL,
 		}
 	}
 	return out
 }
 
-func (b GDrive) List(ctx context.Context, t Target, subPath string) ([]Entry, error) {
+func (b GDrive) List(ctx context.Context, t Target, subPath string) (Listing, error) {
 	if err := b.check(t); err != nil {
-		return nil, err
+		return Listing{}, err
 	}
 	if err := ValidateObjectPath(subPath); err != nil {
-		return nil, err
+		return Listing{}, err
 	}
-	es, err := b.Client.List(ctx, b.driveTarget(t), subPath)
-	return toDriveEntries(es), err
+	native, err := b.Client.List(ctx, b.driveTarget(t), subPath)
+	if err != nil {
+		return Listing{}, err
+	}
+	return Listing{FolderOpenURL: native.FolderOpenURL, Entries: toDriveEntries(native.Entries)}, nil
 }
 
 func (b GDrive) Describe(ctx context.Context, t Target, object string) (Entry, bool, error) {
@@ -70,7 +73,7 @@ func (b GDrive) Describe(ctx context.Context, t Target, object string) (Entry, b
 	}
 	return Entry{
 		Name: e.Name, IsDir: e.IsDir, Size: e.Size,
-		Updated: e.Updated, ContentType: e.ContentType,
+		Updated: e.Updated, ContentType: e.ContentType, OpenURL: e.OpenURL,
 	}, true, nil
 }
 

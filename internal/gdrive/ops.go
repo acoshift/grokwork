@@ -22,6 +22,15 @@ type Entry struct {
 	Size        int64
 	Updated     time.Time
 	ContentType string
+	// OpenURL is a Google Drive / Docs browser link for this item. Empty when
+	// the row has no Drive id (should not happen for a real list row).
+	OpenURL string
+}
+
+// Listing is one folder level: the folder being listed plus its children.
+type Listing struct {
+	FolderOpenURL string
+	Entries       []Entry
 }
 
 // Target is the resolved Drive identity for one operation.
@@ -34,33 +43,32 @@ type Target struct {
 // List returns one level of children under subPath (relative to effective root).
 // At most listPageSize entries are returned; if more existed, the remainder is dropped
 // (caller may treat len==200 as potentially clipped — web layer clips at 200).
-func (c *Client) List(ctx context.Context, t Target, subPath string) ([]Entry, error) {
+// FolderOpenURL is the Google URL for the folder actually listed (isolation
+// child when inherited; nested path folder when subPath is set).
+func (c *Client) List(ctx context.Context, t Target, subPath string) (Listing, error) {
 	root, err := c.ensureEffectiveRoot(ctx, t.FolderID, t.IsolationSegment)
 	if err != nil {
-		return nil, err
+		return Listing{}, err
 	}
 	parentID, err := c.resolveDirPath(ctx, root, subPath)
 	if err != nil {
-		return nil, err
+		return Listing{}, err
 	}
 	files, err := c.listChildren(ctx, parentID, "", false, "folder,name")
 	if err != nil {
-		return nil, err
+		return Listing{}, err
 	}
 	if len(files) > listPageSize {
 		files = files[:listPageSize]
 	}
 	out := make([]Entry, 0, len(files))
 	for _, f := range files {
-		out = append(out, Entry{
-			Name:        f.Name,
-			IsDir:       f.isFolder(),
-			Size:        f.sizeInt(),
-			Updated:     f.modified(),
-			ContentType: f.MimeType,
-		})
+		out = append(out, f.entry())
 	}
-	return out, nil
+	return Listing{
+		FolderOpenURL: OpenURL(parentID, folderMIME, ""),
+		Entries:       out,
+	}, nil
 }
 
 // Describe returns metadata for a single non-folder object path.
@@ -92,14 +100,7 @@ func (c *Client) Describe(ctx context.Context, t Target, object string) (Entry, 
 	case 0:
 		return Entry{}, false, nil
 	case 1:
-		f := files[0]
-		return Entry{
-			Name:        f.Name,
-			IsDir:       false,
-			Size:        f.sizeInt(),
-			Updated:     f.modified(),
-			ContentType: f.MimeType,
-		}, true, nil
+		return files[0].entry(), true, nil
 	default:
 		return Entry{}, false, fmt.Errorf("drive: ambiguous name %q under parent", leaf)
 	}

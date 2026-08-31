@@ -1,6 +1,15 @@
 package filestore
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/acoshift/grokwork/internal/gdrive"
+)
 
 func TestValidateObjectPath(t *testing.T) {
 	if err := ValidateObjectPath(""); err != nil {
@@ -59,3 +68,64 @@ func TestSanitizeFilename(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestGDriveListSurfacesOpenURL(t *testing.T) {
+	var listURL string
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Header.Get("Authorization") == "" {
+			t.Fatal("missing bearer")
+		}
+		if r.URL.Path == "/drive/v3/files" {
+			listURL = r.URL.String()
+			body, _ := json.Marshal(map[string]any{
+				"files": []map[string]string{
+					{"id": "f1", "name": "readme.txt", "mimeType": "text/plain", "size": "12"},
+					{"id": "d1", "name": "docs", "mimeType": "application/vnd.google-apps.folder"},
+				},
+			})
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(string(body))),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+			}, nil
+		}
+		t.Fatalf("unexpected %s %s", r.Method, r.URL)
+		return nil, nil
+	})
+	b := GDrive{Client: &gdrive.Client{
+		Auth:    staticToken("t"),
+		HTTP:    &http.Client{Transport: rt},
+		APIBase: "https://www.googleapis.com/drive/v3",
+	}}
+	listing, err := b.List(t.Context(), Target{Backend: BackendGDrive, FolderID: "root1"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listing.FolderOpenURL != "https://drive.google.com/drive/folders/root1" {
+		t.Fatalf("FolderOpenURL = %q", listing.FolderOpenURL)
+	}
+	if len(listing.Entries) != 2 {
+		t.Fatalf("len = %d", len(listing.Entries))
+	}
+	byName := map[string]Entry{}
+	for _, e := range listing.Entries {
+		byName[e.Name] = e
+	}
+	if got := byName["readme.txt"].OpenURL; got != "https://drive.google.com/file/d/f1/view" {
+		t.Fatalf("readme OpenURL = %q", got)
+	}
+	if got := byName["docs"].OpenURL; got != "https://drive.google.com/drive/folders/d1" {
+		t.Fatalf("docs OpenURL = %q", got)
+	}
+	if !strings.Contains(listURL, "id") || !strings.Contains(listURL, "webViewLink") {
+		t.Fatalf("list request missing id/webViewLink: %s", listURL)
+	}
+}
+
+type staticToken string
+
+func (s staticToken) Token(context.Context) (string, error) { return string(s), nil }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

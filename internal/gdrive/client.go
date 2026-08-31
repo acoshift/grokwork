@@ -2,6 +2,7 @@ package gdrive
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -77,6 +78,73 @@ type fileMeta struct {
 	Size         string `json:"size"` // Drive returns size as string
 	ModifiedTime string `json:"modifiedTime"`
 	CreatedTime  string `json:"createdTime"`
+	WebViewLink  string `json:"webViewLink,omitempty"`
+}
+
+// listFileFields is the files() projection for list/get. id + webViewLink
+// are what OpenURL needs; the rest feed listing rows.
+const listFileFields = "id,name,mimeType,size,modifiedTime,createdTime,webViewLink"
+
+// OpenURL is the browser URL for a Drive item. Prefer webViewLink when it is a
+// Google https URL; otherwise build from id and mime type.
+func OpenURL(id, mimeType, webViewLink string) string {
+	return cmp.Or(sanitizeDriveOpenURL(webViewLink), driveOpenURLFromID(id, mimeType))
+}
+
+func sanitizeDriveOpenURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" {
+		return ""
+	}
+	switch strings.ToLower(u.Hostname()) {
+	case "drive.google.com", "docs.google.com":
+		return raw
+	default:
+		return ""
+	}
+}
+
+func driveOpenURLFromID(id, mimeType string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+	escaped := url.PathEscape(id)
+	m := strings.ToLower(strings.TrimSpace(mimeType))
+	if i := strings.IndexByte(m, ';'); i >= 0 {
+		m = strings.TrimSpace(m[:i])
+	}
+	switch m {
+	case folderMIME:
+		return "https://drive.google.com/drive/folders/" + escaped
+	case "application/vnd.google-apps.document":
+		return "https://docs.google.com/document/d/" + escaped + "/edit"
+	case "application/vnd.google-apps.spreadsheet":
+		return "https://docs.google.com/spreadsheets/d/" + escaped + "/edit"
+	case "application/vnd.google-apps.presentation":
+		return "https://docs.google.com/presentation/d/" + escaped + "/edit"
+	case "application/vnd.google-apps.form":
+		return "https://docs.google.com/forms/d/" + escaped + "/edit"
+	case "application/vnd.google-apps.drawing":
+		return "https://docs.google.com/drawings/d/" + escaped + "/edit"
+	default:
+		return "https://drive.google.com/file/d/" + escaped + "/view"
+	}
+}
+
+func (f fileMeta) entry() Entry {
+	return Entry{
+		Name:        f.Name,
+		IsDir:       f.isFolder(),
+		Size:        f.sizeInt(),
+		Updated:     f.modified(),
+		ContentType: f.MimeType,
+		OpenURL:     OpenURL(f.ID, f.MimeType, f.WebViewLink),
+	}
 }
 
 func (f fileMeta) isFolder() bool {
@@ -280,7 +348,7 @@ func (c *Client) listChildren(ctx context.Context, parentID, nameFilter string, 
 		params := url.Values{}
 		params.Set("q", q)
 		params.Set("pageSize", fmt.Sprintf("%d", listPageSize))
-		params.Set("fields", "nextPageToken,files(id,name,mimeType,size,modifiedTime,createdTime)")
+		params.Set("fields", "nextPageToken,files("+listFileFields+")")
 		params.Set("supportsAllDrives", "true")
 		params.Set("includeItemsFromAllDrives", "true")
 		params.Set("orderBy", orderBy)
@@ -410,7 +478,7 @@ func (c *Client) deleteByID(ctx context.Context, id string) error {
 
 func (c *Client) getMeta(ctx context.Context, id string) (fileMeta, error) {
 	params := url.Values{}
-	params.Set("fields", "id,name,mimeType,size,modifiedTime,createdTime")
+	params.Set("fields", listFileFields)
 	params.Set("supportsAllDrives", "true")
 	u := c.apiBase() + "/files/" + url.PathEscape(id) + "?" + params.Encode()
 	var out fileMeta

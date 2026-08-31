@@ -36,16 +36,16 @@ func toEntries(in []gcs.Entry) []Entry {
 	return out
 }
 
-func (b GCS) List(ctx context.Context, t Target, subPath string) ([]Entry, error) {
+func (b GCS) List(ctx context.Context, t Target, subPath string) (Listing, error) {
 	if strings.TrimSpace(t.Backend) != "" && t.Backend != BackendGCS {
-		return nil, fmt.Errorf("filestore: gcs backend got target backend %q", t.Backend)
+		return Listing{}, fmt.Errorf("filestore: gcs backend got target backend %q", t.Backend)
 	}
 	native, err := NativePath(subPath)
 	if err != nil {
-		return nil, err
+		return Listing{}, err
 	}
 	es, err := gcs.List(ctx, b.Run, b.gcsTarget(t), native)
-	return toEntries(es), err
+	return Listing{Entries: toEntries(es)}, err
 }
 
 func (b GCS) Describe(ctx context.Context, t Target, object string) (Entry, bool, error) {

@@ -55,6 +55,8 @@ type fileRow struct {
 	// KindLabel is the short human type shown in the viewer meta line
 	// ("PNG image", "PDF", "Google Sheet").
 	KindLabel string
+	// OpenURL is a Google Drive / Docs browser link. Empty for GCS rows.
+	OpenURL string
 }
 
 // filesPreview is the in-app lightbox opened from ?preview= on the Files page.
@@ -221,13 +223,15 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 		}
 		return s.viewPage(ctx, "files", d)
 	}
-	entries, err := be.List(ctx.Context(), tgt, subPath)
+	listing, err := be.List(ctx.Context(), tgt, subPath)
 	if err != nil {
 		if d.Error == "" {
 			d.Error = err.Error()
 		}
 		return s.viewPage(ctx, "files", d)
 	}
+	d.FilesFolderOpenURL = listing.FolderOpenURL
+	entries := listing.Entries
 	d.FilesTotal = len(entries)
 	if len(entries) > filesListCap {
 		entries = entries[:filesListCap]
@@ -242,6 +246,7 @@ func (s *Server) filesPage(ctx *hime.Context) error {
 			SizeHuman:    formatFileBytes(e.Size),
 			ContentType:  e.ContentType,
 			NativeGoogle: isGoogleNativeMIME(e.ContentType),
+			OpenURL:      e.OpenURL,
 		}
 		if row.NativeGoogle && e.Size == 0 {
 			row.SizeHuman = ""

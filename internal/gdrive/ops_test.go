@@ -440,12 +440,15 @@ func TestListFolderNameContainingSlash(t *testing.T) {
 	f.addFile("d1", "f1", fileMeta{Name: "inside.txt", MimeType: "text/plain", Size: "1"}, []byte("x"))
 	c := testClient(f)
 	// Encoded hop: one folder whose name is a/b.
-	entries, err := c.List(t.Context(), Target{FolderID: "root1"}, "a%2Fb")
+	listing, err := c.List(t.Context(), Target{FolderID: "root1"}, "a%2Fb")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name != "inside.txt" {
-		t.Fatalf("encoded slash folder entries = %+v", entries)
+	if len(listing.Entries) != 1 || listing.Entries[0].Name != "inside.txt" {
+		t.Fatalf("encoded slash folder entries = %+v", listing.Entries)
+	}
+	if !strings.Contains(listing.FolderOpenURL, "d1") {
+		t.Fatalf("slash folder OpenURL = %q, want nested folder id", listing.FolderOpenURL)
 	}
 	// Naive split would look for folder "a" then "b" and miss.
 	_, err = c.List(t.Context(), Target{FolderID: "root1"}, "a/b")
@@ -454,17 +457,64 @@ func TestListFolderNameContainingSlash(t *testing.T) {
 	}
 }
 
+func TestOpenURL(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		id, mime, view, want string
+	}{
+		{"root1", folderMIME, "", "https://drive.google.com/drive/folders/root1"},
+		{"f1", "text/plain", "", "https://drive.google.com/file/d/f1/view"},
+		{"doc1", "application/vnd.google-apps.document", "", "https://docs.google.com/document/d/doc1/edit"},
+		{"sheet1", "application/vnd.google-apps.spreadsheet", "", "https://docs.google.com/spreadsheets/d/sheet1/edit"},
+		{"form1", "application/vnd.google-apps.form", "", "https://docs.google.com/forms/d/form1/edit"},
+		{"f1", "text/plain", "https://drive.google.com/file/d/f1/view?usp=drivesdk", "https://drive.google.com/file/d/f1/view?usp=drivesdk"},
+		{"f1", "text/plain", "javascript:alert(1)", "https://drive.google.com/file/d/f1/view"},
+		{"f1", "text/plain", "https://evil.example/steal", "https://drive.google.com/file/d/f1/view"},
+		{"", "text/plain", "", ""},
+	}
+	for _, tc := range cases {
+		if got := OpenURL(tc.id, tc.mime, tc.view); got != tc.want {
+			t.Errorf("OpenURL(%q, %q, %q)=%q want %q", tc.id, tc.mime, tc.view, got, tc.want)
+		}
+	}
+}
+
 func TestListOneLevel(t *testing.T) {
 	f := newFakeDrive()
 	f.addFile("root1", "f1", fileMeta{Name: "readme.txt", MimeType: "text/plain", Size: "12", ModifiedTime: "2026-08-01T12:00:00.000Z"}, []byte("hello world!"))
 	f.addFile("root1", "d1", fileMeta{Name: "docs", MimeType: folderMIME, CreatedTime: "2026-01-01T00:00:00Z"}, nil)
 	c := testClient(f)
-	entries, err := c.List(t.Context(), Target{FolderID: "root1"}, "")
+	listing, err := c.List(t.Context(), Target{FolderID: "root1"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 2 {
-		t.Fatalf("len = %d", len(entries))
+	if len(listing.Entries) != 2 {
+		t.Fatalf("len = %d", len(listing.Entries))
+	}
+	if listing.FolderOpenURL != "https://drive.google.com/drive/folders/root1" {
+		t.Fatalf("FolderOpenURL = %q", listing.FolderOpenURL)
+	}
+	byName := map[string]Entry{}
+	for _, e := range listing.Entries {
+		byName[e.Name] = e
+	}
+	if got := byName["readme.txt"].OpenURL; got != "https://drive.google.com/file/d/f1/view" {
+		t.Fatalf("readme OpenURL = %q", got)
+	}
+	if got := byName["docs"].OpenURL; got != "https://drive.google.com/drive/folders/d1" {
+		t.Fatalf("docs OpenURL = %q", got)
+	}
+	// Nested path must open the child folder, not the configured parent.
+	f.addFile("d1", "f2", fileMeta{Name: "inside.txt", MimeType: "text/plain", Size: "1"}, []byte("x"))
+	nested, err := c.List(t.Context(), Target{FolderID: "root1"}, "docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nested.FolderOpenURL != "https://drive.google.com/drive/folders/d1" {
+		t.Fatalf("nested FolderOpenURL = %q", nested.FolderOpenURL)
+	}
+	if len(nested.Entries) != 1 || nested.Entries[0].OpenURL != "https://drive.google.com/file/d/f2/view" {
+		t.Fatalf("nested entries = %+v", nested.Entries)
 	}
 	// Contract: list query params
 	f.mu.Lock()
@@ -491,6 +541,26 @@ func TestListOneLevel(t *testing.T) {
 	}
 	if q.Get("orderBy") != "folder,name" {
 		t.Fatalf("orderBy = %q", q.Get("orderBy"))
+	}
+	fields := q.Get("fields")
+	if !strings.Contains(fields, "id") || !strings.Contains(fields, "webViewLink") {
+		t.Fatalf("fields = %q, want id and webViewLink", fields)
+	}
+}
+
+func TestListUsesWebViewLink(t *testing.T) {
+	f := newFakeDrive()
+	f.addFile("root1", "form1", fileMeta{
+		Name:        "Intake",
+		MimeType:    "application/vnd.google-apps.form",
+		WebViewLink: "https://docs.google.com/forms/d/form1/viewform",
+	}, nil)
+	listing, err := testClient(f).List(t.Context(), Target{FolderID: "root1"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing.Entries) != 1 || listing.Entries[0].OpenURL != "https://docs.google.com/forms/d/form1/viewform" {
+		t.Fatalf("entries = %+v", listing.Entries)
 	}
 }
 
@@ -757,12 +827,12 @@ func TestUploadCreatesIntermediateFolders(t *testing.T) {
 		t.Fatalf("want parent missing, got %v", err)
 	}
 	// Nested list works after create
-	entries, err := c.List(t.Context(), Target{FolderID: "root1"}, "docs/a/b")
+	listing, err := c.List(t.Context(), Target{FolderID: "root1"}, "docs/a/b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name != "file.bin" {
-		t.Fatalf("entries = %+v", entries)
+	if len(listing.Entries) != 1 || listing.Entries[0].Name != "file.bin" {
+		t.Fatalf("entries = %+v", listing.Entries)
 	}
 }
 
@@ -878,12 +948,15 @@ func TestIsolationUsedOnList(t *testing.T) {
 	// Also a file on the parent root that must NOT appear
 	f.addFile("root1", "f-root", fileMeta{Name: "company-secret.txt", MimeType: "text/plain", Size: "1"}, []byte("z"))
 	c := testClient(f)
-	entries, err := c.List(t.Context(), Target{FolderID: "root1", IsolationSegment: "api"}, "")
+	listing, err := c.List(t.Context(), Target{FolderID: "root1", IsolationSegment: "api"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name != "only-in-iso.txt" {
-		t.Fatalf("entries = %+v", entries)
+	if len(listing.Entries) != 1 || listing.Entries[0].Name != "only-in-iso.txt" {
+		t.Fatalf("entries = %+v", listing.Entries)
+	}
+	if listing.FolderOpenURL != "https://drive.google.com/drive/folders/iso-api" {
+		t.Fatalf("isolation FolderOpenURL = %q", listing.FolderOpenURL)
 	}
 }
 
@@ -897,6 +970,9 @@ func TestDescribeExistsSingleFile(t *testing.T) {
 	}
 	if e.Name != "a.txt" || e.Size != 3 {
 		t.Fatalf("entry = %+v", e)
+	}
+	if e.OpenURL != "https://drive.google.com/file/d/f1/view" {
+		t.Fatalf("OpenURL = %q", e.OpenURL)
 	}
 	_, ok, err = c.Describe(t.Context(), Target{FolderID: "root1"}, "missing.txt")
 	if err != nil || ok {

@@ -2269,6 +2269,12 @@
       overflow-wrap: anywhere;
     }
     .files-loc h2 .fico { width: 1.2rem; height: 1.2rem; }
+    .files-head-aside {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem 0.75rem;
+    }
     .files-count {
       margin: 0;
       font-size: 0.8rem;
@@ -2330,6 +2336,12 @@
     .files-mrow-hit:focus-visible { outline: 2px solid var(--focus-border); outline-offset: -2px; }
     .files-mrow:has(.files-mrow-hit):hover { background: var(--surface-l1); }
     .files-mrows .m-row-act .files-del { width: 2rem; height: 2rem; }
+    .files-mrows a.m-row-act.btn-compact {
+      font-size: 0.72rem;
+      padding: 0.22rem 0.5rem;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
     /* Tap affordance: folders get a.m-row's chevron; a file row is a <div>
        (its hit target is the overlay link), so it draws its own — chevron
        for "opens the viewer", a down-arrow for "downloads". */

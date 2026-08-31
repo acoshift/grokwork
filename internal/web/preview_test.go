@@ -928,22 +928,22 @@ func seedPreviewFiles(t *testing.T, srv *Server, cfg *config.Config) {
 
 type previewFiles struct{}
 
-func (previewFiles) List(_ context.Context, _ filestore.Target, subPath string) ([]filestore.Entry, error) {
+func (previewFiles) List(_ context.Context, _ filestore.Target, subPath string) (filestore.Listing, error) {
 	stamp := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
 	switch strings.Trim(subPath, "/") {
 	case "":
-		return []filestore.Entry{{Name: "Docs for Customer", IsDir: true}}, nil
+		return filestore.Listing{Entries: []filestore.Entry{{Name: "Docs for Customer", IsDir: true}}}, nil
 	case "Docs for Customer":
-		return []filestore.Entry{{Name: "CR AMB", IsDir: true}}, nil
+		return filestore.Listing{Entries: []filestore.Entry{{Name: "CR AMB", IsDir: true}}}, nil
 	case "Docs for Customer/CR AMB":
-		return []filestore.Entry{
+		return filestore.Listing{Entries: []filestore.Entry{
 			{Name: "handoff.pdf", Size: int64(len(previewPDF)), Updated: stamp, ContentType: "application/pdf"},
 			{Name: "photo.png", Size: int64(len(previewPNG)), Updated: stamp, ContentType: "image/png"},
 			{Name: "notes [v2].txt", Size: int64(len(previewNotes)), Updated: stamp, ContentType: "text/plain"},
 			{Name: "Sheet", Size: 0, Updated: stamp, ContentType: "application/vnd.google-apps.spreadsheet"},
-		}, nil
+		}}, nil
 	default:
-		return nil, nil
+		return filestore.Listing{}, nil
 	}
 }
 

@@ -142,13 +142,18 @@
       <h2>{{template "fileIcon" "folder"}}All files</h2>
       {{end}}
     </div>
-    <p class="files-count">
-      {{if .FilesRows}}
-        {{if .FilesDirCount}}{{.FilesDirCount}} folder{{if ne .FilesDirCount 1}}s{{end}}{{end}}
-        {{if and .FilesDirCount .FilesFileCount}}<span class="crumb-sep">·</span>{{end}}
-        {{if .FilesFileCount}}{{.FilesFileCount}} file{{if ne .FilesFileCount 1}}s{{end}} <span class="muted-soft">({{.FilesBytesHuman}})</span>{{end}}
-      {{else if not .Error}}Empty{{end}}
-    </p>
+    <div class="files-head-aside">
+      {{if .FilesFolderOpenURL}}
+      <a class="btn-secondary btn-compact" href="{{.FilesFolderOpenURL}}" target="_blank" rel="noopener">Open in Drive</a>
+      {{end}}
+      <p class="files-count">
+        {{if .FilesRows}}
+          {{if .FilesDirCount}}{{.FilesDirCount}} folder{{if ne .FilesDirCount 1}}s{{end}}{{end}}
+          {{if and .FilesDirCount .FilesFileCount}}<span class="crumb-sep">·</span>{{end}}
+          {{if .FilesFileCount}}{{.FilesFileCount}} file{{if ne .FilesFileCount 1}}s{{end}} <span class="muted-soft">({{.FilesBytesHuman}})</span>{{end}}
+        {{else if not .Error}}Empty{{end}}
+      </p>
+    </div>
   </div>
   {{if .FilesClipped}}
   <p class="sub files-clip">Showing {{len .FilesRows}} of {{.FilesTotal}} entries (capped at 200).</p>
@@ -157,13 +162,18 @@
   <div class="m-rows files-mrows">
     {{range .FilesRows}}
       {{if .IsDir}}
-      <a class="m-row" href="/projects/{{$.Project}}/files?path={{urlquery .Path}}">
+      <div class="m-row files-mrow">
+        <a class="files-mrow-hit" href="/projects/{{$.Project}}/files?path={{urlquery .Path}}" aria-label="Open folder {{.Name}}"></a>
         {{template "fileIcon" .Icon}}
         <span class="m-row-main">
           <span class="m-row-t mono">{{.Name}}/</span>
           <span class="m-row-s">Folder{{if .UpdatedText}} · {{.UpdatedText}}{{end}}</span>
         </span>
-      </a>
+        <span class="files-mrow-chev" aria-hidden="true"></span>
+        {{if .OpenURL}}
+        <a class="m-row-act btn-secondary btn-compact" href="{{.OpenURL}}" target="_blank" rel="noopener">Open in Drive</a>
+        {{end}}
+      </div>
       {{else}}
       <div class="m-row files-mrow">
         {{if .PreviewKind}}
@@ -182,6 +192,9 @@
           <span class="m-row-s">{{if and .NativeGoogle (not .Downloadable)}}Cannot download{{else}}{{.MetaLine}}{{end}}</span>
         </span>
         {{if .PreviewKind}}<span class="files-mrow-chev" aria-hidden="true"></span>{{else if .Downloadable}}<span class="files-mrow-dl" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M12 4.5V15M7.5 10.5 12 15l4.5-4.5M4.5 16v1.5A2 2 0 0 0 6.5 19.5h11a2 2 0 0 0 2-2V16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{{end}}
+        {{if .OpenURL}}
+        <a class="m-row-act btn-secondary btn-compact" href="{{.OpenURL}}" target="_blank" rel="noopener">Open in Drive</a>
+        {{end}}
         {{if $.CanStorageWrite}}
         <form class="m-row-act" method="post" action="/projects/{{$.Project}}/files/delete"
               data-confirm="Delete {{.Name}}? This cannot be undone."
@@ -232,6 +245,9 @@
         <td class="mono muted files-size">{{if or .IsDir (not .SizeHuman)}}—{{else}}{{.SizeHuman}}{{end}}</td>
         <td class="mono muted">{{if .UpdatedText}}{{.UpdatedText}}{{else}}—{{end}}</td>
         <td class="row-actions files-actions">
+          {{if .OpenURL}}
+            <a class="btn-secondary btn-compact" href="{{.OpenURL}}" target="_blank" rel="noopener">Open in Drive</a>
+          {{end}}
           {{if .PreviewKind}}
             <a class="btn-secondary btn-compact" href="/projects/{{$.Project}}/files?{{if $.FilesPath}}path={{urlquery $.FilesPath}}&amp;{{end}}preview={{urlquery .Object}}"
                hx-boost="false" data-preview="{{.PreviewKind}}"

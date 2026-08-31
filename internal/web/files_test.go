@@ -89,13 +89,31 @@ func postFilesMultipart(t *testing.T, srv *Server, path, sid, csrf string, field
 	return w
 }
 
+func filesPageBody(t *testing.T, body string) string {
+	t.Helper()
+	i := strings.Index(body, `id="page-project-files"`)
+	if i < 0 {
+		t.Fatal("page marker missing")
+	}
+	return body[i:]
+}
+
+func assertOpenInDrive(t *testing.T, body, href string) {
+	t.Helper()
+	want := `href="` + href + `" target="_blank" rel="noopener"`
+	if !strings.Contains(body, want) {
+		t.Fatalf("missing Open in Drive link %q", want)
+	}
+	if !strings.Contains(body, ">Open in Drive</a>") {
+		t.Fatal(`missing label "Open in Drive"`)
+	}
+}
+
 func TestFilesPageListsBucket(t *testing.T) {
 	srv, _, calls := storageServer(t)
 	sid, _ := adminLogin(t, srv)
 	body := getAuthed(t, srv, "/projects/proj/files", sid)
-	if !strings.Contains(body, `id="page-project-files"`) {
-		t.Fatal("page marker missing")
-	}
+	body = filesPageBody(t, body)
 	for _, want := range []string{"report.pdf", "2.0 KiB", "sub/", "test-bucket"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q", want)
@@ -104,6 +122,9 @@ func TestFilesPageListsBucket(t *testing.T) {
 	// Admin (unmapped → builder) may write: upload form renders.
 	if !strings.Contains(body, `id="files-upload"`) {
 		t.Fatal("upload form missing for builder-class viewer")
+	}
+	if strings.Contains(body, "Open in Drive") {
+		t.Fatal("GCS listing must not render Open in Drive")
 	}
 	if len(*calls) != 1 || !strings.Contains(strings.Join((*calls)[0], " "), "gs://test-bucket/pre/") {
 		t.Fatalf("ls call = %v", *calls)
@@ -550,14 +571,16 @@ type fakeFilesBackend struct {
 	describeEntry  filestore.Entry
 	describeOK     bool
 	downloadBody   []byte
+	// folderOpenURL is the current-folder Google URL List returns (Drive only).
+	folderOpenURL string
 }
 
-func (f *fakeFilesBackend) List(_ context.Context, t filestore.Target, subPath string) ([]filestore.Entry, error) {
+func (f *fakeFilesBackend) List(_ context.Context, t filestore.Target, subPath string) (filestore.Listing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.lists = append(f.lists, t)
 	f.listPaths = append(f.listPaths, subPath)
-	return slices.Clone(f.listEntries), nil
+	return filestore.Listing{FolderOpenURL: f.folderOpenURL, Entries: slices.Clone(f.listEntries)}, nil
 }
 func (f *fakeFilesBackend) Describe(_ context.Context, _ filestore.Target, object string) (filestore.Entry, bool, error) {
 	f.mu.Lock()
@@ -602,9 +625,10 @@ func driveStorageServer(t *testing.T) (*Server, *config.Config, *fakeFilesBacken
 		t.Fatal(err)
 	}
 	fake := &fakeFilesBackend{
+		folderOpenURL: "https://drive.google.com/drive/folders/0ABcdEfghIjKlMnOp",
 		listEntries: []filestore.Entry{
-			{Name: "brief.pdf", Size: 4096, Updated: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)},
-			{Name: "docs", IsDir: true},
+			{Name: "brief.pdf", Size: 4096, Updated: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC), OpenURL: "https://drive.google.com/file/d/fileBrief/view"},
+			{Name: "docs", IsDir: true, OpenURL: "https://drive.google.com/drive/folders/folderDocs"},
 		},
 	}
 	srv.filesBackendFn = func(t filestore.Target) (filestore.Backend, error) {
@@ -644,15 +668,15 @@ func TestFilesPageSlashFolderHrefAndList(t *testing.T) {
 func TestFilesPageListsDrive(t *testing.T) {
 	srv, _, fake := driveStorageServer(t)
 	sid, _ := adminLogin(t, srv)
-	body := getAuthed(t, srv, "/projects/proj/files", sid)
-	if !strings.Contains(body, `id="page-project-files"`) {
-		t.Fatal("page marker missing")
-	}
+	body := filesPageBody(t, getAuthed(t, srv, "/projects/proj/files", sid))
 	for _, want := range []string{"brief.pdf", "4.0 KiB", "docs/", "0ABcdEfghIjKlMnOp", "Drive"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q", want)
 		}
 	}
+	assertOpenInDrive(t, body, "https://drive.google.com/drive/folders/0ABcdEfghIjKlMnOp")
+	assertOpenInDrive(t, body, "https://drive.google.com/file/d/fileBrief/view")
+	assertOpenInDrive(t, body, "https://drive.google.com/drive/folders/folderDocs")
 	if len(fake.lists) != 1 {
 		t.Fatalf("list calls = %d", len(fake.lists))
 	}
@@ -671,9 +695,12 @@ func TestFilesPageDisabledNoListDrive(t *testing.T) {
 	}
 	fake.lists = nil
 	sid, _ := adminLogin(t, srv)
-	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	body := filesPageBody(t, getAuthed(t, srv, "/projects/proj/files", sid))
 	if !strings.Contains(body, "Storage disabled for this project") {
 		t.Fatal("disabled card missing")
+	}
+	if strings.Contains(body, "Open in Drive") {
+		t.Fatal("disabled Files page must not render Open in Drive")
 	}
 	if len(fake.lists) != 0 {
 		t.Fatalf("disabled must not List: %d calls", len(fake.lists))
@@ -689,10 +716,15 @@ func TestFilesPageInheritsDriveIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake.lists = nil
+	fake.folderOpenURL = "https://drive.google.com/drive/folders/isoChildProj"
 	sid, _ := adminLogin(t, srv)
-	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	body := filesPageBody(t, getAuthed(t, srv, "/projects/proj/files", sid))
 	if !strings.Contains(body, "0AGlobalRootFolder") {
 		t.Fatal("inherited page must show global folder id")
+	}
+	assertOpenInDrive(t, body, "https://drive.google.com/drive/folders/isoChildProj")
+	if strings.Contains(body, `href="https://drive.google.com/drive/folders/0AGlobalRootFolder"`) {
+		t.Fatal("inherited listing must Open-in-Drive the isolation child, not the configured parent")
 	}
 	if !strings.Contains(body, "via global default") {
 		t.Fatal("inherited chrome missing")
@@ -719,9 +751,12 @@ func TestFilesPageNoBucketExplainer(t *testing.T) {
 		t.Fatal(err)
 	}
 	sid, _ := adminLogin(t, srv)
-	body := getAuthed(t, srv, "/projects/proj/files", sid)
+	body := filesPageBody(t, getAuthed(t, srv, "/projects/proj/files", sid))
 	if !strings.Contains(body, "No file storage linked") {
 		t.Fatal("unlinked project must render the explainer card")
+	}
+	if strings.Contains(body, "Open in Drive") {
+		t.Fatal("unconfigured Files page must not render Open in Drive")
 	}
 	if !strings.Contains(body, "/config/projects/proj/integrations") {
 		t.Fatal("admin viewer should see the Integrations settings link")
@@ -889,16 +924,13 @@ func TestFilePreviewKind(t *testing.T) {
 func TestFilesPageDownloadAndPreviewMarkup(t *testing.T) {
 	srv, _, fake := driveStorageServer(t)
 	fake.listEntries = []filestore.Entry{
-		{Name: "Report [final].pdf", Size: 4096, ContentType: "application/pdf"},
-		{Name: "Sheet", Size: 0, ContentType: "application/vnd.google-apps.spreadsheet"},
-		{Name: "Intake", Size: 0, ContentType: "application/vnd.google-apps.form"},
-		{Name: "notes [v2].txt", Size: 12, ContentType: "text/plain"},
+		{Name: "Report [final].pdf", Size: 4096, ContentType: "application/pdf", OpenURL: "https://drive.google.com/file/d/fileReport/view"},
+		{Name: "Sheet", Size: 0, ContentType: "application/vnd.google-apps.spreadsheet", OpenURL: "https://docs.google.com/spreadsheets/d/fileSheet/edit"},
+		{Name: "Intake", Size: 0, ContentType: "application/vnd.google-apps.form", OpenURL: "https://docs.google.com/forms/d/fileIntake/edit"},
+		{Name: "notes [v2].txt", Size: 12, ContentType: "text/plain", OpenURL: "https://drive.google.com/file/d/fileNotes/view"},
 	}
 	sid, _ := adminLogin(t, srv)
-	body := getAuthed(t, srv, "/projects/proj/files", sid)
-	if i := strings.Index(body, `id="page-project-files"`); i >= 0 {
-		body = body[i:]
-	}
+	body := filesPageBody(t, getAuthed(t, srv, "/projects/proj/files", sid))
 	for _, want := range []string{
 		`hx-boost="false"`,
 		// urlquery emits + for space; html/template then writes &#43; in href.
@@ -926,6 +958,24 @@ func TestFilesPageDownloadAndPreviewMarkup(t *testing.T) {
 	}
 	if strings.Contains(body, "export as PDF to download") {
 		t.Fatal("exportable native must not keep the old cannot-download note")
+	}
+	assertOpenInDrive(t, body, "https://docs.google.com/forms/d/fileIntake/edit")
+	assertOpenInDrive(t, body, "https://docs.google.com/spreadsheets/d/fileSheet/edit")
+	assertOpenInDrive(t, body, "https://drive.google.com/file/d/fileReport/view")
+}
+
+func TestFilesPageNestedFolderOpenInDrive(t *testing.T) {
+	srv, _, fake := driveStorageServer(t)
+	fake.folderOpenURL = "https://drive.google.com/drive/folders/nestedDocsFolder"
+	fake.listEntries = []filestore.Entry{
+		{Name: "notes.txt", Size: 12, ContentType: "text/plain", OpenURL: "https://drive.google.com/file/d/fileNotes/view"},
+	}
+	sid, _ := adminLogin(t, srv)
+	body := filesPageBody(t, getAuthed(t, srv, "/projects/proj/files?path=docs", sid))
+	assertOpenInDrive(t, body, "https://drive.google.com/drive/folders/nestedDocsFolder")
+	assertOpenInDrive(t, body, "https://drive.google.com/file/d/fileNotes/view")
+	if strings.Contains(body, `href="https://drive.google.com/drive/folders/0ABcdEfghIjKlMnOp"`) {
+		t.Fatal("nested listing must not Open-in-Drive the configured parent")
 	}
 }
 
@@ -1075,6 +1125,12 @@ func TestFilesGCSNativeMimeNotExported(t *testing.T) {
 	}
 	if !strings.Contains(body, "Cannot download") {
 		t.Fatal("GCS native mime should keep the cannot-download note")
+	}
+	if i := strings.Index(body, `id="page-project-files"`); i >= 0 {
+		body = body[i:]
+	}
+	if strings.Contains(body, "Open in Drive") {
+		t.Fatal("GCS listing must not render Open in Drive")
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/projects/proj/files/download?object=Sheet", nil)

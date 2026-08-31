@@ -25,6 +25,16 @@ type Entry struct {
 	Size        int64
 	Updated     time.Time
 	ContentType string
+	// OpenURL is a Google Drive / Docs browser link. Empty for GCS.
+	OpenURL string
+}
+
+// Listing is one folder level returned by Backend.List.
+type Listing struct {
+	// FolderOpenURL is a Google Drive browser link for the folder being
+	// listed (isolation child or nested path). Empty for GCS.
+	FolderOpenURL string
+	Entries       []Entry
 }
 
 // Target is the resolved identity for one Files operation (from EffectiveStorage).
@@ -44,7 +54,7 @@ type Target struct {
 
 // Backend is the storage operations surface used by the Files page.
 type Backend interface {
-	List(ctx context.Context, t Target, subPath string) ([]Entry, error)
+	List(ctx context.Context, t Target, subPath string) (Listing, error)
 	Describe(ctx context.Context, t Target, object string) (Entry, bool, error)
 	Upload(ctx context.Context, localPath string, t Target, object string, overwrite bool) error
 	Download(ctx context.Context, t Target, object, destPath string) error

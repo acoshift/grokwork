@@ -915,9 +915,12 @@ type pageData struct {
 	FilesPath           string
 	FilesCrumbs         []fileCrumb
 	FilesRows           []fileRow
-	FilesTotal          int
-	FilesClipped        bool
-	FilesPreview        *filesPreview
+	// FilesFolderOpenURL is the Google Drive link for the folder currently
+	// listed (isolation child or nested ?path=). Empty on GCS / empty states.
+	FilesFolderOpenURL string
+	FilesTotal         int
+	FilesClipped       bool
+	FilesPreview       *filesPreview
 	// Listing summary for the panel header: counts over the rows shown, and
 	// the byte total of those files (folders report no size).
 	FilesDirCount   int
