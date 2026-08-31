@@ -2899,6 +2899,17 @@
     .action-body label.check { min-height: 0; font-size: 0.84rem; }
     .action-body .form-actions { margin-top: 0.1rem; }
     .action-body .form-actions button { flex: 1 1 auto; }
+    /* Note is a sibling of the form, not a flex child of it. Close-PR (note +
+       button, no fields) otherwise sits the caption on the button (~2px). */
+    .action-body > .rail-note + form { margin-top: 0.55rem; }
+    /* btn-danger is a 2rem compact chip; stretched rail CTAs need the default
+       2.5rem or Close is 8px shorter than Post comment in the same card. */
+    .action-body .form-actions button.btn-danger {
+      height: 2.5rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0 1.1rem;
+    }
     /* One-off rail CTAs (claim ownership, reset session, commit review):
        uniform compact size, stretched to the rail card width. */
     .rail-group > form .form-actions { margin-top: 0.45rem; }
