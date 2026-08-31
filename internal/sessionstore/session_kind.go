@@ -10,7 +10,8 @@ const (
 	// SessionKindImportedPR is a web-native shell created by the background
 	// importer for a GitHub PR grokwork did not open. It binds the PR so Ship
 	// and Address reuse work, but has no worktree, agent session, or owner
-	// until the first run. Auto-fix and auto-label skip these shells.
+	// until the first run — which checks out the PR head rather than minting a
+	// grokwork branch. Auto-fix and auto-label skip these shells.
 	SessionKindImportedPR = "imported_pr"
 
 	// SessionKindPRAsk is a throwaway, per-viewer Q&A on a PR detail page.

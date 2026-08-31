@@ -1161,12 +1161,17 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 	if !b.cfg.WorktreeIsolationEnabled() {
 		return cwd, "", nil
 	}
-	if !gitworktree.IsRepo(proj.Cwd) {
-		log.Printf("task: project %s is not a git repo — using main cwd", proj.Name)
-		return cwd, "", nil
+
+	primary := ""
+	if b.cfg != nil {
+		primary = b.cfg.ProjectPrimaryBranch(proj.Name)
 	}
 
 	if e, ok := b.sessions.Get(threadID); ok && e.IsPRAsk() {
+		if !gitworktree.IsRepo(proj.Cwd) {
+			log.Printf("task: project %s is not a git repo — using main cwd", proj.Name)
+			return cwd, "", nil
+		}
 		path, err := b.ensurePRAskCheckout(ctx, proj, threadID, e)
 		if err != nil {
 			log.Printf("task: pr-ask checkout failed thread=%s: %v — using project cwd", threadID, err)
@@ -1175,10 +1180,24 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		return path, "", nil
 	}
 
-	opts := b.ensureOptsForUnit(threadID)
-	if b.cfg != nil {
-		opts.PreferredPrimary = b.cfg.ProjectPrimaryBranch(proj.Name)
+	if e, ok := b.sessions.Get(threadID); ok {
+		path, br, adopted, aerr := b.ensureAdoptedPRWorktree(ctx, proj, threadID, e, primary)
+		if aerr != nil {
+			return "", "", aerr
+		}
+		if adopted {
+			log.Printf("task: adopted PR head branch=%s cwd=%s thread=%s", br, path, threadID)
+			return path, br, nil
+		}
 	}
+
+	if !gitworktree.IsRepo(proj.Cwd) {
+		log.Printf("task: project %s is not a git repo — using main cwd", proj.Name)
+		return cwd, "", nil
+	}
+
+	opts := b.ensureOptsForUnit(threadID)
+	opts.PreferredPrimary = primary
 	// Direct-to-primary sessions never track PRs for cleanup; skip gh pr list.
 	// Terminal PRs free the worktree but keep the session (PR links + closed state).
 	skipPRCleanup := false
@@ -1275,22 +1294,38 @@ func remoteWorkPromptPrefix(branch string) string {
 	return remoteWorkPromptPrefixMode(branch, false, "")
 }
 
+// remoteWorkPromptContinuePR is the contract for a session already bound to an
+// open GitHub PR: push this branch, do not open a second PR.
+func remoteWorkPromptContinuePR(branch, primary string, pr sessionstore.TrackedPR) string {
+	return remoteWorkPrompt(branch, false, primary, pr)
+}
+
 // remoteWorkPromptPrefixMode builds the remote-work contract.
 // direct=true enables No-PR / direct-to-primary wording when a managed branch is present.
 // Without a branch, direct mode falls back to PR-mode wording (ship is skipped).
 // primary is the configured project primary (empty = heuristic / main-master wording).
 func remoteWorkPromptPrefixMode(branch string, direct bool, primary string) string {
+	return remoteWorkPrompt(branch, direct, primary, sessionstore.TrackedPR{})
+}
+
+func remoteWorkPrompt(branch string, direct bool, primary string, existing sessionstore.TrackedPR) string {
 	primary = strings.TrimSpace(primary)
 	lines := []string{
 		"You are working on a shared workflow unit (Discord thread and/or web session) on a remote machine — not a local interactive session.",
 	}
 	useDirect := direct && branch != ""
+	continuePR := !useDirect && (existing.Number > 0 || strings.TrimSpace(existing.URL) != "")
 	if branch != "" {
 		lines = append(lines,
 			"Isolated git worktree for this workflow unit / thread.",
 			"Branch: "+branch,
 			"Stay in this worktree; do not switch to the main checkout.",
 		)
+		if continuePR {
+			if sel := existingPRPromptLabel(existing); sel != "" {
+				lines = append(lines, "This session is bound to existing pull request "+sel+".")
+			}
+		}
 		if useDirect {
 			primaryName := "the project primary"
 			forbidCheckout := "main/master"
@@ -1315,6 +1350,14 @@ func remoteWorkPromptPrefixMode(branch string, direct bool, primary string) stri
 				"Summarize your commits in the final reply (no PR URL required for this ship).",
 				"If the task legitimately touches another repository, you may open a PR there; still do not open a PR for this project repo.",
 			)
+		} else if continuePR {
+			lines = append(lines,
+				"When you make code changes you MUST:",
+				"1. "+scrutinizeBeforeShipStep,
+				"2. Commit on this branch only (never commit to main/master).",
+				"3. Push the branch to the remote (`git push -u origin HEAD`).",
+				"4. Do NOT open a new pull request (`gh pr create` is forbidden). Push updates the existing PR.",
+			)
 		} else {
 			prCreate := "4. Open a pull request with `gh pr create` (or push to update an existing PR for this branch)."
 			if primary != "" {
@@ -1329,6 +1372,19 @@ func remoteWorkPromptPrefixMode(branch string, direct bool, primary string) stri
 			)
 		}
 		lines = append(lines, artifactPromptLines(true)...)
+	} else if continuePR {
+		if sel := existingPRPromptLabel(existing); sel != "" {
+			lines = append(lines, "This session is bound to existing pull request "+sel+".")
+		}
+		lines = append(lines,
+			"When you make code changes in a git repository you MUST:",
+			"1. "+scrutinizeBeforeShipStep,
+			"2. Stay on the existing PR branch (never commit directly to main/master).",
+			"3. Commit on that branch.",
+			"4. Push the branch. Do NOT open a new pull request (`gh pr create` is forbidden).",
+			"If this is not a git repository, skip PR steps and say so.",
+		)
+		lines = append(lines, artifactPromptLines(false)...)
 	} else {
 		lines = append(lines,
 			"When you make code changes in a git repository you MUST:",
@@ -2108,7 +2164,17 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		if b.cfg != nil {
 			primary = b.cfg.ProjectPrimaryBranch(proj.Name)
 		}
-		prefix += remoteWorkPromptPrefixMode(wtBranch, promptDirect, primary)
+		var existingPR sessionstore.TrackedPR
+		if e, ok := b.sessions.Get(threadID); ok && pol.AllowPR {
+			if pr, prOK := existingPRForPrompt(e); prOK {
+				existingPR = pr
+			}
+		}
+		if existingPR.Number > 0 || strings.TrimSpace(existingPR.URL) != "" {
+			prefix += remoteWorkPromptContinuePR(wtBranch, primary, existingPR)
+		} else {
+			prefix += remoteWorkPromptPrefixMode(wtBranch, promptDirect, primary)
+		}
 		if pol.AllowPR || pol.AllowDirectShip {
 			attr := AttributionInput{
 				PrompterName: actor.String(),
@@ -2752,14 +2818,20 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string) {
 	shipMode := ""
 	sessionMode := ""
 	sessionPhase := ""
+	hasOpenPR := false
 	if b.sessions != nil {
 		if e, ok := b.sessions.Get(item.threadID); ok {
 			shipMode = e.ShipMode
 			sessionMode = e.Mode
 			sessionPhase = e.Phase
+			hasOpenPR = e.HasOpenPR()
 		}
 	}
-	if shipMode == "" && b.cfg != nil && b.cfg.ProjectDirectToPrimary(project) {
+	if shipMode == "" && hasOpenPR {
+		// Imported / Address-bound sessions continue the existing PR even when
+		// the project defaults to direct-to-primary.
+		shipMode = sessionstore.ShipModePR
+	} else if shipMode == "" && b.cfg != nil && b.cfg.ProjectDirectToPrimary(project) {
 		shipMode = sessionstore.ShipModeDirect
 	} else if shipMode == "" {
 		shipMode = sessionstore.ShipModePR

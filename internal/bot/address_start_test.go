@@ -382,6 +382,43 @@ func TestStartContinueNoCreate(t *testing.T) {
 	}
 }
 
+func TestStartContinueImportedPRKeepsExisting(t *testing.T) {
+	b, _ := testAddressBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	e := sessionstore.Entry{
+		Project: "app", Origin: SourceWeb, SessionKind: sessionstore.SessionKindImportedPR,
+	}
+	e.UpsertPR(sessionstore.TrackedPR{
+		Owner: "acme", Repo: "app", Number: 12, State: "OPEN", HeadRef: "feat-x",
+		URL: "https://github.com/acme/app/pull/12",
+	})
+	if err := b.sessions.Set("imp-cont", e); err != nil {
+		t.Fatal(err)
+	}
+	res, err := b.StartContinue(ContinueOpts{
+		ThreadID: "imp-cont", Prompt: "fix the lint",
+		Actor: Actor{ID: "u", DisplayName: "U"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created || res.ThreadID != "imp-cont" {
+		t.Fatalf("%+v", res)
+	}
+	waitHistory(t, b, "imp-cont", 1)
+	th, _ := b.history.Get("imp-cont")
+	prompt := th.Turns[0].Prompt
+	if !strings.Contains(prompt, "fix the lint") {
+		t.Fatalf("%q", prompt)
+	}
+	if !strings.Contains(prompt, "Update the existing PR; do not open a new one; do not merge.") {
+		t.Fatalf("want continue-existing-PR suffix: %q", prompt)
+	}
+	if strings.Contains(prompt, "When you open or update a PR") {
+		t.Fatalf("must not invite opening a new PR: %q", prompt)
+	}
+}
+
 func TestStartContinueDirectOmitsDoNotMerge(t *testing.T) {
 	b, _ := testAddressBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })

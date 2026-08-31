@@ -459,7 +459,15 @@ func Remove(ctx context.Context, repo, path, branch string) error {
 
 	if branch != "" && repo != "" {
 		if !IsManagedBranch(branch) {
-			errs = append(errs, fmt.Sprintf("refuse to delete unprotected branch %q (want prefix %s)", branch, managedPrefixHint()))
+			// Path set: the caller is freeing a worktree that happened to sit on
+			// a human/PR branch. Never delete that branch; the path removal
+			// above is the whole job. Path empty: the call is a branch delete,
+			// which we still refuse.
+			if path == "" {
+				errs = append(errs, fmt.Sprintf("refuse to delete unprotected branch %q (want prefix %s)", branch, managedPrefixHint()))
+			} else {
+				log.Printf("gitworktree: skip delete unprotected branch %q (worktree removed)", branch)
+			}
 		} else if branchExists(ctx, repo, branch) {
 			if err := runGit(ctx, repo, "branch", "-D", branch); err != nil {
 				// Last chance: registration may have been mid-prune.

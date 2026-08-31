@@ -33,7 +33,9 @@ func (b *Bot) ensureShipMode(threadID, project string) string {
 			mode = e.ShipMode
 			return
 		}
-		if wantDirect {
+		// A session already bound to an open GitHub PR continues that PR even
+		// when the project defaults to direct-to-primary (imported shells).
+		if wantDirect && !e.HasOpenPR() {
 			e.ShipMode = sessionstore.ShipModeDirect
 		} else {
 			e.ShipMode = sessionstore.ShipModePR
