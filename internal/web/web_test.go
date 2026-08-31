@@ -513,7 +513,7 @@ func TestPagesRender(t *testing.T) {
 			t.Fatalf("manifest Content-Type=%q", ct)
 		}
 		body := w.Body.String()
-		for _, want := range []string{`"name": "Grok Work"`, `"display": "standalone"`, `/static/icon-192.png`, `/static/icon-512.png`} {
+		for _, want := range []string{`"name": "Grok Work"`, `"display": "standalone"`, `/static/icon-192.png`, `/static/icon-512.png`, `/static/icon-1024.png`} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("manifest missing %q", want)
 			}
@@ -535,6 +535,7 @@ func TestPagesRender(t *testing.T) {
 		for _, path := range []string{
 			"/static/icon-192.png",
 			"/static/icon-512.png",
+			"/static/icon-1024.png",
 			"/static/icon-maskable-512.png",
 			"/static/apple-touch-icon.png",
 			"/static/favicon.svg",
