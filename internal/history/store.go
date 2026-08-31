@@ -190,6 +190,12 @@ type Summary struct {
 type Store struct {
 	mu  sync.Mutex
 	dir string
+	// rev increments whenever a thread log is appended or deleted. SSE uses it
+	// to skip walking every transcript while the UI is idle.
+	rev uint64
+	// list is the last List() result. Nil / listOK=false means rebuild from disk.
+	list   []Summary
+	listOK bool
 }
 
 func New(dataDir string) (*Store, error) {
@@ -237,7 +243,24 @@ func (s *Store) AppendFiles(threadID string, turn Turn, files []File) error {
 		turn.Attachments = atts
 	}
 	th.Turns = append(th.Turns, turn)
-	return s.saveLocked(th)
+	if err := s.saveLocked(th); err != nil {
+		return err
+	}
+	s.invalidateListLocked()
+	return nil
+}
+
+// Rev is a monotonic counter of transcript writes. It does not change on List.
+func (s *Store) Rev() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rev
+}
+
+func (s *Store) invalidateListLocked() {
+	s.rev++
+	s.list = nil
+	s.listOK = false
 }
 
 // Get returns the full turn log for a thread.
@@ -256,16 +279,30 @@ func (s *Store) Get(threadID string) (Thread, error) {
 }
 
 // List returns thread summaries newest-first.
+//
+// Summaries are cached in memory and rebuilt only after Append/Delete. The SSE
+// idle tick called this on every connection every 2s, and each call parsed every
+// transcript just to read the last turn's metadata.
 func (s *Store) List() ([]Summary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !s.listOK {
+		if err := s.rebuildListLocked(); err != nil {
+			return nil, err
+		}
+	}
+	return slices.Clone(s.list), nil
+}
 
+func (s *Store) rebuildListLocked() error {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			s.list = nil
+			s.listOK = true
+			return nil
 		}
-		return nil, err
+		return err
 	}
 
 	out := make([]Summary, 0, len(entries))
@@ -281,16 +318,7 @@ func (s *Store) List() ([]Summary, error) {
 		if err != nil || len(th.Turns) == 0 {
 			continue
 		}
-		last := th.Turns[len(th.Turns)-1]
-		out = append(out, Summary{
-			ThreadID:   th.ThreadID,
-			Project:    firstNonEmpty(th.Project, last.Project),
-			LastUser:   last.User,
-			UpdatedAt:  last.At,
-			TurnCount:  len(th.Turns),
-			LastPrompt: truncate(last.Prompt, 120),
-			LastStatus: last.Status,
-		})
+		out = append(out, summaryFrom(th))
 	}
 	slices.SortFunc(out, func(a, b Summary) int {
 		switch {
@@ -312,7 +340,22 @@ func (s *Store) List() ([]Summary, error) {
 			return 1
 		}
 	})
-	return out, nil
+	s.list = out
+	s.listOK = true
+	return nil
+}
+
+func summaryFrom(th Thread) Summary {
+	last := th.Turns[len(th.Turns)-1]
+	return Summary{
+		ThreadID:   th.ThreadID,
+		Project:    firstNonEmpty(th.Project, last.Project),
+		LastUser:   last.User,
+		UpdatedAt:  last.At,
+		TurnCount:  len(th.Turns),
+		LastPrompt: truncate(last.Prompt, 120),
+		LastStatus: last.Status,
+	}
 }
 
 // Walk calls fn once per thread log.
@@ -374,6 +417,7 @@ func (s *Store) Delete(threadID string) error {
 	if os.IsNotExist(dirErr) {
 		dirErr = nil
 	}
+	s.invalidateListLocked()
 	return errors.Join(jsonErr, dirErr)
 }
 

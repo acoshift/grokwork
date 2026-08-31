@@ -116,6 +116,10 @@ type Server struct {
 	suggestConflict func(ctx context.Context, cli grokrun.CLI, cwd string, timeout time.Duration, files []string, target, sha string, hooks *grokrun.SuggestStreamHooks) (string, error)
 	// deploysCLI, when set, replaces exec of the deploys binary (errors token mint).
 	deploysCLI deploys.CLIRunner
+	// liveMu guards liveCache. SSE connections share host-wide fingerprints so
+	// an idle tab does not re-walk sessions, history, and boards every 2s.
+	liveMu    sync.Mutex
+	liveCache liveRevCache
 }
 
 // New builds a hime app with dashboard, history, config, and SSE routes.

@@ -314,6 +314,38 @@ func (b *Bot) InjectActiveRunForTest(threadID, project string) (cancel context.C
 	return c, nil
 }
 
+// LiveBusyKey fingerprints which threads have a job or a queue. Elapsed and
+// stream text are omitted — those belong to the dashboard fingerprint so a
+// ticking run does not force a ship/history/cases/worktree rebuild.
+func (b *Bot) LiveBusyKey() string {
+	if b == nil {
+		return ""
+	}
+	var lines []string
+	b.states.Range(func(key, value any) bool {
+		threadID, _ := key.(string)
+		st, _ := value.(*threadState)
+		if st == nil {
+			return true
+		}
+		st.mu.Lock()
+		hasJob := st.job != nil
+		qlen := len(st.queue)
+		st.mu.Unlock()
+		if !hasJob && qlen == 0 {
+			return true
+		}
+		jobBit := 0
+		if hasJob {
+			jobBit = 1
+		}
+		lines = append(lines, fmt.Sprintf("%s|%d|%d", threadID, jobBit, qlen))
+		return true
+	})
+	slices.Sort(lines)
+	return strings.Join(lines, "\n")
+}
+
 // StatusSnapshot collects active runs and session counts without Discord I/O.
 func (b *Bot) StatusSnapshot() StatusSnapshot {
 	now := time.Now()

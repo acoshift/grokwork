@@ -1,6 +1,7 @@
 package history
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -76,6 +77,83 @@ func TestAppendGetList(t *testing.T) {
 	}
 	if _, err := filepath.Glob(filepath.Join(dir, "history", "*.json")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestListCacheAndRev(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Rev() != 0 {
+		t.Fatalf("Rev=%d want 0", s.Rev())
+	}
+	if err := s.Append("111", Turn{User: "a", Prompt: "p", Response: "r", Status: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.Rev() != 1 {
+		t.Fatalf("Rev after append=%d want 1", s.Rev())
+	}
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ThreadID != "111" || list[0].TurnCount != 1 {
+		t.Fatalf("list=%+v", list)
+	}
+	if s.Rev() != 1 {
+		t.Fatalf("List must not bump Rev: %d", s.Rev())
+	}
+
+	// Corrupt the file: a cache hit must still return the prior summary.
+	path := filepath.Join(dir, "history", "111.json")
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again) != 1 || again[0].TurnCount != 1 {
+		t.Fatalf("cache missed after corrupt: %+v", again)
+	}
+
+	if err := s.Delete("111"); err != nil {
+		t.Fatal(err)
+	}
+	if s.Rev() != 2 {
+		t.Fatalf("Rev after delete=%d want 2", s.Rev())
+	}
+	empty, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("list after delete=%+v", empty)
+	}
+}
+
+func BenchmarkListCached(b *testing.B) {
+	dir := b.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		b.Fatal(err)
+	}
+	body := strings.Repeat("x", 20_000)
+	for i := range 230 {
+		id := fmt.Sprintf("t%03d", i)
+		if err := s.Append(id, Turn{User: "a", Prompt: "p", Response: body, Status: "done"}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if _, err := s.List(); err != nil {
+		b.Fatal(err)
+	}
+	for b.Loop() {
+		if _, err := s.List(); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

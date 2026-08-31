@@ -103,6 +103,39 @@ func TestListAndCount(t *testing.T) {
 	}
 }
 
+func TestRevIncrementsOnMutation(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Rev() != 0 {
+		t.Fatalf("Rev=%d want 0", s.Rev())
+	}
+	if err := s.Set("t1", Entry{SessionID: "s1", Project: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.Rev() != 1 {
+		t.Fatalf("Rev after Set=%d want 1", s.Rev())
+	}
+	if _, _, err := s.Patch("t1", func(e *Entry) { e.Goal = "g" }); err != nil {
+		t.Fatal(err)
+	}
+	if s.Rev() != 2 {
+		t.Fatalf("Rev after Patch=%d want 2", s.Rev())
+	}
+	_ = s.List()
+	if s.Rev() != 2 {
+		t.Fatalf("List must not bump Rev: %d", s.Rev())
+	}
+	if err := s.Delete("t1"); err != nil {
+		t.Fatal(err)
+	}
+	if s.Rev() != 3 {
+		t.Fatalf("Rev after Delete=%d want 3", s.Rev())
+	}
+}
+
 func TestUpdatedAtOnlyOnTurn(t *testing.T) {
 	dir := t.TempDir()
 	s, err := New(dir)

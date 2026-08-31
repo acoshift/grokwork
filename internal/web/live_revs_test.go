@@ -1,7 +1,10 @@
 package web
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/history"
@@ -97,6 +100,66 @@ func TestLiveRevsStableAndChange(t *testing.T) {
 	}
 	if g.Ship != beforeShip {
 		t.Fatal("ship rev should not change on a case phase transition")
+	}
+}
+
+func TestComputeLiveRevsHistoryMovesOnRunIdle(t *testing.T) {
+	srv, _, _ := testServer(t)
+	idle := srv.computeLiveRevs()
+	if err := bot.SeedActiveRunForTest(srv.bot, "thread-99", "proj", "prompt", "live"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { bot.FinishRunForTest(srv.bot, "thread-99") })
+	running := srv.computeLiveRevs()
+	if running.History == idle.History {
+		t.Fatal("cached history rev must move when a run starts")
+	}
+	if running.Dashboard == idle.Dashboard {
+		t.Fatal("dashboard rev should move when a run starts")
+	}
+	bot.FinishRunForTest(srv.bot, "thread-99")
+	after := srv.computeLiveRevs()
+	if after.History == running.History {
+		t.Fatal("cached history rev must move when a run ends")
+	}
+}
+
+func TestComputeLiveRevsIdleSkipsHistoryReread(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	before := srv.computeLiveRevs()
+	path := filepath.Join(cfg.DataDir, "history", "thread-99.json")
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after := srv.computeLiveRevs()
+	if after.History != before.History {
+		t.Fatal("idle tick must not re-parse history files")
+	}
+	if after.Ship != before.Ship || after.Cases != before.Cases || after.Worktrees != before.Worktrees {
+		t.Fatalf("idle tick rebuilt expensive domains:\n before=%+v\n after=%+v", before, after)
+	}
+}
+
+func TestNextSLARecompute(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	empty := nextSLARecompute(bot.CaseBoard{}, now)
+	if empty.Sub(now) != 24*time.Hour {
+		t.Fatalf("empty board until=%s", empty)
+	}
+
+	board := bot.CaseBoard{
+		Groups: []bot.CaseGroup{{
+			Rows: []bot.CaseRow{{
+				SLA: bot.CaseSLA{
+					FirstResponse: bot.SLAClock{Active: true, Target: time.Hour, Elapsed: 50 * time.Minute},
+					Resolution:    bot.SLAClock{Active: true, Target: 4 * time.Hour, Elapsed: time.Hour, Held: true},
+				},
+			}},
+		}},
+	}
+	got := nextSLARecompute(board, now)
+	if got.Sub(now) != 10*time.Minute {
+		t.Fatalf("soonest remaining=%s want 10m", got.Sub(now))
 	}
 }
 

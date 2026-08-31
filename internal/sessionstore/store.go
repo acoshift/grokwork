@@ -18,7 +18,7 @@ type Entry struct {
 	Cwd            string `json:"cwd"` // worktree path when isolated
 	MainCwd        string `json:"mainCwd,omitempty"`
 	WorktreeBranch string `json:"worktreeBranch,omitempty"`
-	LastUser string `json:"lastUser,omitempty"`
+	LastUser       string `json:"lastUser,omitempty"`
 	// UpdatedAt is last real activity (RFC3339 UTC): a human/agent turn, or a
 	// terminal lifecycle event (abandon / close / done). Set/Patch never invent
 	// this — only TouchTurn / StampTurn (or an explicit value on Set) write it.
@@ -325,6 +325,10 @@ type Store struct {
 	mu       sync.Mutex
 	filePath string
 	entries  map[string]Entry
+	// rev increments on every in-memory mutation that is meant to be visible
+	// to readers (Set/Patch/Delete/RewriteActor). SSE uses it to skip cloning
+	// the whole map while the UI is idle.
+	rev uint64
 }
 
 func New(dataDir string) (*Store, error) {
@@ -398,7 +402,15 @@ func (s *Store) Set(threadID string, e Entry) error {
 	}
 	ensureDiscordRef(threadID, &e)
 	s.entries[threadID] = e
+	s.rev++
 	return s.save()
+}
+
+// Rev is a monotonic counter of store mutations. Load does not change it.
+func (s *Store) Rev() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rev
 }
 
 // Patch loads the entry, applies fn, and saves. Returns false if missing.
@@ -417,6 +429,7 @@ func (s *Store) Patch(threadID string, fn func(*Entry)) (Entry, bool, error) {
 	fn(&e)
 	ensureDiscordRef(threadID, &e)
 	s.entries[threadID] = e
+	s.rev++
 	if err := s.save(); err != nil {
 		return Entry{}, true, err
 	}
@@ -453,6 +466,7 @@ func (s *Store) Delete(threadID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.entries, threadID)
+	s.rev++
 	return s.save()
 }
 

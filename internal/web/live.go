@@ -90,16 +90,70 @@ func liveTextFingerprint(text string) string {
 	return fmt.Sprintf("%d:%s", n, hashFingerprint(text[start:]))
 }
 
+// liveRevCache is the last host-wide domain fingerprint set. Dashboard/config/
+// deploy are cheap and always refreshed; the rest are reused until a store
+// generation, busy-set, SLA deadline, or idle-duration bucket moves.
+type liveRevCache struct {
+	have       bool
+	revs       liveRevs
+	sessionRev uint64
+	historyRev uint64
+	busyKey    string
+	wtBucket   int64
+	casesUntil time.Time
+}
+
 func (s *Server) computeLiveRevs() liveRevs {
-	return liveRevs{
+	now := time.Now()
+	var sessionRev, historyRev uint64
+	if s.sessions != nil {
+		sessionRev = s.sessions.Rev()
+	}
+	if s.history != nil {
+		historyRev = s.history.Rev()
+	}
+	busyKey := ""
+	if s.bot != nil {
+		busyKey = s.bot.LiveBusyKey()
+	}
+	wtBucket := now.Unix() / 60
+
+	s.liveMu.Lock()
+	defer s.liveMu.Unlock()
+
+	revs := liveRevs{
 		Dashboard: s.fpDashboard(),
-		Ship:      s.fpShip(),
-		Cases:     s.fpCases(),
-		History:   s.fpHistory(),
-		Worktrees: s.fpWorktrees(),
 		Config:    s.fpConfig(),
 		Deploy:    s.fpDeploys(),
 	}
+	if s.liveCache.have &&
+		s.liveCache.sessionRev == sessionRev &&
+		s.liveCache.historyRev == historyRev &&
+		s.liveCache.busyKey == busyKey &&
+		s.liveCache.wtBucket == wtBucket &&
+		now.Before(s.liveCache.casesUntil) {
+		revs.Ship = s.liveCache.revs.Ship
+		revs.Cases = s.liveCache.revs.Cases
+		revs.History = s.liveCache.revs.History
+		revs.Worktrees = s.liveCache.revs.Worktrees
+		return revs
+	}
+
+	cases, casesUntil := s.fpCases()
+	revs.Ship = s.fpShip()
+	revs.Cases = cases
+	revs.History = s.fpHistory()
+	revs.Worktrees = s.fpWorktrees()
+	s.liveCache = liveRevCache{
+		have:       true,
+		revs:       revs,
+		sessionRev: sessionRev,
+		historyRev: historyRev,
+		busyKey:    busyKey,
+		wtBucket:   wtBucket,
+		casesUntil: casesUntil,
+	}
+	return revs
 }
 
 // fpDeploys folds the engine's monotonic revision in with the active count.
@@ -151,7 +205,7 @@ func (s *Server) fpShip() string {
 	return hashFingerprint(b.String())
 }
 
-func (s *Server) fpCases() string {
+func (s *Server) fpCases() (string, time.Time) {
 	// Unfiltered board fingerprint: any case change notifies cases listeners.
 	// Partials re-apply the client's project/phase/severity filters on fetch.
 	board := s.bot.ListCaseBoard("", "", "", "all")
@@ -168,7 +222,36 @@ func (s *Server) fpCases() string {
 				r.SLABreached, r.SLAHeld)
 		}
 	}
-	return hashFingerprint(b.String())
+	return hashFingerprint(b.String()), nextSLARecompute(board, time.Now())
+}
+
+// nextSLARecompute is when an unbreached, running SLA clock will next change
+// standing. With no such clock the cases fingerprint is stable until a store
+// write, so the idle SSE tick can skip the board walk until then.
+func nextSLARecompute(board bot.CaseBoard, now time.Time) time.Time {
+	var soonest time.Duration
+	found := false
+	for _, g := range board.Groups {
+		for _, r := range g.Rows {
+			for _, c := range []bot.SLAClock{r.SLA.FirstResponse, r.SLA.Resolution} {
+				if !c.Active || c.Stopped || c.Held || c.Breached {
+					continue
+				}
+				rem := c.Remaining()
+				if rem <= 0 {
+					continue
+				}
+				if !found || rem < soonest {
+					soonest = rem
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		return now.Add(24 * time.Hour)
+	}
+	return now.Add(soonest)
 }
 
 func (s *Server) fpHistory() string {

@@ -77,4 +77,12 @@ func TestStatusSnapshot(t *testing.T) {
 	if snap.Time.IsZero() {
 		t.Fatal("Time zero")
 	}
+
+	key := b.LiveBusyKey()
+	if key == "" {
+		t.Fatal("expected busy key while a run is in flight")
+	}
+	if again := b.LiveBusyKey(); again != key {
+		t.Fatalf("busy key moved without queue/job change: %q → %q", key, again)
+	}
 }

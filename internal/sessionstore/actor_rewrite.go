@@ -105,6 +105,7 @@ func (s *Store) RewriteActor(same func(actorID string) bool, to string) (int, er
 	if n == 0 {
 		return 0, nil
 	}
+	s.rev++
 	if err := s.save(); err != nil {
 		return 0, err
 	}
