@@ -69,6 +69,12 @@ func TestThreadCLIPinnedAgainstConfigChanges(t *testing.T) {
 	if got := b.threadCLI("t1"); got.Agent != grokrun.AgentClaude || got.Model != "sonnet" {
 		t.Fatalf("config change leaked into a live session: %+v", got)
 	}
+
+	// A later host-wide disable of the stamped model must not restamp the thread.
+	cfg.DisabledModels = []string{"sonnet"}
+	if got := b.threadCLI("t1"); got.Agent != grokrun.AgentClaude || got.Model != "sonnet" {
+		t.Fatalf("disabling a stamped model moved the session: %+v", got)
+	}
 }
 
 // Sessions created before agents were selectable carry no stamp. They ran on grok
@@ -204,6 +210,28 @@ func TestSameAgentTreatsEmptyAsGrok(t *testing.T) {
 	}
 	if sameAgent("claude", grokrun.AgentGrok) {
 		t.Error("claude session must not resume on grok")
+	}
+}
+
+// A host-wide disable must not restamp an already-running session: the stamp is
+// the CLI that owns the transcript.
+func TestThreadCLIStampedModelSurvivesLaterDisable(t *testing.T) {
+	cfg := &config.Config{Agent: "grok", Model: "grok-4.5", GrokBin: "grok", ClaudeBin: "claude"}
+	b, store := pinBot(t, cfg)
+	if err := store.Set("t-stamp", sessionstore.Entry{
+		SessionID: "sess-stamp", Agent: "claude", Model: "claude-opus-5",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg.DisabledModels = []string{"claude-opus-5"}
+	got := b.threadCLI("t-stamp")
+	if got.Agent != grokrun.AgentClaude || got.Model != "claude-opus-5" {
+		t.Fatalf("stamped session moved after disable: %+v", got)
+	}
+	cfg.Model = "claude-opus-5"
+	fresh := b.threadCLI("fresh-never-run")
+	if fresh.Model == "claude-opus-5" {
+		t.Fatalf("unstamped session launched the disabled default: %+v", fresh)
 	}
 }
 

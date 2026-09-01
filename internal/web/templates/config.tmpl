@@ -49,6 +49,13 @@
         </span>
         <span class="drill-v">{{if eq .Config.Agent "claude"}}Claude{{else if eq .Config.Agent "cursor"}}Cursor{{else}}Grok{{end}}{{if and (eq .Config.Agent "claude") .Config.ClaudeModel}} · {{.Config.ClaudeModel}}{{end}}</span>
       </a>
+      <a class="drill" href="{{route "config.models"}}">
+        <span class="drill-main">
+          <span class="drill-t">Available models</span>
+          <span class="drill-s">enable or disable curated models for new sessions</span>
+        </span>
+        {{if .Config.DisabledModelCount}}<span class="drill-v">{{.Config.DisabledModelCount}} off</span>{{else}}<span class="drill-v">all on</span>{{end}}
+      </a>
       <a class="drill" href="{{route "config.skills"}}">
         <span class="drill-main">
           <span class="drill-t">Skills</span>

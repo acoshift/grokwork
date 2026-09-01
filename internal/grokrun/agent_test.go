@@ -122,6 +122,45 @@ func TestModelOptionsMatchInference(t *testing.T) {
 	}
 }
 
+// Family grouping is derived from the catalog so bulk "disable Cursor GPT"
+// cannot drift from the names the picker actually offers.
+func TestModelFamilyFollowsCatalog(t *testing.T) {
+	if got := ModelFamily("not-a-model"); got != "" {
+		t.Fatalf("uncurated family=%q", got)
+	}
+	cursorFamilies := map[string]int{}
+	for _, opt := range ModelOptions() {
+		fam := ModelFamily(opt.Value)
+		if fam == "" {
+			t.Errorf("%q has no family", opt.Value)
+			continue
+		}
+		switch opt.Agent {
+		case AgentGrok, AgentClaude:
+			if fam != opt.Agent.String() {
+				t.Errorf("%q agent=%s family=%q want the agent name", opt.Value, opt.Agent, fam)
+			}
+		case AgentCursor:
+			cursorFamilies[fam]++
+		}
+	}
+	if cursorFamilies["gpt"] == 0 {
+		t.Fatal("Cursor catalog has no gpt family; bulk disable of Cursor GPT would be a no-op")
+	}
+	if len(cursorFamilies) < 2 {
+		t.Fatalf("Cursor families=%v; the admin page groups only when an agent has more than one", cursorFamilies)
+	}
+	if got := ModelFamily("gpt-5.6-sol-medium"); got != "gpt" {
+		t.Fatalf("gpt-5.6-sol-medium family=%q", got)
+	}
+	if got := ModelFamily("composer-2.5"); got != "composer" {
+		t.Fatalf("composer-2.5 family=%q", got)
+	}
+	if ModelFamilyLabel("gpt") != "GPT" {
+		t.Fatalf("label=%q", ModelFamilyLabel("gpt"))
+	}
+}
+
 func TestAgentForModel(t *testing.T) {
 	cases := []struct {
 		in   string

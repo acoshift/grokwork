@@ -97,6 +97,10 @@ type Config struct {
 	// report tokens without a dollar figure rather than a wrong one — see
 	// ModelRate.Price.
 	ModelRates map[string]ModelRate `json:"modelRates,omitempty"`
+	// DisabledModels is the host-wide denylist of curated model names. Absent or
+	// empty leaves every curated model enabled for a new session. Already-stamped
+	// sessions keep their model even after it is listed here.
+	DisabledModels []string `json:"disabledModels,omitempty"`
 	// ClaudeExtraArgs are extra claude CLI flags. ExtraArgs below is grok
 	// vocabulary and is never passed to claude.
 	ClaudeExtraArgs []string `json:"claudeExtraArgs,omitempty"`
@@ -374,8 +378,13 @@ type Snapshot struct {
 	// rows with at least one figure, which is what the hub row reports — a spend
 	// report with zero configured rates shows tokens only, and that is worth
 	// surfacing before someone goes looking for the dollars.
-	ModelRates                []ModelRateItem
-	ModelRatesSet             int
+	ModelRates    []ModelRateItem
+	ModelRatesSet int
+	// ModelAvailability is the admin enable/disable page: curated models grouped
+	// by agent (and by family when an agent has more than one). DisabledModelCount
+	// is what the hub row reports.
+	ModelAvailability         []ModelAvailGroup
+	DisabledModelCount        int
 	ClaudeIncludeAnthropicEnv bool
 	MaxTurns                  int // effective (default 40)
 	TimeoutMs                 int // effective (default 1800000 = 30m)
@@ -871,6 +880,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("agent %q is not a known coding CLI (want %s)",
 			c.Agent, grokrun.KnownAgents())
 	}
+	c.DisabledModels = normalizeDisabledModels(c.DisabledModels)
 	if c.MaxTurns <= 0 {
 		c.MaxTurns = DefaultMaxTurns
 	}
@@ -921,6 +931,7 @@ func (c *Config) saveLocked() error {
 		SummarizeModel            string               `json:"summarizeModel,omitempty"`
 		ReviewModel               string               `json:"reviewModel,omitempty"`
 		ModelRates                map[string]ModelRate `json:"modelRates,omitempty"`
+		DisabledModels            []string             `json:"disabledModels,omitempty"`
 		ClaudeExtraArgs           []string             `json:"claudeExtraArgs,omitempty"`
 		ClaudeIncludeAnthropicEnv *bool                `json:"claudeIncludeAnthropicEnv,omitempty"`
 		Yolo                      *bool                `json:"yolo"`
@@ -971,6 +982,7 @@ func (c *Config) saveLocked() error {
 		SummarizeModel:            c.SummarizeModel,
 		ReviewModel:               c.ReviewModel,
 		ModelRates:                cloneModelRates(c.ModelRates),
+		DisabledModels:            slices.Clone(c.DisabledModels),
 		ClaudeExtraArgs:           slices.Clone(c.ClaudeExtraArgs),
 		ClaudeIncludeAnthropicEnv: cloneBoolPtr(c.ClaudeIncludeAnthropicEnv),
 		Yolo:                      c.Yolo,
@@ -1643,6 +1655,7 @@ func (c *Config) Snapshot() Snapshot {
 			ratesSet++
 		}
 	}
+	avail := modelAvailabilityFrom(c.DisabledModels)
 	snap := Snapshot{
 		Projects:                  projects,
 		Channels:                  channels,
@@ -1670,6 +1683,8 @@ func (c *Config) Snapshot() Snapshot {
 		ReviewModelGroups:         ModelGroups(c.ReviewModel),
 		ModelRates:                rateItems,
 		ModelRatesSet:             ratesSet,
+		ModelAvailability:         avail,
+		DisabledModelCount:        len(c.DisabledModels),
 		ClaudeIncludeAnthropicEnv: c.ClaudeIncludeAnthropicEnv != nil && *c.ClaudeIncludeAnthropicEnv,
 		MaxTurns:                  maxTurns,
 		TimeoutMs:                 timeoutMs,

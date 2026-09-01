@@ -1477,6 +1477,42 @@
        card and behind a horizontal scroll on an ordinary desktop. A price per
        million tokens is a handful of characters. */
     #page-config-rates td input { max-width: 6.5rem; }
+    #page-config-models .model-avail-head,
+    #page-config-models .model-avail-family-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    #page-config-models .model-avail-head h2,
+    #page-config-models .model-avail-family-head h3 {
+      margin: 0;
+    }
+    #page-config-models .model-avail-family-head h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    #page-config-models .model-avail-bulk {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    #page-config-models .model-avail-family { margin-top: 0.85rem; }
+    #page-config-models .model-avail-list {
+      list-style: none;
+      margin: 0.4rem 0 0;
+      padding: 0;
+    }
+    #page-config-models .model-avail-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    #page-config-models .model-avail-list li:last-child { border-bottom: none; }
     /* Skills inventory: long absolute paths must wrap, not force the page wider
        than the viewport. Name stays nowrap; path/desc reflow inside the cell. */
     #page-config-skills td.skill-name {

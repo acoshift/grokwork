@@ -979,8 +979,14 @@ func (s *Server) attachModelPicker(d *pageData, project, def string) {
 		return
 	}
 	d.CanSelectModel = true
-	d.ModelGroups = config.ModelGroups("")
-	d.ModelDefaultLabel = strings.TrimSpace(def)
+	d.ModelGroups = s.cfg.PickerModelGroups("")
+	def = strings.TrimSpace(def)
+	if def != "" && !s.cfg.ModelAllowed(def) {
+		// Same rule as EffectiveReviewModel: a Default label that names a model
+		// the run will not use is worse than no label.
+		def = ""
+	}
+	d.ModelDefaultLabel = def
 	if d.ModelDefaultLabel == "" {
 		d.ModelDefaultLabel = "CLI default"
 	}

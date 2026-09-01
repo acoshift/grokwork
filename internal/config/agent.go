@@ -47,8 +47,10 @@ func (c *Config) DefaultAgent() grokrun.Agent {
 }
 
 func (c *Config) defaultAgentLocked() grokrun.Agent {
-	if a, ok := grokrun.AgentForModel(c.Model); ok {
-		return a
+	if c.modelAllowedLocked(c.Model) {
+		if a, ok := grokrun.AgentForModel(c.Model); ok {
+			return a
+		}
 	}
 	agent, _ := grokrun.ParseAgent(c.Agent)
 	return agent
@@ -102,9 +104,14 @@ func (c *Config) EffectiveReviewModel() string {
 	c.mu.RLock()
 	review := strings.TrimSpace(c.ReviewModel)
 	task := strings.TrimSpace(c.Model)
+	reviewOK := c.modelAllowedLocked(review)
+	taskOK := c.modelAllowedLocked(task)
 	c.mu.RUnlock()
-	if review != "" && grokrun.IsKnownModel(review) {
+	if review != "" && grokrun.IsKnownModel(review) && reviewOK {
 		return review
+	}
+	if grokrun.IsKnownModel(task) && !taskOK {
+		return ""
 	}
 	return task
 }
@@ -121,7 +128,7 @@ func (c *Config) RequestedAgentCLI(model string) (AgentCLI, error) {
 	if m == "" {
 		return c.ResolveAgentCLI(""), nil
 	}
-	if !grokrun.IsKnownModel(m) {
+	if !grokrun.IsKnownModel(m) || !c.ModelAllowed(m) {
 		return AgentCLI{}, fmt.Errorf("model %q is not a known model", m)
 	}
 	a, ok := grokrun.AgentForModel(m)
@@ -177,7 +184,11 @@ func (c *Config) ResolveAgentCLI(agent string) AgentCLI {
 	if !explicit {
 		a = c.defaultAgentLocked()
 	}
-	return c.cliLocked(a, c.Model)
+	model := c.Model
+	if !c.modelAllowedLocked(model) {
+		model = ""
+	}
+	return c.cliLocked(a, model)
 }
 
 // cliLocked builds the invocation for agent a, applying model only when a owns
@@ -228,7 +239,7 @@ func (c *Config) ResolveSummarizeCLI(agent string) AgentCLI {
 	owner, owned := grokrun.AgentForModel(summarize)
 	c.mu.RUnlock()
 
-	if summarize == "" {
+	if summarize == "" || !c.ModelAllowed(summarize) {
 		return c.ResolveAgentCLI(agent)
 	}
 	if owned {
@@ -289,11 +300,29 @@ type ModelGroup struct {
 	Choices []ModelChoice
 }
 
+// PickerModelGroups is ModelGroups with disabled curated names omitted. Builder
+// session-start and dispatch pickers must use this; the admin default-model
+// dropdowns keep ModelGroups so a currently configured (even disabled) default
+// remains visible.
+func (c *Config) PickerModelGroups(current string) []ModelGroup {
+	var deny []string
+	if c != nil {
+		c.mu.RLock()
+		deny = slices.Clone(c.DisabledModels)
+		c.mu.RUnlock()
+	}
+	return modelGroups(current, deny)
+}
+
 // ModelGroups returns the dropdown options grouped by agent, marking current as
 // selected. When current is set but not one of the curated options it is appended
 // to its inferred agent's group, so a value written into config.json by hand is
 // offered rather than silently dropped the next time someone saves the form.
 func ModelGroups(current string) []ModelGroup {
+	return modelGroups(current, nil)
+}
+
+func modelGroups(current string, deny []string) []ModelGroup {
 	current = strings.TrimSpace(current)
 	groups := []ModelGroup{
 		{Agent: grokrun.AgentGrok.String(), Label: grokrun.AgentGrok.Label()},
@@ -310,6 +339,9 @@ func ModelGroups(current string) []ModelGroup {
 		}
 	}
 	for _, opt := range grokrun.ModelOptions() {
+		if slices.Contains(deny, opt.Value) {
+			continue
+		}
 		add(opt.Agent, ModelChoice{
 			Value:    opt.Value,
 			Label:    opt.Label,

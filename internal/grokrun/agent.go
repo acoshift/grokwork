@@ -173,6 +173,75 @@ func IsKnownModel(name string) bool {
 	return false
 }
 
+// ModelFamily is the vendor family of a curated name within its agent. It is
+// how an admin disables "every GPT model of Cursor" without taking Composer
+// with them. Empty for a name that is not curated.
+//
+// Cursor families follow the catalog prefix (gpt-*, composer-*, claude-*,
+// cursor-grok-*, gemini-*, glm-*, kimi-*). Grok and Claude each have a single
+// family matching the agent, so callers that only group when an agent has more
+// than one family leave those lists flat.
+func ModelFamily(name string) string {
+	name = strings.TrimSpace(name)
+	for _, opt := range ModelOptions() {
+		if opt.Value == name {
+			return familyOf(opt)
+		}
+	}
+	return ""
+}
+
+func familyOf(opt ModelOption) string {
+	n := strings.ToLower(opt.Value)
+	switch opt.Agent {
+	case AgentCursor:
+		switch {
+		case strings.HasPrefix(n, "gpt-") || strings.Contains(n, "codex"):
+			return "gpt"
+		case strings.HasPrefix(n, "composer"):
+			return "composer"
+		case strings.HasPrefix(n, "claude") || strings.Contains(n, "anthropic"):
+			return "claude"
+		case strings.Contains(n, "grok"):
+			return "grok"
+		case strings.HasPrefix(n, "gemini"):
+			return "gemini"
+		case strings.HasPrefix(n, "glm"):
+			return "glm"
+		case strings.HasPrefix(n, "kimi"):
+			return "kimi"
+		default:
+			return "other"
+		}
+	default:
+		return opt.Agent.String()
+	}
+}
+
+// ModelFamilyLabel is the operator-facing name of a family key.
+func ModelFamilyLabel(family string) string {
+	switch strings.ToLower(strings.TrimSpace(family)) {
+	case "gpt":
+		return "GPT"
+	case "composer":
+		return "Composer"
+	case "claude":
+		return "Claude"
+	case "grok":
+		return "Grok"
+	case "gemini":
+		return "Gemini"
+	case "glm":
+		return "GLM"
+	case "kimi":
+		return "Kimi"
+	case "other":
+		return "Other"
+	default:
+		return strings.TrimSpace(family)
+	}
+}
+
 // Resolve maps the zero value to the default agent.
 func (a Agent) Resolve() Agent {
 	if a == "" {

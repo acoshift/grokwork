@@ -252,6 +252,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.projectNew":                  "/config/projects/new",
 		"config.run":                         "/config/run",
 		"config.agent":                       "/config/agent",
+		"config.models":                      "/config/models",
 		"config.worktrees":                   "/config/worktrees",
 		"config.board":                       "/config/board",
 		"config.notify":                      "/config/notify",
@@ -346,6 +347,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("config_project_new", "layout.tmpl", "config_project_new.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_run", "layout.tmpl", "config_run.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_agent", "layout.tmpl", "config_agent.tmpl", "config_shared.tmpl")
+	tp.ParseFiles("config_models", "layout.tmpl", "config_models.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_worktrees", "layout.tmpl", "config_worktrees.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_board", "layout.tmpl", "config_board.tmpl", "config_shared.tmpl")
 	tp.ParseFiles("config_notify", "layout.tmpl", "config_notify.tmpl", "config_shared.tmpl")
@@ -706,6 +708,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /config/projects/new", s.requireAdmin(hime.Handler(s.configSubPage("config_project_new", "Add project"))))
 	mux.Handle("GET /config/run", s.requireAdmin(hime.Handler(s.configSubPage("config_run", "Run limits"))))
 	mux.Handle("GET /config/agent", s.requireAdmin(hime.Handler(s.configSubPage("config_agent", "Coding agent"))))
+	mux.Handle("GET /config/models", s.requireAdmin(hime.Handler(s.configSubPage("config_models", "Available models"))))
+	mux.Handle("POST /config/models", s.requireAdmin(hime.Handler(s.updateDisabledModels)))
 	mux.Handle("GET /config/worktrees", s.requireAdmin(hime.Handler(s.configSubPage("config_worktrees", "Worktrees"))))
 	mux.Handle("GET /config/board", s.requireAdmin(hime.Handler(s.configSubPage("config_board", "Team activity board"))))
 	mux.Handle("GET /config/notify", s.requireAdmin(hime.Handler(s.configSubPage("config_notify", "Run notifications"))))

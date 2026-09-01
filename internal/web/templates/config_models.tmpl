@@ -1,0 +1,78 @@
+{{define "content"}}
+<div class="config-sub" id="page-config-models">
+{{template "config_sub_header" $}}
+<h1>Available models</h1>
+<p class="sub">
+  Disabled models are omitted from the session-start and dispatch pickers and
+  refused if named on a new session. Discord and the web “Default” option skip a
+  disabled configured default rather than launching it.
+  Sessions already stamped on a model keep it even after it is turned off here.
+  Empty means every curated model is on.
+</p>
+
+{{range $g := .Config.ModelAvailability}}
+<div class="section card model-avail" data-agent="{{$g.Agent}}">
+  <div class="model-avail-head">
+    <h2>{{$g.Label}}</h2>
+    <div class="model-avail-bulk">
+      <form method="post" action="{{route "config.models"}}">
+        {{template "csrf" $}}
+        <input type="hidden" name="action" value="disable-agent">
+        <input type="hidden" name="agent" value="{{$g.Agent}}">
+        <button type="submit" class="btn-secondary">Disable all {{$g.Label}}</button>
+      </form>
+      <form method="post" action="{{route "config.models"}}">
+        {{template "csrf" $}}
+        <input type="hidden" name="action" value="enable-agent">
+        <input type="hidden" name="agent" value="{{$g.Agent}}">
+        <button type="submit" class="btn-secondary">Enable all {{$g.Label}}</button>
+      </form>
+    </div>
+  </div>
+
+  {{range $g.Families}}
+  <div class="model-avail-family" data-family="{{.Key}}">
+    {{if $g.ShowFamilies}}
+    <div class="model-avail-family-head">
+      <h3>{{.Label}}</h3>
+      <div class="model-avail-bulk">
+        <form method="post" action="{{route "config.models"}}">
+          {{template "csrf" $}}
+          <input type="hidden" name="action" value="disable-family">
+          <input type="hidden" name="agent" value="{{.Agent}}">
+          <input type="hidden" name="family" value="{{.Key}}">
+          <button type="submit" class="btn-secondary">Disable all {{.Label}}</button>
+        </form>
+        <form method="post" action="{{route "config.models"}}">
+          {{template "csrf" $}}
+          <input type="hidden" name="action" value="enable-family">
+          <input type="hidden" name="agent" value="{{.Agent}}">
+          <input type="hidden" name="family" value="{{.Key}}">
+          <button type="submit" class="btn-secondary">Enable all {{.Label}}</button>
+        </form>
+      </div>
+    </div>
+    {{end}}
+    <ul class="model-avail-list">
+      {{range .Choices}}
+      <li>
+        <span class="mono">{{.Value}}</span>
+        <form method="post" action="{{route "config.models"}}" class="drill-toggle">
+          {{template "csrf" $}}
+          <input type="hidden" name="action" value="{{if .Enabled}}disable{{else}}enable{{end}}">
+          <input type="hidden" name="model" value="{{.Value}}">
+          <label class="switch" title="{{if .Enabled}}Disable{{else}}Enable{{end}} {{.Value}}">
+            <input type="checkbox" {{if .Enabled}}checked{{end}} data-autosubmit>
+            <span class="knob" aria-hidden="true"></span>
+            <span class="sr-only">{{if .Enabled}}Disable{{else}}Enable{{end}} {{.Value}}</span>
+          </label>
+        </form>
+      </li>
+      {{end}}
+    </ul>
+  </div>
+  {{end}}
+</div>
+{{end}}
+</div>
+{{end}}
