@@ -786,6 +786,24 @@ func (s *Server) partialSessionRun(ctx *hime.Context) error {
 	return s.viewFragment(ctx, "session", "session_run", s.sessionPageData(ctx, threadID))
 }
 
+// partialSessionRail streams the button-only rail groups (ownership, watch,
+// close-out). Typed Case/Lifecycle fields stay on the full page so a history
+// tick cannot wipe them; Close out still has to remount when SESSION_DONE
+// lands, which is this fragment.
+func (s *Server) partialSessionRail(ctx *hime.Context) error {
+	threadID := strings.TrimSpace(ctx.PathValue("threadID"))
+	if threadID == "" {
+		return ctx.Status(http.StatusBadRequest).Error("missing thread id")
+	}
+	if err := s.ensureSessionPageAccess(ctx, threadID); err != nil {
+		return forbiddenProject(ctx, err)
+	}
+	if s.refusePRAskPartial(ctx, threadID) {
+		return ctx.Status(http.StatusNotFound).Error("not found")
+	}
+	return s.viewFragment(ctx, "session", "session_rail_live", s.sessionPageData(ctx, threadID))
+}
+
 // ensureSessionPageAccess is ensureThreadAccess plus a narrow fallback for the
 // post-reset landing page only. When the store entry is gone and history has
 // no project yet, a stamped ?project= that the caller may access is enough to

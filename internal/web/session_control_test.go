@@ -437,6 +437,109 @@ func TestSessionMarkDoneSuccess(t *testing.T) {
 	}
 }
 
+// TestSessionRailLiveHidesCloseOutWhenDone pins the SSE path: after a turn
+// finishes (SESSION_DONE / Mark as done) the rail fragment — not a full page
+// load — is what htmx swaps in, and it must hide Close out. Record/run
+// fragments stay conversation-only so they cannot carry the rail.
+func TestSessionRailLiveHidesCloseOutWhenDone(t *testing.T) {
+	srv, _, b := fixEnabledServer(t)
+	seedOwned(t, srv, "rail-live-th", "member-1", "Member One")
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	getPartial := func(path string) string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("HX-Request", "true")
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", path, w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+
+	pageReq := httptest.NewRequest(http.MethodGet, "/sessions/rail-live-th", nil)
+	pageReq.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	pageW := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(pageW, pageReq)
+	if pageW.Code != http.StatusOK {
+		t.Fatalf("session page status=%d", pageW.Code)
+	}
+	page := pageW.Body.String()
+	for _, want := range []string{
+		`id="live-session-rail"`,
+		`hx-trigger="sse:history"`,
+		`/partials/sessions/rail-live-th/rail`,
+		`id="session-danger"`,
+		`id="session-lifecycle"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("session page missing %q", want)
+		}
+	}
+
+	rail := getPartial("/partials/sessions/rail-live-th/rail")
+	if !strings.Contains(rail, `id="session-danger"`) || !strings.Contains(rail, `id="btn-mark-done"`) {
+		t.Fatal("active rail fragment must show Close out")
+	}
+	if strings.Contains(rail, `disabled title="Cancel the active run before abandoning"`) {
+		t.Fatal("idle rail fragment must not disable Abandon")
+	}
+	if !strings.Contains(rail, `id="session-ownership"`) {
+		t.Fatal("active rail fragment must show Ownership")
+	}
+	for _, ban := range []string{
+		`id="session-lifecycle"`, `id="session-continue-form"`, `id="session-case-actions"`,
+		`id="live-session-rail"`, "<nav", "sse-status", `class="rail-sheet-head"`,
+	} {
+		if strings.Contains(rail, ban) {
+			t.Fatalf("rail fragment leaked %q", ban)
+		}
+	}
+
+	if err := bot.SeedActiveRunForTest(b, "rail-live-th", "proj", "prompt", "live"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { bot.FinishRunForTest(b, "rail-live-th") })
+	busyRail := getPartial("/partials/sessions/rail-live-th/rail")
+	if !strings.Contains(busyRail, `disabled title="Cancel the active run before abandoning"`) {
+		t.Fatal("rail fragment must disable Abandon while a run is active")
+	}
+	bot.FinishRunForTest(b, "rail-live-th")
+	idleAgain := getPartial("/partials/sessions/rail-live-th/rail")
+	if strings.Contains(idleAgain, `disabled title="Cancel the active run before abandoning"`) {
+		t.Fatal("rail fragment must re-enable Abandon when the run ends")
+	}
+
+	record := getPartial("/partials/sessions/rail-live-th")
+	run := getPartial("/partials/sessions/rail-live-th/run")
+	for _, partial := range []string{record, run} {
+		for _, ban := range []string{
+			`id="session-danger"`, `id="btn-mark-done"`, `id="btn-abandon"`,
+			`id="session-ownership"`, `id="session-watch"`, `id="live-session-rail"`,
+		} {
+			if strings.Contains(partial, ban) {
+				t.Fatalf("conversation fragment leaked rail chrome %q", ban)
+			}
+		}
+	}
+
+	w := postFix(t, srv, "/sessions/rail-live-th/label", sid, csrf, url.Values{"label": {"done"}})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("label status=%d body=%s", w.Code, w.Body.String())
+	}
+	doneRail := getPartial("/partials/sessions/rail-live-th/rail")
+	if strings.Contains(doneRail, `id="session-danger"`) || strings.Contains(doneRail, `id="btn-mark-done"`) || strings.Contains(doneRail, `id="btn-abandon"`) {
+		t.Fatal("rail fragment must hide Close out after the session is done")
+	}
+	if !strings.Contains(doneRail, `id="session-ownership"`) {
+		t.Fatal("done rail fragment should keep Ownership")
+	}
+}
+
 // TestSessionClaimEmptyIdentity400: an admin session without a Discord identity
 // (the auth-off-style edge) cannot claim — there is no owner to assign.
 func TestSessionClaimEmptyIdentity400(t *testing.T) {

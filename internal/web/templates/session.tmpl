@@ -236,6 +236,10 @@
 
 {{if and .CanStartSession .HasSession}}
 {{if not .SessionEntry.IsCaseClosed}}
+{{/* Goal is a text field — keep Lifecycle outside the rail live region so a
+     history tick cannot wipe an in-progress edit. Label can look stale until
+     the next navigation; Close out / Claim must not, which is why they live
+     in #live-session-rail. */}}
 <div class="rail-group" id="session-lifecycle">
   <div class="rail-group-title">Lifecycle</div>
   <details class="action">
@@ -274,9 +278,32 @@
     </div>
   </details>
 </div>
-
+{{end}}
 {{end}}
 
+{{/* Button-only rail groups that follow the unit's label / run-idle. They
+     cannot sit in #live-session (that fragment is the conversation) and
+     cannot share a region with Case/Lifecycle text fields. fpHistory already
+     folds EffectiveLabel + Running, so sse:history remounts Close out when a
+     turn finishes (SESSION_DONE hides it; RunBusy dropping re-enables
+     Abandon). Dashboard would remount on every 2s elapsed tick. */}}
+<div class="live-region"
+     id="live-session-rail"
+     hx-get="/partials/sessions/{{.ThreadID}}/rail{{if .NavProject}}?project={{urlquery .NavProject}}{{else if .Project}}?project={{urlquery .Project}}{{end}}"
+     hx-trigger="sse:history"
+     hx-target="this"
+     hx-select="unset"
+     hx-swap="innerHTML show:none focus-scroll:false"
+     hx-sync="this:queue last">
+  {{template "session_rail_live" .}}
+</div>
+
+</aside>
+</div>{{/* /pr-cols */}}
+{{end}}
+
+{{define "session_rail_live"}}
+{{if and .CanStartSession .HasSession}}
 <div class="rail-group" id="session-ownership">
   <div class="rail-group-title">Ownership</div>
   <p class="rail-note">{{if .SessionEntry.OwnerName}}Owner: <strong>{{.SessionEntry.OwnerName}}</strong>{{else}}Unowned — any member may control it.{{end}}{{if .SessionEntry.CoOwnerIDs}} · {{len .SessionEntry.CoOwnerIDs}} co-owner(s){{end}}</p>
@@ -340,9 +367,6 @@
 </div>
 {{end}}
 {{end}}
-
-</aside>
-</div>{{/* /pr-cols */}}
 {{end}}
 
 {{define "session_live"}}

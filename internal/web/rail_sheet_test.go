@@ -54,16 +54,21 @@ func TestRailSheetChromeIsShellOnly(t *testing.T) {
 		}
 	}
 
-	// The live fragment renders the conversation only. If the sheet header ever
-	// migrated into it, an SSE tick would swap the sheet's own chrome out from
-	// under an open sheet.
-	frag := get("/partials/sessions/thread-rail?project=proj")
-	for _, banned := range []string{
-		`id="rail-fab"`, `id="rail-scrim"`, `class="rail-sheet-head"`, `id="page-rail"`,
-		"<nav", "sse-status",
+	// Live fragments render conversation / rail groups only. If the sheet
+	// header ever migrated into one, an SSE tick would swap the sheet's own
+	// chrome out from under an open sheet.
+	for _, path := range []string{
+		"/partials/sessions/thread-rail?project=proj",
+		"/partials/sessions/thread-rail/rail?project=proj",
 	} {
-		if strings.Contains(frag, banned) {
-			t.Errorf("session live fragment must not contain %q", banned)
+		frag := get(path)
+		for _, banned := range []string{
+			`id="rail-fab"`, `id="rail-scrim"`, `class="rail-sheet-head"`, `id="page-rail"`,
+			"<nav", "sse-status",
+		} {
+			if strings.Contains(frag, banned) {
+				t.Errorf("%s must not contain %q", path, banned)
+			}
 		}
 	}
 }

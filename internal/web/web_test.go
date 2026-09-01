@@ -406,6 +406,7 @@ func TestPagesRender(t *testing.T) {
 			{"/partials/history/turns/thread-99", `id="turns"`, "history"},
 			{"/partials/sessions/thread-99", `id="turns"`, "history"},
 			{"/partials/sessions/thread-99/run", `id="session-run"`, "dashboard"},
+			{"/partials/sessions/thread-99/rail", `class="rail-group"`, "history"},
 			{"/partials/worktrees/table", "All worktrees", "worktrees"},
 			{"/partials/issues/table?project=proj&owner=acme&repo=app", "No issues.", ""},
 			{"/partials/config/lists", "Projects", "config"},
@@ -450,7 +451,7 @@ func TestPagesRender(t *testing.T) {
 			{"/ship", []string{`hx-trigger="sse:ship"`}},
 			{"/history", []string{`hx-trigger="sse:history"`}},
 			{"/history/thread-99", []string{`hx-trigger="sse:history"`}},
-			{"/sessions/thread-99", []string{`hx-trigger="sse:history"`, `hx-trigger="sse:dashboard"`, `/partials/sessions/thread-99`, `/partials/sessions/thread-99/run`}},
+			{"/sessions/thread-99", []string{`hx-trigger="sse:history"`, `hx-trigger="sse:dashboard"`, `/partials/sessions/thread-99`, `/partials/sessions/thread-99/run`, `/partials/sessions/thread-99/rail`}},
 			{"/worktrees", []string{`hx-trigger="sse:worktrees"`}},
 			{"/config", []string{`hx-trigger="sse:config"`}},
 		}
@@ -811,11 +812,13 @@ func TestSessionsHub(t *testing.T) {
 		`id="page-session"`,
 		`id="live-session"`,
 		`id="live-session-run"`,
+		`id="live-session-rail"`,
 		`hx-trigger="sse:history"`,
 		`hx-trigger="sse:dashboard"`,
 		`hx-swap="innerHTML show:none focus-scroll:false"`,
 		`/partials/sessions/thread-99`,
 		`/partials/sessions/thread-99/run`,
+		`/partials/sessions/thread-99/rail`,
 		"thread-99",
 		"Grok Work",
 		`href="/projects/proj/sessions">← Sessions</a>`,
@@ -1208,6 +1211,19 @@ func TestSessionDetailStreamsLiveTurn(t *testing.T) {
 		if strings.Contains(partial, "session-watch") || strings.Contains(partial, "btn-watch") {
 			t.Fatal("watch form must not be in live partial")
 		}
+		if strings.Contains(partial, `id="session-danger"`) || strings.Contains(partial, `id="live-session-rail"`) {
+			t.Fatal("rail close-out must not be in conversation partials")
+		}
+	}
+	railPartial := getPartial("/partials/sessions/thread-99/rail")
+	if !strings.Contains(railPartial, `class="rail-group"`) {
+		t.Fatal("rail partial empty")
+	}
+	if strings.Contains(railPartial, "<nav") || strings.Contains(railPartial, "sse-status") {
+		t.Fatal("rail partial leaked layout chrome")
+	}
+	if strings.Contains(railPartial, "session-continue-form") || strings.Contains(railPartial, `id="session-lifecycle"`) {
+		t.Fatal("rail partial must not carry the composer or typed Lifecycle fields")
 	}
 	assertTurnAgentAboveUser(t, body)
 	assertTurnAgentAboveUser(t, recordPartial)
