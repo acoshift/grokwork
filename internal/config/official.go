@@ -195,6 +195,7 @@ func parseXAIRates(body []byte) map[string]ModelRate {
 		if r, ok := rateFromCells(row); ok {
 			out[name] = r
 			out[name+"-xhigh"] = r
+			out[name+"-low"] = r
 		}
 	}
 	return out

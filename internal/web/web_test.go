@@ -237,6 +237,7 @@ func TestPagesRender(t *testing.T) {
 		{"/config/agent", `<option value="grok-4.6-xhigh"`},
 		{"/config/agent", `<option value="grok-4.6"`},
 		{"/config/agent", `<option value="grok-4.5"`},
+		{"/config/agent", `<option value="grok-4.5-low"`},
 		{"/config/agent", `<option value="claude-opus-5"`},
 		{"/config/agent", `<option value="claude-sonnet-5"`},
 		{"/config/agent", `<option value="cursor-grok-4.6-xhigh"`},

@@ -170,6 +170,7 @@ func TestAgentForModel(t *testing.T) {
 		{"grok-4.6-xhigh", AgentGrok, true},
 		{"grok-4.6", AgentGrok, true},
 		{"grok-4.5", AgentGrok, true},
+		{"grok-4.5-low", AgentGrok, true},
 		{"grok-code-fast-1", AgentGrok, true},
 		{"sonnet", AgentClaude, true},
 		{"opus", AgentClaude, true},

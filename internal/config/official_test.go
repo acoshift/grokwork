@@ -85,6 +85,11 @@ func TestParseXAIRatesUsesStandardContextNotLong(t *testing.T) {
 		t.Fatal("missing grok-4.5")
 	}
 	assertRate(t, r, 2, 6, 0.3, -1)
+	if r, ok := got["grok-4.5-low"]; !ok {
+		t.Fatal("low alias missing")
+	} else {
+		assertRate(t, r, 2, 6, 0.3, -1)
+	}
 }
 
 func TestParseAnthropicRates(t *testing.T) {

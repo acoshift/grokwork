@@ -131,10 +131,12 @@ func ModelOptions() []ModelOption {
 	return []ModelOption{
 		// grok. `grok models` reports what a given account can actually reach, so
 		// this list is intentionally short — extend it per deployment.
-		// grok-4.6-xhigh is a picker alias: grokCLIModel passes -m grok-4.6 --effort xhigh.
+		// grok-4.6-xhigh / grok-4.5-low are picker aliases: grokCLIModel passes
+		// -m grok-4.6 --effort xhigh and -m grok-4.5 --effort low.
 		{Value: "grok-4.6-xhigh", Label: "grok-4.6-xhigh", Agent: AgentGrok},
 		{Value: "grok-4.6", Label: "grok-4.6", Agent: AgentGrok},
 		{Value: "grok-4.5", Label: "grok-4.5", Agent: AgentGrok},
+		{Value: "grok-4.5-low", Label: "grok-4.5-low", Agent: AgentGrok},
 
 		// claude (Claude Code CLI).
 		{Value: "claude-opus-5", Label: "claude-opus-5", Agent: AgentClaude},
