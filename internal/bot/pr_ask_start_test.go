@@ -170,7 +170,68 @@ func TestStartPRAskStampsReviewModel(t *testing.T) {
 	}
 	e, ok := b.sessions.Get(res.ThreadID)
 	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5" {
-		t.Fatalf("want review model stamped, got agent=%q model=%q", e.Agent, e.Model)
+		t.Fatalf("want review model stamped when askModel is empty, got agent=%q model=%q", e.Agent, e.Model)
+	}
+}
+
+func TestStartPRAskStampsAskModel(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5", AskModel: "grok-4.6",
+	})
+	res, err := b.StartPRAsk(prAskOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, ok := b.sessions.Get(res.ThreadID)
+	if !ok || e.Agent != "grok" || e.Model != "grok-4.6" {
+		t.Fatalf("want ask model stamped, got agent=%q model=%q", e.Agent, e.Model)
+	}
+}
+
+func TestStartPRAskExplicitModelBeatsAskModel(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5", AskModel: "grok-4.6",
+	})
+	o := prAskOpts()
+	o.Model = "claude-opus-5"
+	res, err := b.StartPRAsk(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, ok := b.sessions.Get(res.ThreadID)
+	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5" {
+		t.Fatalf("want explicit pick stamped, got agent=%q model=%q", e.Agent, e.Model)
+	}
+}
+
+func TestStartPRAskReuseKeepsStamp(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5", AskModel: "grok-4.6",
+	})
+	first, err := b.StartPRAsk(prAskOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitHistory(t, b, first.ThreadID, 1)
+	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5", AskModel: "claude-opus-5",
+	})
+	second, err := b.StartPRAsk(prAskOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Created || second.ThreadID != first.ThreadID {
+		t.Fatalf("want reuse, first=%+v second=%+v", first, second)
+	}
+	e, ok := b.sessions.Get(second.ThreadID)
+	if !ok || e.Agent != "grok" || e.Model != "grok-4.6" {
+		t.Fatalf("reuse must keep the stamped ask model, got agent=%q model=%q", e.Agent, e.Model)
 	}
 }
 

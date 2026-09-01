@@ -122,6 +122,8 @@
   "yolo": true,
   "model": "grok-4.6",
   "summarizeModel": "",
+  "reviewModel": "",
+  "askModel": "",
   "modelRates": {
     "claude-opus-5": {
       "inputPerMTok": null,

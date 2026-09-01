@@ -92,6 +92,10 @@ type Config struct {
 	// dispatch UI can override it per session, and the choice is stamped on the
 	// session like any other. Empty → Model.
 	ReviewModel string `json:"reviewModel,omitempty"`
+	// AskModel is the default for in-page PR Ask (throwaway Q&A on the PR page).
+	// Empty → ReviewModel (then Model), so adding the field is a no-op until set.
+	// An explicit pick on first create still wins; reuse keeps the stamped session.
+	AskModel string `json:"askModel,omitempty"`
 	// ModelRates prices token usage per model, in dollars per million tokens,
 	// keyed by normalized model name (see ModelRateKey). Absent or partial rates
 	// report tokens without a dollar figure rather than a wrong one — see
@@ -344,35 +348,40 @@ type Snapshot struct {
 	Agent     string
 	ClaudeBin string
 	CursorBin string
-	// SummarizeModel / ReviewModel are the raw configured values (empty = "use
-	// Model"), not the effective ones, so the config form shows a placeholder
-	// rather than a fabricated value.
+	// SummarizeModel / ReviewModel / AskModel are the raw configured values
+	// (empty = "use the next fallback"), not the effective ones, so the config
+	// form shows a placeholder rather than a fabricated value.
 	SummarizeModel string
 	ReviewModel    string
-	// ModelAgent / SummarizeModelAgent / ReviewModelAgent are the agents inferred
-	// from those model names, and *Known is false when the name identifies neither.
-	// The config page renders these so the derived agent is visible rather than
-	// implicit.
+	AskModel       string
+	// ModelAgent / SummarizeModelAgent / ReviewModelAgent / AskModelAgent are
+	// the agents inferred from those model names, and *Known is false when the
+	// name identifies neither. The config page renders these so the derived
+	// agent is visible rather than implicit.
 	ModelAgent          string
 	ModelAgentKnown     bool
 	SummarizeAgent      string
 	SummarizeAgentKnown bool
 	ReviewAgent         string
 	ReviewAgentKnown    bool
-	// ModelLimits / SummarizeLimits / ReviewLimits are the currently selected
-	// (or fallback) CLI's harness caveats, so the config page can paint them
-	// without a second lookup. FallbackLimits is the empty "CLI default"
+	AskAgent            string
+	AskAgentKnown       bool
+	// ModelLimits / SummarizeLimits / ReviewLimits / AskLimits are the currently
+	// selected (or fallback) CLI's harness caveats, so the config page can paint
+	// them without a second lookup. FallbackLimits is the empty "CLI default"
 	// option — the configured agent, not the inferred one.
 	ModelLimits     string
 	SummarizeLimits string
 	ReviewLimits    string
+	AskLimits       string
 	FallbackLimits  string
-	// ModelGroups / SummarizeModelGroups / ReviewModelGroups are the dropdown
-	// options for each field, grouped by agent and including the configured value
-	// when it is not curated.
+	// ModelGroups / SummarizeModelGroups / ReviewModelGroups / AskModelGroups
+	// are the dropdown options for each field, grouped by agent and including
+	// the configured value when it is not curated.
 	ModelGroups          []ModelGroup
 	SummarizeModelGroups []ModelGroup
 	ReviewModelGroups    []ModelGroup
+	AskModelGroups       []ModelGroup
 	// ModelRates is the per-model price table for the config form (curated models
 	// first, then any extra name config already carries). ModelRatesSet counts the
 	// rows with at least one figure, which is what the hub row reports — a spend
@@ -930,6 +939,7 @@ func (c *Config) saveLocked() error {
 		CursorBin                 string               `json:"cursorBin,omitempty"`
 		SummarizeModel            string               `json:"summarizeModel,omitempty"`
 		ReviewModel               string               `json:"reviewModel,omitempty"`
+		AskModel                  string               `json:"askModel,omitempty"`
 		ModelRates                map[string]ModelRate `json:"modelRates,omitempty"`
 		DisabledModels            []string             `json:"disabledModels,omitempty"`
 		ClaudeExtraArgs           []string             `json:"claudeExtraArgs,omitempty"`
@@ -981,6 +991,7 @@ func (c *Config) saveLocked() error {
 		CursorBin:                 c.CursorBin,
 		SummarizeModel:            c.SummarizeModel,
 		ReviewModel:               c.ReviewModel,
+		AskModel:                  c.AskModel,
 		ModelRates:                cloneModelRates(c.ModelRates),
 		DisabledModels:            slices.Clone(c.DisabledModels),
 		ClaudeExtraArgs:           slices.Clone(c.ClaudeExtraArgs),
@@ -1640,6 +1651,10 @@ func (c *Config) Snapshot() Snapshot {
 	if !reviewAgentKnown {
 		reviewAgent = modelAgent
 	}
+	askAgent, askAgentKnown := grokrun.AgentForModel(c.AskModel)
+	if !askAgentKnown {
+		askAgent = modelAgent
+	}
 	claudeBin := strings.TrimSpace(c.ClaudeBin)
 	if claudeBin == "" {
 		claudeBin = grokrun.AgentClaude.DefaultBin()
@@ -1668,19 +1683,24 @@ func (c *Config) Snapshot() Snapshot {
 		CursorBin:                 cursorBin,
 		SummarizeModel:            strings.TrimSpace(c.SummarizeModel),
 		ReviewModel:               strings.TrimSpace(c.ReviewModel),
+		AskModel:                  strings.TrimSpace(c.AskModel),
 		ModelAgent:                modelAgent.String(),
 		ModelAgentKnown:           modelAgentKnown,
 		SummarizeAgent:            summarizeAgent.String(),
 		SummarizeAgentKnown:       summarizeAgentKnown,
 		ReviewAgent:               reviewAgent.String(),
 		ReviewAgentKnown:          reviewAgentKnown,
+		AskAgent:                  askAgent.String(),
+		AskAgentKnown:             askAgentKnown,
 		ModelLimits:               modelAgent.Limitations(),
 		SummarizeLimits:           summarizeAgent.Limitations(),
 		ReviewLimits:              reviewAgent.Limitations(),
+		AskLimits:                 askAgent.Limitations(),
 		FallbackLimits:            rawFallback.Limitations(),
 		ModelGroups:               ModelGroups(c.Model),
 		SummarizeModelGroups:      ModelGroups(c.SummarizeModel),
 		ReviewModelGroups:         ModelGroups(c.ReviewModel),
+		AskModelGroups:            ModelGroups(c.AskModel),
 		ModelRates:                rateItems,
 		ModelRatesSet:             ratesSet,
 		ModelAvailability:         avail,

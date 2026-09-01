@@ -1112,10 +1112,14 @@ type pageData struct {
 	// ModelDefaultLimits is the Default option's harness caveat (the CLI that
 	// `def` would run on). ReviewModelDefaultLabel / ReviewModelDefaultLimits
 	// are the same pair for a review-model Default on pages that also host a
-	// task-model card (issue Fix vs Plan).
+	// task-model card (issue Fix vs Plan). AskModelDefaultLabel /
+	// AskModelDefaultLimits are the Ask composer Default on the PR page, which
+	// must not share the review-card Default when the two config fields differ.
 	ModelDefaultLimits       string
 	ReviewModelDefaultLabel  string
 	ReviewModelDefaultLimits string
+	AskModelDefaultLabel     string
+	AskModelDefaultLimits    string
 	// Case intake (/projects/{project}/cases/new + board CTAs): Discord /case
 	// parity — startSessions feature+role AND investigator-class capability.
 	CanOpenCase bool
@@ -2245,6 +2249,7 @@ func (s *Server) updateAgentSettings(ctx *hime.Context) error {
 		Model:          strings.TrimSpace(ctx.PostFormValue("model")),
 		SummarizeModel: strings.TrimSpace(ctx.PostFormValue("summarizeModel")),
 		ReviewModel:    strings.TrimSpace(ctx.PostFormValue("reviewModel")),
+		AskModel:       strings.TrimSpace(ctx.PostFormValue("askModel")),
 		GrokBin:        strings.TrimSpace(ctx.PostFormValue("grokBin")),
 		ClaudeBin:      strings.TrimSpace(ctx.PostFormValue("claudeBin")),
 		CursorBin:      strings.TrimSpace(ctx.PostFormValue("cursorBin")),

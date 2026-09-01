@@ -193,7 +193,7 @@ func TestAgentIncludesAnthropicEnvIsOptInAndClaudeOnly(t *testing.T) {
 }
 
 func TestSnapshotCarriesAgentSettings(t *testing.T) {
-	cfg, err := loadAgentConfig(t, `, "claudeBin": "/opt/claude", "model": "opus", "summarizeModel": "grok-code-fast-1"`)
+	cfg, err := loadAgentConfig(t, `, "claudeBin": "/opt/claude", "model": "opus", "summarizeModel": "grok-code-fast-1", "askModel": "grok-4.6"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,11 +208,17 @@ func TestSnapshotCarriesAgentSettings(t *testing.T) {
 	if snap.SummarizeAgent != "grok" || !snap.SummarizeAgentKnown {
 		t.Fatalf("summarize agent=%q known=%v", snap.SummarizeAgent, snap.SummarizeAgentKnown)
 	}
+	if snap.AskModel != "grok-4.6" || snap.AskAgent != "grok" || !snap.AskAgentKnown {
+		t.Fatalf("ask snapshot model=%q agent=%q known=%v", snap.AskModel, snap.AskAgent, snap.AskAgentKnown)
+	}
 	if snap.ModelLimits != grokrun.AgentClaude.Limitations() {
 		t.Fatalf("model limits=%q", snap.ModelLimits)
 	}
 	if snap.SummarizeLimits != grokrun.AgentGrok.Limitations() {
 		t.Fatalf("summarize limits=%q", snap.SummarizeLimits)
+	}
+	if snap.AskLimits != grokrun.AgentGrok.Limitations() {
+		t.Fatalf("ask limits=%q", snap.AskLimits)
 	}
 }
 
@@ -441,6 +447,8 @@ func TestSetAgentSettingsRoundTripsModels(t *testing.T) {
 		Agent:          "grok",
 		Model:          "claude-opus-5",
 		SummarizeModel: "claude-haiku-4-5",
+		ReviewModel:    "claude-sonnet-5",
+		AskModel:       "grok-4.6",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -455,8 +463,171 @@ func TestSetAgentSettingsRoundTripsModels(t *testing.T) {
 	if got := reloaded.ResolveSummarizeCLI(""); got.Model != "claude-haiku-4-5" || got.Agent != grokrun.AgentClaude {
 		t.Fatalf("summarize cli=%+v", got)
 	}
+	if got := reloaded.EffectiveReviewModel(); got != "claude-sonnet-5" {
+		t.Fatalf("review model=%q", got)
+	}
+	if got := reloaded.EffectiveAskModel(); got != "grok-4.6" {
+		t.Fatalf("ask model=%q", got)
+	}
+	if got := reloaded.Snapshot().AskModel; got != "grok-4.6" {
+		t.Fatalf("stored askModel=%q", got)
+	}
 	// Blank claude binary resolves rather than persisting empty.
 	if got := reloaded.ResolveAgentCLI("claude").Bin; got != "claude" {
 		t.Fatalf("claudeBin=%q", got)
+	}
+	// An unrelated save must not drop askModel: it is part of the known schema.
+	if err := reloaded.SetGrokRunLimits(40, DefaultTimeoutMs); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := again.Snapshot().AskModel; got != "grok-4.6" {
+		t.Fatalf("askModel dropped by unrelated save: %q", got)
+	}
+}
+
+// Empty askModel must inherit the review default (then the task model). Falling
+// through only to the task model would retarget hosts that already set
+// reviewModel ≠ model.
+func TestAskAgentCLIFallsBackToReviewThenTask(t *testing.T) {
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5", "reviewModel": "claude-opus-5"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := cfg.AskAgentCLI("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "claude-opus-5" || got.Agent != grokrun.AgentClaude {
+		t.Fatalf("ask cli=%+v want the review model", got)
+	}
+	if label := cfg.EffectiveAskModel(); label != got.Model {
+		t.Fatalf("modal would advertise %q while the run uses %q", label, got.Model)
+	}
+
+	cfg, err = loadAgentConfig(t, `, "model": "grok-4.5"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = cfg.AskAgentCLI("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "grok-4.5" || got.Agent != grokrun.AgentGrok {
+		t.Fatalf("ask cli=%+v want the task model", got)
+	}
+}
+
+// A curated askModel is what an empty dispatch runs, and an explicit pick beats it.
+func TestAskAgentCLIPrecedence(t *testing.T) {
+	cfg, err := loadAgentConfig(t, `,
+		"model": "grok-4.5",
+		"reviewModel": "claude-opus-5",
+		"askModel": "grok-4.6",
+		"claudeBin": "/opt/claude"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, err := cfg.AskAgentCLI("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if def.Agent != grokrun.AgentGrok || def.Model != "grok-4.6" {
+		t.Fatalf("default ask cli=%+v", def)
+	}
+	pick, err := cfg.AskAgentCLI("claude-opus-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pick.Agent != grokrun.AgentClaude || pick.Model != "claude-opus-5" || pick.Bin != "/opt/claude" {
+		t.Fatalf("explicit pick cli=%+v", pick)
+	}
+	if got := cfg.EffectiveAskModel(); got != "grok-4.6" {
+		t.Fatalf("effective ask model=%q", got)
+	}
+	if got := cfg.EffectiveReviewModel(); got != "claude-opus-5" {
+		t.Fatalf("effective review model=%q must be unchanged by askModel", got)
+	}
+}
+
+// A hand-edited askModel that is not curated must not break dispatch: Ask falls
+// back rather than failing. The label must fall back with it.
+func TestAskAgentCLIToleratesUncuratedStoredName(t *testing.T) {
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4", "reviewModel": "claude-opus-5", "askModel": "gpt-9"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := cfg.AskAgentCLI("")
+	if err != nil {
+		t.Fatalf("stored name must not fail the dispatch: %v", err)
+	}
+	if got.Agent != grokrun.AgentClaude || got.Model != "claude-opus-5" {
+		t.Fatalf("ask cli=%+v want the review default", got)
+	}
+	if label := cfg.EffectiveAskModel(); label != got.Model {
+		t.Fatalf("modal would advertise %q while the run uses %q", label, got.Model)
+	}
+}
+
+func TestEffectiveAskModelMatchesWhatRuns(t *testing.T) {
+	for _, tc := range []struct{ name, extra string }{
+		{"both unset", ""},
+		{"task only", `, "model": "grok-4.5"`},
+		{"review only", `, "model": "grok-4.5", "reviewModel": "claude-opus-5"`},
+		{"curated ask model", `, "model": "grok-4.5", "reviewModel": "claude-opus-5", "askModel": "grok-4.6"`},
+		{"uncurated ask model", `, "model": "grok-4.5", "reviewModel": "claude-opus-5", "askModel": "gpt-9"`},
+		{"uncurated ask and review", `, "model": "grok-4.5", "reviewModel": "gpt-9", "askModel": "gpt-9"`},
+		{"uncurated task model", `, "model": "grok-4-fast"`},
+		{"all uncurated", `, "model": "grok-4-fast", "reviewModel": "gpt-9", "askModel": "gpt-8"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := loadAgentConfig(t, tc.extra)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cli, err := cfg.AskAgentCLI("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if label := cfg.EffectiveAskModel(); label != cli.Model {
+				t.Fatalf("label=%q but the run uses %q", label, cli.Model)
+			}
+		})
+	}
+}
+
+// A forged uncurated POST is rejected; a previously stored hand-edited name
+// remains selectable so a save does not silently wipe it.
+func TestSetAgentSettingsKeepsHandEditedAskModel(t *testing.T) {
+	cfg, err := loadAgentConfig(t, `, "askModel": "gpt-9"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetAgentSettings(AgentSettings{Agent: "grok", AskModel: "invented"}); err == nil {
+		t.Fatal("want rejection of an uncurated ask model")
+	}
+	if got := cfg.Snapshot().AskModel; got != "gpt-9" {
+		t.Fatalf("rejected write overwrote askModel: %q", got)
+	}
+	if err := cfg.SetAgentSettings(AgentSettings{Agent: "grok", AskModel: "gpt-9"}); err != nil {
+		t.Fatalf("re-saving the stored name must succeed: %v", err)
+	}
+	snap := cfg.Snapshot()
+	if snap.AskModel != "gpt-9" {
+		t.Fatalf("askModel=%q", snap.AskModel)
+	}
+	found := false
+	for _, g := range snap.AskModelGroups {
+		for _, c := range g.Choices {
+			if c.Value == "gpt-9" && c.Selected {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("hand-edited askModel must stay in the dropdown")
 	}
 }

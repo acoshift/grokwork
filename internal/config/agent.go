@@ -116,6 +116,27 @@ func (c *Config) EffectiveReviewModel() string {
 	return task
 }
 
+// EffectiveAskModel is the model an in-page PR Ask runs on when the composer does
+// not name one: the configured ask model, else EffectiveReviewModel (review, then
+// task). Empty means "let the CLI pick".
+//
+// It must agree with AskAgentCLI("") — the Ask confirm modal's "Default (…)"
+// option. An uncurated or disabled stored name is not usable as an *ask* model, so
+// both fall through rather than one promising it and the other dropping it.
+func (c *Config) EffectiveAskModel() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	ask := strings.TrimSpace(c.AskModel)
+	askOK := c.modelAllowedLocked(ask)
+	c.mu.RUnlock()
+	if ask != "" && grokrun.IsKnownModel(ask) && askOK {
+		return ask
+	}
+	return c.EffectiveReviewModel()
+}
+
 // RequestedAgentCLI resolves a model chosen for a session that does not exist yet
 // — the web start form and the review/PR dispatch pickers.
 //
@@ -163,6 +184,24 @@ func (c *Config) ReviewAgentCLI(model string) (AgentCLI, error) {
 	// is either curated or the task model — and a hand-set task model may itself be
 	// uncurated, which is legal there and reaches the CLI via ResolveAgentCLI.
 	cli, err := c.RequestedAgentCLI(c.EffectiveReviewModel())
+	if err != nil {
+		return c.ResolveAgentCLI(""), nil
+	}
+	return cli, nil
+}
+
+// AskAgentCLI is RequestedAgentCLI for in-page PR Ask: an empty choice falls
+// back to the configured ask model, then the review model, then the task model.
+//
+// Ask units resolve their model at creation and stamp it. Unlike `model`, an
+// uncurated `askModel` is not passed through to the CLI: it falls back, which is
+// also what EffectiveAskModel reports, so the Ask composer's "Default (…)" label
+// always names the model that will run.
+func (c *Config) AskAgentCLI(model string) (AgentCLI, error) {
+	if m := strings.TrimSpace(model); m != "" {
+		return c.RequestedAgentCLI(m)
+	}
+	cli, err := c.RequestedAgentCLI(c.EffectiveAskModel())
 	if err != nil {
 		return c.ResolveAgentCLI(""), nil
 	}
@@ -396,7 +435,10 @@ type AgentSettings struct {
 	SummarizeModel string
 	// ReviewModel is the default for review sessions started from the web. Empty
 	// falls back to Model.
-	ReviewModel         string
+	ReviewModel string
+	// AskModel is the default for in-page PR Ask. Empty falls back to ReviewModel
+	// (then Model).
+	AskModel            string
 	GrokBin             string
 	ClaudeBin           string
 	CursorBin           string
@@ -423,10 +465,14 @@ func (c *Config) SetAgentSettings(in AgentSettings) error {
 	if !validModelChoice(in.ReviewModel, c.ReviewModel) {
 		return fmt.Errorf("review model %q is not a known model", in.ReviewModel)
 	}
+	if !validModelChoice(in.AskModel, c.AskModel) {
+		return fmt.Errorf("ask model %q is not a known model", in.AskModel)
+	}
 	c.Agent = name.String()
 	c.Model = strings.TrimSpace(in.Model)
 	c.SummarizeModel = strings.TrimSpace(in.SummarizeModel)
 	c.ReviewModel = strings.TrimSpace(in.ReviewModel)
+	c.AskModel = strings.TrimSpace(in.AskModel)
 	c.GrokBin = binOrDefault(in.GrokBin, grokrun.AgentGrok)
 	c.ClaudeBin = binOrDefault(in.ClaudeBin, grokrun.AgentClaude)
 	c.CursorBin = binOrDefault(in.CursorBin, grokrun.AgentCursor)

@@ -458,7 +458,7 @@
   <form method="post" action="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/ask" class="composer" id="pr-ask-form"{{if or .PRAskThreadID .RunBusy .Thread.Turns}} style="margin-top:0.85rem"{{end}}>
     {{template "csrf" $}}
     <input type="hidden" name="project" value="{{.Project}}">
-    {{if $pickModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
+    {{if $pickModel}}<select name="model" hidden>{{template "ask_model_picker_options" $}}</select>{{end}}
     <label for="ask-prompt" class="sr-only">Ask about this diff</label>
     <textarea id="ask-prompt" name="prompt" rows="1" required placeholder="Ask about this diff…"></textarea>
     <button type="submit" class="composer-send" id="btn-ask-pr" title="Ask" aria-label="Ask"

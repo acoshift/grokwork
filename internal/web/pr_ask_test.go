@@ -215,6 +215,46 @@ func TestPRDetailAskButton(t *testing.T) {
 	}
 }
 
+func TestPRDetailAskDefaultNamesAskModel(t *testing.T) {
+	srv, b := addressEnabledServer(t)
+	cfg := srv.cfg
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5", AskModel: "grok-4.6",
+	})
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/prs/acme/app/9?project=proj")
+	ask := body
+	if i := strings.Index(body, `id="pr-ask-form"`); i >= 0 {
+		ask = body[i:]
+		if j := strings.Index(ask, `</form>`); j >= 0 {
+			ask = ask[:j]
+		}
+	}
+	if !strings.Contains(ask, `>Default (grok-4.6)</option>`) {
+		t.Fatal("Ask Default must name the ask model")
+	}
+	if strings.Contains(ask, `>Default (claude-opus-5)</option>`) {
+		t.Fatal("Ask Default must not name the review model when they differ")
+	}
+	rail := body
+	if i := strings.Index(body, `id="pr-address-actions"`); i >= 0 {
+		rail = body[i:]
+	}
+	if !strings.Contains(rail, `>Default (claude-opus-5)</option>`) {
+		t.Fatal("Address/Review Default must still name the review model")
+	}
+	if strings.Contains(rail, `>Default (grok-4.6)</option>`) {
+		t.Fatal("Address/Review Default must not name the ask model")
+	}
+}
+
 func TestPRAskContinueRefused(t *testing.T) {
 	srv, b := addressEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })

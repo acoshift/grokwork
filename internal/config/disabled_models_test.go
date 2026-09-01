@@ -386,6 +386,38 @@ func TestEffectiveReviewModelSkipsDisabled(t *testing.T) {
 	}
 }
 
+func TestEffectiveAskModelSkipsDisabled(t *testing.T) {
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5", "reviewModel": "claude-opus-5", "askModel": "grok-4.6"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.SetModelDisabled("grok-4.6", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveAskModel(); got != "claude-opus-5" {
+		t.Fatalf("effective ask=%q want the review model", got)
+	}
+	cli, err := cfg.AskAgentCLI("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cli.Model != "claude-opus-5" {
+		t.Fatalf("ask cli model=%q want the review model", cli.Model)
+	}
+	if err := cfg.SetModelDisabled("claude-opus-5", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveAskModel(); got != "grok-4.5" {
+		t.Fatalf("effective ask=%q want the task model", got)
+	}
+	if err := cfg.SetModelDisabled("grok-4.5", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.EffectiveAskModel(); got != "" {
+		t.Fatalf("all disabled: effective ask=%q want empty", got)
+	}
+}
+
 func TestSnapshotCarriesModelAvailability(t *testing.T) {
 	cfg, err := loadAgentConfig(t, "")
 	if err != nil {

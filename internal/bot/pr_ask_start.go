@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -14,12 +15,12 @@ type PRAskOpts struct {
 	Project string
 	Actor   Actor
 
-	Owner  string
-	Repo   string
-	Number int
-	Title  string
-	URL    string
-	State  string
+	Owner        string
+	Repo         string
+	Number       int
+	Title        string
+	URL          string
+	State        string
 	HeadSHA      string
 	HeadRef      string
 	BaseRef      string
@@ -33,7 +34,7 @@ type PRAskOpts struct {
 	Diff string
 	// Question is the reviewer's prompt. Required.
 	Question string
-	// Model overrides the configured review model on first create only.
+	// Model overrides the configured ask model on first create only.
 	Model string
 }
 
@@ -59,7 +60,7 @@ func (b *Bot) StartPRAsk(opts PRAskOpts) (FixStartResult, error) {
 		return FixStartResult{}, ErrEmptyPrompt
 	}
 
-	cli, err := b.resolveDispatchCLI(project, opts.Actor, opts.Model)
+	cli, err := b.resolveAskCLI(project, opts.Actor, opts.Model)
 	if err != nil {
 		return FixStartResult{}, err
 	}
@@ -85,6 +86,18 @@ func (b *Bot) StartPRAsk(opts PRAskOpts) (FixStartResult, error) {
 			}
 			return b.stampNewSessionCLI(unitID, cli)
 		})
+}
+
+// resolveAskCLI is the model gate for in-page PR Ask: authorize a named model,
+// then resolve it (or the configured ask default). Kept off resolveDispatchCLI so
+// Address / Review cannot pick up askModel by accident.
+func (b *Bot) resolveAskCLI(project string, actor Actor, model string) (config.AgentCLI, error) {
+	if strings.TrimSpace(model) != "" {
+		if err := b.requireCanSelectModel(project, actor.ID); err != nil {
+			return config.AgentCLI{}, err
+		}
+	}
+	return b.cfg.AskAgentCLI(model)
 }
 
 // userFacingPrompt is what history and the live user bubble should show.

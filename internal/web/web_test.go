@@ -228,6 +228,8 @@ func TestPagesRender(t *testing.T) {
 		{"/config/agent", `name="grokBin"`},
 		{"/config/agent", `name="model"`},
 		{"/config/agent", `name="summarizeModel"`},
+		{"/config/agent", `name="reviewModel"`},
+		{"/config/agent", `name="askModel"`},
 		{"/config/agent", `name="claudeIncludeAnthropicEnv"`},
 		// Models are picked from a grouped dropdown, not typed free-form; the
 		// optgroup label is how the inferred agent shows at the point of choice.
@@ -2174,6 +2176,8 @@ func TestConfigAddsPersist(t *testing.T) {
 		"claudeBin":                 {"/opt/claude"},
 		"model":                     {"claude-opus-5"},
 		"summarizeModel":            {"claude-haiku-4-5"},
+		"reviewModel":               {"claude-sonnet-5"},
+		"askModel":                  {"grok-4.6"},
 		"claudeIncludeAnthropicEnv": {"1"},
 	}.Encode()))
 	reqAgent.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -2195,6 +2199,15 @@ func TestConfigAddsPersist(t *testing.T) {
 	if got := cfg.ResolveSummarizeCLI("").Model; got != "claude-haiku-4-5" {
 		t.Fatalf("title model=%q", got)
 	}
+	if got := cfg.Snapshot().ReviewModel; got != "claude-sonnet-5" {
+		t.Fatalf("review model=%q", got)
+	}
+	if got := cfg.Snapshot().AskModel; got != "grok-4.6" {
+		t.Fatalf("ask model=%q", got)
+	}
+	if got := cfg.EffectiveAskModel(); got != "grok-4.6" {
+		t.Fatalf("effective ask model=%q", got)
+	}
 	// A model that is not one of the offered options must not be persisted — the
 	// dropdown is the whole allowed set, so a hand-crafted POST cannot widen it.
 	reqBadModel := httptest.NewRequest(http.MethodPost, "/config/agent", strings.NewReader(url.Values{
@@ -2204,6 +2217,14 @@ func TestConfigAddsPersist(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), reqBadModel)
 	if got := cfg.ResolveAgentCLI("").Model; got != "claude-opus-5" {
 		t.Fatalf("rejected model overwrote config: %q", got)
+	}
+	reqBadAsk := httptest.NewRequest(http.MethodPost, "/config/agent", strings.NewReader(url.Values{
+		"agent": {"grok"}, "model": {"claude-opus-5"}, "askModel": {"not-a-model"},
+	}.Encode()))
+	reqBadAsk.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(httptest.NewRecorder(), reqBadAsk)
+	if got := cfg.Snapshot().AskModel; got != "grok-4.6" {
+		t.Fatalf("rejected ask model overwrote config: %q", got)
 	}
 	// An unknown agent is rejected instead of silently falling back.
 	reqBadAgent := httptest.NewRequest(http.MethodPost, "/config/agent", strings.NewReader(url.Values{

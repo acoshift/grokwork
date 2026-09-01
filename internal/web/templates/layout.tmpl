@@ -7795,3 +7795,8 @@
 {{define "review_model_picker_options"}}<option value=""{{if .ReviewModelDefaultLimits}} data-limits="{{.ReviewModelDefaultLimits}}"{{end}}>Default ({{.ReviewModelDefaultLabel}})</option>
 {{- template "model_optgroups" .ModelGroups}}
 {{- end}}
+{{/* ask_model_picker_options is the Ask composer Default on the PR page.
+     Address / Review cards on that page keep the review-model Default. */}}
+{{define "ask_model_picker_options"}}<option value=""{{if .AskModelDefaultLimits}} data-limits="{{.AskModelDefaultLimits}}"{{end}}>Default ({{.AskModelDefaultLabel}})</option>
+{{- template "model_optgroups" .ModelGroups}}
+{{- end}}

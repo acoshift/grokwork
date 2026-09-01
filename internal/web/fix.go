@@ -1018,6 +1018,11 @@ func (s *Server) attachModelPicker(d *pageData, project, def string) {
 		d.ReviewModelDefaultLabel = "CLI default"
 	}
 	d.ReviewModelDefaultLimits = grokrun.LimitationsForModel(s.cfg.EffectiveReviewModel(), fallback)
+	d.AskModelDefaultLabel = strings.TrimSpace(s.cfg.EffectiveAskModel())
+	if d.AskModelDefaultLabel == "" {
+		d.AskModelDefaultLabel = "CLI default"
+	}
+	d.AskModelDefaultLimits = grokrun.LimitationsForModel(s.cfg.EffectiveAskModel(), fallback)
 	if s.cfg.AgentMCPEnabled() && s.cfg.ProjectAgentMCPAlways(project) {
 		stripGrokInvestigateLimits(d)
 	}
@@ -1038,6 +1043,9 @@ func stripGrokInvestigateLimits(d *pageData) {
 	}
 	if d.ReviewModelDefaultLimits == grok {
 		d.ReviewModelDefaultLimits = ""
+	}
+	if d.AskModelDefaultLimits == grok {
+		d.AskModelDefaultLimits = ""
 	}
 	for i := range d.ModelGroups {
 		for j := range d.ModelGroups[i].Choices {

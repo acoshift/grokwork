@@ -19,11 +19,12 @@
     <p class="sub" style="margin:0 0 0.65rem">
       A title run is one cheap tools-off turn, so it can use a smaller model or the other CLI.
       The review model is the default for sessions dispatched from a commit or pull request.
-      Both blank fields fall back to the task model.
+      The ask model is the default for in-page PR questions.
+      Blank title and review fields fall back to the task model; a blank ask field falls back to the review model, then the task model.
     </p>
-    {{/* .inline bottom-aligns by default, which staggers these three labels as soon
+    {{/* .inline bottom-aligns by default, which staggers labels as soon
          as one field's note wraps to a second line. */}}
-    <div class="inline" style="grid-template-columns: 1fr 1fr 1fr;align-items:start">
+    <div class="inline" style="grid-template-columns: 1fr 1fr;align-items:start">
       <div>
         <label for="model">Task model</label>
         <select id="model" name="model" data-model-limits="model-limits">
@@ -65,6 +66,20 @@
           {{else}}→ same as the task model{{end}}
         </p>
         <p class="model-limits" id="review-limits"{{if not .Config.ReviewLimits}} hidden{{end}}>{{.Config.ReviewLimits}}</p>
+      </div>
+      <div>
+        <label for="ask-model">Ask model</label>
+        <select id="ask-model" name="askModel" data-model-limits="ask-limits">
+          <option value=""{{if .Config.ReviewLimits}} data-limits="{{.Config.ReviewLimits}}"{{end}}>Same as review model</option>
+          {{template "model_optgroups" .Config.AskModelGroups}}
+        </select>
+        <p class="sub" style="margin:0.35rem 0 0" id="ask-agent">
+          {{if .Config.AskModel}}
+            {{if .Config.AskAgentKnown}}→ runs on <strong>{{if eq .Config.AskAgent "claude"}}Claude{{else if eq .Config.AskAgent "cursor"}}Cursor{{else}}Grok{{end}}</strong>
+            {{else}}→ name not recognized, using the fallback agent{{end}}
+          {{else}}→ same as the review model{{end}}
+        </p>
+        <p class="model-limits" id="ask-limits"{{if not .Config.AskLimits}} hidden{{end}}>{{.Config.AskLimits}}</p>
       </div>
     </div>
 
