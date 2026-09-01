@@ -475,6 +475,7 @@ func TestSessionRailLiveHidesCloseOutWhenDone(t *testing.T) {
 		`/partials/sessions/rail-live-th/rail`,
 		`id="session-danger"`,
 		`id="session-lifecycle"`,
+		`#live-session-rail { display: contents; }`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("session page missing %q", want)

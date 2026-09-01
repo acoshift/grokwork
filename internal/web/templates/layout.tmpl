@@ -2884,6 +2884,10 @@
       gap: 0.9rem;
       min-width: 0;
     }
+    /* Boxless so Ownership / Watch / Close out stay flex children of .pr-rail
+       (desktop gap + phone sibling dividers). A real box glues those three
+       cards into one stack with no gap after Lifecycle. */
+    #live-session-rail { display: contents; }
     .rail-group {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -2969,6 +2973,12 @@
       font-size: 0.82rem;
       font-weight: 560;
     }
+    /* Close out is two button+caption pairs. .rail-note's 0.55rem bottom is
+       for captions that sit above a CTA (Watch); stacked here it adds onto
+       the next form-actions 0.45rem and the last caption pads the card. */
+    #session-danger > form { margin: 0; }
+    #session-danger > form + .rail-note { margin: 0.35rem 0 0; }
+    #session-danger > .rail-note + form .form-actions { margin-top: 0.7rem; }
     .rail-note {
       margin: 0.3rem 0 0.55rem;
       font-size: 0.78rem;
