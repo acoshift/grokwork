@@ -30,6 +30,8 @@ const anthropicFixture = `## Model pricing
 
 | Model | Base Input Tokens | 5m Cache Writes | 1h Cache Writes | Cache Hits & Refreshes | Output Tokens |
 | --- | --- | --- | --- | --- | --- |
+| Claude Fable 5.1 | $10 / MTok | $12.50 / MTok | $20 / MTok | $0.25 / MTok | $50 / MTok |
+| Claude Mythos 5.1 (limited availability) | $10 / MTok | $12.50 / MTok | $20 / MTok | $0.25 / MTok | $50 / MTok |
 | Claude Fable 5 | $10 / MTok | $12.50 / MTok | $20 / MTok | $1 / MTok | $50 / MTok |
 | Claude Mythos 5 (limited availability) | $10 / MTok | $12.50 / MTok | $20 / MTok | $1 / MTok | $50 / MTok |
 | Claude Opus 5 | $5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok |
@@ -58,6 +60,7 @@ const cursorFixture = `## Cursor Models
 
 | Model | Provider | Input | Cache write | Cache read | Output | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| [Claude Fable 5.1](https://www.anthropic.com/claude) | Anthropic | $10 | $12.5 | $0.25 | $50 | - |
 | [Claude Opus 5](https://www.anthropic.com/claude/opus) | Anthropic | $5 | $6.25 | $0.5 | $25 | Requires Max Mode |
 | [Claude Sonnet 5](https://www.anthropic.com/claude/sonnet) | Anthropic | $2 | $2.5 | $0.2 | $10 | - |
 | [Claude Fable 5](https://www.anthropic.com/claude) | Anthropic | $10 | $12.5 | $1 | $50 | - |
@@ -98,9 +101,13 @@ func TestParseAnthropicRates(t *testing.T) {
 	assertRate(t, got["claude-opus-4-8"], 5, 25, 0.5, 6.25)
 	assertRate(t, got["claude-sonnet-5"], 2, 10, 0.2, 2.5)
 	assertRate(t, got["claude-haiku-4-5"], 1, 5, 0.1, 1.25)
+	assertRate(t, got["claude-fable-5-1"], 10, 50, 0.25, 12.5)
 	assertRate(t, got["claude-fable-5"], 10, 50, 1, 12.5)
 	if _, ok := got["claude-mythos-5"]; ok {
 		t.Fatal("mythos must be skipped")
+	}
+	if _, ok := got["claude-mythos-5-1"]; ok {
+		t.Fatal("mythos 5.1 must be skipped")
 	}
 	if _, ok := got["claude-opus-4-1"]; ok {
 		t.Fatal("retired opus 4.1 must be skipped")
@@ -113,7 +120,12 @@ func TestParseCursorRatesAliasesPickerNames(t *testing.T) {
 	assertRate(t, got["composer-2.5-fast"], 3, 15, 0.5, -1)
 	assertRate(t, got["cursor-grok-4.6-xhigh"], 2, 6, 0.5, -1)
 	assertRate(t, got["cursor-grok-4.6-high"], 2, 6, 0.5, -1)
+	assertRate(t, got["claude-fable-5-1-thinking-high"], 10, 50, 0.25, 12.5)
 	assertRate(t, got["claude-opus-5-thinking-high"], 5, 25, 0.5, 6.25)
+	assertRate(t, got["claude-fable-5-thinking-high"], 10, 50, 1, 12.5)
+	if _, ok := got["claude-fable-5.1-thinking-high"]; ok {
+		t.Fatal("cursor fable 5.1 must hyphenate like the Claude CLI id")
+	}
 	assertRate(t, got["gpt-5.6-sol-medium"], 4, 20, 0.4, 5)
 	assertRate(t, got["gemini-3.7-flash-high"], 0.75, 3.5, 0.075, -1)
 	assertRate(t, got["glm-5.2-high"], 1.4, 4.4, 0.26, -1)
@@ -255,6 +267,7 @@ func TestParseUSDRate(t *testing.T) {
 		{"$10 / MTok", 10, true},
 		{"$12.50 / MTok", 12.5, true},
 		{"$0.5", 0.5, true},
+		{"$0.25 / MTok1", 0.25, true},
 		{"-", 0, false},
 		{"", 0, false},
 		{"n/a", 0, false},

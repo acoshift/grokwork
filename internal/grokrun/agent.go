@@ -139,6 +139,7 @@ func ModelOptions() []ModelOption {
 		{Value: "grok-4.5-low", Label: "grok-4.5-low", Agent: AgentGrok},
 
 		// claude (Claude Code CLI).
+		{Value: "claude-fable-5-1", Label: "claude-fable-5-1", Agent: AgentClaude},
 		{Value: "claude-opus-5", Label: "claude-opus-5", Agent: AgentClaude},
 		{Value: "claude-opus-4-8", Label: "claude-opus-4-8", Agent: AgentClaude},
 		{Value: "claude-sonnet-5", Label: "claude-sonnet-5", Agent: AgentClaude},
@@ -150,6 +151,7 @@ func ModelOptions() []ModelOption {
 		// task runs Claude-quality models on cursor-agent.
 		{Value: "composer-2.5", Label: "composer-2.5", Agent: AgentCursor},
 		{Value: "composer-2.5-fast", Label: "composer-2.5-fast", Agent: AgentCursor},
+		{Value: "claude-fable-5-1-thinking-high", Label: "claude-fable-5-1-thinking-high", Agent: AgentCursor},
 		{Value: "claude-opus-5-thinking-high", Label: "claude-opus-5-thinking-high", Agent: AgentCursor},
 		{Value: "claude-sonnet-5-thinking-high", Label: "claude-sonnet-5-thinking-high", Agent: AgentCursor},
 		{Value: "claude-fable-5-thinking-high", Label: "claude-fable-5-thinking-high", Agent: AgentCursor},

@@ -352,7 +352,9 @@ func cursorAliases(key string) []string {
 	case key == "grok-4.6" || key == "grok-4.5":
 		return []string{"cursor-" + key + "-high", "cursor-" + key + "-xhigh"}
 	case strings.HasPrefix(key, "claude-"):
-		return []string{key + "-thinking-high"}
+		// Docs write "Claude Fable 5.1"; picker ids hyphenate the minor
+		// (claude-fable-5-1-thinking-high), matching the Claude CLI id.
+		return []string{strings.ReplaceAll(key, ".", "-") + "-thinking-high"}
 	case key == "gpt-5.6-sol":
 		return []string{"gpt-5.6-sol-medium"}
 	case key == "gemini-3.7-flash":

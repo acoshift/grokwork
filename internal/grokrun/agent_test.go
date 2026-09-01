@@ -176,6 +176,8 @@ func TestAgentForModel(t *testing.T) {
 		{"opus", AgentClaude, true},
 		{"haiku", AgentClaude, true},
 		{"fable", AgentClaude, true},
+		{"claude-fable-5-1", AgentClaude, true},
+		{"claude-fable-5", AgentClaude, true},
 		{"claude-opus-4-8", AgentClaude, true},
 		{"claude-opus-5", AgentClaude, true},
 		{"  SONNET  ", AgentClaude, true},
@@ -184,6 +186,7 @@ func TestAgentForModel(t *testing.T) {
 		// cursor-agent. Cursor-hosted Claude ids carry effort/speed suffixes
 		// the Claude CLI does not use; those must not route to claude.
 		{"composer-2.5", AgentCursor, true},
+		{"claude-fable-5-1-thinking-high", AgentCursor, true},
 		{"claude-opus-5-thinking-high", AgentCursor, true},
 		{"claude-opus-5-high", AgentCursor, true},
 		{"cursor-grok-4.6-xhigh", AgentCursor, true},
