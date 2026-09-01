@@ -397,7 +397,7 @@ func TestPagesRender(t *testing.T) {
 			{"/partials/history/table", "thread-99", "history"},
 			{"/partials/history/turns/thread-99", `id="turns"`, "history"},
 			{"/partials/sessions/thread-99", `id="turns"`, "history"},
-			{"/partials/sessions/thread-99/run", "No active", "dashboard"},
+			{"/partials/sessions/thread-99/run", `id="session-run"`, "dashboard"},
 			{"/partials/worktrees/table", "All worktrees", "worktrees"},
 			{"/partials/issues/table?project=proj&owner=acme&repo=app", "No issues.", ""},
 			{"/partials/config/lists", "Projects", "config"},
@@ -607,10 +607,10 @@ func TestPagesRender(t *testing.T) {
 	}
 }
 
-// TestTranscriptNamesSessionAgent pins that reply bubbles and the run-status
-// line name the CLI the session is stamped on. A thread stamped on claude
-// captioned "Grok" misattributes every answer in it, and the stamp is
-// immutable, so the whole transcript is wrong — not just the newest turn.
+// TestTranscriptNamesSessionAgent pins that reply bubbles name the CLI the
+// session is stamped on. A thread stamped on claude captioned "Grok"
+// misattributes every answer in it, and the stamp is immutable, so the whole
+// transcript is wrong — not just the newest turn.
 func TestTranscriptNamesSessionAgent(t *testing.T) {
 	srv, _, _ := testServer(t)
 	h := srv.Handler()
@@ -638,10 +638,6 @@ func TestTranscriptNamesSessionAgent(t *testing.T) {
 			t.Fatalf("%s: claude session still labels a bubble Grok: %s", p, body)
 		}
 	}
-	// Same resolution drives the idle run-status line on the session page.
-	if body := getBody(t, h, "/sessions/thread-99"); !strings.Contains(body, "No active Claude run.") {
-		t.Fatalf("session page run-status line not agent-aware: %s", body)
-	}
 }
 
 func getBody(t *testing.T, h http.Handler, path string) string {
@@ -653,6 +649,65 @@ func getBody(t *testing.T, h http.Handler, path string) string {
 		t.Fatalf("%s status=%d body=%s", path, w.Code, w.Body.String())
 	}
 	return w.Body.String()
+}
+
+func TestSessionHidesEmptyTurnsChrome(t *testing.T) {
+	srv, _, _ := testServer(t)
+	if err := srv.sessions.Set("thread-empty", sessionstore.Entry{
+		SessionID: "sess-empty",
+		Project:   "proj",
+		LastUser:  "alice#0",
+		Goal:      "brand new unit",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	body := getBody(t, h, "/sessions/thread-empty")
+	for _, ban := range []string{
+		"No turns yet.",
+		"No active",
+		`id="turns"`,
+		">Turns <",
+	} {
+		if strings.Contains(body, ban) {
+			t.Fatalf("empty session still shows %q", ban)
+		}
+	}
+	for _, want := range []string{
+		`id="page-session"`,
+		`id="live-session"`,
+		`id="live-session-run"`,
+		`id="session-run"`,
+		"Work unit",
+		"brand new unit",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("empty session missing %q", want)
+		}
+	}
+
+	runPartial := httptest.NewRequest(http.MethodGet, "/partials/sessions/thread-empty/run", nil)
+	runPartial.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, runPartial)
+	if w.Code != http.StatusOK {
+		t.Fatalf("run partial status=%d", w.Code)
+	}
+	runBody := w.Body.String()
+	if !strings.Contains(runBody, `id="session-run"`) {
+		t.Fatal("idle run partial must keep the session-run hook")
+	}
+	if strings.Contains(runBody, "No active") {
+		t.Fatal("idle run partial must not show empty run copy")
+	}
+
+	withTurns := getBody(t, h, "/sessions/thread-99")
+	if !strings.Contains(withTurns, `id="turns"`) {
+		t.Fatal("session with turns must still render the turns list")
+	}
+	if strings.Contains(withTurns, "No turns yet.") {
+		t.Fatal("session with turns must not show the empty copy")
+	}
 }
 
 func TestSessionsHub(t *testing.T) {

@@ -549,10 +549,10 @@
   {{template "session_run" .}}
 </div>
 
+{{if .Thread.Turns}}
 <div class="section">
   {{$done := len .Thread.Turns}}
   <h2>Turns <span class="muted" style="font-weight:500;font-size:0.9rem">({{$done}})</span></h2>
-  {{if .Thread.Turns}}
   <div class="turns" id="turns">
     {{/* Newest first. #N stays chronological. Within a turn the agent reply
          is above the user prompt. The docked composer is position-pinned. */}}
@@ -624,13 +624,12 @@
     {{end}}
     {{end}}
   </div>
-  {{else}}
-  <div class="empty">No turns yet.</div>
-  {{end}}
 </div>
+{{end}}
 {{end}}
 
 {{define "session_run"}}
+<div id="session-run">
 {{if or .RunBusy .QueueItems}}
 <div class="section card">
   {{if .RunBusy}}
@@ -670,13 +669,7 @@
   {{if .RunBusy}}
   {{if .RunPhases}}<p class="mono" style="margin:0.85rem 0 0">{{.RunPhases}}</p>{{end}}
   {{if .RunActivity}}<p class="muted" style="margin:0.35rem 0 0"><em>{{.RunActivity}}</em></p>{{end}}
-  {{else}}
-  <p class="muted" style="margin:0.85rem 0 0">No active {{.AgentLabel}} run.</p>
   {{end}}
-</div>
-{{else}}
-<div class="section">
-  <p class="muted" style="margin:0">No active {{.AgentLabel}} run.</p>
 </div>
 {{end}}
 {{if .RunBusy}}
@@ -741,4 +734,5 @@
 </article>
 </div>
 {{end}}
+</div>
 {{end}}

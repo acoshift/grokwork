@@ -1060,8 +1060,8 @@ type pageData struct {
 	PRSessionThreadID string
 	PRSessionCount    int
 	SessionEntry      sessionstore.Entry
-	// AgentLabel names the CLI a session runs on ("Grok" / "Claude"), for the
-	// session page's reply bubbles and run-status line.
+	// AgentLabel names the CLI a session runs on ("Grok" / "Claude"), for
+	// reply bubbles on the session page.
 	AgentLabel  string
 	DiscordURL  string
 	HasSession  bool // live sessionstore entry exists (false after reset)
