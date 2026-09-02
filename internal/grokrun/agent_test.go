@@ -156,6 +156,9 @@ func TestModelFamilyFollowsCatalog(t *testing.T) {
 	if got := ModelFamily("composer-2.5"); got != "composer" {
 		t.Fatalf("composer-2.5 family=%q", got)
 	}
+	if got := ModelFamily("gemini-3.8-flash-high"); got != "gemini" {
+		t.Fatalf("gemini-3.8-flash-high family=%q", got)
+	}
 	if ModelFamilyLabel("gpt") != "GPT" {
 		t.Fatalf("label=%q", ModelFamilyLabel("gpt"))
 	}
@@ -201,6 +204,8 @@ func TestAgentForModel(t *testing.T) {
 		{"cursor-grok-4.6-high", AgentCursor, true},
 		{"gpt-5", AgentCursor, true},
 		{"gemini-3-pro", AgentCursor, true},
+		{"gemini-3.8-flash-high", AgentCursor, true},
+		{"gemini-3.7-flash-high", AgentCursor, true},
 		{"glm-5.2-high", AgentCursor, true},
 		{"glm-5.2-max", AgentCursor, true},
 		{"kimi-k3-max", AgentCursor, true},

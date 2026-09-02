@@ -356,8 +356,8 @@ func cursorAliases(key string) []string {
 		return []string{id + "-thinking-high", id + "-thinking-xhigh"}
 	case key == "gpt-5.6-sol":
 		return []string{"gpt-5.6-sol-medium"}
-	case key == "gemini-3.7-flash":
-		return []string{"gemini-3.7-flash-high"}
+	case key == "gemini-3.7-flash" || key == "gemini-3.8-flash":
+		return []string{key + "-high"}
 	case key == "glm-5.2":
 		return []string{"glm-5.2-high", "glm-5.2-max"}
 	case key == "kimi-k3":

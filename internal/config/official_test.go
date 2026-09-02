@@ -66,6 +66,7 @@ const cursorFixture = `## Cursor Models
 | [Claude Fable 5](https://www.anthropic.com/claude) | Anthropic | $10 | $12.5 | $1 | $50 | - |
 | [GPT-5.6 Sol](https://openai.com/) | OpenAI | $4 | $5 | $0.4 | $20 | - |
 | [Gemini 3.7 Flash](https://ai.google.dev/) | Google | $0.75 | - | $0.075 | $3.5 | - |
+| [Gemini 3.8 Flash](https://ai.google.dev/) | Google | $0.75 | - | $0.075 | $3.5 | - |
 | [GLM 5.2](https://z.ai) | Z.ai | $1.4 | - | $0.26 | $4.4 | Hidden by default |
 | Kimi K2.7 Code | Moonshot | $0.95 | - | $0.19 | $4 | Hidden by default |
 | [Kimi K3](https://www.moonshot.ai) | Moonshot | $3 | - | $0.3 | $15 | Hidden by default |
@@ -142,6 +143,7 @@ func TestParseCursorRatesAliasesPickerNames(t *testing.T) {
 	}
 	assertRate(t, got["gpt-5.6-sol-medium"], 4, 20, 0.4, 5)
 	assertRate(t, got["gemini-3.7-flash-high"], 0.75, 3.5, 0.075, -1)
+	assertRate(t, got["gemini-3.8-flash-high"], 0.75, 3.5, 0.075, -1)
 	assertRate(t, got["glm-5.2-high"], 1.4, 4.4, 0.26, -1)
 	assertRate(t, got["glm-5.2-max"], 1.4, 4.4, 0.26, -1)
 	assertRate(t, got["kimi-k3-max"], 3, 15, 0.3, -1)

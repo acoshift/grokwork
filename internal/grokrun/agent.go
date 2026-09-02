@@ -170,6 +170,7 @@ func ModelOptions() []ModelOption {
 		{Value: "gpt-5.6-sol-medium", Label: "gpt-5.6-sol-medium", Agent: AgentCursor},
 		{Value: "cursor-grok-4.6-xhigh", Label: "cursor-grok-4.6-xhigh", Agent: AgentCursor},
 		{Value: "cursor-grok-4.6-high", Label: "cursor-grok-4.6-high", Agent: AgentCursor},
+		{Value: "gemini-3.8-flash-high", Label: "gemini-3.8-flash-high", Agent: AgentCursor},
 		{Value: "gemini-3.7-flash-high", Label: "gemini-3.7-flash-high", Agent: AgentCursor},
 		{Value: "glm-5.2-high", Label: "glm-5.2-high", Agent: AgentCursor},
 		{Value: "glm-5.2-max", Label: "glm-5.2-max", Agent: AgentCursor},
