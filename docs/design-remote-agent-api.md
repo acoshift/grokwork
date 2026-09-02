@@ -7,7 +7,7 @@
 | **Date** | 2026-08-12 |
 | **Repo** | `github.com/acoshift/grokwork` |
 | **Audience** | Senior engineers familiar with this codebase |
-| **Related** | `CLAUDE.md`, `TODO.md` (design principles), `docs/design-web-primary.md`, `docs/design-agent-sandbox.md`, `docs/design-agentic-team-runtime.md`, `docs/design-deploy-pipeline.md` (package-boundary style), `internal/web/auth.go`, `internal/bot/web_task_start.go`, `internal/identity`, `internal/sessionstore/ownership.go` |
+| **Related** | `AGENTS.md`, `TODO.md` (design principles), `docs/design-web-primary.md`, `docs/design-agent-sandbox.md`, `docs/design-agentic-team-runtime.md`, `docs/design-deploy-pipeline.md` (package-boundary style), `internal/web/auth.go`, `internal/bot/web_task_start.go`, `internal/identity`, `internal/sessionstore/ownership.go` |
 
 ---
 

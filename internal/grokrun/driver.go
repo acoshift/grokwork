@@ -70,7 +70,7 @@ type streamCallbacks struct {
 	onThought  func(string)
 	onActivity func(string)
 	// cwd is the run's working directory. Activity lines are shown in Discord and
-	// must never carry a local path (see CLAUDE.md), so drivers whose tool payloads
+	// must never carry a local path (see AGENTS.md), so drivers whose tool payloads
 	// are absolute report them relative to this.
 	cwd string
 }

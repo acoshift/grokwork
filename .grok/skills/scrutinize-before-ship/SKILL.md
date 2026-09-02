@@ -1,6 +1,6 @@
 ---
 name: scrutinize-before-ship
-description: Mandatory pre-ship review gate for this repository. Load and run the scrutinize skill on the full change before any commit intended for main. Use when finishing implementation, about to commit, push, open a PR, or ship code on this repo — and whenever CLAUDE.md says scrutinize-then-ship.
+description: Mandatory pre-ship review gate for this repository. Load and run the scrutinize skill on the full change before any commit intended for main. Use when finishing implementation, about to commit, push, open a PR, or ship code on this repo — and whenever AGENTS.md says scrutinize-then-ship.
 ---
 
 # Scrutinize before ship
@@ -21,7 +21,7 @@ Any time you have code changes you intend to commit/push to `main` (or hand to a
    - Report with evidence
 3. Fix every **blocker** and **major** finding. Re-run scrutinize if the fix is non-trivial.
 4. Ship only with verdict **`ship`** (or after fixes reached `ship`).
-5. Then commit and integrate per CLAUDE.md Workflow (worktree → main). Do not leave long-lived feature branches for routine work.
+5. Then commit and integrate per AGENTS.md Workflow (worktree → main). Do not leave long-lived feature branches for routine work.
 
 ## Output
 

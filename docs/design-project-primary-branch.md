@@ -641,7 +641,7 @@ No schema change. `Entry.PrimaryBranch` remains ship/sync metadata.
 3. **No feature flag** — empty default keeps today’s mutator shapes; Actions empty-preferred candidate expansion is a small alignment fix (only matters when HEAD/main/master are all absent).
 4. **Staging:** project with GitHub default `main`, set `primaryBranch: "prod"`; verify worktree base, commits, deploy allowlist, direct ship (including fetch-before-resolve), prompt `--base` / forbid-list. Also verify clearing the field restores `DirectShipFF(..., "")` path.
 5. **Rollback:** clear field in UI; runtime-mutable; next ensure/ship/sync without stamp uses heuristic. Shipped sessions keep `Entry.PrimaryBranch` for `/sync` until reset.
-6. **Docs:** README, CLAUDE.md pointer, cross-links from design-no-pr-mode and design-deploy-pipeline; document local `set-head` interim tip.
+6. **Docs:** README, AGENTS.md pointer, cross-links from design-no-pr-mode and design-deploy-pipeline; document local `set-head` interim tip.
 
 ### Should this design live in `docs/`?
 
@@ -757,7 +757,7 @@ Each PR is independently reviewable and mergeable. Prefer landing on `main` via 
 ### PR6 — Docs polish + cross-links
 
 - **Title:** `docs: primaryBranch operator notes and design cross-links`
-- **Files:** `README.md`, `CLAUDE.md`, `docs/design-no-pr-mode.md`, `docs/design-deploy-pipeline.md`
+- **Files:** `README.md`, `AGENTS.md`, `docs/design-no-pr-mode.md`, `docs/design-deploy-pipeline.md`
 - **Dependencies:** PR3–PR5 behavior live
 - **Description:** Operator summary, multi-repo caveat, `/sync` stamp stickiness, fail-closed UX, local `set-head` interim tip.
 

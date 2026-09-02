@@ -1429,7 +1429,7 @@ const scrutinizeBeforeShipStep = "Run a full pre-ship scrutinize pass (load the 
 
 // scrutinizeBeforeShipContract is the hard pre-ship review block for every
 // shipping remote-work run (PR mode and direct-to-primary). Soft prose in
-// project CLAUDE.md is not enough — agents skip optional "when done" steps.
+// project AGENTS.md / CLAUDE.md is not enough — agents skip optional "when done" steps.
 // Prefer the coding CLI's `scrutinize` skill when discoverable (this repo vendors
 // it under .grok/skills/scrutinize/; hosts may also install ~/.grok or ~/.claude
 // user skills so other project worktrees see it). The contract below still

@@ -425,7 +425,7 @@ func TestClaudeDecodeSeparatesAssistantMessages(t *testing.T) {
 }
 
 // Activity lines are rendered into Discord, where a local path must never appear
-// (CLAUDE.md). claude's file tools take absolute paths, and the detail is truncated
+// (AGENTS.md). claude's file tools take absolute paths, and the detail is truncated
 // to its first 60 characters — so the raw form both leaked the private worktree
 // path and spent the whole budget on a prefix common to every file, dropping the
 // filename.

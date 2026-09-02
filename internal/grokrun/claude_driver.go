@@ -416,7 +416,7 @@ func claudeToolActivity(blk claudeContentBlock, cwd string) string {
 // relativizeToolDetail rewrites paths under cwd to be relative to it.
 //
 // Two reasons, both load-bearing. Activity lines are rendered into Discord, and a
-// local path must never appear there (CLAUDE.md) — claude's file tools take
+// local path must never appear there (AGENTS.md) — claude's file tools take
 // absolute paths, so its raw detail is the private worktree path. And the detail is
 // then truncated to its first 60 characters, so an absolute path spent the whole
 // budget on a prefix that is identical for every file in the repo and dropped the

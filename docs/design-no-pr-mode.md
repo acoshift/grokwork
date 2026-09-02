@@ -80,7 +80,7 @@ Rationale:
 - Soft prompt-only “push to main” under yolo is fail-open and races badly.
 - SHA push never touches main checkout HEAD (safe if operator is working there).
 
-**Invariant update (docs / CLAUDE.md):**
+**Invariant update (docs / AGENTS.md):**
 
 > Bot never merges **GitHub PRs**. When a session is in direct-to-primary mode, the bot **may fast-forward a managed session branch onto the project primary and push primary** — local integrate + push of an `IsManagedBranch` head only, not PR merge.
 
@@ -322,7 +322,7 @@ Do **not** claim “re-run will auto-rebase” — v1 keeps the diverged worktre
 ### Docs
 
 - `README.md` — mode, safety, no primary CI watcher, sticky threads
-- `CLAUDE.md` — invariant amendment
+- `AGENTS.md` — invariant amendment
 - `config.example.json` field only if we keep comments in README (JSON has no comments)
 
 ---
@@ -357,7 +357,7 @@ Do **not** claim “re-run will auto-rebase” — v1 keeps the diverged worktre
 
 - Project home / ship board “direct” badge
 - Idle cleanup regression
-- Docs + CLAUDE invariant
+- Docs + AGENTS.md invariant
 - Note: no primary CI watcher in v1
 
 Can squash for a solo repo if preferred; ordering keeps each step reviewable.

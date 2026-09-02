@@ -432,7 +432,7 @@ Two changes are **accepted** as visible, because they cannot be avoided and are 
 
 ## Doc / principle updates this train implies
 
-- **`TODO.md` design principle #1** — “One **thread** = one worktree = one branch = one Grok session” → “One **unit** = one worktree = one branch = one agent session (a unit may have a Discord thread).” `CLAUDE.md` carries the same sentence and needs the same edit.
+- **`TODO.md` design principle #1** — “One **thread** = one worktree = one branch = one Grok session” → “One **unit** = one worktree = one branch = one agent session (a unit may have a Discord thread).” `AGENTS.md` carries the same sentence and needs the same edit.
 - **`TODO.md` principle #5** — “Pins/cards over chat archaeology” becomes surface-independent: “one updated **timeline** beats chat archaeology”, of which pins are the Discord rendering.
 - **`TODO.md` non-goal “Auth-heavy public web app”** — retire. Web stays private-network by default, but pluggable auth with non-Discord accounts is now in scope. Restate the boundary as: *no public signup, no multi-tenant hostile isolation.*
 - **`TODO.md` framing line** — “Discord-first team development workflow + private web UI” → “web-primary team development workflow with a first-class Discord surface”.

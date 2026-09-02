@@ -393,7 +393,7 @@ Enforce mode with hardened vetting (IP literals, private-range post-resolve deny
 
 ### PR5 — hardening and close-out
 
-Per-project fine-grained PAT via the `GH_CONFIG_DIR`/env seam + `gh auth logout` runbook + branch-protection docs; **mandatory** seccomp UDP block as the prerequisite spike for any future Landlock net-enforce; credential-broker (v2) design spike; **P0.4 default-on decision point** (below); CLAUDE.md invariant blockquote:
+Per-project fine-grained PAT via the `GH_CONFIG_DIR`/env seam + `gh auth logout` runbook + branch-protection docs; **mandatory** seccomp UDP block as the prerequisite spike for any future Landlock net-enforce; credential-broker (v2) design spike; **P0.4 default-on decision point** (below); AGENTS.md invariant blockquote:
 
 > grok children run inside an OS sandbox; only the bot execs unsandboxed `git`/`gh`.
 
@@ -468,7 +468,7 @@ Four proposals were judged against security, feasibility, and operability. This 
 ## Docs touchpoints
 
 - `README.md` — sandbox modes, host requirements (bubblewrap / kernel), agent-home provisioning runbook, HTTPS-remote requirement, migration/upgrade ordering, kill switch.
-- `CLAUDE.md` — invariant amendment (PR5 blockquote); `internal/sandbox` is the only wrap point.
+- `AGENTS.md` — invariant amendment (PR5 blockquote); `internal/sandbox` is the only wrap point.
 - `config.example.json` — `sandbox` block (incl. `allowUnconfinedDegrade`), `worktreesRoot`, `webSearch`.
 - `TODO.md` — close line 176; cross-reference the broker design and `requirePushApproval`.
 

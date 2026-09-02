@@ -15,7 +15,7 @@ import "slices"
 //     held — Store.mu is released before the caller ever looks at the value.
 //     Observed under -race as a web handler rendering a session against a
 //     running task's upsertIssue.
-//   - A silent write-through. CLAUDE.md is explicit that mutation goes through
+//   - A silent write-through. AGENTS.md is explicit that mutation goes through
 //     Patch, but a caller doing e.PRs[0].State = … or e.Dossier.Summary = …
 //     mutated store state directly and invisibly, skipping both the lock and
 //     the save. The pointer fields made this especially easy: Dossier alone

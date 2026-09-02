@@ -69,7 +69,7 @@ would be seven no-op stubs to reach `args()`.
 ### K2 — The manifest is read from the revision, never the working tree
 
 `LoadAt` runs `git ls-tree`/`git cat-file` against the rev. The shared main checkout is routinely
-dirty — CLAUDE.md's workflow section has parallel agents editing it — so reading the working tree
+dirty — AGENTS.md's workflow section has parallel agents editing it — so reading the working tree
 would show, and run, a pipeline that is not the one committed with the code being deployed.
 
 Size is probed with `git ls-tree -l` **before** any read, because a `Runner` buffers all of stdout
@@ -505,7 +505,7 @@ A notification failure never fails the run.
 | 4 | Trigger + run page + live log | `TestPostDeployRequiresCapability`, `TestDeployLogTailOffset`, `TestLiveRevsChangesForRunWithinOneTick`, `TestDeployPartialHasNoChrome`, `TestRawLogLinkOptsOutOfBoost` |
 | 5 | Queue + concurrency + restart recovery | `TestSecondTriggerQueues`, `TestQueueCapRejects`, `TestDoubleTriggerSameShaDifferentActorDedupes`, `TestRunningBecomesInterruptedOnRestart`, `TestRecoverBlocksLaneWhenGroupAliveButLeaderGone`, `TestTriggerRefusedWhileStopping` |
 | 6 | Redeploy + Discord notification | `TestRedeployReplaysFrozenSteps`, `TestRedeployWaivesRefCheckOnSameLane`, `TestDeployNoticeHasNoLocalPath`, `TestDeployNoticeFallsBackToInboxWithoutChannel` |
-| 7 | Docs: README, CLAUDE.md, TODO.md, `config.example.json` | PATH poison list extended with `docker`, `kubectl`, `helm`, `gcloud` |
+| 7 | Docs: README, AGENTS.md, TODO.md, `config.example.json` | PATH poison list extended with `docker`, `kubectl`, `helm`, `gcloud` |
 
 Slice 1 delivers observable value on its own: you can see the pipeline your repo declares, and
 nothing executes.
