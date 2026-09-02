@@ -254,7 +254,7 @@ func TestStartAddressCIReuseKeepsPinnedModel(t *testing.T) {
 	}
 	res, err := b.StartAddressCI(AddressCIOpts{
 		Project: "app", Owner: "acme", Repo: "app", Number: 5,
-		Actor: Actor{ID: "u", DisplayName: "U"}, Model: "claude-opus-5",
+		Actor: Actor{ID: "u", DisplayName: "U"}, Model: "claude-opus-5-high",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -272,7 +272,7 @@ func TestStartAddressCICreateStampsReviewModel(t *testing.T) {
 	b, _ := testAddressBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
 	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high",
 	})
 	res, err := b.StartAddressCI(AddressCIOpts{
 		Project: "app", Owner: "acme", Repo: "app", Number: 21,
@@ -282,7 +282,7 @@ func TestStartAddressCICreateStampsReviewModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := b.sessions.Get(res.ThreadID)
-	if got.Agent != "claude" || got.Model != "claude-opus-5" {
+	if got.Agent != "claude" || got.Model != "claude-opus-5-high" {
 		t.Fatalf("want review model stamped, got agent=%q model=%q", got.Agent, got.Model)
 	}
 }

@@ -160,7 +160,7 @@ func TestPRDetailReviewButtonAndModelGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high",
 	})
 	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
@@ -201,7 +201,7 @@ func TestPRDetailReviewButtonAndModelGate(t *testing.T) {
 		t.Fatal("investigator must not see the model field on the review card")
 	}
 	w := postFix(t, srv, "/prs/acme/app/9/agent-review", sid2, csrf2, url.Values{
-		"project": {"proj"}, "model": {"claude-opus-5"},
+		"project": {"proj"}, "model": {"claude-opus-5-high"},
 	})
 	assertRedirectErr(t, w, "/prs/acme/app/9", "not allowed to pick a model")
 

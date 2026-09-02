@@ -223,7 +223,7 @@ func TestPRDetailAskDefaultNamesAskModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5", AskModel: "grok-4.6",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high", AskModel: "grok-4.6-high",
 	})
 	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
@@ -237,20 +237,20 @@ func TestPRDetailAskDefaultNamesAskModel(t *testing.T) {
 			ask = ask[:j]
 		}
 	}
-	if !strings.Contains(ask, `>Default (grok-4.6)</option>`) {
+	if !strings.Contains(ask, `>Default (grok-4.6-high)</option>`) {
 		t.Fatal("Ask Default must name the ask model")
 	}
-	if strings.Contains(ask, `>Default (claude-opus-5)</option>`) {
+	if strings.Contains(ask, `>Default (claude-opus-5-high)</option>`) {
 		t.Fatal("Ask Default must not name the review model when they differ")
 	}
 	rail := body
 	if i := strings.Index(body, `id="pr-address-actions"`); i >= 0 {
 		rail = body[i:]
 	}
-	if !strings.Contains(rail, `>Default (claude-opus-5)</option>`) {
+	if !strings.Contains(rail, `>Default (claude-opus-5-high)</option>`) {
 		t.Fatal("Address/Review Default must still name the review model")
 	}
-	if strings.Contains(rail, `>Default (grok-4.6)</option>`) {
+	if strings.Contains(rail, `>Default (grok-4.6-high)</option>`) {
 		t.Fatal("Address/Review Default must not name the ask model")
 	}
 }

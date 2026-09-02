@@ -474,7 +474,7 @@ func TestStartFixNamedModelStampsOnCreate(t *testing.T) {
 		Kind: FixKindGitHub, Project: "app",
 		Owner: "acme", Repo: "app", Number: 9,
 		Title: "m", Actor: Actor{ID: "u1", DisplayName: "U"},
-		Model: "claude-opus-5", ForceNew: true,
+		Model: "claude-opus-5-high", ForceNew: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -483,7 +483,7 @@ func TestStartFixNamedModelStampsOnCreate(t *testing.T) {
 	if !ok {
 		t.Fatal("no entry")
 	}
-	if e.Model != "claude-opus-5" || e.Agent != "claude" {
+	if e.Model != "claude-opus-5-high" || e.Agent != "claude" {
 		t.Fatalf("agent=%q model=%q", e.Agent, e.Model)
 	}
 }
@@ -514,7 +514,7 @@ func TestStartFixReuseIgnoresModel(t *testing.T) {
 		Owner: "acme", Repo: "app", Number: 3,
 		ThreadID: "exist-m",
 		Title:    "again", Actor: Actor{ID: "u", DisplayName: "U"},
-		Model: "claude-opus-5",
+		Model: "claude-opus-5-high",
 	})
 	if err != nil {
 		t.Fatal(err)

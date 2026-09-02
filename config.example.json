@@ -120,7 +120,7 @@
   "claudeExtraArgs": [],
   "claudeIncludeAnthropicEnv": false,
   "yolo": true,
-  "model": "grok-4.6",
+  "model": "grok-4.6-high",
   "summarizeModel": "",
   "reviewModel": "",
   "askModel": "",

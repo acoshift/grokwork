@@ -170,7 +170,7 @@ func (c *Config) ApplyOfficialRates(cat OfficialRateCatalog) (OfficialFillResult
 			return
 		}
 		merged[key] = incoming
-		res.Updated = append(res.Updated, name)
+		res.Updated = append(res.Updated, key)
 	}
 	for _, opt := range grokrun.ModelOptions() {
 		consider(opt.Value)
@@ -193,7 +193,7 @@ func parseXAIRates(body []byte) map[string]ModelRate {
 			continue
 		}
 		if r, ok := rateFromCells(row); ok {
-			aliasEffortRates(out, name, r)
+			out[name] = r
 		}
 	}
 	return out
@@ -207,7 +207,7 @@ func parseAnthropicRates(body []byte) map[string]ModelRate {
 			continue
 		}
 		if r, ok := rateFromCells(row); ok {
-			aliasEffortRates(out, name, r)
+			out[name] = r
 		}
 	}
 	return out
@@ -364,15 +364,6 @@ func cursorAliases(key string) []string {
 		return []string{"kimi-k3-max"}
 	}
 	return nil
-}
-
-// aliasEffortRates copies r onto name and every grok/claude picker effort
-// suffix. Token price does not change with effort; spend looks up the stamp.
-func aliasEffortRates(out map[string]ModelRate, name string, r ModelRate) {
-	out[name] = r
-	for _, e := range []string{"low", "medium", "high", "xhigh", "max"} {
-		out[name+"-"+e] = r
-	}
 }
 
 func stripMDLink(s string) string {

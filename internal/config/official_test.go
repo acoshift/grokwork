@@ -78,25 +78,24 @@ func TestParseXAIRatesUsesStandardContextNotLong(t *testing.T) {
 		t.Fatal("missing grok-4.6")
 	}
 	assertRate(t, r, 2, 6, 0.5, -1)
-	if r, ok := got["grok-4.6-xhigh"]; !ok {
-		t.Fatal("xhigh alias missing")
+	if r, ok := (OfficialRateCatalog{rates: got}).RateFor("grok-4.6-xhigh"); !ok {
+		t.Fatal("RateFor must peel grok-4.6-xhigh to grok-4.6")
 	} else {
 		assertRate(t, r, 2, 6, 0.5, -1)
 	}
-	if r, ok := got["grok-4.6-high"]; !ok {
-		t.Fatal("high alias missing")
-	} else {
-		assertRate(t, r, 2, 6, 0.5, -1)
+	if _, ok := got["grok-4.6-xhigh"]; ok {
+		t.Fatal("effort aliases must not be stored; lookup peels the suffix")
+	}
+	if _, ok := got["grok-4.6-high"]; ok {
+		t.Fatal("effort aliases must not be stored; lookup peels the suffix")
 	}
 	r, ok = got["grok-4.5"]
 	if !ok {
 		t.Fatal("missing grok-4.5")
 	}
 	assertRate(t, r, 2, 6, 0.3, -1)
-	if r, ok := got["grok-4.5-low"]; !ok {
-		t.Fatal("low alias missing")
-	} else {
-		assertRate(t, r, 2, 6, 0.3, -1)
+	if _, ok := got["grok-4.5-low"]; ok {
+		t.Fatal("effort aliases must not be stored; lookup peels the suffix")
 	}
 }
 
@@ -107,8 +106,14 @@ func TestParseAnthropicRates(t *testing.T) {
 	assertRate(t, got["claude-sonnet-5"], 2, 10, 0.2, 2.5)
 	assertRate(t, got["claude-haiku-4-5"], 1, 5, 0.1, 1.25)
 	assertRate(t, got["claude-fable-5-1"], 10, 50, 0.25, 12.5)
-	assertRate(t, got["claude-fable-5-1-xhigh"], 10, 50, 0.25, 12.5)
-	assertRate(t, got["claude-fable-5-1-high"], 10, 50, 0.25, 12.5)
+	if r, ok := (OfficialRateCatalog{rates: got}).RateFor("claude-fable-5-1-xhigh"); !ok {
+		t.Fatal("RateFor must peel claude-fable-5-1-xhigh to claude-fable-5-1")
+	} else {
+		assertRate(t, r, 10, 50, 0.25, 12.5)
+	}
+	if _, ok := got["claude-fable-5-1-xhigh"]; ok {
+		t.Fatal("effort aliases must not be stored; lookup peels the suffix")
+	}
 	assertRate(t, got["claude-fable-5"], 10, 50, 1, 12.5)
 	if _, ok := got["claude-mythos-5"]; ok {
 		t.Fatal("mythos must be skipped")

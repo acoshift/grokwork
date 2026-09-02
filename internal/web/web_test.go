@@ -238,12 +238,10 @@ func TestPagesRender(t *testing.T) {
 		{"/config/agent", `<optgroup label="Cursor">`},
 		{"/config/agent", `<option value="grok-4.6-xhigh"`},
 		{"/config/agent", `<option value="grok-4.6-high"`},
-		{"/config/agent", `<option value="grok-4.6"`},
-		{"/config/agent", `<option value="grok-4.5"`},
 		{"/config/agent", `<option value="grok-4.5-low"`},
 		{"/config/agent", `<option value="claude-fable-5-1-xhigh"`},
-		{"/config/agent", `<option value="claude-opus-5"`},
-		{"/config/agent", `<option value="claude-sonnet-5"`},
+		{"/config/agent", `<option value="claude-opus-5-high"`},
+		{"/config/agent", `<option value="claude-sonnet-5-high"`},
 		{"/config/agent", `<option value="claude-fable-5-1-thinking-xhigh"`},
 		{"/config/agent", `<option value="cursor-grok-4.6-xhigh"`},
 		{"/config/agent", `<option value="composer-2.5"`},
@@ -255,7 +253,7 @@ func TestPagesRender(t *testing.T) {
 		{"/config/models", `id="page-config-models"`},
 		{"/config/models", `data-agent="claude"`},
 		{"/config/models", `data-family="gpt"`},
-		{"/config/models", `value="claude-opus-5"`},
+		{"/config/models", `value="claude-opus-5-high"`},
 		{"/config/models", `value="gpt-5.6-sol-medium"`},
 		{"/config/models", "Disable all Claude"},
 		{"/config/models", "Disable all GPT"},
@@ -2177,10 +2175,10 @@ func TestConfigAddsPersist(t *testing.T) {
 	reqAgent := httptest.NewRequest(http.MethodPost, "/config/agent", strings.NewReader(url.Values{
 		"agent":                     {"grok"},
 		"claudeBin":                 {"/opt/claude"},
-		"model":                     {"claude-opus-5"},
-		"summarizeModel":            {"claude-haiku-4-5"},
-		"reviewModel":               {"claude-sonnet-5"},
-		"askModel":                  {"grok-4.6"},
+		"model":                     {"claude-opus-5-high"},
+		"summarizeModel":            {"claude-haiku-4-5-high"},
+		"reviewModel":               {"claude-sonnet-5-high"},
+		"askModel":                  {"grok-4.6-high"},
 		"claudeIncludeAnthropicEnv": {"1"},
 	}.Encode()))
 	reqAgent.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -2189,26 +2187,26 @@ func TestConfigAddsPersist(t *testing.T) {
 	if wAgent.Code != http.StatusSeeOther && wAgent.Code != http.StatusFound {
 		t.Fatalf("agent settings status=%d body=%s", wAgent.Code, wAgent.Body.String())
 	}
-	// The model name selects the CLI: "claude-opus-5" routes to claude even though
+	// The model name selects the CLI: "claude-opus-5-high" routes to claude even though
 	// the fallback agent is grok.
 	agentCLI := cfg.ResolveAgentCLI("")
-	if agentCLI.Agent != grokrun.AgentClaude || agentCLI.Bin != "/opt/claude" || agentCLI.Model != "claude-opus-5" {
+	if agentCLI.Agent != grokrun.AgentClaude || agentCLI.Bin != "/opt/claude" || agentCLI.Model != "claude-opus-5-high" {
 		t.Fatalf("agent settings not applied: %+v", agentCLI)
 	}
 	if !cfg.AgentIncludesAnthropicEnv(grokrun.AgentClaude) {
 		t.Fatal("ANTHROPIC_* opt-in not persisted")
 	}
 	// Thread titles run on the cheap model; tasks keep the full one.
-	if got := cfg.ResolveSummarizeCLI("").Model; got != "claude-haiku-4-5" {
+	if got := cfg.ResolveSummarizeCLI("").Model; got != "claude-haiku-4-5-high" {
 		t.Fatalf("title model=%q", got)
 	}
-	if got := cfg.Snapshot().ReviewModel; got != "claude-sonnet-5" {
+	if got := cfg.Snapshot().ReviewModel; got != "claude-sonnet-5-high" {
 		t.Fatalf("review model=%q", got)
 	}
-	if got := cfg.Snapshot().AskModel; got != "grok-4.6" {
+	if got := cfg.Snapshot().AskModel; got != "grok-4.6-high" {
 		t.Fatalf("ask model=%q", got)
 	}
-	if got := cfg.EffectiveAskModel(); got != "grok-4.6" {
+	if got := cfg.EffectiveAskModel(); got != "grok-4.6-high" {
 		t.Fatalf("effective ask model=%q", got)
 	}
 	// A model that is not one of the offered options must not be persisted — the
@@ -2218,15 +2216,15 @@ func TestConfigAddsPersist(t *testing.T) {
 	}.Encode()))
 	reqBadModel.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	h.ServeHTTP(httptest.NewRecorder(), reqBadModel)
-	if got := cfg.ResolveAgentCLI("").Model; got != "claude-opus-5" {
+	if got := cfg.ResolveAgentCLI("").Model; got != "claude-opus-5-high" {
 		t.Fatalf("rejected model overwrote config: %q", got)
 	}
 	reqBadAsk := httptest.NewRequest(http.MethodPost, "/config/agent", strings.NewReader(url.Values{
-		"agent": {"grok"}, "model": {"claude-opus-5"}, "askModel": {"not-a-model"},
+		"agent": {"grok"}, "model": {"claude-opus-5-high"}, "askModel": {"not-a-model"},
 	}.Encode()))
 	reqBadAsk.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	h.ServeHTTP(httptest.NewRecorder(), reqBadAsk)
-	if got := cfg.Snapshot().AskModel; got != "grok-4.6" {
+	if got := cfg.Snapshot().AskModel; got != "grok-4.6-high" {
 		t.Fatalf("rejected ask model overwrote config: %q", got)
 	}
 	// An unknown agent is rejected instead of silently falling back.

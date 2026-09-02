@@ -132,36 +132,29 @@ func ModelOptions() []ModelOption {
 	return []ModelOption{
 		// grok. `grok models` reports what a given account can actually reach, so
 		// this list is intentionally short — extend it per deployment.
-		// -high / -xhigh / -low are picker aliases: grokCLIModel passes
-		// -m <base> --effort <level>. Unsuffixed keeps the CLI default.
+		// Every name carries an effort suffix: grokCLIModel passes
+		// -m <base> --effort <level>. Rates key on the unsuffixed base
+		// (RateModel).
 		{Value: "grok-4.6-xhigh", Label: "grok-4.6-xhigh", Agent: AgentGrok},
 		{Value: "grok-4.6-high", Label: "grok-4.6-high", Agent: AgentGrok},
-		{Value: "grok-4.6", Label: "grok-4.6", Agent: AgentGrok},
 		{Value: "grok-4.5-high", Label: "grok-4.5-high", Agent: AgentGrok},
-		{Value: "grok-4.5", Label: "grok-4.5", Agent: AgentGrok},
 		{Value: "grok-4.5-low", Label: "grok-4.5-low", Agent: AgentGrok},
 
-		// claude (Claude Code CLI). -high / -xhigh are picker aliases:
-		// claudeCLIModel passes --model <base> --effort <level>. Unsuffixed
-		// keeps the CLI default. Cursor thinking ids are listed below.
+		// claude (Claude Code CLI). Every name carries -high / -xhigh:
+		// claudeCLIModel passes --model <base> --effort <level>. Rates key
+		// on the unsuffixed base. Cursor thinking ids are listed below.
 		{Value: "claude-fable-5-1-xhigh", Label: "claude-fable-5-1-xhigh", Agent: AgentClaude},
 		{Value: "claude-fable-5-1-high", Label: "claude-fable-5-1-high", Agent: AgentClaude},
-		{Value: "claude-fable-5-1", Label: "claude-fable-5-1", Agent: AgentClaude},
 		{Value: "claude-opus-5-xhigh", Label: "claude-opus-5-xhigh", Agent: AgentClaude},
 		{Value: "claude-opus-5-high", Label: "claude-opus-5-high", Agent: AgentClaude},
-		{Value: "claude-opus-5", Label: "claude-opus-5", Agent: AgentClaude},
 		{Value: "claude-opus-4-8-xhigh", Label: "claude-opus-4-8-xhigh", Agent: AgentClaude},
 		{Value: "claude-opus-4-8-high", Label: "claude-opus-4-8-high", Agent: AgentClaude},
-		{Value: "claude-opus-4-8", Label: "claude-opus-4-8", Agent: AgentClaude},
 		{Value: "claude-sonnet-5-xhigh", Label: "claude-sonnet-5-xhigh", Agent: AgentClaude},
 		{Value: "claude-sonnet-5-high", Label: "claude-sonnet-5-high", Agent: AgentClaude},
-		{Value: "claude-sonnet-5", Label: "claude-sonnet-5", Agent: AgentClaude},
 		{Value: "claude-haiku-4-5-xhigh", Label: "claude-haiku-4-5-xhigh", Agent: AgentClaude},
 		{Value: "claude-haiku-4-5-high", Label: "claude-haiku-4-5-high", Agent: AgentClaude},
-		{Value: "claude-haiku-4-5", Label: "claude-haiku-4-5", Agent: AgentClaude},
 		{Value: "claude-fable-5-xhigh", Label: "claude-fable-5-xhigh", Agent: AgentClaude},
 		{Value: "claude-fable-5-high", Label: "claude-fable-5-high", Agent: AgentClaude},
-		{Value: "claude-fable-5", Label: "claude-fable-5", Agent: AgentClaude},
 
 		// cursor-agent. Claude-family ids here are Cursor's effort/speed variants,
 		// distinct from the Claude Code names above — picking one is how a start

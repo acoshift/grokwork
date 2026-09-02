@@ -240,7 +240,7 @@ func TestAPIBuilderTeamStartSessionsMaskCannotFixOrIssue(t *testing.T) {
 		t.Fatalf("fix status=%d %s", w.Code, w.Body.String())
 	}
 	w = apiJSON(t, srv, http.MethodPost, "/api/v1/projects/proj/sessions", wire, map[string]string{
-		"prompt": "x", "model": "grok-4.5",
+		"prompt": "x", "model": "grok-4.5-high",
 	}, "")
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("model status=%d %s", w.Code, w.Body.String())

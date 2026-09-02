@@ -100,10 +100,11 @@ func (r ModelRate) IsEmpty() bool {
 }
 
 // ModelRateKey normalizes a model name for rate lookup. Names reach us from
-// config, from a session stamp, and from a curated dropdown, so case and padding
-// must not decide whether a run is priced.
+// config, from a session stamp, and from a curated dropdown, so case, padding,
+// and grok/claude effort suffixes must not decide whether a run is priced
+// (grok-4.6-xhigh shares grok-4.6).
 func ModelRateKey(model string) string {
-	return strings.ToLower(strings.TrimSpace(model))
+	return grokrun.RateModel(model)
 }
 
 // ModelRateFor returns the configured rate for a model.
@@ -235,7 +236,7 @@ func modelRateItemsFrom(rates map[string]ModelRate) []ModelRateItem {
 		})
 	}
 	for _, opt := range grokrun.ModelOptions() {
-		add(opt.Value, opt.Agent.Label(), true)
+		add(grokrun.RateModel(opt.Value), opt.Agent.Label(), true)
 	}
 	for _, key := range slices.Sorted(maps.Keys(rates)) {
 		agent := ""

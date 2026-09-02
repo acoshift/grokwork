@@ -162,14 +162,14 @@ func TestStartPRAskStampsReviewModel(t *testing.T) {
 	b, _ := testFixBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
 	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high",
 	})
 	res, err := b.StartPRAsk(prAskOpts())
 	if err != nil {
 		t.Fatal(err)
 	}
 	e, ok := b.sessions.Get(res.ThreadID)
-	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5" {
+	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5-high" {
 		t.Fatalf("want review model stamped when askModel is empty, got agent=%q model=%q", e.Agent, e.Model)
 	}
 }
@@ -178,14 +178,14 @@ func TestStartPRAskStampsAskModel(t *testing.T) {
 	b, _ := testFixBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
 	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5", AskModel: "grok-4.6",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high", AskModel: "grok-4.6-high",
 	})
 	res, err := b.StartPRAsk(prAskOpts())
 	if err != nil {
 		t.Fatal(err)
 	}
 	e, ok := b.sessions.Get(res.ThreadID)
-	if !ok || e.Agent != "grok" || e.Model != "grok-4.6" {
+	if !ok || e.Agent != "grok" || e.Model != "grok-4.6-high" {
 		t.Fatalf("want ask model stamped, got agent=%q model=%q", e.Agent, e.Model)
 	}
 }
@@ -194,16 +194,16 @@ func TestStartPRAskExplicitModelBeatsAskModel(t *testing.T) {
 	b, _ := testFixBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
 	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5", AskModel: "grok-4.6",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high", AskModel: "grok-4.6-high",
 	})
 	o := prAskOpts()
-	o.Model = "claude-opus-5"
+	o.Model = "claude-opus-5-high"
 	res, err := b.StartPRAsk(o)
 	if err != nil {
 		t.Fatal(err)
 	}
 	e, ok := b.sessions.Get(res.ThreadID)
-	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5" {
+	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5-high" {
 		t.Fatalf("want explicit pick stamped, got agent=%q model=%q", e.Agent, e.Model)
 	}
 }
@@ -212,7 +212,7 @@ func TestStartPRAskReuseKeepsStamp(t *testing.T) {
 	b, _ := testFixBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
 	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5", AskModel: "grok-4.6",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high", AskModel: "grok-4.6-high",
 	})
 	first, err := b.StartPRAsk(prAskOpts())
 	if err != nil {
@@ -220,7 +220,7 @@ func TestStartPRAskReuseKeepsStamp(t *testing.T) {
 	}
 	waitHistory(t, b, first.ThreadID, 1)
 	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5", AskModel: "claude-opus-5",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high", AskModel: "claude-opus-5-high",
 	})
 	second, err := b.StartPRAsk(prAskOpts())
 	if err != nil {
@@ -230,7 +230,7 @@ func TestStartPRAskReuseKeepsStamp(t *testing.T) {
 		t.Fatalf("want reuse, first=%+v second=%+v", first, second)
 	}
 	e, ok := b.sessions.Get(second.ThreadID)
-	if !ok || e.Agent != "grok" || e.Model != "grok-4.6" {
+	if !ok || e.Agent != "grok" || e.Model != "grok-4.6-high" {
 		t.Fatalf("reuse must keep the stamped ask model, got agent=%q model=%q", e.Agent, e.Model)
 	}
 }

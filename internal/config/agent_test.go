@@ -193,7 +193,7 @@ func TestAgentIncludesAnthropicEnvIsOptInAndClaudeOnly(t *testing.T) {
 }
 
 func TestSnapshotCarriesAgentSettings(t *testing.T) {
-	cfg, err := loadAgentConfig(t, `, "claudeBin": "/opt/claude", "model": "opus", "summarizeModel": "grok-code-fast-1", "askModel": "grok-4.6"`)
+	cfg, err := loadAgentConfig(t, `, "claudeBin": "/opt/claude", "model": "opus", "summarizeModel": "grok-code-fast-1", "askModel": "grok-4.6-high"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestSnapshotCarriesAgentSettings(t *testing.T) {
 	if snap.SummarizeAgent != "grok" || !snap.SummarizeAgentKnown {
 		t.Fatalf("summarize agent=%q known=%v", snap.SummarizeAgent, snap.SummarizeAgentKnown)
 	}
-	if snap.AskModel != "grok-4.6" || snap.AskAgent != "grok" || !snap.AskAgentKnown {
+	if snap.AskModel != "grok-4.6-high" || snap.AskAgent != "grok" || !snap.AskAgentKnown {
 		t.Fatalf("ask snapshot model=%q agent=%q known=%v", snap.AskModel, snap.AskAgent, snap.AskAgentKnown)
 	}
 	if snap.ModelLimits != grokrun.AgentClaude.Limitations() {
@@ -225,8 +225,8 @@ func TestSnapshotCarriesAgentSettings(t *testing.T) {
 func TestModelGroupsCarryLimits(t *testing.T) {
 	want := map[string]struct{ agent, limits string }{
 		"composer-2.5":  {agent: "cursor", limits: grokrun.AgentCursor.Limitations()},
-		"grok-4.6":      {agent: "grok", limits: grokrun.AgentGrok.Limitations()},
-		"claude-opus-5": {agent: "claude", limits: ""},
+		"grok-4.6-high":      {agent: "grok", limits: grokrun.AgentGrok.Limitations()},
+		"claude-opus-5-high": {agent: "claude", limits: ""},
 	}
 	seen := map[string]bool{}
 	for _, g := range ModelGroups("") {
@@ -325,7 +325,7 @@ func TestResolveSummarizeCLIAllEmpty(t *testing.T) {
 // Like the title model, the review model is an override: unset means "use the task
 // model", so adding the field changes nothing for an existing config.
 func TestReviewAgentCLIFallsBackToTaskModel(t *testing.T) {
-	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5"`)
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5-high"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestReviewAgentCLIFallsBackToTaskModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Model != "grok-4.5" || got.Agent != grokrun.AgentGrok {
+	if got.Model != "grok-4.5-high" || got.Agent != grokrun.AgentGrok {
 		t.Fatalf("review cli=%+v want the task model", got)
 	}
 }
@@ -342,8 +342,8 @@ func TestReviewAgentCLIFallsBackToTaskModel(t *testing.T) {
 // the dispatch modal beats it.
 func TestReviewAgentCLIPrecedence(t *testing.T) {
 	cfg, err := loadAgentConfig(t, `,
-		"model": "grok-4.5",
-		"reviewModel": "claude-opus-5",
+		"model": "grok-4.5-high",
+		"reviewModel": "claude-opus-5-high",
 		"claudeBin": "/opt/claude"`)
 	if err != nil {
 		t.Fatal(err)
@@ -352,17 +352,17 @@ func TestReviewAgentCLIPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if def.Agent != grokrun.AgentClaude || def.Model != "claude-opus-5" || def.Bin != "/opt/claude" {
+	if def.Agent != grokrun.AgentClaude || def.Model != "claude-opus-5-high" || def.Bin != "/opt/claude" {
 		t.Fatalf("default review cli=%+v", def)
 	}
-	pick, err := cfg.ReviewAgentCLI("grok-4.5")
+	pick, err := cfg.ReviewAgentCLI("grok-4.5-high")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pick.Agent != grokrun.AgentGrok || pick.Model != "grok-4.5" {
+	if pick.Agent != grokrun.AgentGrok || pick.Model != "grok-4.5-high" {
 		t.Fatalf("explicit pick cli=%+v", pick)
 	}
-	if got := cfg.EffectiveReviewModel(); got != "claude-opus-5" {
+	if got := cfg.EffectiveReviewModel(); got != "claude-opus-5-high" {
 		t.Fatalf("effective review model=%q", got)
 	}
 }
@@ -393,9 +393,9 @@ func TestReviewAgentCLIToleratesUncuratedStoredName(t *testing.T) {
 func TestEffectiveReviewModelMatchesWhatRuns(t *testing.T) {
 	for _, tc := range []struct{ name, extra string }{
 		{"both unset", ""},
-		{"task only", `, "model": "grok-4.5"`},
-		{"curated review model", `, "model": "grok-4.5", "reviewModel": "claude-opus-5"`},
-		{"uncurated review model", `, "model": "grok-4.5", "reviewModel": "gpt-9"`},
+		{"task only", `, "model": "grok-4.5-high"`},
+		{"curated review model", `, "model": "grok-4.5-high", "reviewModel": "claude-opus-5-high"`},
+		{"uncurated review model", `, "model": "grok-4.5-high", "reviewModel": "gpt-9"`},
 		{"uncurated task model", `, "model": "grok-4-fast"`},
 		{"both uncurated", `, "model": "grok-4-fast", "reviewModel": "gpt-9"`},
 	} {
@@ -445,10 +445,10 @@ func TestSetAgentSettingsRoundTripsModels(t *testing.T) {
 	}
 	err = cfg.SetAgentSettings(AgentSettings{
 		Agent:          "grok",
-		Model:          "claude-opus-5",
-		SummarizeModel: "claude-haiku-4-5",
-		ReviewModel:    "claude-sonnet-5",
-		AskModel:       "grok-4.6",
+		Model:          "claude-opus-5-high",
+		SummarizeModel: "claude-haiku-4-5-high",
+		ReviewModel:    "claude-sonnet-5-high",
+		AskModel:       "grok-4.6-high",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -457,19 +457,19 @@ func TestSetAgentSettingsRoundTripsModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := reloaded.ResolveAgentCLI("").Model; got != "claude-opus-5" {
+	if got := reloaded.ResolveAgentCLI("").Model; got != "claude-opus-5-high" {
 		t.Fatalf("task model=%q", got)
 	}
-	if got := reloaded.ResolveSummarizeCLI(""); got.Model != "claude-haiku-4-5" || got.Agent != grokrun.AgentClaude {
+	if got := reloaded.ResolveSummarizeCLI(""); got.Model != "claude-haiku-4-5-high" || got.Agent != grokrun.AgentClaude {
 		t.Fatalf("summarize cli=%+v", got)
 	}
-	if got := reloaded.EffectiveReviewModel(); got != "claude-sonnet-5" {
+	if got := reloaded.EffectiveReviewModel(); got != "claude-sonnet-5-high" {
 		t.Fatalf("review model=%q", got)
 	}
-	if got := reloaded.EffectiveAskModel(); got != "grok-4.6" {
+	if got := reloaded.EffectiveAskModel(); got != "grok-4.6-high" {
 		t.Fatalf("ask model=%q", got)
 	}
-	if got := reloaded.Snapshot().AskModel; got != "grok-4.6" {
+	if got := reloaded.Snapshot().AskModel; got != "grok-4.6-high" {
 		t.Fatalf("stored askModel=%q", got)
 	}
 	// Blank claude binary resolves rather than persisting empty.
@@ -484,7 +484,7 @@ func TestSetAgentSettingsRoundTripsModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := again.Snapshot().AskModel; got != "grok-4.6" {
+	if got := again.Snapshot().AskModel; got != "grok-4.6-high" {
 		t.Fatalf("askModel dropped by unrelated save: %q", got)
 	}
 }
@@ -493,7 +493,7 @@ func TestSetAgentSettingsRoundTripsModels(t *testing.T) {
 // through only to the task model would retarget hosts that already set
 // reviewModel ≠ model.
 func TestAskAgentCLIFallsBackToReviewThenTask(t *testing.T) {
-	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5", "reviewModel": "claude-opus-5"`)
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5-high", "reviewModel": "claude-opus-5-high"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,14 +501,14 @@ func TestAskAgentCLIFallsBackToReviewThenTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Model != "claude-opus-5" || got.Agent != grokrun.AgentClaude {
+	if got.Model != "claude-opus-5-high" || got.Agent != grokrun.AgentClaude {
 		t.Fatalf("ask cli=%+v want the review model", got)
 	}
 	if label := cfg.EffectiveAskModel(); label != got.Model {
 		t.Fatalf("modal would advertise %q while the run uses %q", label, got.Model)
 	}
 
-	cfg, err = loadAgentConfig(t, `, "model": "grok-4.5"`)
+	cfg, err = loadAgentConfig(t, `, "model": "grok-4.5-high"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +516,7 @@ func TestAskAgentCLIFallsBackToReviewThenTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Model != "grok-4.5" || got.Agent != grokrun.AgentGrok {
+	if got.Model != "grok-4.5-high" || got.Agent != grokrun.AgentGrok {
 		t.Fatalf("ask cli=%+v want the task model", got)
 	}
 }
@@ -524,9 +524,9 @@ func TestAskAgentCLIFallsBackToReviewThenTask(t *testing.T) {
 // A curated askModel is what an empty dispatch runs, and an explicit pick beats it.
 func TestAskAgentCLIPrecedence(t *testing.T) {
 	cfg, err := loadAgentConfig(t, `,
-		"model": "grok-4.5",
-		"reviewModel": "claude-opus-5",
-		"askModel": "grok-4.6",
+		"model": "grok-4.5-high",
+		"reviewModel": "claude-opus-5-high",
+		"askModel": "grok-4.6-high",
 		"claudeBin": "/opt/claude"`)
 	if err != nil {
 		t.Fatal(err)
@@ -535,20 +535,20 @@ func TestAskAgentCLIPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if def.Agent != grokrun.AgentGrok || def.Model != "grok-4.6" {
+	if def.Agent != grokrun.AgentGrok || def.Model != "grok-4.6-high" {
 		t.Fatalf("default ask cli=%+v", def)
 	}
-	pick, err := cfg.AskAgentCLI("claude-opus-5")
+	pick, err := cfg.AskAgentCLI("claude-opus-5-high")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pick.Agent != grokrun.AgentClaude || pick.Model != "claude-opus-5" || pick.Bin != "/opt/claude" {
+	if pick.Agent != grokrun.AgentClaude || pick.Model != "claude-opus-5-high" || pick.Bin != "/opt/claude" {
 		t.Fatalf("explicit pick cli=%+v", pick)
 	}
-	if got := cfg.EffectiveAskModel(); got != "grok-4.6" {
+	if got := cfg.EffectiveAskModel(); got != "grok-4.6-high" {
 		t.Fatalf("effective ask model=%q", got)
 	}
-	if got := cfg.EffectiveReviewModel(); got != "claude-opus-5" {
+	if got := cfg.EffectiveReviewModel(); got != "claude-opus-5-high" {
 		t.Fatalf("effective review model=%q must be unchanged by askModel", got)
 	}
 }
@@ -556,7 +556,7 @@ func TestAskAgentCLIPrecedence(t *testing.T) {
 // A hand-edited askModel that is not curated must not break dispatch: Ask falls
 // back rather than failing. The label must fall back with it.
 func TestAskAgentCLIToleratesUncuratedStoredName(t *testing.T) {
-	cfg, err := loadAgentConfig(t, `, "model": "grok-4", "reviewModel": "claude-opus-5", "askModel": "gpt-9"`)
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4", "reviewModel": "claude-opus-5-high", "askModel": "gpt-9"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -564,7 +564,7 @@ func TestAskAgentCLIToleratesUncuratedStoredName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stored name must not fail the dispatch: %v", err)
 	}
-	if got.Agent != grokrun.AgentClaude || got.Model != "claude-opus-5" {
+	if got.Agent != grokrun.AgentClaude || got.Model != "claude-opus-5-high" {
 		t.Fatalf("ask cli=%+v want the review default", got)
 	}
 	if label := cfg.EffectiveAskModel(); label != got.Model {
@@ -575,11 +575,11 @@ func TestAskAgentCLIToleratesUncuratedStoredName(t *testing.T) {
 func TestEffectiveAskModelMatchesWhatRuns(t *testing.T) {
 	for _, tc := range []struct{ name, extra string }{
 		{"both unset", ""},
-		{"task only", `, "model": "grok-4.5"`},
-		{"review only", `, "model": "grok-4.5", "reviewModel": "claude-opus-5"`},
-		{"curated ask model", `, "model": "grok-4.5", "reviewModel": "claude-opus-5", "askModel": "grok-4.6"`},
-		{"uncurated ask model", `, "model": "grok-4.5", "reviewModel": "claude-opus-5", "askModel": "gpt-9"`},
-		{"uncurated ask and review", `, "model": "grok-4.5", "reviewModel": "gpt-9", "askModel": "gpt-9"`},
+		{"task only", `, "model": "grok-4.5-high"`},
+		{"review only", `, "model": "grok-4.5-high", "reviewModel": "claude-opus-5-high"`},
+		{"curated ask model", `, "model": "grok-4.5-high", "reviewModel": "claude-opus-5-high", "askModel": "grok-4.6-high"`},
+		{"uncurated ask model", `, "model": "grok-4.5-high", "reviewModel": "claude-opus-5-high", "askModel": "gpt-9"`},
+		{"uncurated ask and review", `, "model": "grok-4.5-high", "reviewModel": "gpt-9", "askModel": "gpt-9"`},
 		{"uncurated task model", `, "model": "grok-4-fast"`},
 		{"all uncurated", `, "model": "grok-4-fast", "reviewModel": "gpt-9", "askModel": "gpt-8"`},
 	} {

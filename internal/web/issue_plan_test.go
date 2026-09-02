@@ -269,7 +269,7 @@ func TestIssueDetailRendersBreakdown(t *testing.T) {
 func TestIssueDetailShowsPlanModelConfirm(t *testing.T) {
 	srv, cfg, _ := fixEnabledServer(t)
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high",
 	})
 	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
 		t.Fatal(err)
@@ -286,7 +286,7 @@ func TestIssueDetailShowsPlanModelConfirm(t *testing.T) {
 		`data-confirm-title="Plan this feature"`,
 		`data-confirm-select="model"`,
 		`data-confirm-select-label="Model"`,
-		`>Default (claude-opus-5)</option>`,
+		`>Default (claude-opus-5-high)</option>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in Plan UI", want)
@@ -296,7 +296,7 @@ func TestIssueDetailShowsPlanModelConfirm(t *testing.T) {
 	if got := strings.Count(body, `<select name="model" hidden>`); got < 2 {
 		t.Fatalf("Plan form needs its own hidden select, got %d", got)
 	}
-	if !strings.Contains(body, `>Default (grok-4.5)</option>`) {
+	if !strings.Contains(body, `>Default (grok-4.5-high)</option>`) {
 		t.Fatal("Fix modal Default must still name the task model")
 	}
 }
@@ -304,7 +304,7 @@ func TestIssueDetailShowsPlanModelConfirm(t *testing.T) {
 func TestIssueDetailReplanShowsModelConfirm(t *testing.T) {
 	srv, cfg, _ := fixEnabledServer(t)
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high",
 	})
 	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
 		t.Fatal(err)
@@ -330,7 +330,7 @@ func TestIssueDetailReplanShowsModelConfirm(t *testing.T) {
 		`>Re-plan</button>`,
 		`data-confirm-title="Re-plan feature"`,
 		`data-confirm-select="model"`,
-		`>Default (claude-opus-5)</option>`,
+		`>Default (claude-opus-5-high)</option>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in Re-plan UI", want)
@@ -345,14 +345,14 @@ func TestIssuePlanModelPickStampsSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "grok-4.5",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "grok-4.5-high",
 	})
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
 	}
 	w := postFix(t, srv, "/projects/proj/issues/42/plan", sid, csrf, url.Values{
-		"owner": {"acme"}, "repo": {"app"}, "model": {"claude-opus-5"},
+		"owner": {"acme"}, "repo": {"app"}, "model": {"claude-opus-5-high"},
 	})
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
@@ -367,7 +367,7 @@ func TestIssuePlanModelPickStampsSession(t *testing.T) {
 	if !ok {
 		t.Fatalf("session %s missing", tid)
 	}
-	if e.Model != "claude-opus-5" || e.Agent != "claude" {
+	if e.Model != "claude-opus-5-high" || e.Agent != "claude" {
 		t.Fatalf("stamp agent=%q model=%q", e.Agent, e.Model)
 	}
 }
@@ -379,7 +379,7 @@ func TestIssuePlanModelGateForInvestigator(t *testing.T) {
 		t.Fatal(err)
 	}
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5",
+		Agent: "grok", Model: "grok-4.5-high",
 	})
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
@@ -396,7 +396,7 @@ func TestIssuePlanModelGateForInvestigator(t *testing.T) {
 		t.Fatal("investigator must not see a model field")
 	}
 	w := postFix(t, srv, "/projects/proj/issues/42/plan", sid, csrf, url.Values{
-		"owner": {"acme"}, "repo": {"app"}, "model": {"claude-opus-5"},
+		"owner": {"acme"}, "repo": {"app"}, "model": {"claude-opus-5-high"},
 	})
 	assertRedirectErr(t, w, "/projects/proj/issues/42", "not allowed to pick a model")
 }

@@ -129,7 +129,7 @@ func TestPRDetailModelPickerWiringAndGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high",
 	})
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
@@ -143,7 +143,7 @@ func TestPRDetailModelPickerWiringAndGate(t *testing.T) {
 		// Both buttons feed the same field.
 		`id="btn-address-ci"`,
 		`id="btn-address-review"`,
-		`>Default (claude-opus-5)</option>`,
+		`>Default (claude-opus-5-high)</option>`,
 		`<div class="rail-group-title">Agent</div>`,
 	} {
 		if !strings.Contains(body, want) {
@@ -170,7 +170,7 @@ func TestPRDetailModelPickerWiringAndGate(t *testing.T) {
 	}
 	for _, path := range []string{"/prs/acme/app/9/address-ci", "/prs/acme/app/9/address-review"} {
 		w := postFix(t, srv, path, sid2, csrf2, url.Values{
-			"project": {"proj"}, "force_new": {"1"}, "model": {"claude-opus-5"},
+			"project": {"proj"}, "force_new": {"1"}, "model": {"claude-opus-5-high"},
 		})
 		// Assert the model denial specifically — any other error here would mean the
 		// request never reached the gate.

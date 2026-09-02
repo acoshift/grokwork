@@ -77,7 +77,7 @@ func TestPriceTokensLookupIsNameNormalized(t *testing.T) {
 		"claude-opus-5": {InputPerMTok: rate(5), OutputPerMTok: rate(25)},
 	}}
 	tokens := TokenCounts{Input: 1_000_000, Output: 0}
-	for _, name := range []string{"claude-opus-5", "Claude-Opus-5", "  claude-opus-5  "} {
+	for _, name := range []string{"claude-opus-5", "Claude-Opus-5", "  claude-opus-5  ", "claude-opus-5-high", "claude-opus-5-xhigh"} {
 		got, ok := c.PriceTokens(name, tokens)
 		if !ok || got != 5 {
 			t.Fatalf("%q → %v %v", name, got, ok)
@@ -210,7 +210,10 @@ func TestModelRateItemsCoverCuratedAndCustomModels(t *testing.T) {
 		byModel[it.Model] = it
 	}
 	// Curated models are always offered, priced or not, so the table can be filled
-	// in without typing names.
+	// in without typing names. Grok/Claude effort aliases collapse to the base id.
+	if _, dup := byModel["grok-4.6-xhigh"]; dup {
+		t.Fatal("effort-suffixed grok name must not be its own rate row")
+	}
 	grok, ok := byModel["grok-4.6"]
 	if !ok || grok.Configured || grok.Input != "" || !grok.Curated {
 		t.Fatalf("curated unpriced row: %+v", grok)

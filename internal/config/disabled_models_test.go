@@ -34,13 +34,13 @@ func TestDisabledModelsRoundTripThroughLoadAndSave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetModelDisabled("claude-opus-5", true); err != nil {
+	if err := cfg.SetModelDisabled("claude-opus-5-high", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetModelDisabled("grok-4.5", true); err != nil {
+	if err := cfg.SetModelDisabled("grok-4.5-high", true); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ModelAllowed("claude-opus-5") || cfg.ModelAllowed("grok-4.5") {
+	if cfg.ModelAllowed("claude-opus-5-high") || cfg.ModelAllowed("grok-4.5-high") {
 		t.Fatal("names still allowed after disable")
 	}
 	if !cfg.ModelAllowed("composer-2.5") {
@@ -51,7 +51,7 @@ func TestDisabledModelsRoundTripThroughLoadAndSave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reloaded.ModelAllowed("claude-opus-5") || reloaded.ModelAllowed("grok-4.5") {
+	if reloaded.ModelAllowed("claude-opus-5-high") || reloaded.ModelAllowed("grok-4.5-high") {
 		t.Fatal("disable did not survive reload")
 	}
 	if !reloaded.ModelAllowed("composer-2.5") {
@@ -66,7 +66,7 @@ func TestSaveLockedPreservesDisabledModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetModelDisabled("claude-opus-5", true); err != nil {
+	if err := cfg.SetModelDisabled("claude-opus-5-high", true); err != nil {
 		t.Fatal(err)
 	}
 	// An unrelated save is the trap: dropping disabledModels from the marshal
@@ -84,7 +84,7 @@ func TestSaveLockedPreservesDisabledModels(t *testing.T) {
 	if err := json.Unmarshal(raw, &again); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(again.DisabledModels, "claude-opus-5") {
+	if !slices.Contains(again.DisabledModels, "claude-opus-5-high") {
 		t.Fatalf("denylist lost on unrelated save: %s", raw)
 	}
 	if _, ok := again.ModelRates["grok-4.5"]; !ok {
@@ -127,13 +127,13 @@ func TestDisableAllClaudeAgentModels(t *testing.T) {
 
 	// Individual re-enable of one Claude model after "disable all" works because
 	// the store is the expanded list, not a parallel agent flag.
-	if err := cfg.SetModelDisabled("claude-haiku-4-5", false); err != nil {
+	if err := cfg.SetModelDisabled("claude-haiku-4-5-high", false); err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.ModelAllowed("claude-haiku-4-5") {
+	if !cfg.ModelAllowed("claude-haiku-4-5-high") {
 		t.Fatal("re-enable of one Claude model failed")
 	}
-	if cfg.ModelAllowed("claude-opus-5") {
+	if cfg.ModelAllowed("claude-opus-5-high") {
 		t.Fatal("sibling Claude model was re-enabled")
 	}
 }
@@ -186,7 +186,7 @@ func TestPickerModelGroupsOmitsDisabledNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetModelDisabled("claude-opus-5", true); err != nil {
+	if err := cfg.SetModelDisabled("claude-opus-5-high", true); err != nil {
 		t.Fatal(err)
 	}
 	seen := map[string]bool{}
@@ -195,10 +195,10 @@ func TestPickerModelGroupsOmitsDisabledNames(t *testing.T) {
 			seen[c.Value] = true
 		}
 	}
-	if seen["claude-opus-5"] {
+	if seen["claude-opus-5-high"] {
 		t.Fatal("picker still lists a disabled name")
 	}
-	if !seen["claude-haiku-4-5"] || !seen["grok-4.6"] || !seen["composer-2.5"] {
+	if !seen["claude-haiku-4-5-high"] || !seen["grok-4.6-high"] || !seen["composer-2.5"] {
 		t.Fatalf("picker dropped an enabled name: %v", seen)
 	}
 	// Admin default dropdowns keep the full catalog so a stored default stays visible.
@@ -208,63 +208,63 @@ func TestPickerModelGroupsOmitsDisabledNames(t *testing.T) {
 			admin[c.Value] = true
 		}
 	}
-	if !admin["claude-opus-5"] {
+	if !admin["claude-opus-5-high"] {
 		t.Fatal("admin ModelGroups must still list the disabled name")
 	}
 }
 
 func TestRequestedAgentCLIRejectsDisabledName(t *testing.T) {
-	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5"`)
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5-high"`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetModelDisabled("claude-opus-5", true); err != nil {
+	if err := cfg.SetModelDisabled("claude-opus-5-high", true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cfg.RequestedAgentCLI("claude-opus-5"); err == nil {
+	if _, err := cfg.RequestedAgentCLI("claude-opus-5-high"); err == nil {
 		t.Fatal("disabled curated name must be refused")
 	}
-	got, err := cfg.RequestedAgentCLI("grok-4.5")
-	if err != nil || got.Model != "grok-4.5" {
+	got, err := cfg.RequestedAgentCLI("grok-4.5-high")
+	if err != nil || got.Model != "grok-4.5-high" {
 		t.Fatalf("enabled name: cli=%+v err=%v", got, err)
 	}
 }
 
 func TestUnstampedResolutionSkipsDisabledDefault(t *testing.T) {
-	cfg, err := loadAgentConfig(t, `, "agent": "grok", "model": "claude-opus-5"`)
+	cfg, err := loadAgentConfig(t, `, "agent": "grok", "model": "claude-opus-5-high"`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	before := cfg.ResolveAgentCLI("")
-	if before.Model != "claude-opus-5" || before.Agent != grokrun.AgentClaude {
+	if before.Model != "claude-opus-5-high" || before.Agent != grokrun.AgentClaude {
 		t.Fatalf("before disable cli=%+v", before)
 	}
-	if err := cfg.SetModelDisabled("claude-opus-5", true); err != nil {
+	if err := cfg.SetModelDisabled("claude-opus-5-high", true); err != nil {
 		t.Fatal(err)
 	}
 	got := cfg.ResolveAgentCLI("")
-	if got.Model == "claude-opus-5" {
+	if got.Model == "claude-opus-5-high" {
 		t.Fatalf("unstamped resolution returned the disabled default: %+v", got)
 	}
 	empty, err := cfg.RequestedAgentCLI("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if empty.Model == "claude-opus-5" {
+	if empty.Model == "claude-opus-5-high" {
 		t.Fatalf("empty request returned the disabled default: %+v", empty)
 	}
 }
 
 func TestPinnedAgentCLIIgnoresDisable(t *testing.T) {
-	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5"`)
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5-high"`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetModelDisabled("claude-opus-5", true); err != nil {
+	if err := cfg.SetModelDisabled("claude-opus-5-high", true); err != nil {
 		t.Fatal(err)
 	}
-	got := cfg.PinnedAgentCLI("claude", "claude-opus-5")
-	if got.Agent != grokrun.AgentClaude || got.Model != "claude-opus-5" {
+	got := cfg.PinnedAgentCLI("claude", "claude-opus-5-high")
+	if got.Agent != grokrun.AgentClaude || got.Model != "claude-opus-5-high" {
 		t.Fatalf("pinned cli=%+v, stamped model must survive a later disable", got)
 	}
 }
@@ -333,7 +333,7 @@ func TestLoadDropsUnknownDisabledNames(t *testing.T) {
 		"discordToken": "tok",
 		"projects": { "p": "` + proj + `" },
 		"channels": { "c1": "p" },
-		"disabledModels": ["claude-opus-5", "not-a-real-model", "claude-opus-5"]
+		"disabledModels": ["claude-opus-5-high", "not-a-real-model", "claude-opus-5-high"]
 	}`
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
@@ -346,7 +346,7 @@ func TestLoadDropsUnknownDisabledNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := cfg.DisabledModelNames()
-	if len(got) != 1 || got[0] != "claude-opus-5" {
+	if len(got) != 1 || got[0] != "claude-opus-5-high" {
 		t.Fatalf("normalized denylist=%v", got)
 	}
 }
@@ -368,17 +368,17 @@ func TestDisableRejectsUnknownNameAndEmptyAgent(t *testing.T) {
 }
 
 func TestEffectiveReviewModelSkipsDisabled(t *testing.T) {
-	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5", "reviewModel": "claude-opus-5"`)
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5-high", "reviewModel": "claude-opus-5-high"`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetModelDisabled("claude-opus-5", true); err != nil {
+	if err := cfg.SetModelDisabled("claude-opus-5-high", true); err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.EffectiveReviewModel(); got != "grok-4.5" {
+	if got := cfg.EffectiveReviewModel(); got != "grok-4.5-high" {
 		t.Fatalf("effective review=%q want the task model", got)
 	}
-	if err := cfg.SetModelDisabled("grok-4.5", true); err != nil {
+	if err := cfg.SetModelDisabled("grok-4.5-high", true); err != nil {
 		t.Fatal(err)
 	}
 	if got := cfg.EffectiveReviewModel(); got != "" {
@@ -387,30 +387,30 @@ func TestEffectiveReviewModelSkipsDisabled(t *testing.T) {
 }
 
 func TestEffectiveAskModelSkipsDisabled(t *testing.T) {
-	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5", "reviewModel": "claude-opus-5", "askModel": "grok-4.6"`)
+	cfg, err := loadAgentConfig(t, `, "model": "grok-4.5-high", "reviewModel": "claude-opus-5-high", "askModel": "grok-4.6-high"`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetModelDisabled("grok-4.6", true); err != nil {
+	if err := cfg.SetModelDisabled("grok-4.6-high", true); err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.EffectiveAskModel(); got != "claude-opus-5" {
+	if got := cfg.EffectiveAskModel(); got != "claude-opus-5-high" {
 		t.Fatalf("effective ask=%q want the review model", got)
 	}
 	cli, err := cfg.AskAgentCLI("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cli.Model != "claude-opus-5" {
+	if cli.Model != "claude-opus-5-high" {
 		t.Fatalf("ask cli model=%q want the review model", cli.Model)
 	}
-	if err := cfg.SetModelDisabled("claude-opus-5", true); err != nil {
+	if err := cfg.SetModelDisabled("claude-opus-5-high", true); err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.EffectiveAskModel(); got != "grok-4.5" {
+	if got := cfg.EffectiveAskModel(); got != "grok-4.5-high" {
 		t.Fatalf("effective ask=%q want the task model", got)
 	}
-	if err := cfg.SetModelDisabled("grok-4.5", true); err != nil {
+	if err := cfg.SetModelDisabled("grok-4.5-high", true); err != nil {
 		t.Fatal(err)
 	}
 	if got := cfg.EffectiveAskModel(); got != "" {
@@ -423,7 +423,7 @@ func TestSnapshotCarriesModelAvailability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetModelDisabled("grok-4.5", true); err != nil {
+	if err := cfg.SetModelDisabled("grok-4.5-high", true); err != nil {
 		t.Fatal(err)
 	}
 	snap := cfg.Snapshot()
@@ -437,7 +437,7 @@ func TestSnapshotCarriesModelAvailability(t *testing.T) {
 	for _, g := range snap.ModelAvailability {
 		for _, f := range g.Families {
 			for _, c := range f.Choices {
-				if c.Value == "grok-4.5" {
+				if c.Value == "grok-4.5-high" {
 					found = true
 					if c.Enabled {
 						t.Fatal("snapshot still marks grok-4.5 enabled")

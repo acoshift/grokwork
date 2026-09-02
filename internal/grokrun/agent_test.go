@@ -99,7 +99,7 @@ func TestModelOptionsMatchInference(t *testing.T) {
 		}
 		seen[opt.Value] = true
 	}
-	if !IsKnownModel("claude-opus-5") || IsKnownModel("not-a-model") || IsKnownModel("opus") {
+	if !IsKnownModel("claude-opus-5-high") || IsKnownModel("claude-opus-5") || IsKnownModel("not-a-model") || IsKnownModel("opus") {
 		t.Error("IsKnownModel disagrees with the option list")
 	}
 	// Both agents must be represented, or one CLI becomes unselectable in the UI.

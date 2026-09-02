@@ -40,6 +40,30 @@ func TestGrokArgsXhighMapsToEffort(t *testing.T) {
 	}
 }
 
+func TestRateModelStripsGrokAndClaudeEffort(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"grok-4.6-xhigh", "grok-4.6"},
+		{" GROK-4.6-HIGH ", "grok-4.6"},
+		{"grok-4.5-low", "grok-4.5"},
+		{"grok-4.6", "grok-4.6"},
+		{"claude-fable-5-1-xhigh", "claude-fable-5-1"},
+		{"claude-opus-5-high", "claude-opus-5"},
+		{"claude-haiku-4-5-high", "claude-haiku-4-5"},
+		{"claude-opus-5", "claude-opus-5"},
+		// Cursor catalog ids keep their effort token.
+		{"cursor-grok-4.6-xhigh", "cursor-grok-4.6-xhigh"},
+		{"claude-fable-5-1-thinking-xhigh", "claude-fable-5-1-thinking-xhigh"},
+		{"glm-5.2-high", "glm-5.2-high"},
+		{"gpt-5.6-sol-medium", "gpt-5.6-sol-medium"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := RateModel(c.in); got != c.want {
+			t.Errorf("RateModel(%q)=%q want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestGrokArgsHighMapsToEffort(t *testing.T) {
 	args := grokArgs(Options{Model: "grok-4.6-high", MaxTurns: 1})
 	if got := argValue(args, "-m"); got != "grok-4.6" {

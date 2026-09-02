@@ -533,7 +533,7 @@ func TestFixLinearCreate(t *testing.T) {
 func TestIssueDetailShowsFixWhenAllowed(t *testing.T) {
 	srv, cfg, _ := fixEnabledServer(t)
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5",
+		Agent: "grok", Model: "grok-4.5-high",
 	})
 	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
@@ -555,7 +555,7 @@ func TestIssueDetailShowsFixWhenAllowed(t *testing.T) {
 		`<select name="model" hidden>`,
 		`data-confirm-title="Fix"`,
 		`data-confirm-select="model"`,
-		`>Default (grok-4.5)</option>`,
+		`>Default (grok-4.5-high)</option>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in Fix UI: %s", want, body[:min(800, len(body))])
@@ -590,14 +590,14 @@ func TestIssueFixModelPickStampsSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5",
+		Agent: "grok", Model: "grok-4.5-high",
 	})
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
 	}
 	w := postFix(t, srv, "/projects/proj/issues/42/fix", sid, csrf, url.Values{
-		"owner": {"acme"}, "repo": {"app"}, "force_new": {"1"}, "model": {"claude-opus-5"},
+		"owner": {"acme"}, "repo": {"app"}, "force_new": {"1"}, "model": {"claude-opus-5-high"},
 	})
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
@@ -612,7 +612,7 @@ func TestIssueFixModelPickStampsSession(t *testing.T) {
 	if !ok {
 		t.Fatalf("session %s missing", tid)
 	}
-	if e.Model != "claude-opus-5" || e.Agent != "claude" {
+	if e.Model != "claude-opus-5-high" || e.Agent != "claude" {
 		t.Fatalf("stamp agent=%q model=%q", e.Agent, e.Model)
 	}
 }
@@ -620,7 +620,7 @@ func TestIssueFixModelPickStampsSession(t *testing.T) {
 func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
 	srv, cfg, _ := fixEnabledServer(t)
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5",
+		Agent: "grok", Model: "grok-4.5-high",
 	})
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		joined := name + " " + strings.Join(args, " ")
@@ -682,7 +682,7 @@ func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {
 		`value="2"`,
 		`class="issue-link"`,
 		`<select name="model" hidden>`,
-		`>Default (grok-4.5)</option>`,
+		`>Default (grok-4.5-high)</option>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("partial missing %q", want)
@@ -807,7 +807,7 @@ func TestBulkFixModelPickStampsSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5",
+		Agent: "grok", Model: "grok-4.5-high",
 	})
 	spy := &bot.FakeThreadAPI{NextMsg: "m1", NextTh: "bulk-model-th"}
 	bot.SetThreadAPIForTest(b, spy)
@@ -836,7 +836,7 @@ func TestBulkFixModelPickStampsSessions(t *testing.T) {
 		"owner":   {"acme"},
 		"repo":    {"app"},
 		"numbers": {"10", "20"},
-		"model":   {"claude-opus-5"},
+		"model":   {"claude-opus-5-high"},
 	})
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
@@ -851,7 +851,7 @@ func TestBulkFixModelPickStampsSessions(t *testing.T) {
 		if !ok {
 			t.Fatalf("session %s missing", id)
 		}
-		if e.Model != "claude-opus-5" || e.Agent != "claude" {
+		if e.Model != "claude-opus-5-high" || e.Agent != "claude" {
 			t.Fatalf("%s stamp agent=%q model=%q", id, e.Agent, e.Model)
 		}
 	}
@@ -866,7 +866,7 @@ func TestIssuesListHidesModelPickerWithoutShipCaps(t *testing.T) {
 		t.Fatal(err)
 	}
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5",
+		Agent: "grok", Model: "grok-4.5-high",
 	})
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		if strings.Contains(strings.Join(args, " "), "issue list") {

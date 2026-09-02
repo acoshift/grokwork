@@ -27,7 +27,7 @@ func TestDisabledModelsConfigPageAndSave(t *testing.T) {
 		`data-agent="claude"`,
 		`data-agent="cursor"`,
 		`data-family="gpt"`,
-		`name="model" value="claude-opus-5"`,
+		`name="model" value="claude-opus-5-high"`,
 		`name="model" value="gpt-5.6-sol-medium"`,
 		`name="action" value="disable-agent"`,
 		`name="agent" value="claude"`,
@@ -52,15 +52,15 @@ func TestDisabledModelsConfigPageAndSave(t *testing.T) {
 
 	indiv := post(url.Values{
 		"action": {"disable"},
-		"model":  {"claude-opus-5"},
+		"model":  {"claude-opus-5-high"},
 	})
 	if indiv.Code != http.StatusSeeOther && indiv.Code != http.StatusFound {
 		t.Fatalf("disable one status=%d body=%s", indiv.Code, indiv.Body.String())
 	}
-	if cfg.ModelAllowed("claude-opus-5") {
+	if cfg.ModelAllowed("claude-opus-5-high") {
 		t.Fatal("individual disable did not persist")
 	}
-	if !cfg.ModelAllowed("claude-haiku-4-5") {
+	if !cfg.ModelAllowed("claude-haiku-4-5-high") {
 		t.Fatal("sibling Claude model was disabled by an individual toggle")
 	}
 
@@ -91,7 +91,7 @@ func TestDisabledModelsConfigPageAndSave(t *testing.T) {
 	if !strings.Contains(reload, `name="action" value="enable"`) {
 		t.Fatal("reload must offer enable for a disabled model")
 	}
-	if !strings.Contains(reload, `name="model" value="claude-opus-5"`) {
+	if !strings.Contains(reload, `name="model" value="claude-opus-5-high"`) {
 		t.Fatal("disabled model missing from reload")
 	}
 
@@ -112,12 +112,12 @@ func TestDisabledModelsConfigPageAndSave(t *testing.T) {
 func TestAttachModelPickerSkipsDisabledDefaultLabel(t *testing.T) {
 	srv, cfg, _ := testServer(t)
 	if err := cfg.SetAgentSettings(config.AgentSettings{
-		Agent: "grok", Model: "claude-opus-5",
+		Agent: "grok", Model: "claude-opus-5-high",
 		GrokBin: "grok", ClaudeBin: "claude", CursorBin: "cursor-agent",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := cfg.SetModelDisabled("claude-opus-5", true); err != nil {
+	if err := cfg.SetModelDisabled("claude-opus-5-high", true); err != nil {
 		t.Fatal(err)
 	}
 	d := pageData{CanStartSession: true, UserID: "u0"}
@@ -125,12 +125,12 @@ func TestAttachModelPickerSkipsDisabledDefaultLabel(t *testing.T) {
 	if !d.CanSelectModel {
 		t.Fatal("builder picker should render")
 	}
-	if d.ModelDefaultLabel == "claude-opus-5" {
+	if d.ModelDefaultLabel == "claude-opus-5-high" {
 		t.Fatalf("Default option advertised the disabled model %q", d.ModelDefaultLabel)
 	}
 	for _, g := range d.ModelGroups {
 		for _, c := range g.Choices {
-			if c.Value == "claude-opus-5" {
+			if c.Value == "claude-opus-5-high" {
 				t.Fatal("picker still lists the disabled model")
 			}
 		}
@@ -145,7 +145,7 @@ func TestDisabledModelsNonAdminPOSTDoesNotPersist(t *testing.T) {
 	}
 	form := url.Values{
 		"action": {"disable"},
-		"model":  {"claude-opus-5"},
+		"model":  {"claude-opus-5-high"},
 		"csrf":   {csrf},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/config/models", strings.NewReader(form.Encode()))
@@ -156,7 +156,7 @@ func TestDisabledModelsNonAdminPOSTDoesNotPersist(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("member POST status=%d body=%s", w.Code, w.Body.String())
 	}
-	if !cfg.ModelAllowed("claude-opus-5") {
+	if !cfg.ModelAllowed("claude-opus-5-high") {
 		t.Fatal("non-admin POST persisted a disable")
 	}
 }

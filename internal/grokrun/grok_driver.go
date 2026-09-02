@@ -173,6 +173,25 @@ func grokCLIModel(name string) (model, effort string) {
 	return strings.ToLower(base), effort
 }
 
+// RateModel is the name rates are stored and looked up under. Grok and Claude
+// picker aliases share the unsuffixed catalog id (grok-4.6-xhigh → grok-4.6).
+// Cursor catalog ids already include effort and are left alone.
+func RateModel(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return ""
+	}
+	a, ok := AgentForModel(name)
+	if !ok || (a != AgentGrok && a != AgentClaude) {
+		return name
+	}
+	base, effort := splitEffortSuffix(name)
+	if effort == "" {
+		return name
+	}
+	return strings.ToLower(strings.TrimSpace(base))
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if v != "" {

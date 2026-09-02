@@ -225,14 +225,14 @@ func TestStartFeaturePlanStampsReviewModel(t *testing.T) {
 	b, _ := testFixBot(t)
 	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
 	setAgentSettingsKeepBins(t, b.cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.5", ReviewModel: "claude-opus-5",
+		Agent: "grok", Model: "grok-4.5-high", ReviewModel: "claude-opus-5-high",
 	})
 	res, err := b.StartFeaturePlan(featurePlanOpts())
 	if err != nil {
 		t.Fatal(err)
 	}
 	e, ok := b.sessions.Get(res.ThreadID)
-	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5" {
+	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5-high" {
 		t.Fatalf("want review model stamped, got agent=%q model=%q", e.Agent, e.Model)
 	}
 }

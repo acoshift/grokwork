@@ -418,7 +418,7 @@ func TestStartModelPickerBuilderClassOnly(t *testing.T) {
 	w := postFix(t, srv, "/projects/proj/start", sid, csrf, url.Values{
 		"prompt": {"look into this"},
 		"mode":   {"investigate"},
-		"model":  {"claude-opus-5"},
+		"model":  {"claude-opus-5-high"},
 	})
 	// Assert the *reason*, not just that something failed — "err= is present" passes
 	// for any unrelated breakage on this POST.
@@ -464,12 +464,12 @@ func TestStartModelPickStampsSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := getPageBody(t, srv, sid, "/projects/proj/start")
-	if !strings.Contains(body, `id="start-model"`) || !strings.Contains(body, `value="claude-opus-5"`) {
+	if !strings.Contains(body, `id="start-model"`) || !strings.Contains(body, `value="claude-opus-5-high"`) {
 		t.Fatal("builder must see the model field with curated options")
 	}
 	w := postFix(t, srv, "/projects/proj/start", sid, csrf, url.Values{
 		"prompt": {"ship it"},
-		"model":  {"claude-opus-5"},
+		"model":  {"claude-opus-5-high"},
 	})
 	loc := w.Header().Get("Location")
 	if !strings.HasPrefix(loc, "/sessions/") {
@@ -480,7 +480,7 @@ func TestStartModelPickStampsSession(t *testing.T) {
 		tid = tid[:i]
 	}
 	e, ok := srv.sessions.Get(tid)
-	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5" {
+	if !ok || e.Agent != "claude" || e.Model != "claude-opus-5-high" {
 		t.Fatalf("want claude stamped, got ok=%v agent=%q model=%q", ok, e.Agent, e.Model)
 	}
 }
@@ -513,7 +513,7 @@ func TestStartModelPickerShowsHarnessLimits(t *testing.T) {
 		`id="start-model-limits"`,
 		cursor,
 		`value="composer-2.5"`,
-		`value="claude-opus-5"`,
+		`value="claude-opus-5-high"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("start picker missing %q", want)
@@ -533,7 +533,7 @@ func TestStartModelPickerHidesGrokLimitsWhenAlwaysMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
-		Agent: "grok", Model: "grok-4.6",
+		Agent: "grok", Model: "grok-4.6-high",
 	})
 	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
