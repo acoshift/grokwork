@@ -859,6 +859,39 @@ func TestSessionsHub(t *testing.T) {
 	}
 }
 
+func TestSessionListsRenderRelativeAge(t *testing.T) {
+	srv, _, _ := testServer(t)
+	stamp := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	if err := srv.sessions.Set("thread-aged", sessionstore.Entry{
+		SessionID: "sess-aged",
+		Project:   "proj",
+		LastUser:  "dana#3",
+		Goal:      "aged session",
+		UpdatedAt: stamp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	for _, path := range []string{"/sessions", "/projects/proj", "/projects/proj/sessions"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status=%d", path, w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, "aged session") {
+			t.Fatalf("%s missing aged session row", path)
+		}
+		if !strings.Contains(body, "2h ago") {
+			t.Fatalf("%s missing relative age", path)
+		}
+		if strings.Contains(body, stamp) {
+			t.Fatalf("%s leaked RFC3339 %q", path, stamp)
+		}
+	}
+}
+
 func TestSessionBoundIssueLinks(t *testing.T) {
 	srv, _, _ := testServer(t)
 	if err := srv.sessions.Set("thread-99", sessionstore.Entry{

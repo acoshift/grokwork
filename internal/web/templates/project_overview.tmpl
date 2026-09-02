@@ -100,7 +100,7 @@
         {{else}}
         <span class="m-row-t mono">{{.ThreadID}}</span>
         {{end}}
-        <span class="m-row-s">{{if .Goal}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if .Label}}{{.Label}} · {{end}}{{if .PRNumber}}PR #{{.PRNumber}}{{if .PRState}} {{.PRState}}{{end}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{.UpdatedAt}}{{end}}</span>
+        <span class="m-row-s">{{if .Goal}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if .Label}}{{.Label}} · {{end}}{{if .PRNumber}}PR #{{.PRNumber}}{{if .PRState}} {{.PRState}}{{end}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{relativeAge .UpdatedAt}}{{end}}</span>
       </span>
     </a>
     {{end}}
@@ -135,7 +135,7 @@
         </td>
         <td class="mono">{{.TurnCount}}</td>
         <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
-        <td class="mono muted">{{if .UpdatedAt}}{{.UpdatedAt}}{{else}}—{{end}}</td>
+        <td class="mono muted">{{if .UpdatedAt}}{{relativeAge .UpdatedAt}}{{else}}—{{end}}</td>
         <td>{{if .Goal}}<span class="clamp muted">{{.Goal}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
       {{end}}
