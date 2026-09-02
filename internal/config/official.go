@@ -193,9 +193,7 @@ func parseXAIRates(body []byte) map[string]ModelRate {
 			continue
 		}
 		if r, ok := rateFromCells(row); ok {
-			out[name] = r
-			out[name+"-xhigh"] = r
-			out[name+"-low"] = r
+			aliasEffortRates(out, name, r)
 		}
 	}
 	return out
@@ -209,7 +207,7 @@ func parseAnthropicRates(body []byte) map[string]ModelRate {
 			continue
 		}
 		if r, ok := rateFromCells(row); ok {
-			out[name] = r
+			aliasEffortRates(out, name, r)
 		}
 	}
 	return out
@@ -354,7 +352,8 @@ func cursorAliases(key string) []string {
 	case strings.HasPrefix(key, "claude-"):
 		// Docs write "Claude Fable 5.1"; picker ids hyphenate the minor
 		// (claude-fable-5-1-thinking-high), matching the Claude CLI id.
-		return []string{strings.ReplaceAll(key, ".", "-") + "-thinking-high"}
+		id := strings.ReplaceAll(key, ".", "-")
+		return []string{id + "-thinking-high", id + "-thinking-xhigh"}
 	case key == "gpt-5.6-sol":
 		return []string{"gpt-5.6-sol-medium"}
 	case key == "gemini-3.7-flash":
@@ -365,6 +364,15 @@ func cursorAliases(key string) []string {
 		return []string{"kimi-k3-max"}
 	}
 	return nil
+}
+
+// aliasEffortRates copies r onto name and every grok/claude picker effort
+// suffix. Token price does not change with effort; spend looks up the stamp.
+func aliasEffortRates(out map[string]ModelRate, name string, r ModelRate) {
+	out[name] = r
+	for _, e := range []string{"low", "medium", "high", "xhigh", "max"} {
+		out[name+"-"+e] = r
+	}
 }
 
 func stripMDLink(s string) string {

@@ -168,27 +168,35 @@ func TestAgentForModel(t *testing.T) {
 		ok   bool
 	}{
 		{"grok-4.6-xhigh", AgentGrok, true},
+		{"grok-4.6-high", AgentGrok, true},
 		{"grok-4.6", AgentGrok, true},
 		{"grok-4.5", AgentGrok, true},
+		{"grok-4.5-high", AgentGrok, true},
 		{"grok-4.5-low", AgentGrok, true},
 		{"grok-code-fast-1", AgentGrok, true},
 		{"sonnet", AgentClaude, true},
 		{"opus", AgentClaude, true},
 		{"haiku", AgentClaude, true},
 		{"fable", AgentClaude, true},
+		{"claude-fable-5-1-xhigh", AgentClaude, true},
+		{"claude-fable-5-1-high", AgentClaude, true},
 		{"claude-fable-5-1", AgentClaude, true},
 		{"claude-fable-5", AgentClaude, true},
 		{"claude-opus-4-8", AgentClaude, true},
+		{"claude-opus-5-high", AgentClaude, true},
 		{"claude-opus-5", AgentClaude, true},
 		{"  SONNET  ", AgentClaude, true},
 		// Third-party hosts prefix the vendor.
 		{"us.anthropic.claude-sonnet-4-5-20250929-v1:0", AgentClaude, true},
-		// cursor-agent. Cursor-hosted Claude ids carry effort/speed suffixes
-		// the Claude CLI does not use; those must not route to claude.
+		// cursor-agent. Thinking/speed infixes are Cursor catalog ids and must
+		// not route to Claude Code, whose effort aliases are -high/-xhigh.
 		{"composer-2.5", AgentCursor, true},
+		{"claude-fable-5-1-thinking-xhigh", AgentCursor, true},
 		{"claude-fable-5-1-thinking-high", AgentCursor, true},
 		{"claude-opus-5-thinking-high", AgentCursor, true},
-		{"claude-opus-5-high", AgentCursor, true},
+		{"claude-fable-5-thinking-xhigh", AgentCursor, true},
+		// Unlisted Cursor Claude effort ids still belong to cursor-agent.
+		{"claude-opus-5-medium", AgentCursor, true},
 		{"cursor-grok-4.6-xhigh", AgentCursor, true},
 		{"cursor-grok-4.6-high", AgentCursor, true},
 		{"gpt-5", AgentCursor, true},

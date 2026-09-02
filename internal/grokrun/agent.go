@@ -44,8 +44,9 @@ var claudeModelMarkers = []string{"claude", "anthropic", "opus", "sonnet", "haik
 var cursorModelMarkers = []string{"composer", "cursor-", "gpt-", "codex", "gemini", "glm", "kimi"}
 
 // cursorClaudeQualifiers are suffixes the Cursor catalog adds to Claude family
-// ids. The Claude CLI's curated names (claude-opus-5, claude-haiku-4-5) do not
-// carry these, so a name with both a Claude marker and a qualifier is Cursor's.
+// ids. Curated Claude Code names may also carry -high/-xhigh (picker aliases
+// for --effort); those are claimed by ModelOptions first. An unlisted name
+// with both a Claude marker and a qualifier is Cursor's.
 var cursorClaudeQualifiers = []string{"thinking", "-fast", "-low", "-medium", "-high", "-xhigh", "-max"}
 
 // AgentForModel infers which CLI owns a model name.
@@ -131,19 +132,35 @@ func ModelOptions() []ModelOption {
 	return []ModelOption{
 		// grok. `grok models` reports what a given account can actually reach, so
 		// this list is intentionally short — extend it per deployment.
-		// grok-4.6-xhigh / grok-4.5-low are picker aliases: grokCLIModel passes
-		// -m grok-4.6 --effort xhigh and -m grok-4.5 --effort low.
+		// -high / -xhigh / -low are picker aliases: grokCLIModel passes
+		// -m <base> --effort <level>. Unsuffixed keeps the CLI default.
 		{Value: "grok-4.6-xhigh", Label: "grok-4.6-xhigh", Agent: AgentGrok},
+		{Value: "grok-4.6-high", Label: "grok-4.6-high", Agent: AgentGrok},
 		{Value: "grok-4.6", Label: "grok-4.6", Agent: AgentGrok},
+		{Value: "grok-4.5-high", Label: "grok-4.5-high", Agent: AgentGrok},
 		{Value: "grok-4.5", Label: "grok-4.5", Agent: AgentGrok},
 		{Value: "grok-4.5-low", Label: "grok-4.5-low", Agent: AgentGrok},
 
-		// claude (Claude Code CLI).
+		// claude (Claude Code CLI). -high / -xhigh are picker aliases:
+		// claudeCLIModel passes --model <base> --effort <level>. Unsuffixed
+		// keeps the CLI default. Cursor thinking ids are listed below.
+		{Value: "claude-fable-5-1-xhigh", Label: "claude-fable-5-1-xhigh", Agent: AgentClaude},
+		{Value: "claude-fable-5-1-high", Label: "claude-fable-5-1-high", Agent: AgentClaude},
 		{Value: "claude-fable-5-1", Label: "claude-fable-5-1", Agent: AgentClaude},
+		{Value: "claude-opus-5-xhigh", Label: "claude-opus-5-xhigh", Agent: AgentClaude},
+		{Value: "claude-opus-5-high", Label: "claude-opus-5-high", Agent: AgentClaude},
 		{Value: "claude-opus-5", Label: "claude-opus-5", Agent: AgentClaude},
+		{Value: "claude-opus-4-8-xhigh", Label: "claude-opus-4-8-xhigh", Agent: AgentClaude},
+		{Value: "claude-opus-4-8-high", Label: "claude-opus-4-8-high", Agent: AgentClaude},
 		{Value: "claude-opus-4-8", Label: "claude-opus-4-8", Agent: AgentClaude},
+		{Value: "claude-sonnet-5-xhigh", Label: "claude-sonnet-5-xhigh", Agent: AgentClaude},
+		{Value: "claude-sonnet-5-high", Label: "claude-sonnet-5-high", Agent: AgentClaude},
 		{Value: "claude-sonnet-5", Label: "claude-sonnet-5", Agent: AgentClaude},
+		{Value: "claude-haiku-4-5-xhigh", Label: "claude-haiku-4-5-xhigh", Agent: AgentClaude},
+		{Value: "claude-haiku-4-5-high", Label: "claude-haiku-4-5-high", Agent: AgentClaude},
 		{Value: "claude-haiku-4-5", Label: "claude-haiku-4-5", Agent: AgentClaude},
+		{Value: "claude-fable-5-xhigh", Label: "claude-fable-5-xhigh", Agent: AgentClaude},
+		{Value: "claude-fable-5-high", Label: "claude-fable-5-high", Agent: AgentClaude},
 		{Value: "claude-fable-5", Label: "claude-fable-5", Agent: AgentClaude},
 
 		// cursor-agent. Claude-family ids here are Cursor's effort/speed variants,
@@ -151,9 +168,11 @@ func ModelOptions() []ModelOption {
 		// task runs Claude-quality models on cursor-agent.
 		{Value: "composer-2.5", Label: "composer-2.5", Agent: AgentCursor},
 		{Value: "composer-2.5-fast", Label: "composer-2.5-fast", Agent: AgentCursor},
+		{Value: "claude-fable-5-1-thinking-xhigh", Label: "claude-fable-5-1-thinking-xhigh", Agent: AgentCursor},
 		{Value: "claude-fable-5-1-thinking-high", Label: "claude-fable-5-1-thinking-high", Agent: AgentCursor},
 		{Value: "claude-opus-5-thinking-high", Label: "claude-opus-5-thinking-high", Agent: AgentCursor},
 		{Value: "claude-sonnet-5-thinking-high", Label: "claude-sonnet-5-thinking-high", Agent: AgentCursor},
+		{Value: "claude-fable-5-thinking-xhigh", Label: "claude-fable-5-thinking-xhigh", Agent: AgentCursor},
 		{Value: "claude-fable-5-thinking-high", Label: "claude-fable-5-thinking-high", Agent: AgentCursor},
 		{Value: "gpt-5.6-sol-medium", Label: "gpt-5.6-sol-medium", Agent: AgentCursor},
 		{Value: "cursor-grok-4.6-xhigh", Label: "cursor-grok-4.6-xhigh", Agent: AgentCursor},

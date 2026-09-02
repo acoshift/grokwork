@@ -59,7 +59,11 @@ func (claudeDriver) args(in argInput) []string {
 		args = append(args, "--permission-mode", "bypassPermissions")
 	}
 	if opt.Model != "" {
-		args = append(args, "--model", opt.Model)
+		model, effort := claudeCLIModel(opt.Model)
+		args = append(args, "--model", model)
+		if effort != "" {
+			args = append(args, "--effort", effort)
+		}
 	}
 	// Trimmed: the CLI validates the id as a UUID, so a padded value from config or
 	// a hand-edited sessions.json would be rejected outright.
@@ -113,6 +117,24 @@ func claudeDenyList(opt Options) string {
 		deny = append(deny, "WebSearch", "WebFetch")
 	}
 	return strings.Join(deny, ",")
+}
+
+// claudeCLIModel maps a picker/stamp name onto the Claude CLI's --model and an
+// optional --effort. Cursor's thinking variants keep the full id — those are
+// catalog names, not a Claude Code effort suffix.
+func claudeCLIModel(name string) (model, effort string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", ""
+	}
+	if strings.Contains(strings.ToLower(name), "thinking") {
+		return name, ""
+	}
+	base, effort := splitEffortSuffix(name)
+	if effort == "" {
+		return name, ""
+	}
+	return strings.ToLower(base), effort
 }
 
 // watchActivity is a no-op: tool_use blocks arrive on the stream.

@@ -83,6 +83,11 @@ func TestParseXAIRatesUsesStandardContextNotLong(t *testing.T) {
 	} else {
 		assertRate(t, r, 2, 6, 0.5, -1)
 	}
+	if r, ok := got["grok-4.6-high"]; !ok {
+		t.Fatal("high alias missing")
+	} else {
+		assertRate(t, r, 2, 6, 0.5, -1)
+	}
 	r, ok = got["grok-4.5"]
 	if !ok {
 		t.Fatal("missing grok-4.5")
@@ -102,6 +107,8 @@ func TestParseAnthropicRates(t *testing.T) {
 	assertRate(t, got["claude-sonnet-5"], 2, 10, 0.2, 2.5)
 	assertRate(t, got["claude-haiku-4-5"], 1, 5, 0.1, 1.25)
 	assertRate(t, got["claude-fable-5-1"], 10, 50, 0.25, 12.5)
+	assertRate(t, got["claude-fable-5-1-xhigh"], 10, 50, 0.25, 12.5)
+	assertRate(t, got["claude-fable-5-1-high"], 10, 50, 0.25, 12.5)
 	assertRate(t, got["claude-fable-5"], 10, 50, 1, 12.5)
 	if _, ok := got["claude-mythos-5"]; ok {
 		t.Fatal("mythos must be skipped")
@@ -121,8 +128,10 @@ func TestParseCursorRatesAliasesPickerNames(t *testing.T) {
 	assertRate(t, got["cursor-grok-4.6-xhigh"], 2, 6, 0.5, -1)
 	assertRate(t, got["cursor-grok-4.6-high"], 2, 6, 0.5, -1)
 	assertRate(t, got["claude-fable-5-1-thinking-high"], 10, 50, 0.25, 12.5)
+	assertRate(t, got["claude-fable-5-1-thinking-xhigh"], 10, 50, 0.25, 12.5)
 	assertRate(t, got["claude-opus-5-thinking-high"], 5, 25, 0.5, 6.25)
 	assertRate(t, got["claude-fable-5-thinking-high"], 10, 50, 1, 12.5)
+	assertRate(t, got["claude-fable-5-thinking-xhigh"], 10, 50, 1, 12.5)
 	if _, ok := got["claude-fable-5.1-thinking-high"]; ok {
 		t.Fatal("cursor fable 5.1 must hyphenate like the Claude CLI id")
 	}

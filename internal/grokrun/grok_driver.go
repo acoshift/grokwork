@@ -134,21 +134,43 @@ func (grokDriver) decodeFinal(stdout []byte) (finalOut, bool) {
 	return out, true
 }
 
+// effortSuffixes is longest-first so "xhigh" is not parsed as "high".
+var effortSuffixes = []string{"xhigh", "medium", "high", "low", "max"}
+
+// splitEffortSuffix peels a trailing effort token off a picker/stamp name.
+// Grok and Claude take effort as --effort; cursor-agent bakes it into the id.
+func splitEffortSuffix(name string) (base, effort string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", ""
+	}
+	lower := strings.ToLower(name)
+	for _, e := range effortSuffixes {
+		if rest, ok := strings.CutSuffix(lower, "-"+e); ok {
+			return name[:len(rest)], e
+		}
+	}
+	return name, ""
+}
+
 // grokCLIModel maps a picker/stamp name onto the grok CLI's -m value and an
 // optional --effort. The CLI catalog is model ids only (`grok models` lists
 // grok-4.6, grok-4.5); effort is a flag, unlike cursor-agent where xhigh/low
-// are part of the model name. Passing grok-4.6-xhigh or grok-4.5-low as -m
-// fails with "unknown model id".
+// are part of the model name. Passing grok-4.6-xhigh as -m fails with
+// "unknown model id". Cursor-hosted grok ids are left alone.
 func grokCLIModel(name string) (model, effort string) {
 	name = strings.TrimSpace(name)
-	switch strings.ToLower(name) {
-	case "grok-4.6-xhigh":
-		return "grok-4.6", "xhigh"
-	case "grok-4.5-low":
-		return "grok-4.5", "low"
-	default:
+	if name == "" {
+		return "", ""
+	}
+	if strings.Contains(strings.ToLower(name), "cursor") {
 		return name, ""
 	}
+	base, effort := splitEffortSuffix(name)
+	if effort == "" {
+		return name, ""
+	}
+	return strings.ToLower(base), effort
 }
 
 func firstNonEmpty(vals ...string) string {

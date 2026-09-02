@@ -171,6 +171,49 @@ func TestClaudeArgsCapabilityFlags(t *testing.T) {
 	}
 }
 
+func TestClaudeCLIModel(t *testing.T) {
+	cases := []struct {
+		in, model, effort string
+	}{
+		{"claude-fable-5-1-xhigh", "claude-fable-5-1", "xhigh"},
+		{"claude-fable-5-1-high", "claude-fable-5-1", "high"},
+		{" CLAUDE-OPUS-5-XHIGH ", "claude-opus-5", "xhigh"},
+		{"claude-fable-5-1", "claude-fable-5-1", ""},
+		{"claude-haiku-4-5", "claude-haiku-4-5", ""},
+		{"claude-haiku-4-5-high", "claude-haiku-4-5", "high"},
+		// Cursor thinking ids must not be rewritten if they reach this helper.
+		{"claude-fable-5-1-thinking-high", "claude-fable-5-1-thinking-high", ""},
+		{"claude-fable-5-1-thinking-xhigh", "claude-fable-5-1-thinking-xhigh", ""},
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		model, effort := claudeCLIModel(c.in)
+		if model != c.model || effort != c.effort {
+			t.Errorf("claudeCLIModel(%q)=%q,%q want %q,%q", c.in, model, effort, c.model, c.effort)
+		}
+	}
+}
+
+func TestClaudeArgsEffortSuffixMapsToFlag(t *testing.T) {
+	args := claudeArgs(Options{Model: "claude-fable-5-1-xhigh"})
+	if got := argValue(args, "--model"); got != "claude-fable-5-1" {
+		t.Errorf("--model=%q want claude-fable-5-1 in %v", got, args)
+	}
+	if got := argValue(args, "--effort"); got != "xhigh" {
+		t.Errorf("--effort=%q want xhigh in %v", got, args)
+	}
+}
+
+func TestClaudeArgsPlainModelOmitsEffort(t *testing.T) {
+	args := claudeArgs(Options{Model: "claude-fable-5-1"})
+	if got := argValue(args, "--model"); got != "claude-fable-5-1" {
+		t.Errorf("--model=%q in %v", got, args)
+	}
+	if slices.Contains(args, "--effort") {
+		t.Errorf("unsuffixed claude model must not pass --effort: %v", args)
+	}
+}
+
 func TestClaudeArgsJSONSchemaAndExtraArgs(t *testing.T) {
 	args := claudeArgs(Options{JSONSchema: `{"type":"object"}`, ExtraArgs: []string{"--effort", "high"}})
 	if got := argValue(args, "--json-schema"); got != `{"type":"object"}` {

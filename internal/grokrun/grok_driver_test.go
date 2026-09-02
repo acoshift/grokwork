@@ -11,8 +11,10 @@ func TestGrokCLIModel(t *testing.T) {
 	}{
 		{"grok-4.6-xhigh", "grok-4.6", "xhigh"},
 		{" GROK-4.6-XHIGH ", "grok-4.6", "xhigh"},
+		{"grok-4.6-high", "grok-4.6", "high"},
 		{"grok-4.6", "grok-4.6", ""},
 		{"grok-4.5", "grok-4.5", ""},
+		{"grok-4.5-high", "grok-4.5", "high"},
 		{"grok-4.5-low", "grok-4.5", "low"},
 		{" GROK-4.5-LOW ", "grok-4.5", "low"},
 		// Cursor's xhigh id is a real catalog name and must not be rewritten
@@ -35,6 +37,16 @@ func TestGrokArgsXhighMapsToEffort(t *testing.T) {
 	}
 	if got := argValue(args, "--effort"); got != "xhigh" {
 		t.Errorf("--effort=%q want xhigh in %v", got, args)
+	}
+}
+
+func TestGrokArgsHighMapsToEffort(t *testing.T) {
+	args := grokArgs(Options{Model: "grok-4.6-high", MaxTurns: 1})
+	if got := argValue(args, "-m"); got != "grok-4.6" {
+		t.Errorf("-m=%q want grok-4.6 in %v", got, args)
+	}
+	if got := argValue(args, "--effort"); got != "high" {
+		t.Errorf("--effort=%q want high in %v", got, args)
 	}
 }
 
