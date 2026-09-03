@@ -1,6 +1,6 @@
 module github.com/acoshift/grokwork
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/bwmarrin/discordgo v0.29.1-0.20260214123928-f43dd94faaac
@@ -13,7 +13,7 @@ require (
 require (
 	github.com/kavu/go_reuseport v1.5.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/moonrhythm/parapet v0.18.5 // indirect
+	github.com/moonrhythm/parapet v0.19.0 // indirect
 	github.com/tdewolff/minify/v2 v2.24.17 // indirect
 	github.com/tdewolff/parse/v2 v2.8.16 // indirect
 )
