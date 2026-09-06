@@ -157,6 +157,8 @@ func TestPagesRender(t *testing.T) {
 		// Search results render as a full lead view even with no query.
 		{"/search", `id="page-search"`},
 		{"/search", `id="search-form"`},
+		{"/today", `id="page-today"`},
+		{"/projects/proj/today", `id="page-today"`},
 		// Self-service account page. With auth off there is no account, and the
 		// page says so instead of rendering buttons that would refuse.
 		{"/account", `id="page-account"`},
@@ -412,6 +414,7 @@ func TestPagesRender(t *testing.T) {
 			{"/partials/sessions/thread-99/run", `id="session-run"`, "dashboard"},
 			{"/partials/sessions/thread-99/rail", `class="rail-group"`, "history"},
 			{"/partials/worktrees/table", "All worktrees", "worktrees"},
+			{"/partials/today/list", `id="today-list"`, ""},
 			{"/partials/issues/table?project=proj&owner=acme&repo=app", "No issues.", ""},
 			{"/partials/config/lists", "Projects", "config"},
 		}
@@ -452,6 +455,8 @@ func TestPagesRender(t *testing.T) {
 			{"/projects/proj", []string{`hx-trigger="sse:dashboard, sse:ship, sse:cases"`}},
 			{"/projects/proj/cases", []string{`hx-trigger="sse:cases"`, "/partials/cases/counts?project=proj", "/partials/cases/list?project=proj"}},
 			{"/projects/proj/worktrees", []string{`hx-trigger="sse:worktrees"`, "/partials/worktrees/table?project=proj"}},
+			{"/today", []string{`hx-trigger="sse:ship, sse:cases, sse:history, sse:inbox"`}},
+			{"/projects/proj/today", []string{`hx-trigger="sse:ship, sse:cases, sse:history, sse:inbox"`, "scoped=1"}},
 			{"/ship", []string{`hx-trigger="sse:ship"`}},
 			{"/history", []string{`hx-trigger="sse:history"`}},
 			{"/history/thread-99", []string{`hx-trigger="sse:history"`}},
@@ -1328,6 +1333,7 @@ func TestNavBrandChrome(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		`data-scope=""`,
+		">Today<",
 		">Projects<",
 		">Ship<",
 		">Cases<",
@@ -1358,6 +1364,7 @@ func TestNavBrandChrome(t *testing.T) {
 		`data-scope="proj"`,
 		`class="proj-switch"`,
 		"All projects",
+		">Today<",
 		">Overview<",
 		">Start task<",
 		">Ship<",
@@ -1404,10 +1411,10 @@ func TestNavBrandChrome(t *testing.T) {
 		tabbar = tabbar[:end]
 	}
 	for _, want := range []string{
+		`href="/projects/proj/today" data-icon="today" class="">`,
 		`data-icon="overview" class="active">`,
 		`href="/projects/proj/ship" data-icon="ship" class="">`,
 		`href="/projects/proj/cases" data-icon="cases" class="">`,
-		`href="/projects/proj/sessions" data-icon="sessions" class="">`,
 		`href="/projects/proj/reviews" data-icon="reviews" class="">`,
 		`class="ws-back" href="/"`,
 		`class="ws-start" href="/projects/proj/start"`,

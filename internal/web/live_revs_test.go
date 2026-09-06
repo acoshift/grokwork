@@ -229,4 +229,23 @@ func TestHistoryRevMovesOnRunIdleAndSessionChrome(t *testing.T) {
 	if srv.fpHistory() == beforeNote {
 		t.Fatal("history rev should change when the close note is patched")
 	}
+
+	beforeQ := srv.fpHistory()
+	if _, _, err := srv.sessions.Patch("thread-99", func(e *sessionstore.Entry) {
+		e.OpenQuestions = []sessionstore.OpenQuestion{{ID: "q1", Text: "go?", Status: "open"}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	afterOpen := srv.fpHistory()
+	if afterOpen == beforeQ {
+		t.Fatal("history rev should change when an OpenQuestion is added")
+	}
+	if _, _, err := srv.sessions.Patch("thread-99", func(e *sessionstore.Entry) {
+		e.OpenQuestions = []sessionstore.OpenQuestion{{ID: "q1", Text: "go?", Status: "answered", Answer: "yes"}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if srv.fpHistory() == afterOpen {
+		t.Fatal("history rev should change when an OpenQuestion status flips")
+	}
 }

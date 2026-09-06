@@ -32,6 +32,7 @@ type navCounts struct {
 	Cases   int `json:"cases"`
 	Reviews int `json:"reviews"`
 	Inbox   int `json:"inbox"`
+	Today   int `json:"today"`
 	Issues  int `json:"issues,omitzero"`
 	Errors  int `json:"errors,omitzero"`
 }
@@ -52,6 +53,7 @@ func (s *Server) partialNavCounts(ctx *hime.Context) error {
 		Cases:   s.listCaseBoardVisible(ctx, project).OpenTotal,
 		Reviews: s.pendingReviewCount(ctx, project),
 		Inbox:   s.inboxUnreadVisible(ctx),
+		Today:   s.waitingMatched(ctx, project),
 	}
 	// Remote counts (GitHub issues, error sources) are a second fetch so the
 	// local badges are not held behind those APIs. JS requests remote=1 when

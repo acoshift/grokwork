@@ -309,6 +309,13 @@ func appendSessionLiveChrome(b *strings.Builder, sessions []sessionstore.Listed)
 				fmt.Fprintf(b, "|n|%s", a)
 			}
 		}
+		for _, q := range e.OpenQuestions {
+			status := strings.TrimSpace(q.Status)
+			if status == "" {
+				status = "open"
+			}
+			fmt.Fprintf(b, "|q|%s|%s", q.ID, status)
+		}
 		b.WriteByte('\n')
 	}
 }

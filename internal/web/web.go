@@ -199,6 +199,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"cases":                              "/cases",
 		"search":                             "/search",
 		"inbox":                              "/inbox",
+		"today":                              "/today",
 		"spend":                              "/spend",
 		"deploys":                            "/deploys",
 		"worktrees":                          "/worktrees",
@@ -291,6 +292,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"partial.issues.table":         "/partials/issues/table",
 		"partial.nav.counts":           "/partials/nav/counts",
 		"partial.inbox.list":           "/partials/inbox/list",
+		"partial.today.list":           "/partials/today/list",
 		"inbox.read":                   "/inbox/read",
 		"partial.pr.gates":             "/partials/prs/",
 		"partial.config.lists":         "/partials/config/lists",
@@ -337,6 +339,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("ship", "layout.tmpl", "ship.tmpl")
 	tp.ParseFiles("cases", "layout.tmpl", "cases.tmpl")
 	tp.ParseFiles("inbox", "layout.tmpl", "inbox.tmpl")
+	tp.ParseFiles("today", "layout.tmpl", "today.tmpl")
 	tp.ParseFiles("search", "layout.tmpl", "search.tmpl")
 	tp.ParseFiles("case_new", "layout.tmpl", "case_new.tmpl")
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
@@ -437,6 +440,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /inbox", s.requireAuth(hime.Handler(s.inboxPage)))
 	mux.Handle("POST /inbox/read", s.requireAuth(hime.Handler(s.postInboxRead)))
 	mux.Handle("GET /partials/inbox/list", s.requireAuth(hime.Handler(s.partialInboxList)))
+	mux.Handle("GET /today", s.requireAuth(hime.Handler(s.todayPage)))
+	mux.Handle("GET /partials/today/list", s.requireAuth(hime.Handler(s.partialTodayList)))
 	mux.Handle("GET /worktrees", s.requireAuth(hime.Handler(s.worktreesPage)))
 	// Cross-project deploy board. Read-only and global — triggering stays on
 	// /projects/{p}/deploys, where the manifest and the environment gates are.
@@ -458,6 +463,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/actions-rule/remove", s.requireAdmin(hime.Handler(s.removeProjectActionsRule)))
 	// Project workspace (project-first UX): overview + scoped list pages.
 	mux.Handle("GET /projects/{project}", s.requireAuth(hime.Handler(s.projectOverview)))
+	mux.Handle("GET /projects/{project}/today", s.requireAuth(hime.Handler(s.todayScoped)))
 	mux.Handle("GET /projects/{project}/start", s.requireAuth(hime.Handler(s.startComposer)))
 	mux.Handle("GET /projects/{project}/ship", s.requireAuth(hime.Handler(s.shipScoped)))
 	mux.Handle("GET /projects/{project}/cases", s.requireAuth(hime.Handler(s.casesScoped)))
@@ -766,6 +772,7 @@ type pageData struct {
 	IsShip         bool
 	IsCases        bool
 	IsInbox        bool
+	IsToday        bool
 	IsWorktrees    bool
 	IsConfig       bool
 	IsLogin        bool
@@ -1089,6 +1096,10 @@ type pageData struct {
 	Completion *bot.CompletionCardInput
 	// InboxItems are the viewer's queued notifications (newest first).
 	InboxItems InboxItems
+	// Waiting is the personal Today queue. InboxUnread is the feed count for
+	// the header link (independent of the derived waiting pill).
+	Waiting     bot.WaitingBoard
+	InboxUnread int
 	// Session lifecycle controls (cancel/reset/dequeue/claim on the detail page).
 	// CanControlSession gates control affordances: it already folds in
 	// CanStartSession (feature+role), so the buttons never render when the POST

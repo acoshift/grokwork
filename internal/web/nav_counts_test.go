@@ -52,7 +52,7 @@ func TestNavCountPlaceholders(t *testing.T) {
 	}
 	body := w.Body.String()
 	nav := navLinksChunk(t, body)
-	for _, key := range []string{"ship", "cases", "reviews", "inbox"} {
+	for _, key := range []string{"ship", "cases", "reviews", "inbox", "today"} {
 		needle := `data-nav-count="` + key + `"`
 		if !strings.Contains(nav, needle) {
 			t.Fatalf("global nav missing %s", needle)
@@ -73,7 +73,7 @@ func TestNavCountPlaceholders(t *testing.T) {
 	h.ServeHTTP(w, req)
 	body = w.Body.String()
 	nav = navLinksChunk(t, body)
-	for _, key := range []string{"ship", "cases", "reviews", "issues"} {
+	for _, key := range []string{"ship", "cases", "reviews", "issues", "today"} {
 		needle := `data-nav-count="` + key + `"`
 		if !strings.Contains(nav, needle) {
 			t.Fatalf("workspace nav missing %s", needle)
@@ -116,8 +116,8 @@ func TestNavCountsLiveOnSSE(t *testing.T) {
 	srv, _, _ := testServer(t)
 	body := getBody(t, srv.Handler(), "/")
 	for _, want := range []string{
-		`if (name === "ship" || name === "cases" || name === "inbox") loadNavCounts(true)`,
-		`if (changed.ship || changed.cases || changed.inbox) loadNavCounts(true)`,
+		`if (name === "ship" || name === "cases" || name === "inbox" || name === "history") loadNavCounts(true)`,
+		`if (changed.ship || changed.cases || changed.inbox || changed.history) loadNavCounts(true)`,
 		`function loadNavCounts(localOnly)`,
 		`if (localOnly) return`,
 		`if (remote && key !== "issues" && key !== "errors") return`,
