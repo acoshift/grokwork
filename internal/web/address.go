@@ -179,9 +179,16 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 	if ent, ok := s.sessions.Get(threadID); ok && ent.IsCaseClosed() {
 		return s.sessionRedirect(ctx, threadID, "", "case is closed — use /reopen first")
 	}
+	intent := strings.ToLower(strings.TrimSpace(ctx.PostFormValue("intent")))
+	kind := bot.KindEmpty
+	auditKind := "continue"
+	if intent == "fix" {
+		kind = bot.KindStartFix
+		auditKind = "start_fix"
+	}
 	if err := s.checkStartRate(ctx); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
-			"kind": "continue", "threadId": threadID,
+			"kind": auditKind, "threadId": threadID,
 		})
 		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
 	}
@@ -192,10 +199,10 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 	actor := s.fixActor(ctx)
 	res, startErr := s.bot.StartContinue(bot.ContinueOpts{
 		ThreadID: threadID, Project: project, Prompt: prompt, Actor: actor,
-		AttachmentPaths: paths,
+		Kind: kind, AttachmentPaths: paths,
 	})
 	detail := map[string]any{
-		"kind": "continue", "threadId": threadID, "project": project,
+		"kind": auditKind, "threadId": threadID, "project": project,
 		"attachments": len(paths),
 	}
 	if startErr != nil {
@@ -206,6 +213,9 @@ func (s *Server) postSessionContinue(ctx *hime.Context) error {
 		}
 		if errors.Is(startErr, bot.ErrUnknownThread) {
 			return ctx.Status(http.StatusNotFound).Error(startErr.Error())
+		}
+		if errors.Is(startErr, bot.ErrCannotStartFix) {
+			return ctx.Status(http.StatusForbidden).Error(startErr.Error())
 		}
 		return s.sessionRedirect(ctx, threadID, "", startErr.Error())
 	}

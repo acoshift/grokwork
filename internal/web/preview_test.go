@@ -205,6 +205,7 @@ func TestPreviewServer(t *testing.T) {
 		"1390000000000000004": {
 			SessionID: "sess-d4", Project: "api", LastUser: "beam#0",
 			OwnerName: "beam", Origin: "discord",
+			Mode: "investigate",
 			Goal: "Investigate slow N+1 queries on /orders",
 		},
 		// Support cases (Mode=case) across the phase pipeline → /projects/webapp/cases.

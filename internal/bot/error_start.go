@@ -49,6 +49,8 @@ type ErrorStartOpts struct {
 
 // StartError discovers or creates a work unit, binds the error, and StartTasks.
 // Investigate enqueues KindStartInvestigate; Fix enqueues KindStartFix.
+// Fix on a session already stamped investigate promotes Mode to fix so later
+// Continue runs ship (same rewrite as Discord /start fix and web Fix & ship).
 func (b *Bot) StartError(opts ErrorStartOpts) (FixStartResult, error) {
 	if b == nil {
 		return FixStartResult{}, fmt.Errorf("bot is nil")

@@ -2810,6 +2810,21 @@ func (b *Bot) ensureSessionMode(threadID, mode string) {
 	})
 }
 
+// stampFixModeOnStartFix is the one-way Mode rewrite for an explicit start-fix
+// on a non-case session that is still empty or investigate. ensureSessionMode
+// is first-writer-wins, so without this KindStartFix would ship once and the
+// next KindTask / Continue would stay investigate.
+func (b *Bot) stampFixModeOnStartFix(threadID string) {
+	if b == nil || b.sessions == nil || strings.TrimSpace(threadID) == "" {
+		return
+	}
+	_, _, _ = b.sessions.Patch(threadID, func(e *sessionstore.Entry) {
+		if e.Mode == "" || e.Mode == ModeInvestigate {
+			e.Mode = ModeFix
+		}
+	})
+}
+
 // snapshotPolicyOntoItem fills K19 fields before claimOrEnqueue.
 func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string) {
 	if item == nil || b == nil {
@@ -2883,6 +2898,14 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string) {
 			// else: leave phase unchanged; RunPolicy stays non-ship for investigate phase
 		} else {
 			reqMode = ModeFix
+			if sessionMode == ModeInvestigate || sessionMode == "" {
+				// First-writer-wins would leave Mode=investigate, so Continue after
+				// this ship run would go read-only again. Empty is included so a
+				// Fix & ship queued while the first investigate run is still in
+				// ensureSessionMode cannot lose that race.
+				b.stampFixModeOnStartFix(item.threadID)
+				sessionMode = ModeFix
+			}
 		}
 	default:
 		// Freeform on case: promote intake/answered → investigate before snapshot

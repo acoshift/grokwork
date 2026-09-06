@@ -919,6 +919,15 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 	// startSessions gate so control affordances only render when the matching
 	// POST would actually run (auth-off keeps them hidden — the POSTs 404 there).
 	d.CanControlSession = d.CanStartSession && s.canControlSession(ctx, d.SessionEntry)
+	if d.CanStartSession {
+		proj := d.SessionEntry.Project
+		if proj == "" {
+			proj = d.Project
+		}
+		if proj != "" {
+			d.CanStartFixMode = s.cfg.ResolveCapabilities(proj, d.UserID).CanShip()
+		}
+	}
 	if s.bot != nil {
 		d.QueueItems = s.bot.QueueItems(threadID)
 	}

@@ -68,6 +68,7 @@ func TestCasePanelRendersOnSession(t *testing.T) {
 	for _, hide := range []string{
 		"btn-case-investigate",
 		"case-investigate-notes",
+		`id="btn-start-fix"`,
 	} {
 		if strings.Contains(body, hide) {
 			t.Fatalf("support-phase case must not render investigate rail form %q", hide)

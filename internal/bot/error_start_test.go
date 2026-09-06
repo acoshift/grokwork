@@ -77,8 +77,8 @@ func TestStartErrorInvestigateThenFixIsRemoteWork(t *testing.T) {
 	if ent.Goal != wantGoal {
 		t.Fatalf("goal rewritten: %q", ent.Goal)
 	}
-	if ent.Mode != ModeInvestigate {
-		t.Fatalf("mode after fix=%q (first-writer-wins)", ent.Mode)
+	if ent.Mode != ModeFix {
+		t.Fatalf("mode after fix=%q (start-fix promotes investigate)", ent.Mode)
 	}
 	if len(ent.Errors) != 1 || ent.Errors[0].ErrorKey() != "deploys:gke.cluster-rcf2/api/iss_go_nilmap" {
 		t.Fatalf("errors after fix=%+v", ent.Errors)

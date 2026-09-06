@@ -106,6 +106,10 @@ type ContinueOpts struct {
 	Prompt          string
 	Actor           Actor
 	AttachmentPaths []string // staged web files; ownership transfers to StartTask
+	// Kind selects the follow-up policy. Zero (KindEmpty) is KindTask and
+	// inherits the session Mode. KindStartFix ships even when Mode is
+	// investigate, and promotes that session to ModeFix.
+	Kind Kind
 }
 
 // StartContinue runs StartTask on an existing work unit (never creates a thread).
@@ -164,6 +168,7 @@ func (b *Bot) StartContinue(opts ContinueOpts) (FixStartResult, error) {
 		ThreadID:        threadID,
 		Proj:            projectRef{Name: project, Cwd: cwd},
 		Prompt:          prompt,
+		Kind:            opts.Kind,
 		Actor:           opts.Actor,
 		Source:          SourceWeb,
 		Origin:          SourceWeb,

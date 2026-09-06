@@ -382,7 +382,7 @@ Orthogonal to label and (for cases) to phase.
 
 `""` (legacy fix default) | `investigate` | `explain` | `fix` | `plan` | `case`
 
-First writer wins (`ensureSessionMode`). A case stays `Mode=case` through escalate/ship — it does not become `Mode=fix`. Plan on a unit already in another mode is refused (`ErrPlanModeConflict`).
+First writer wins (`ensureSessionMode`), with one explicit rewrite: **KindStartFix** on a non-case session whose Mode is empty or `investigate` stamps `Mode=fix` (`stampFixModeOnStartFix`). That is Discord `/start fix`, web composer **Fix & ship**, and error Fix reuse — so a later Continue / KindTask inherits ship policy instead of snapping back to read-only. Empty is included so a Fix queued during the first investigate run cannot lose the first-writer race. A case stays `Mode=case` through escalate/ship — it does not become `Mode=fix`. Plan on a unit already in another mode is refused (`ErrPlanModeConflict`). Explain is not rewritten.
 
 ### Ship mode (`Entry.ShipMode`)
 
