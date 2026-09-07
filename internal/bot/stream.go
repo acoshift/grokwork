@@ -108,12 +108,6 @@ func streamTail(s string, budget int) string {
 	return "…" + strings.TrimLeft(tail, " \t")
 }
 
-// streamPreview is kept as an alias for tests that referenced head preview;
-// live streaming uses streamTail.
-func streamPreview(s string, budget int) string {
-	return streamTail(s, budget)
-}
-
 type streamPoster struct {
 	msg       messageMessenger
 	channelID string

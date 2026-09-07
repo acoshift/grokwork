@@ -47,7 +47,6 @@ const (
 	ActionPRReviewSubmit         = "pr.review.submit"
 	ActionPRReviewRequest        = "pr.review.request"
 	ActionPRReviewCancel         = "pr.review.cancel"
-	ActionPRReviewObsolete       = "pr.review.obsolete"
 	ActionPRReviewGitHub         = "pr.review.github" // real gh pr review as the host gh user; unlike ActionPRReviewSubmit it can satisfy branch protection
 	ActionPRImport               = "pr.import"        // background importer bound a GitHub PR grokwork did not open
 	ActionSessionStart           = "session.start"    // Fix with Grok / web session start

@@ -114,11 +114,6 @@ func RunStdioList(ctx context.Context, call CallFunc, list ListFunc, token strin
 	return sc.Err()
 }
 
-// RunStdioDefault serves MCP on stdin/stdout.
-func RunStdioDefault(ctx context.Context, call CallFunc, token string) error {
-	return RunStdioList(ctx, call, nil, token, os.Stdin, os.Stdout)
-}
-
 // RunStdioDefaultList serves MCP on stdin/stdout with a custom tools/list.
 func RunStdioDefaultList(ctx context.Context, call CallFunc, list ListFunc, token string) error {
 	return RunStdioList(ctx, call, list, token, os.Stdin, os.Stdout)

@@ -57,18 +57,6 @@ func (s *Server) SetSessionCookie(w http.ResponseWriter, sessionID string) {
 	})
 }
 
-// SetSessionCookie is a package-level helper for tests that lack a Server pointer.
-func SetSessionCookie(w http.ResponseWriter, sessionID string) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    sessionID,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(sessionTTL.Seconds()),
-	})
-}
-
 func clearSessionCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,

@@ -77,12 +77,6 @@ func finalBodiesByID(sends []sendCall, edits []editCall) []string {
 	return out
 }
 
-var errFake = errString("fake messenger error")
-
-type errString string
-
-func (e errString) Error() string { return string(e) }
-
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

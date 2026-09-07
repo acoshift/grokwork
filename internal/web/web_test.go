@@ -3169,12 +3169,3 @@ func TestSSE(t *testing.T) {
 		t.Fatalf("hello revs incomplete: %+v", hello.Revs)
 	}
 }
-
-func contains(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
-}

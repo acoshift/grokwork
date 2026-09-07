@@ -25,9 +25,6 @@ const (
 	RunKindInvestigate = "investigate"
 	RunKindExplain     = "explain"
 	RunKindPlan        = "plan"
-	RunKindFixCI       = "fix_ci"
-	RunKindAddress     = "address"
-	RunKindPreset      = "preset"
 )
 
 // RunPolicy is the bot-enforced gate set for one Grok child run (K2).
@@ -65,7 +62,7 @@ type PolicyInput struct {
 	ConfigYolo   bool
 	// RequestedMode from /start or freeform inherit; empty → session or fix default.
 	RequestedMode string
-	// RequestedRunKind optional explicit kind (fix_ci, address).
+	// RequestedRunKind optional explicit kind; empty derives from mode.
 	RequestedRunKind string
 	// ForceInvestigate forces investigate policy (e.g. /start investigate).
 	ForceInvestigate bool

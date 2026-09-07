@@ -107,35 +107,6 @@ func (s *Server) resolveCatalogRepoAccess(ctx *hime.Context, project, owner, rep
 		strings.TrimSpace(owner), strings.TrimSpace(repo))
 }
 
-// filterSnapshotToVisible limits Snapshot projects to what the session may see.
-func (s *Server) filterSnapshotToVisible(ctx *hime.Context, snap config.Snapshot) config.Snapshot {
-	userID, role := s.sessionIdentity(ctx)
-	if config.RoleAtLeast(role, config.WebRoleAdmin) {
-		return snap
-	}
-	visible := s.cfg.ProjectsVisibleTo(userID, role)
-	set := make(map[string]struct{}, len(visible))
-	for _, n := range visible {
-		set[n] = struct{}{}
-	}
-	projects := make([]config.ProjectItem, 0, len(visible))
-	for _, p := range snap.Projects {
-		if _, ok := set[p.Name]; ok {
-			projects = append(projects, p)
-		}
-	}
-	snap.Projects = projects
-	snap.ProjectNames = visible
-	channels := make([]config.ChannelItem, 0, len(snap.Channels))
-	for _, ch := range snap.Channels {
-		if _, ok := set[ch.Project]; ok {
-			channels = append(channels, ch)
-		}
-	}
-	snap.Channels = channels
-	return snap
-}
-
 // filterProjectNames returns project names visible to the session.
 func (s *Server) filterProjectNames(ctx *hime.Context) []string {
 	userID, role := s.sessionIdentity(ctx)

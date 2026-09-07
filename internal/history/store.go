@@ -31,7 +31,7 @@ type Turn struct {
 	SessionID string `json:"sessionId,omitempty"`
 	MessageID string `json:"messageId,omitempty"`
 	// Wave 1 classification (optional on older records).
-	RunKind string `json:"runKind,omitempty"` // fix|investigate|explain|fix_ci|…
+	RunKind string `json:"runKind,omitempty"` // fix|investigate|explain|plan|…
 	Mode    string `json:"mode,omitempty"`    // session mode at turn time
 	Phase   string `json:"phase,omitempty"`
 	Preset  string `json:"preset,omitempty"`

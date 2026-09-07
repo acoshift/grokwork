@@ -35,12 +35,6 @@ func (b *Bot) Inbox() *inbox.Store {
 // recipient is DMed if Discord can reach them. A failed or capped Discord send
 // must not mean the inbox row is missing.
 
-// canDM reports whether a recipient id can receive a Discord DM. Only a Discord
-// actor can: a web-only login has no DM channel to open.
-func canDM(actorID string) bool {
-	return looksLikeDiscordUserID(actorID)
-}
-
 // inboxSessionPath is the in-app link stored on a run.done row. It is
 // root-relative so it works without webPublicBaseURL (sessionWebURL returns
 // empty when that is unset).

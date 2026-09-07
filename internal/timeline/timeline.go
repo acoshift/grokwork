@@ -33,9 +33,7 @@ import (
 type Kind string
 
 const (
-	KindRunStarted Kind = "run.started"
 	KindTextBlock  Kind = "text.block" // a SEALED chunk of assistant output
-	KindPhase      Kind = "phase"
 	KindCompletion Kind = "completion"
 	KindBrief      Kind = "brief"
 	KindPRStatus   Kind = "pr.status"
@@ -58,15 +56,6 @@ type Event struct {
 // TextBlock is a sealed chunk of assistant output.
 type TextBlock struct {
 	Text string `json:"text"`
-}
-
-// RunStarted opens a run.
-type RunStarted struct {
-	Prompt  string `json:"prompt,omitempty"`
-	Kind    string `json:"kind,omitempty"` // task | fix | investigate | …
-	Agent   string `json:"agent,omitempty"`
-	Model   string `json:"model,omitempty"`
-	Project string `json:"project,omitempty"`
 }
 
 // RunDone closes a run.

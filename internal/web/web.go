@@ -321,7 +321,6 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	// because an unpriced row must render "—" and not "$0.00" — the decision needs
 	// the row's Priced/Unpriced counts, so it cannot live in the template.
 	app.TemplateFunc("tokens", formatTokens)
-	app.TemplateFunc("usd", formatUSD)
 	app.TemplateFunc("cost", spendCost)
 	app.TemplateFunc("models", spendModels)
 

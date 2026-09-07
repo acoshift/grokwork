@@ -3,7 +3,6 @@ package bot
 import (
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -302,13 +301,4 @@ func DiscordThreadURL(guildID, threadID string) string {
 		return ""
 	}
 	return "https://discord.com/channels/" + guildID + "/" + threadID
-}
-
-// ParseRFC3339OrZero parses UpdatedAt for tests/helpers.
-func ParseRFC3339OrZero(s string) time.Time {
-	t, err := time.Parse(time.RFC3339, strings.TrimSpace(s))
-	if err != nil {
-		return time.Time{}
-	}
-	return t
 }

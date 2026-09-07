@@ -2599,14 +2599,6 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	}
 }
 
-func (b *Bot) recordTurn(threadID string, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration) {
-	actor := Actor{}
-	if m != nil {
-		actor = b.actorFromUser(m.Author)
-	}
-	b.recordTurnActor(threadID, actor, m, project, userPrompt, result, elapsed)
-}
-
 func (b *Bot) recordTurnActor(threadID string, actor Actor, m *discordgo.MessageCreate, project, userPrompt string, result grokrun.Result, elapsed time.Duration) {
 	b.recordTurnActorPolicy(threadID, actor, m, project, userPrompt, result, elapsed, RunPolicy{}, nil, nil)
 }

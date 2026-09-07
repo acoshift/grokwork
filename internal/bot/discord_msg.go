@@ -28,10 +28,6 @@ func unwrapDiscordLinks(s string) string {
 	return angleURLRE.ReplaceAllString(s, "$1")
 }
 
-func containsURL(s string) bool {
-	return looseURLRE.FindString(s) != ""
-}
-
 func extractURLs(s string) []string {
 	s = unwrapDiscordLinks(s)
 	found := looseURLRE.FindAllString(s, -1)

@@ -124,11 +124,6 @@ func LooksLikeAgentCLI(pid int, agent, bin string) bool {
 	return false
 }
 
-// LooksLikeGrokCLI is the grok-only form of LooksLikeAgentCLI.
-func LooksLikeGrokCLI(pid int, grokBin string) bool {
-	return LooksLikeAgentCLI(pid, "", grokBin)
-}
-
 func processCommandLine(pid int) string {
 	if pid <= 0 {
 		return ""

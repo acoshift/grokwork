@@ -1,7 +1,6 @@
 package grokrun
 
 import (
-	"os"
 	"strings"
 )
 
@@ -141,9 +140,4 @@ func matchesDenylist(name string, prefixes []string) bool {
 		}
 	}
 	return false
-}
-
-// ChildEnvFromOS is a convenience for tests and callers.
-func ChildEnvFromOS(pol ChildEnvPolicy) (env []string, dropped []string) {
-	return FilterChildEnv(os.Environ(), pol)
 }

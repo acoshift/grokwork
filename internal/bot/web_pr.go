@@ -1,7 +1,6 @@
 package bot
 
 import (
-	"fmt"
 	"log"
 	"strings"
 
@@ -113,17 +112,4 @@ func (b *Bot) FindThreadsByPR(owner, repo string, number int) []string {
 		}
 	}
 	return out
-}
-
-// WebPRSelector builds a URL selector for logging/display.
-func WebPRSelector(owner, repo string, number int) string {
-	owner = strings.TrimSpace(owner)
-	repo = strings.TrimSpace(repo)
-	if owner != "" && repo != "" && number > 0 {
-		return fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, number)
-	}
-	if number > 0 {
-		return fmt.Sprintf("#%d", number)
-	}
-	return ""
 }

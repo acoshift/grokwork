@@ -81,7 +81,7 @@ type fileMeta struct {
 	WebViewLink  string `json:"webViewLink,omitempty"`
 }
 
-// listFileFields is the files() projection for list/get. id + webViewLink
+// listFileFields is the files() projection for list. id + webViewLink
 // are what OpenURL needs; the rest feed listing rows.
 const listFileFields = "id,name,mimeType,size,modifiedTime,createdTime,webViewLink"
 
@@ -474,18 +474,6 @@ func (c *Client) deleteByID(ctx context.Context, id string) error {
 	u := c.apiBase() + "/files/" + url.PathEscape(id) + "?" + params.Encode()
 	_, err := c.doJSON(ctx, http.MethodDelete, u, nil, nil)
 	return err
-}
-
-func (c *Client) getMeta(ctx context.Context, id string) (fileMeta, error) {
-	params := url.Values{}
-	params.Set("fields", listFileFields)
-	params.Set("supportsAllDrives", "true")
-	u := c.apiBase() + "/files/" + url.PathEscape(id) + "?" + params.Encode()
-	var out fileMeta
-	if _, err := c.doJSON(ctx, http.MethodGet, u, nil, &out); err != nil {
-		return fileMeta{}, err
-	}
-	return out, nil
 }
 
 // ensureEffectiveRoot returns the folder id that user paths are relative to.
