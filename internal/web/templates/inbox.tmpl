@@ -1,7 +1,7 @@
 {{define "content"}}
 <div id="page-inbox">
   <h1>Inbox</h1>
-  <p class="muted">What happened — review requests and finished runs you watch or authored. Current needs live on <a href="{{route "today"}}">Today</a>.</p>
+  <p class="muted">What happened — review requests, finished runs, and SLA breaches. Current needs live on <a href="{{route "today"}}">Today</a>.</p>
   <div class="live-region"
        id="live-inbox"
        hx-get="{{route "partial.inbox.list"}}"

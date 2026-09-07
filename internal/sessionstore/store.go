@@ -162,6 +162,12 @@ type Entry struct {
 	FirstResponseAt string `json:"firstResponseAt,omitempty"`
 	AnsweredAt      string `json:"answeredAt,omitempty"`
 
+	// SLAAlerted* are delivery receipts for sla.breached inbox rows: the
+	// SLARoundStart that was already pinged for that clock. Not a stored
+	// breach flag; computeCaseSLA never reads them.
+	SLAAlertedFirstResponse string `json:"slaAlertedFirstResponse,omitempty"`
+	SLAAlertedResolution    string `json:"slaAlertedResolution,omitempty"`
+
 	Resolution     string `json:"resolution,omitempty"` // answered|fixed|duplicate|wontfix|escalated_external
 	ResolutionNote string `json:"resolutionNote,omitempty"`
 	ResolvedAt     string `json:"resolvedAt,omitempty"`

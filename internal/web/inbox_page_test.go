@@ -187,6 +187,58 @@ func TestInboxOmitsForbiddenProject(t *testing.T) {
 	}
 }
 
+func TestInboxSLABreachedVisibilityAndSubtitle(t *testing.T) {
+	srv := twoProjectAuthServer(t)
+	if err := srv.bot.QueueInbox("member-1", inbox.KindSLABreached,
+		"SLA · first response 30m over · WEBAPP-14", "Checkout fails",
+		"/sessions/a?project=public", "a", "public"); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.bot.QueueInbox("member-1", inbox.KindSLABreached,
+		"SLA · first response 2h over · SECRET-1", "hidden title",
+		"/sessions/b?project=secret", "b", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	sid, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/inbox", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "SLA breaches") {
+		t.Error("subtitle missing SLA breaches")
+	}
+	if !strings.Contains(body, "sla.breached") {
+		t.Error("visible sla.breached kind missing")
+	}
+	if !strings.Contains(body, "WEBAPP-14") {
+		t.Error("visible SLA row missing")
+	}
+	if strings.Contains(body, "hidden title") || strings.Contains(body, "SECRET-1") {
+		t.Error("forbidden project SLA row leaked")
+	}
+	if !strings.Contains(body, "unread") {
+		t.Error("GET must not mark the SLA row read")
+	}
+	if n := srv.bot.Inbox().UnreadCount("member-1"); n != 2 {
+		t.Fatalf("GET marked read, store unread=%d want 2", n)
+	}
+	cookie := &http.Cookie{Name: sessionCookieName, Value: sid}
+	code, got, countsBody := getNavCounts(t, srv, "/partials/nav/counts", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("counts=%d %s", code, countsBody)
+	}
+	if got["inbox"] != 1 {
+		t.Fatalf("unread visible=%d want 1: %v", got["inbox"], got)
+	}
+}
+
 func TestInboxBellHiddenAuthOff(t *testing.T) {
 	srv, _, _ := testServer(t)
 	body := getBody(t, srv.Handler(), "/")

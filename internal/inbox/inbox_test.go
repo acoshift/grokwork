@@ -102,8 +102,8 @@ func TestOversizeBodyTruncated(t *testing.T) {
 }
 
 func TestKindConstants(t *testing.T) {
-	if KindRunDone != "run.done" || KindReviewRequested != "review.requested" {
-		t.Fatalf("kind constants drifted: %q %q", KindRunDone, KindReviewRequested)
+	if KindRunDone != "run.done" || KindReviewRequested != "review.requested" || KindSLABreached != "sla.breached" {
+		t.Fatalf("kind constants drifted: %q %q %q", KindRunDone, KindReviewRequested, KindSLABreached)
 	}
 }
 

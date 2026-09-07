@@ -29,13 +29,14 @@ import (
 const (
 	KindRunDone         = "run.done"
 	KindReviewRequested = "review.requested"
+	KindSLABreached     = "sla.breached"
 )
 
 // Item is one delivered notification.
 type Item struct {
 	Seq     int64  `json:"seq"`
 	At      string `json:"at"`
-	Kind    string `json:"kind"`    // run.done | review.requested | ci.failed | …
+	Kind    string `json:"kind"`    // run.done | review.requested | sla.breached | ci.failed | …
 	Subject string `json:"subject"` // one-line summary
 	Body    string `json:"body,omitempty"`
 	URL     string `json:"url,omitempty"` // link to the work
