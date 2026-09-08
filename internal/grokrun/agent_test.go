@@ -71,6 +71,21 @@ func TestAgentToolVocabularyDiffers(t *testing.T) {
 	if AgentGrok.InvestigateTools(true) == AgentClaude.InvestigateTools(true) {
 		t.Error("agents must not share a tool allowlist")
 	}
+	if got := AgentGrok.ExplainTools(); got != "read_file,list_dir,grep" {
+		t.Errorf("grok explain tools=%q", got)
+	}
+	if got := AgentClaude.ExplainTools(); got != "Read,Grep,Glob" {
+		t.Errorf("claude explain tools=%q", got)
+	}
+	if got := AgentCursor.ExplainTools(); got != "Read,Grep,Glob" {
+		t.Errorf("cursor explain tools=%q", got)
+	}
+	if strings.Contains(AgentGrok.ExplainTools(), "write") || strings.Contains(AgentClaude.ExplainTools(), "Write") {
+		t.Error("explain must not include write tools")
+	}
+	if strings.Contains(AgentGrok.ExplainTools(), "run_terminal") || strings.Contains(AgentClaude.ExplainTools(), "Bash") {
+		t.Error("explain must not include shell")
+	}
 }
 
 // The dropdown list and the inference table are two halves of one contract: a

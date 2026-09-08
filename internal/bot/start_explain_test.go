@@ -65,7 +65,10 @@ func TestStartExplainSnapshotPolicyNonShip(t *testing.T) {
 	if pol.PrefixKind != "explain" {
 		t.Fatalf("PrefixKind=%q want explain", pol.PrefixKind)
 	}
-	if pol.Tools == nil {
-		t.Fatal("explain Tools must be non-nil (tools-off)")
+	if pol.Tools == nil || *pol.Tools != grokrun.AgentGrok.ExplainTools() {
+		t.Fatalf("explain tools=%v want grok file-read allowlist", pol.Tools)
+	}
+	if pol.InvestigateShell {
+		t.Fatal("explain must not grant shell")
 	}
 }

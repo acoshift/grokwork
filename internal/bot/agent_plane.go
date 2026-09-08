@@ -291,9 +291,14 @@ func (b *Bot) AgentAPI() *agentapi.Service {
 // --mcp-config + --strict-mcp-config. cursor-agent has no --mcp-config, so
 // it never attaches — writing .cursor/mcp.json into the worktree would
 // pollute the session branch. always is the per-project AgentMCPAlways
-// opt-in (trusted teams); tools-off still never attaches.
+// opt-in (trusted teams); tools-off and explain still never attach.
 func mcpCapsForRun(agent grokrun.Agent, pol RunPolicy, always bool) (agentauth.Caps, bool) {
 	if agent == grokrun.AgentCursor {
+		return agentauth.Caps{}, false
+	}
+	// Explain is file-read, not ticket-digging. A non-empty allowlist would
+	// otherwise attach Claude (and grok when always) the same as investigate.
+	if pol.Mode == ModeExplain || pol.PrefixKind == "explain" {
 		return agentauth.Caps{}, false
 	}
 	if pol.Tools == nil {
@@ -311,7 +316,7 @@ func mcpCapsForRun(agent grokrun.Agent, pol RunPolicy, always bool) (agentauth.C
 // prepareAgentMCP mints a session-bound token and writes MCP config outside
 // the worktree. Ship/fix (any agent) and Claude investigate attach; Grok
 // investigate attaches only when the project has AgentMCPAlways. Tools-off
-// never attaches. Claude uses --mcp-config; grok uses the same server from
+// and explain never attach. Claude uses --mcp-config; grok uses the same server from
 // user scope plus TOKEN/SOCK in the child env (and drops --deny MCPTool
 // when this mint succeeds on an allowlisted run).
 func (b *Bot) prepareAgentMCP(threadID, project, actorID string, agent grokrun.Agent, pol RunPolicy) (mcpPath, token string, ok bool) {

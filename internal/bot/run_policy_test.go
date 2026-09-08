@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/grokrun"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -132,6 +133,39 @@ func TestBuildRunPolicyPlanNonShipFileOnly(t *testing.T) {
 	}
 	if strings.Contains(*pol.Tools, "run_terminal_command") || strings.Contains(*pol.Tools, "Bash") {
 		t.Fatalf("plan tools must not include shell: %s", *pol.Tools)
+	}
+}
+
+func TestBuildRunPolicyAnsweredUsesExplainFileTools(t *testing.T) {
+	pol := BuildRunPolicy(PolicyInput{
+		SessionMode:  ModeCase,
+		SessionPhase: sessionstore.PhaseAnswered,
+		Caps:         config.BuiltinCapabilityTemplates["builder"],
+		ConfigYolo:   true,
+		ShipMode:     sessionstore.ShipModeDirect,
+	})
+	if pol.PrefixKind != "explain" {
+		t.Fatalf("PrefixKind=%q", pol.PrefixKind)
+	}
+	if pol.Tools == nil || *pol.Tools != grokrun.AgentGrok.ExplainTools() {
+		t.Fatalf("answered tools=%v want file-read", pol.Tools)
+	}
+	if pol.InvestigateShell || pol.AllowPR || pol.AllowDirectIntegrate {
+		t.Fatalf("answered must not ship or shell: %+v", pol)
+	}
+}
+
+func TestExplainPromptOffersFileTools(t *testing.T) {
+	p := explainPromptPrefix()
+	for _, need := range []string{"EXPLAIN", "file tools", "CUSTOMER_UPDATE"} {
+		if !strings.Contains(p, need) {
+			t.Fatalf("missing %q in\n%s", need, p)
+		}
+	}
+	for _, bad := range []string{"gh pr create", "Open a pull request"} {
+		if strings.Contains(p, bad) {
+			t.Fatalf("explain must not instruct PR: %q in\n%s", bad, p)
+		}
 	}
 }
 

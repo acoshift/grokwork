@@ -216,8 +216,8 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 		if mode == ModeExplain || phase == sessionstore.PhaseAnswered {
 			pol.PrefixKind = "explain"
 			pol.PostCompletion = "none"
-			empty := ""
-			pol.Tools = &empty // tools-off rewrite
+			explainTools := in.Agent.ExplainTools()
+			pol.Tools = &explainTools
 			pol.InvestigateShell = false
 		}
 		return pol
@@ -390,9 +390,12 @@ func investigatePromptPrefix(branch string, shell bool) string {
 func explainPromptPrefix() string {
 	return strings.Join([]string{
 		"Mode: EXPLAIN — draft a customer-safe explanation only.",
-		"No code changes, no commits, no PRs, no shell that mutates the repo.",
+		"You have file tools (read, grep, list). Use them to inspect the repo. Do not invent files you have not seen.",
+		"No code changes, no commits, no PRs, no shell.",
 		"End with a CUSTOMER_UPDATE: block of plain language (no file paths, no SHAs, no secrets).",
 		"",
+		"Filesystem scope: stay inside this unit's cwd/worktree and the project repo for code inspection.",
+		"Do NOT scan the user's home directory or protected folders for secrets.",
 	}, "\n")
 }
 

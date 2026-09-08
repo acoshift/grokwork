@@ -318,12 +318,25 @@ func TestBuildRunPolicyIgnoresForeignToolOverride(t *testing.T) {
 	}
 }
 
-// Explain mode is tools-off for every agent (the "" pointer, rewritten per driver).
-func TestBuildRunPolicyExplainStaysToolsOff(t *testing.T) {
+// Explain mode is file-read for every agent (grep/read/list; no write, no shell).
+func TestBuildRunPolicyExplainFileReadNoShell(t *testing.T) {
 	for _, agent := range []grokrun.Agent{grokrun.AgentGrok, grokrun.AgentClaude, grokrun.AgentCursor} {
-		pol := BuildRunPolicy(PolicyInput{RequestedMode: ModeExplain, Agent: agent})
-		if pol.Tools == nil || *pol.Tools != "" {
-			t.Fatalf("agent=%s tools=%v want tools-off", agent, pol.Tools)
+		pol := BuildRunPolicy(PolicyInput{
+			RequestedMode:    ModeExplain,
+			Agent:            agent,
+			Caps:             config.BuiltinCapabilityTemplates["builder"],
+			InvestigateTools: "read_file,grep,run_terminal_command",
+			ConfigYolo:       true,
+		})
+		want := agent.ExplainTools()
+		if pol.Tools == nil || *pol.Tools != want {
+			t.Fatalf("agent=%s tools=%v want %q", agent, pol.Tools, want)
+		}
+		if *pol.Tools == "" {
+			t.Fatalf("agent=%s explain must not be tools-off", agent)
+		}
+		if pol.InvestigateShell || pol.Yolo || pol.IncludeGHToken || pol.AllowPR {
+			t.Fatalf("agent=%s explain must stay non-ship file-only: %+v", agent, pol)
 		}
 	}
 }

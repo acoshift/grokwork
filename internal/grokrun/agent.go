@@ -357,6 +357,19 @@ func (a Agent) InvestigateTools(shell bool) string {
 	return base + "," + sh
 }
 
+// ExplainTools is the read-only file allowlist for explain runs.
+// Grep/read/list so the agent can inspect the repo; no write, no shell.
+// Project investigateTools must not apply — an override that listed Bash
+// would re-open host shell on a customer-draft turn.
+func (a Agent) ExplainTools() string {
+	switch a.Resolve() {
+	case AgentClaude, AgentCursor:
+		return "Read,Grep,Glob"
+	default:
+		return "read_file,list_dir,grep"
+	}
+}
+
 // DefaultBin is the binary name looked up on PATH when config leaves it unset.
 func (a Agent) DefaultBin() string {
 	switch a.Resolve() {

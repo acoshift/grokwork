@@ -633,7 +633,7 @@ func (t *thoughtTracker) OnDelta(delta string) {
 		s = "…" + string(r[len(r)-79:])
 	}
 	t.last = s
-	// Explain is tools-off: light the draft chip on first assistant text.
+	// Explain has no report chip: light draft on first assistant text.
 	if t.lane.kind == laneExplain && len(t.seen) > 0 {
 		t.seen[0] = true
 		t.current = 0

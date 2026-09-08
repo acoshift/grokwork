@@ -46,11 +46,16 @@ func TestPrepareAgentMCPClaudeOnly(t *testing.T) {
 	if ok {
 		t.Fatal("grok investigate must not get MCP")
 	}
-	// Tools-off / explain → no MCP
+	// Tools-off and explain → no MCP
 	empty := ""
 	_, _, ok = b.prepareAgentMCP("t1", "app", "actor", grokrun.AgentClaude, RunPolicy{Tools: &empty})
 	if ok {
 		t.Fatal("tools-off must not get MCP")
+	}
+	explain := grokrun.AgentClaude.ExplainTools()
+	_, _, ok = b.prepareAgentMCP("t1", "app", "actor", grokrun.AgentClaude, RunPolicy{Mode: ModeExplain, Tools: &explain})
+	if ok {
+		t.Fatal("explain must not get MCP")
 	}
 	// Grok unrestricted → MCP (this host's default agent)
 	gpath, gtok, ok := b.prepareAgentMCP("t1", "app", "actor", grokrun.AgentGrok, RunPolicy{})
@@ -85,6 +90,11 @@ func TestPrepareAgentMCPAlwaysAttachesGrokInvestigate(t *testing.T) {
 	if ok {
 		t.Fatal("tools-off must not get MCP even when always is set")
 	}
+	explain := grokrun.AgentGrok.ExplainTools()
+	_, _, ok = b.prepareAgentMCP("t-always", "app", "actor", grokrun.AgentGrok, RunPolicy{Mode: ModeExplain, Tools: &explain})
+	if ok {
+		t.Fatal("explain must not get MCP even when always is set")
+	}
 	_, _, ok = b.prepareAgentMCP("t-always", "app", "actor", grokrun.AgentCursor, RunPolicy{})
 	if ok {
 		t.Fatal("cursor must not get MCP even when always is set")
@@ -112,6 +122,13 @@ func TestMCPCapsForRun(t *testing.T) {
 	empty := ""
 	if _, ok := mcpCapsForRun(grokrun.AgentClaude, RunPolicy{Tools: &empty}, true); ok {
 		t.Fatal("tools-off")
+	}
+	explain := grokrun.AgentClaude.ExplainTools()
+	if _, ok := mcpCapsForRun(grokrun.AgentClaude, RunPolicy{Mode: ModeExplain, Tools: &explain}, true); ok {
+		t.Fatal("explain must not get MCP")
+	}
+	if _, ok := mcpCapsForRun(grokrun.AgentClaude, RunPolicy{PrefixKind: "explain", Tools: &explain}, true); ok {
+		t.Fatal("explain PrefixKind must not get MCP")
 	}
 	if _, ok := mcpCapsForRun(grokrun.AgentCursor, RunPolicy{}, true); ok {
 		t.Fatal("cursor-agent has no --mcp-config")
