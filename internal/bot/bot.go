@@ -1426,6 +1426,69 @@ func remoteWorkPrompt(branch string, direct bool, primary string, existing sessi
 	return strings.Join(lines, "\n")
 }
 
+// assembleRunPrompt prepends the policy prefix. When the user prompt starts with
+// grok's `/goal` slash command (optionally after the crash-resume note), that
+// line stays first so grok handle_prompt intercepts GoalSet; the prefix is
+// folded into the objective.
+func assembleRunPrompt(prefix, user string) string {
+	if line, rest, ok := splitGoalSlash(user); ok {
+		var b strings.Builder
+		b.WriteString(line)
+		b.WriteString("\n\n")
+		if p := strings.TrimSpace(prefix); p != "" {
+			b.WriteString(p)
+			if !strings.HasSuffix(p, "\n") {
+				b.WriteByte('\n')
+			}
+			b.WriteByte('\n')
+		}
+		b.WriteString(rest)
+		return b.String()
+	}
+	return prefix + user
+}
+
+func splitGoalSlash(user string) (line, rest string, ok bool) {
+	s := user
+	note := ""
+	if after, cut := strings.CutPrefix(s, interruptionPromptNote); cut {
+		note = strings.TrimSpace(interruptionPromptNote)
+		s = after
+	}
+	s = strings.TrimLeft(s, " \t\r\n")
+	if !goalSlashPrefix(s) {
+		return "", "", false
+	}
+	first, after, cut := strings.Cut(s, "\n")
+	line = strings.TrimSpace(first)
+	if cut {
+		rest = strings.TrimSpace(after)
+	}
+	if note != "" {
+		if rest != "" {
+			rest = note + "\n\n" + rest
+		} else {
+			rest = note
+		}
+	}
+	return line, rest, true
+}
+
+func goalSlashPrefix(s string) bool {
+	if !strings.HasPrefix(s, "/goal") {
+		return false
+	}
+	if len(s) == 5 {
+		return true
+	}
+	switch s[5] {
+	case ' ', '\t', '\n', '\r':
+		return true
+	default:
+		return false
+	}
+}
+
 // scrutinizeBeforeShipStep is the one-line MUST step injected into the numbered
 // ship checklist. Kept short so the numbered list stays scannable; the full
 // procedure lives in scrutinizeBeforeShipContract.
@@ -2200,7 +2263,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	default:
 		prefix = investigatePromptPrefix(wtBranch, pol.InvestigateShell)
 	}
-	prompt = prefix + prompt
+	prompt = assembleRunPrompt(prefix, prompt)
 	if pol.Coerced && present {
 		// One-line notice when D2 coerce applied (best-effort).
 		sendChunks(s, threadID, "Policy: running as **investigate** (no ship/write caps for this actor).")

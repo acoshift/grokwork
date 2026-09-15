@@ -42,6 +42,57 @@ func BuildGitHubFixPrompt(actorDisplay, owner, repo string, number int, title, u
 	return b.String()
 }
 
+// BuildGitHubImplementPrompt is the issue-detail Implement task. A new session
+// starts with `/goal` so grok's handle_prompt intercepts GoalSet; reuse omits
+// it so a live session is not told the goal is already set. Callers still
+// prepend remoteWorkPromptPrefix (folded after the /goal line at execute time).
+func BuildGitHubImplementPrompt(actorDisplay, owner, repo string, number int, title, url, body string, direct, reuse bool) string {
+	actorDisplay = strings.TrimSpace(actorDisplay)
+	if actorDisplay == "" {
+		actorDisplay = "web user"
+	}
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	title = strings.TrimSpace(title)
+	url = strings.TrimSpace(url)
+	if url == "" && owner != "" && repo != "" && number > 0 {
+		url = fmt.Sprintf("https://github.com/%s/%s/issues/%d", owner, repo, number)
+	}
+	body = truncateRunes(strings.TrimSpace(body), fixPromptBodyMaxRunes)
+	sel := fmt.Sprintf("%s/%s#%d", owner, repo, number)
+
+	var b strings.Builder
+	if !reuse {
+		fmt.Fprintf(&b, "/goal Implement the plan in GitHub issue %s", sel)
+		if title != "" {
+			fmt.Fprintf(&b, ": %s", title)
+		}
+		b.WriteByte('\n')
+		fmt.Fprintf(&b, "\n## Task (started from web by %s)\n", actorDisplay)
+		b.WriteString("Implement this issue's plan end-to-end. The issue body — including any Breakdown tasklist — is the plan. Work until the plan is done.\n")
+	} else {
+		fmt.Fprintf(&b, "## Task (continued from web by %s)\n", actorDisplay)
+		fmt.Fprintf(&b, "Continue implementing the plan in GitHub issue %s", sel)
+		if title != "" {
+			fmt.Fprintf(&b, ": %s", title)
+		}
+		b.WriteByte('\n')
+		b.WriteString("Do not start a new /goal; finish remaining work on this session.\n")
+	}
+	if url != "" {
+		fmt.Fprintf(&b, "URL: %s\n", url)
+	}
+	b.WriteString("\n### Plan\n")
+	if body != "" {
+		b.WriteString(body)
+		b.WriteByte('\n')
+	} else {
+		b.WriteString("(no body)\n")
+	}
+	b.WriteString(fixPromptShipSteps(direct, "Fixes "+sel))
+	return b.String()
+}
+
 // BuildLinearFixPrompt is the Fix-with-Grok task body for a Linear issue (web).
 func BuildLinearFixPrompt(actorDisplay, identifier, title, url, state, description string, direct bool) string {
 	actorDisplay = strings.TrimSpace(actorDisplay)

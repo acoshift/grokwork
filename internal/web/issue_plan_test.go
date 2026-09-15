@@ -264,8 +264,8 @@ func TestIssueDetailRendersBreakdown(t *testing.T) {
 
 // Plan this feature feeds the shared confirm modal: a hidden select the modal
 // clones from, and data-confirm-select so the pick is written back before submit.
-// Default names the review model (resolveDispatchCLI → ReviewAgentCLI), not Fix's
-// task model — the two cards share the page and must not share a label.
+// Default names the review model (resolveDispatchCLI → ReviewAgentCLI), not
+// Implement's task model — the two cards share the page and must not share a label.
 func TestIssueDetailShowsPlanModelConfirm(t *testing.T) {
 	srv, cfg, _ := fixEnabledServer(t)
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
@@ -292,12 +292,12 @@ func TestIssueDetailShowsPlanModelConfirm(t *testing.T) {
 			t.Fatalf("missing %q in Plan UI", want)
 		}
 	}
-	// Two hidden selects: Fix (task default) and Plan (review default).
+	// Two hidden selects: Implement (task default) and Plan (review default).
 	if got := strings.Count(body, `<select name="model" hidden>`); got < 2 {
 		t.Fatalf("Plan form needs its own hidden select, got %d", got)
 	}
 	if !strings.Contains(body, `>Default (grok-4.5-high)</option>`) {
-		t.Fatal("Fix modal Default must still name the task model")
+		t.Fatal("Implement modal Default must still name the task model")
 	}
 }
 

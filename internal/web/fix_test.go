@@ -530,7 +530,7 @@ func TestFixLinearCreate(t *testing.T) {
 	}
 }
 
-func TestIssueDetailShowsFixWhenAllowed(t *testing.T) {
+func TestIssueDetailShowsImplementWhenAllowed(t *testing.T) {
 	srv, cfg, _ := fixEnabledServer(t)
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
 		Agent: "grok", Model: "grok-4.5-high",
@@ -547,26 +547,27 @@ func TestIssueDetailShowsFixWhenAllowed(t *testing.T) {
 		t.Fatalf("status=%d", w.Code)
 	}
 	body := w.Body.String()
-	// Button is agent-neutral "Fix"; model choice lives in the confirm modal.
 	for _, want := range []string{
-		`id="btn-fix-github"`,
-		`>Fix</button>`,
+		`id="btn-implement-github"`,
+		`>Implement</button>`,
+		`action="/projects/proj/issues/42/implement"`,
 		`force_new`,
 		`<select name="model" hidden>`,
-		`data-confirm-title="Fix"`,
+		`data-confirm-title="Implement"`,
 		`data-confirm-select="model"`,
 		`>Default (grok-4.5-high)</option>`,
+		`/goal`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("missing %q in Fix UI: %s", want, body[:min(800, len(body))])
+			t.Fatalf("missing %q in Implement UI: %s", want, body[:min(800, len(body))])
 		}
 	}
-	if strings.Contains(body, "Fix with Grok") {
-		t.Fatal("stale Grok-branded Fix label")
+	if strings.Contains(body, `id="btn-fix-github"`) || strings.Contains(body, `>Fix</button>`) {
+		t.Fatal("issue detail must not still offer Fix")
 	}
 }
 
-func TestIssueDetailHidesFixForViewer(t *testing.T) {
+func TestIssueDetailHidesImplementForViewer(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	sid, _, err := srv.LoginAs("viewer-1", "V", config.WebRoleViewer)
 	if err != nil {
@@ -576,14 +577,15 @@ func TestIssueDetailHidesFixForViewer(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
-	if strings.Contains(w.Body.String(), "btn-fix-github") {
-		t.Fatal("viewer must not see Fix button")
+	body := w.Body.String()
+	if strings.Contains(body, "btn-implement-github") || strings.Contains(body, "btn-fix-github") {
+		t.Fatal("viewer must not see Implement")
 	}
 }
 
-// A named model from the issue Fix modal is stamped on the new session (agent
-// follows the model). Reuse and empty pick are covered by bot unit tests.
-func TestIssueFixModelPickStampsSession(t *testing.T) {
+// A named model from the issue Implement modal is stamped on the new session
+// (agent follows the model). Reuse and empty pick are covered by bot unit tests.
+func TestIssueImplementModelPickStampsSession(t *testing.T) {
 	srv, cfg, b := fixEnabledServer(t)
 	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
 	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
@@ -592,11 +594,13 @@ func TestIssueFixModelPickStampsSession(t *testing.T) {
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
 		Agent: "grok", Model: "grok-4.5-high",
 	})
+	var got bot.StartTaskOpts
+	bot.SetStartTaskHookForTest(b, func(opts bot.StartTaskOpts) { got = opts })
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := postFix(t, srv, "/projects/proj/issues/42/fix", sid, csrf, url.Values{
+	w := postFix(t, srv, "/projects/proj/issues/42/implement", sid, csrf, url.Values{
 		"owner": {"acme"}, "repo": {"app"}, "force_new": {"1"}, "model": {"claude-opus-5-high"},
 	})
 	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
@@ -614,6 +618,12 @@ func TestIssueFixModelPickStampsSession(t *testing.T) {
 	}
 	if e.Model != "claude-opus-5-high" || e.Agent != "claude" {
 		t.Fatalf("stamp agent=%q model=%q", e.Agent, e.Model)
+	}
+	if !strings.HasPrefix(e.Goal, "Implement ") {
+		t.Fatalf("implement must stamp a goal, got %q", e.Goal)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(got.Prompt), "/goal ") {
+		t.Fatalf("implement prompt must start with /goal, got %q", got.Prompt)
 	}
 }
 

@@ -75,6 +75,12 @@ type FixStartOpts struct {
 	// keeps the agent it was stamped with. Empty takes the configured task model
 	// at run start. Requires builder-class caps when non-empty.
 	Model string
+
+	// UseGoal is the issue-detail Implement action: a new session's prompt starts
+	// with grok's `/goal` slash command so handle_prompt intercepts GoalSet.
+	// Reuse continues the existing unit without a second `/goal` (that would be
+	// "already set" / "already complete" on a live grok session).
+	UseGoal bool
 }
 
 // FixStartStatus is the outcome of StartFix.
@@ -160,7 +166,7 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 	// Explicit picker selection → reuse only.
 	if tid := strings.TrimSpace(opts.ThreadID); tid != "" && !opts.ForceNew {
 		return b.withFixImages(opts, func(paths []string) (FixStartResult, error) {
-			return b.startFixReuse(tid, project, cwd, tracked, fixPromptFor(opts, b.sessionOrProjectDirect(project, tid)), opts.Actor, paths)
+			return b.startFixReuse(tid, project, cwd, tracked, fixPromptFor(opts, b.sessionOrProjectDirect(project, tid), true), opts.Actor, paths)
 		})
 	}
 
@@ -180,7 +186,7 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 		case 1:
 			return b.withFixImages(opts, func(paths []string) (FixStartResult, error) {
 				tid := hits[0].ThreadID
-				return b.startFixReuse(tid, project, cwd, tracked, fixPromptFor(opts, b.sessionOrProjectDirect(project, tid)), opts.Actor, paths)
+				return b.startFixReuse(tid, project, cwd, tracked, fixPromptFor(opts, b.sessionOrProjectDirect(project, tid), true), opts.Actor, paths)
 			})
 		default:
 			return FixStartResult{Status: FixStatusPicker, Hits: hits}, ErrPickerRequired
@@ -188,7 +194,7 @@ func (b *Bot) StartFix(opts FixStartOpts) (FixStartResult, error) {
 	}
 
 	return b.withFixImages(opts, func(paths []string) (FixStartResult, error) {
-		return b.startFixCreate(project, cwd, tracked, fixPromptFor(opts, b.sessionOrProjectDirect(project, "")), opts, cli, model != "", paths)
+		return b.startFixCreate(project, cwd, tracked, fixPromptFor(opts, b.sessionOrProjectDirect(project, ""), false), opts, cli, model != "", paths)
 	})
 }
 
@@ -232,7 +238,7 @@ func fixTrackedIssue(opts FixStartOpts) sessionstore.TrackedIssue {
 	}
 }
 
-func fixPromptFor(opts FixStartOpts, direct bool) string {
+func fixPromptFor(opts FixStartOpts, direct, reuse bool) string {
 	switch opts.Kind {
 	case FixKindLinear:
 		return BuildLinearFixPrompt(opts.Actor.DisplayName, opts.Identifier, opts.Title, opts.URL, opts.State, opts.Body, direct)
@@ -246,8 +252,20 @@ func fixPromptFor(opts FixStartOpts, direct bool) string {
 		}
 		return BuildClickUpFixPrompt(opts.Actor.DisplayName, display, opts.Title, opts.URL, opts.State, opts.Body, direct)
 	default:
+		if opts.UseGoal {
+			return BuildGitHubImplementPrompt(opts.Actor.DisplayName, opts.Owner, opts.Repo, opts.Number, opts.Title, opts.URL, opts.Body, direct, reuse)
+		}
 		return BuildGitHubFixPrompt(opts.Actor.DisplayName, opts.Owner, opts.Repo, opts.Number, opts.Title, opts.URL, opts.Body, direct)
 	}
+}
+
+func implementGoal(opts FixStartOpts) string {
+	sel := fmt.Sprintf("%s/%s#%d", strings.TrimSpace(opts.Owner), strings.TrimSpace(opts.Repo), opts.Number)
+	goal := "Implement " + sel
+	if t := strings.TrimSpace(opts.Title); t != "" {
+		goal += " — " + t
+	}
+	return clampGoal(goal)
 }
 
 // sessionOrProjectDirect is sticky session ShipMode when stamped, else the
@@ -316,6 +334,11 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 		if err := b.bindFixIssue(unitID, project, tracked, opts.Actor, discordURL, true); err != nil {
 			return err
 		}
+		if opts.UseGoal {
+			if err := b.setSessionGoalIfEmpty(unitID, implementGoal(opts)); err != nil {
+				return err
+			}
+		}
 		if !stampCLI {
 			return nil
 		}
@@ -339,7 +362,7 @@ func (b *Bot) startFixCreate(project, cwd string, tracked sessionstore.TrackedIs
 			return FixStartResult{}, err
 		}
 		title := fixThreadTitle(tracked, opts)
-		starter := fixStarterContent(tracked, opts.Actor)
+		starter := fixStarterContent(tracked, opts.Actor, opts.UseGoal)
 		threadID, err := b.CreateWorkflowThread(channelID, title, starter)
 		if err != nil {
 			log.Printf("fix: create Discord thread failed project=%s: %v — web-native fallback", project, err)
@@ -482,7 +505,11 @@ func (b *Bot) bindFixIssue(threadID, project string, tracked sessionstore.Tracke
 func fixThreadTitle(tracked sessionstore.TrackedIssue, opts FixStartOpts) string {
 	summary := strings.TrimSpace(opts.Title)
 	if summary == "" {
-		summary = "Fix " + tracked.DisplayRef()
+		if opts.UseGoal {
+			summary = "Implement " + tracked.DisplayRef()
+		} else {
+			summary = "Fix " + tracked.DisplayRef()
+		}
 	}
 	name := threadNameFromPrompt(summary, opts.Actor.DisplayName)
 	pref := strings.TrimSpace(sessionstore.IssueTitlePrefix([]sessionstore.TrackedIssue{tracked}))
@@ -495,7 +522,7 @@ func fixThreadTitle(tracked sessionstore.TrackedIssue, opts FixStartOpts) string
 	return name
 }
 
-func fixStarterContent(tracked sessionstore.TrackedIssue, actor Actor) string {
+func fixStarterContent(tracked sessionstore.TrackedIssue, actor Actor, useGoal bool) string {
 	who := actor.DisplayName
 	if who == "" {
 		who = actor.ID
@@ -504,7 +531,11 @@ func fixStarterContent(tracked sessionstore.TrackedIssue, actor Actor) string {
 		who = "web"
 	}
 	ref := tracked.DisplayRef()
-	line := fmt.Sprintf("**Grok Work** · Fix %s · started by %s (web)", ref, who)
+	verb := "Fix"
+	if useGoal {
+		verb = "Implement"
+	}
+	line := fmt.Sprintf("**Grok Work** · %s %s · started by %s (web)", verb, ref, who)
 	if u := strings.TrimSpace(tracked.URL); u != "" {
 		line += "\n" + u
 	}

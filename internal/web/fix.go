@@ -319,6 +319,16 @@ func (s *Server) issuesListRedirect(ctx *hime.Context, project, owner, repo, ok,
 }
 
 func (s *Server) postIssueFix(ctx *hime.Context) error {
+	return s.postIssueStart(ctx, false)
+}
+
+// postIssueImplement is the issue-detail Implement action: StartFix with UseGoal
+// so a new session's prompt is grok `/goal` against the issue plan.
+func (s *Server) postIssueImplement(ctx *hime.Context) error {
+	return s.postIssueStart(ctx, true)
+}
+
+func (s *Server) postIssueStart(ctx *hime.Context, useGoal bool) error {
 	project := strings.TrimSpace(ctx.PathValue("project"))
 	n, err := strconv.Atoi(strings.TrimSpace(ctx.PathValue("n")))
 	if err != nil || n <= 0 {
@@ -335,9 +345,13 @@ func (s *Server) postIssueFix(ctx *hime.Context) error {
 	}
 	owner, repo = ref.Owner, ref.Repo
 
+	kind := "github"
+	if useGoal {
+		kind = "implement_plan"
+	}
 	if err := s.checkStartRate(ctx); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
-			"project": project, "kind": "github", "owner": owner, "repo": repo, "number": n,
+			"project": project, "kind": kind, "owner": owner, "repo": repo, "number": n,
 		})
 		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
 	}
@@ -367,9 +381,10 @@ func (s *Server) postIssueFix(ctx *hime.Context) error {
 		Body:      body,
 		ImageText: githubIssueImageText(info),
 		Model:     model,
+		UseGoal:   useGoal,
 	})
 	return s.handleFixResult(ctx, startErr, res, fixRedirectContext{
-		Kind: "github", Project: project, Owner: owner, Repo: repo, Number: n, Model: model,
+		Kind: kind, Project: project, Owner: owner, Repo: repo, Number: n, Model: model,
 	})
 }
 
@@ -509,6 +524,10 @@ type fixRedirectContext struct {
 	Model      string
 }
 
+func (rc fixRedirectContext) githubIssue() bool {
+	return rc.Kind == "github" || rc.Kind == "implement_plan"
+}
+
 func (s *Server) handleFixResult(ctx *hime.Context, startErr error, res bot.FixStartResult, rc fixRedirectContext) error {
 	detail := map[string]any{
 		"project": rc.Project, "kind": rc.Kind,
@@ -518,7 +537,7 @@ func (s *Server) handleFixResult(ctx *hime.Context, startErr error, res bot.FixS
 	if rc.Model != "" {
 		detail["model"] = rc.Model
 	}
-	if rc.Kind == "github" {
+	if rc.githubIssue() {
 		detail["owner"] = rc.Owner
 		detail["repo"] = rc.Repo
 		detail["number"] = rc.Number
@@ -535,7 +554,7 @@ func (s *Server) handleFixResult(ctx *hime.Context, startErr error, res bot.FixS
 		return s.mapFixError(ctx, startErr, rc)
 	}
 	s.auditAction(ctx, audit.ActionSessionStart, nil, detail)
-	if rc.Kind == "github" {
+	if rc.githubIssue() {
 		s.invalidateIssueListCache(rc.Project, rc.Owner, rc.Repo)
 	}
 

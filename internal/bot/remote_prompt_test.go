@@ -5,6 +5,35 @@ import (
 	"testing"
 )
 
+func TestAssembleRunPromptKeepsGoalSlashFirst(t *testing.T) {
+	user := "/goal Implement the plan in GitHub issue acme/app#42: Auth SSO\n\n## Task\nbody\n"
+	prefix := "You are working on a shared workflow unit\nBranch: grokwork/w_1\n"
+	got := assembleRunPrompt(prefix, user)
+	if !strings.HasPrefix(got, "/goal Implement the plan in GitHub issue acme/app#42") {
+		t.Fatalf("assembled must start with /goal:\n%s", got)
+	}
+	if !strings.Contains(got, "Branch: grokwork/w_1") {
+		t.Fatal("prefix must still be in the objective")
+	}
+	if !strings.Contains(got, "## Task") {
+		t.Fatal("user body missing")
+	}
+	plain := assembleRunPrompt(prefix, "Fix the bug\n")
+	if !strings.HasPrefix(plain, prefix) {
+		t.Fatalf("non-goal must keep prefix-first:\n%s", plain)
+	}
+	noted := assembleRunPrompt(prefix, interruptionPromptNote+user)
+	if !strings.HasPrefix(noted, "/goal ") {
+		t.Fatalf("crash-resume note must not precede /goal:\n%s", noted)
+	}
+	if !strings.Contains(noted, "interrupted") {
+		t.Fatal("resume note must remain in the objective")
+	}
+	if line, _, ok := splitGoalSlash("/goalie rename the helper"); ok {
+		t.Fatalf(" /goalie must not match, line=%q", line)
+	}
+}
+
 func TestRemoteWorkPromptPrefixWorktree(t *testing.T) {
 	p := remoteWorkPromptPrefix("grok/discord/123")
 	for _, want := range []string{

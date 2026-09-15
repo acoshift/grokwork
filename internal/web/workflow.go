@@ -12,10 +12,10 @@ import (
 	"github.com/moonrhythm/hime"
 
 	"github.com/acoshift/grokwork/internal/bot"
+	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
-	"github.com/acoshift/grokwork/internal/clickup"
 	"github.com/acoshift/grokwork/internal/linear"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -382,7 +382,7 @@ func (s *Server) issueDetail(ctx *hime.Context) error {
 			d.TasklistDone++
 		}
 	}
-	// Fix is a ship task, so the modal's Default names the task model (not review).
+	// Implement is a ship task, so the modal's Default names the task model (not review).
 	s.attachModelPicker(&d, project, s.cfg.TaskModel())
 	return s.viewPage(ctx, "issue_detail", d)
 }
@@ -895,7 +895,6 @@ func (s *Server) resolveSessionDiffCwd(ent sessionstore.Entry, threadID string) 
 	}
 	return "", project
 }
-
 
 // annotateClickUpTaskWorkState marks ClickUp tasks FIXING for active Fixes sessions.
 func (s *Server) annotateClickUpTaskWorkState(project string, tasks []clickup.Task) []clickup.Task {

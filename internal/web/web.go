@@ -578,6 +578,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssuesBulkFix))))
 	mux.Handle("POST /projects/{project}/issues/{n}/fix",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssueFix))))
+	mux.Handle("POST /projects/{project}/issues/{n}/implement",
+		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssueImplement))))
 	// Feature epic Phase 2: plan breakdown + per-item session starts.
 	mux.Handle("POST /projects/{project}/issues/{n}/plan",
 		s.requireFeature("startSessions", s.requireMember(hime.Handler(s.postIssuePlan))))

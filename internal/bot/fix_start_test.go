@@ -62,6 +62,108 @@ func testFixBot(t *testing.T) (*Bot, string) {
 	return b, proj
 }
 
+func TestBuildGitHubImplementPromptContract(t *testing.T) {
+	p := BuildGitHubImplementPrompt("Alice", "acme", "app", 42, "Auth SSO", "https://github.com/acme/app/issues/42", "## Breakdown\n- [ ] one\n", false, false)
+	if !strings.HasPrefix(strings.TrimSpace(p), "/goal Implement the plan in GitHub issue acme/app#42") {
+		t.Fatalf("new session must start with /goal:\n%s", p)
+	}
+	for _, want := range []string{
+		"Alice", "Auth SSO", "## Breakdown", "- [ ] one", "Fixes acme/app#42", "Do not merge",
+		"https://github.com/acme/app/issues/42",
+	} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("missing %q in\n%s", want, p)
+		}
+	}
+	re := BuildGitHubImplementPrompt("Alice", "acme", "app", 42, "Auth SSO", "https://github.com/acme/app/issues/42", "## Breakdown\n- [ ] one\n", false, true)
+	if strings.HasPrefix(strings.TrimSpace(re), "/goal") {
+		t.Fatalf("reuse must not send /goal:\n%s", re)
+	}
+	if !strings.Contains(re, "Continue implementing") {
+		t.Fatalf("reuse missing continue:\n%s", re)
+	}
+	d := BuildGitHubImplementPrompt("Alice", "acme", "app", 42, "Auth SSO", "", "body", true, false)
+	if !strings.Contains(d, "host bot ships") {
+		t.Fatalf("direct missing ship wording:\n%s", d)
+	}
+	if strings.Contains(d, "Do not merge") {
+		t.Fatalf("direct must not use PR wording:\n%s", d)
+	}
+}
+
+func TestStartFixUseGoalSendsGoalSlashAndGoal(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	var got StartTaskOpts
+	b.startTaskHook = func(opts StartTaskOpts) { got = opts }
+
+	res, err := b.StartFix(FixStartOpts{
+		Kind: FixKindGitHub, Project: "app", UseGoal: true, ForceNew: true,
+		Owner: "acme", Repo: "app", Number: 42,
+		Title: "Auth SSO", Body: "## Breakdown\n- [ ] one\n",
+		Actor: Actor{ID: "u1", DisplayName: "Alice"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(got.Prompt), "/goal ") {
+		t.Fatalf("prompt=%q", got.Prompt)
+	}
+	if !strings.Contains(got.Prompt, "Auth SSO") || !strings.Contains(got.Prompt, "## Breakdown") {
+		t.Fatalf("prompt missing plan:\n%s", got.Prompt)
+	}
+	e, ok := b.sessions.Get(res.ThreadID)
+	if !ok {
+		t.Fatal("missing session")
+	}
+	if !strings.HasPrefix(e.Goal, "Implement acme/app#42") {
+		t.Fatalf("goal=%q", e.Goal)
+	}
+	if len(e.Issues) != 1 || e.Issues[0].Number != 42 {
+		t.Fatalf("issues=%+v", e.Issues)
+	}
+	if e.Issues[0].EffectiveKeyword() != sessionstore.IssueKeywordFixes {
+		t.Fatalf("keyword=%q", e.Issues[0].Keyword)
+	}
+	waitHistory(t, b, res.ThreadID, 1)
+}
+
+func TestStartFixUseGoalReuseOmitsGoalSlash(t *testing.T) {
+	b, _ := testFixBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	e := sessionstore.Entry{Project: "app", Goal: "already set"}
+	e.UpsertIssue(sessionstore.TrackedIssue{Owner: "acme", Repo: "app", Number: 42, Keyword: sessionstore.IssueKeywordFixes})
+	if err := b.sessions.Set("exist-goal", e); err != nil {
+		t.Fatal(err)
+	}
+	var got StartTaskOpts
+	b.startTaskHook = func(opts StartTaskOpts) { got = opts }
+
+	res, err := b.StartFix(FixStartOpts{
+		Kind: FixKindGitHub, Project: "app", UseGoal: true,
+		ThreadID: "exist-goal",
+		Owner:    "acme", Repo: "app", Number: 42,
+		Title: "Auth SSO", Actor: Actor{ID: "u1", DisplayName: "Alice"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ThreadID != "exist-goal" || res.Created {
+		t.Fatalf("%+v", res)
+	}
+	if strings.HasPrefix(strings.TrimSpace(got.Prompt), "/goal") {
+		t.Fatalf("reuse must not send /goal:\n%s", got.Prompt)
+	}
+	if !strings.Contains(got.Prompt, "Continue implementing") {
+		t.Fatalf("prompt=%q", got.Prompt)
+	}
+	gotE, ok := b.sessions.Get("exist-goal")
+	if !ok || gotE.Goal != "already set" {
+		t.Fatalf("reuse must not rewrite goal: %+v", gotE)
+	}
+	waitHistory(t, b, "exist-goal", 1)
+}
+
 func TestBuildGitHubFixPromptContract(t *testing.T) {
 	p := BuildGitHubFixPrompt("Alice", "acme", "app", 7, "Bug", "https://github.com/acme/app/issues/7", "body text", false)
 	for _, want := range []string{
