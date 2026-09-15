@@ -1065,6 +1065,9 @@ type pageData struct {
 	// CanPlanFeature gates "Plan this feature" / per-item Start session; same
 	// as CanStartSession (feature+role).
 	CanPlanFeature bool
+	// IsPlanIssue is true when the viewed GitHub issue has the host-filed
+	// `plan` label. The rail then offers Implement (/goal) instead of Fix.
+	IsPlanIssue bool
 	// TasklistDone/Total are checked/total counts for the progress strip.
 	TasklistDone  int
 	TasklistTotal int

@@ -376,6 +376,7 @@ func (s *Server) issueDetail(ctx *hime.Context) error {
 	// only — the parser does not require <!-- grokwork:tasklist -->).
 	d.IssueTasklist = bot.ParseTasklist(d.Issue.Body)
 	d.CanPlanFeature = d.CanStartSession
+	d.IsPlanIssue = bot.HasPlanLabel(d.Issue.Labels)
 	d.TasklistTotal = len(d.IssueTasklist)
 	for _, it := range d.IssueTasklist {
 		if it.Checked {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,6 +17,14 @@ import (
 )
 
 const planIssueLabel = "plan"
+
+// HasPlanLabel reports whether labels include the host-filed plan issue label
+// (GitHub labels are case-insensitive).
+func HasPlanLabel(labels []string) bool {
+	return slices.ContainsFunc(labels, func(lab string) bool {
+		return strings.EqualFold(strings.TrimSpace(lab), planIssueLabel)
+	})
+}
 
 var (
 	planIssueStartRE    = regexp.MustCompile(`(?im)^PLAN_ISSUE:[ \t]*\n`)

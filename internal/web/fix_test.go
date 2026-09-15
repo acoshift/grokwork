@@ -530,11 +530,67 @@ func TestFixLinearCreate(t *testing.T) {
 	}
 }
 
-func TestIssueDetailShowsImplementWhenAllowed(t *testing.T) {
+func setIssueViewLabels(t *testing.T, srv *Server, labelsJSON string) {
+	t.Helper()
+	orig := srv.ghRunner
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := name + " " + strings.Join(args, " ")
+		if strings.Contains(joined, "issue view") {
+			return []byte(`{
+				"number":42,"title":"Pay bug","body":"steps to repro","url":"https://github.com/acme/app/issues/42",
+				"state":"OPEN","author":{"login":"z"},"labels":` + labelsJSON + `,"comments":[]
+			}`), nil
+		}
+		if orig != nil {
+			return orig(ctx, dir, name, args...)
+		}
+		return []byte("{}"), nil
+	}
+}
+
+func TestIssueDetailShowsFixWhenNotPlan(t *testing.T) {
 	srv, cfg, _ := fixEnabledServer(t)
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
 		Agent: "grok", Model: "grok-4.5-high",
 	})
+	setIssueViewLabels(t, srv, `[{"name":"bug"}]`)
+	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/issues/42?owner=acme&repo=app", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="btn-fix-github"`,
+		`>Fix</button>`,
+		`action="/projects/proj/issues/42/fix"`,
+		`force_new`,
+		`<select name="model" hidden>`,
+		`data-confirm-title="Fix"`,
+		`data-confirm-select="model"`,
+		`>Default (grok-4.5-high)</option>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in Fix UI: %s", want, body[:min(800, len(body))])
+		}
+	}
+	if strings.Contains(body, `id="btn-implement-github"`) || strings.Contains(body, `>Implement</button>`) {
+		t.Fatal("bug issue must not offer Implement")
+	}
+}
+
+func TestIssueDetailShowsImplementWhenPlan(t *testing.T) {
+	srv, cfg, _ := fixEnabledServer(t)
+	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
+		Agent: "grok", Model: "grok-4.5-high",
+	})
+	setIssueViewLabels(t, srv, `[{"name":"plan"}]`)
 	sid, _, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
@@ -563,12 +619,13 @@ func TestIssueDetailShowsImplementWhenAllowed(t *testing.T) {
 		}
 	}
 	if strings.Contains(body, `id="btn-fix-github"`) || strings.Contains(body, `>Fix</button>`) {
-		t.Fatal("issue detail must not still offer Fix")
+		t.Fatal("plan issue must not still offer Fix")
 	}
 }
 
-func TestIssueDetailHidesImplementForViewer(t *testing.T) {
+func TestIssueDetailHidesDispatchForViewer(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
+	setIssueViewLabels(t, srv, `[{"name":"plan"}]`)
 	sid, _, err := srv.LoginAs("viewer-1", "V", config.WebRoleViewer)
 	if err != nil {
 		t.Fatal(err)
@@ -579,7 +636,7 @@ func TestIssueDetailHidesImplementForViewer(t *testing.T) {
 	srv.Handler().ServeHTTP(w, req)
 	body := w.Body.String()
 	if strings.Contains(body, "btn-implement-github") || strings.Contains(body, "btn-fix-github") {
-		t.Fatal("viewer must not see Implement")
+		t.Fatal("viewer must not see Fix or Implement")
 	}
 }
 
@@ -594,6 +651,7 @@ func TestIssueImplementModelPickStampsSession(t *testing.T) {
 	setAgentSettingsKeepBins(t, cfg, config.AgentSettings{
 		Agent: "grok", Model: "grok-4.5-high",
 	})
+	setIssueViewLabels(t, srv, `[{"name":"plan"}]`)
 	var got bot.StartTaskOpts
 	bot.SetStartTaskHookForTest(b, func(opts bot.StartTaskOpts) { got = opts })
 	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
@@ -625,6 +683,23 @@ func TestIssueImplementModelPickStampsSession(t *testing.T) {
 	if !strings.HasPrefix(strings.TrimSpace(got.Prompt), "/goal ") {
 		t.Fatalf("implement prompt must start with /goal, got %q", got.Prompt)
 	}
+}
+
+func TestIssueImplementRefusesNonPlanLabel(t *testing.T) {
+	srv, cfg, b := fixEnabledServer(t)
+	t.Cleanup(func() { bot.WaitIdleForTest(b, 5*time.Second) })
+	if err := cfg.SetProjectCapabilityByUser("proj", "member-1", "builder"); err != nil {
+		t.Fatal(err)
+	}
+	setIssueViewLabels(t, srv, `[{"name":"bug"}]`)
+	sid, csrf, err := srv.LoginAs("member-1", "M", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postFix(t, srv, "/projects/proj/issues/42/implement", sid, csrf, url.Values{
+		"owner": {"acme"}, "repo": {"app"}, "force_new": {"1"},
+	})
+	assertRedirectErr(t, w, "/projects/proj/issues/42", "labelled plan")
 }
 
 func TestIssuesListShowsBulkFixWhenAllowed(t *testing.T) {

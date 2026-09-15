@@ -292,12 +292,13 @@ func TestIssueDetailShowsPlanModelConfirm(t *testing.T) {
 			t.Fatalf("missing %q in Plan UI", want)
 		}
 	}
-	// Two hidden selects: Implement (task default) and Plan (review default).
+	// Two hidden selects: Fix (task default; this fixture is not labelled plan)
+	// and Plan (review default).
 	if got := strings.Count(body, `<select name="model" hidden>`); got < 2 {
 		t.Fatalf("Plan form needs its own hidden select, got %d", got)
 	}
 	if !strings.Contains(body, `>Default (grok-4.5-high)</option>`) {
-		t.Fatal("Implement modal Default must still name the task model")
+		t.Fatal("Fix modal Default must still name the task model")
 	}
 }
 

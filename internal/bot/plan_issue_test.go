@@ -8,6 +8,18 @@ import (
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
+func TestHasPlanLabel(t *testing.T) {
+	if HasPlanLabel(nil) || HasPlanLabel([]string{}) || HasPlanLabel([]string{"bug", "feature"}) {
+		t.Fatal("unrelated labels must not match")
+	}
+	if !HasPlanLabel([]string{"plan"}) || !HasPlanLabel([]string{"bug", "PLAN"}) {
+		t.Fatal("plan label (any case) must match")
+	}
+	if !HasPlanLabel([]string{"  plan  "}) {
+		t.Fatal("trimmed plan label must match")
+	}
+}
+
 func TestParsePlanIssueAndVerdict(t *testing.T) {
 	text := strings.Join([]string{
 		"Here is the plan.",

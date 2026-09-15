@@ -356,8 +356,18 @@ func (s *Server) postIssueStart(ctx *hime.Context, useGoal bool) error {
 		return ctx.Status(http.StatusTooManyRequests).Error(err.Error())
 	}
 
-	// Fetch issue for title/body (best-effort).
-	info, _ := ghpr.ViewIssueWith(ctx.Context(), s.ghRun(), path, n, owner, repo)
+	// Fetch issue for title/body (best-effort on Fix). Implement requires the
+	// live labels: hiding the button is not a gate.
+	info, viewErr := ghpr.ViewIssueWith(ctx.Context(), s.ghRun(), path, n, owner, repo)
+	if useGoal {
+		if viewErr != nil {
+			return s.issueFixRedirect(ctx, project, owner, repo, n, "", viewErr)
+		}
+		if !bot.HasPlanLabel(info.Labels) {
+			return s.issueFixRedirect(ctx, project, owner, repo, n, "",
+				fmt.Errorf("Implement is only for issues labelled plan"))
+		}
+	}
 	title := strings.TrimSpace(info.Title)
 	body := info.Body
 	issueURL := info.URL
