@@ -339,7 +339,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("ship", "layout.tmpl", "ship.tmpl")
 	tp.ParseFiles("cases", "layout.tmpl", "cases.tmpl")
 	tp.ParseFiles("inbox", "layout.tmpl", "inbox.tmpl")
-	tp.ParseFiles("today", "layout.tmpl", "today.tmpl")
+	tp.ParseFiles("today", "layout.tmpl", "today.tmpl", "session_badges.tmpl")
 	tp.ParseFiles("search", "layout.tmpl", "search.tmpl")
 	tp.ParseFiles("case_new", "layout.tmpl", "case_new.tmpl")
 	tp.ParseFiles("worktrees", "layout.tmpl", "worktrees.tmpl")
@@ -1105,6 +1105,12 @@ type pageData struct {
 	// the header link (independent of the derived waiting pill).
 	Waiting     bot.WaitingBoard
 	InboxUnread int
+	// TodaySessions is the viewer's active work (same mine+active definition
+	// as /sessions). Independent of Waiting; the nav pill stays the attention
+	// count. Matched is pre-cap so a truncated list can say so.
+	TodaySessions       []history.Summary
+	TodaySessionMatched int
+	TodaySessionShown   int
 	// Session lifecycle controls (cancel/reset/dequeue/claim on the detail page).
 	// CanControlSession gates control affordances: it already folds in
 	// CanStartSession (feature+role), so the buttons never render when the POST

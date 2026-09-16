@@ -1,7 +1,7 @@
 {{define "content"}}
 <div id="page-today">
   <h1>{{if .Project}}{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· today</span>{{else}}Today{{end}}</h1>
-  <p class="sub">What still needs you — SLA, unanswered decisions, failing CI, team reviews. Inbox is the log of what happened.{{if gt .InboxUnread 0}} <a href="{{route "inbox"}}">{{.InboxUnread}} unread in Inbox</a>.{{end}}</p>
+  <p class="sub">What still needs you — SLA, unanswered decisions, failing CI, team reviews — and the sessions you own that are still in flight. Inbox is the log of what happened.{{if gt .InboxUnread 0}} <a href="{{route "inbox"}}">{{.InboxUnread}} unread in Inbox</a>.{{end}}</p>
   <div class="live-region"
        id="live-today"
        hx-get="{{route "partial.today.list"}}?project={{urlquery .Waiting.Project}}{{if .Project}}&amp;scoped=1{{end}}"
@@ -15,6 +15,7 @@
 {{end}}
 
 {{define "today_list"}}
+{{if .Waiting.Rows}}
 {{if gt .Waiting.Matched .Waiting.Shown}}
 <p class="muted">Showing {{.Waiting.Shown}} of {{.Waiting.Matched}}.</p>
 {{end}}
@@ -32,8 +33,31 @@
     </div>
     {{if .DecisionText}}<div class="muted">{{.DecisionText}}</div>{{end}}
   </article>
-{{else}}
-  <div class="empty">Nothing needs you.{{if not $.UserID}} Sign in to see your queue.{{end}} <a href="{{route "inbox"}}">Inbox</a> · <a href="{{route "home"}}">Projects</a></div>
 {{end}}
 </div>
+{{else if not .TodaySessions}}
+<div class="empty" id="today-list">Nothing needs you.{{if not $.UserID}} Sign in to see your queue.{{end}} <a href="{{route "inbox"}}">Inbox</a> · <a href="{{route "home"}}">Projects</a></div>
+{{else}}
+<p class="muted" id="today-list">Nothing waiting on you.</p>
+{{end}}
+{{if .TodaySessions}}
+<div class="section" id="today-sessions">
+  <h2>Your sessions{{if gt .TodaySessionMatched .TodaySessionShown}} <span class="muted" style="font-weight:500;font-size:0.9rem">{{.TodaySessionShown}} of {{.TodaySessionMatched}}</span>{{end}}</h2>
+  <p class="muted" style="margin-top:-0.4rem;margin-bottom:0.75rem">Active work you own or co-own. <a href="{{if .Project}}/projects/{{.Project}}/sessions?owner=mine{{else}}{{route "sessions"}}?owner=mine{{if .Waiting.Project}}&amp;project={{urlquery .Waiting.Project}}{{end}}{{end}}">All sessions</a></p>
+  <div class="card-list">
+  {{range .TodaySessions}}
+    <article class="card">
+      <header class="meta">
+        {{template "session_row_state" .}}
+        {{if not $.Project}}{{if .Project}}<span class="mono">{{.Project}}</span>{{end}}{{end}}
+        {{if .UpdatedAt}}<span class="muted mono">{{relativeAge .UpdatedAt}}</span>{{end}}
+      </header>
+      <div>
+        <a href="/sessions/{{.ThreadID}}{{if or $.Project .Project}}?project={{urlquery (or $.Project .Project)}}{{end}}">{{if .Goal}}{{.Goal}}{{else}}{{.ThreadID}}{{end}}</a>
+      </div>
+    </article>
+  {{end}}
+  </div>
+</div>
+{{end}}
 {{end}}

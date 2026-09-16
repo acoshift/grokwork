@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/inbox"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
@@ -239,5 +241,258 @@ func TestTodayNavCountZeroJSON(t *testing.T) {
 	}
 	if got["today"] != 0 {
 		t.Fatalf("today=%d want 0: %s", got["today"], body)
+	}
+}
+
+func TestTodayAuthOffHidesSessions(t *testing.T) {
+	srv, _, _ := testServer(t)
+	if err := srv.sessions.Set("th-owned", sessionstore.Entry{
+		Project: "proj", OwnerID: "u0", Goal: "auth-off should not list this",
+		Label: sessionstore.LabelInProgress, UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := getBody(t, srv.Handler(), "/today")
+	if strings.Contains(body, `id="today-sessions"`) {
+		t.Fatal("auth-off Today must not dump host sessions")
+	}
+	if strings.Contains(body, "auth-off should not list this") {
+		t.Fatal("owned session leaked onto unsigned Today")
+	}
+	if !strings.Contains(body, "Sign in to see your queue") {
+		t.Fatal("auth-off empty copy should ask to sign in")
+	}
+}
+
+func TestTodayShowsMyActiveSessions(t *testing.T) {
+	srv, _, _ := authOnServer(t)
+	now := time.Now().UTC()
+	recent := now.Format(time.RFC3339)
+	stale := now.Add(-48 * time.Hour).Format(time.RFC3339)
+	seed := map[string]sessionstore.Entry{
+		"th-mine": {
+			Project: "proj", Goal: "owned active work", OwnerID: "member-1",
+			UpdatedAt: recent, Label: sessionstore.LabelOpen,
+		},
+		"th-co": {
+			Project: "proj", Goal: "co-owned active work", OwnerID: "allow-user",
+			CoOwnerIDs: []string{"member-1"}, UpdatedAt: recent, Label: sessionstore.LabelInProgress,
+		},
+		"th-theirs": {
+			Project: "proj", Goal: "someone else's session", OwnerID: "allow-user",
+			UpdatedAt: recent, Label: sessionstore.LabelOpen,
+		},
+		"th-engineer": {
+			Project: "proj", Goal: "engineered not owned", Mode: "case",
+			Phase: sessionstore.PhaseFixing, OwnerID: "allow-user", EngineerID: "member-1",
+			UpdatedAt: recent, Label: sessionstore.LabelInProgress,
+		},
+		"th-done-stale": {
+			Project: "proj", Goal: "finished last week", OwnerID: "member-1",
+			UpdatedAt: stale, Label: sessionstore.LabelDone,
+		},
+		"th-ask": {
+			Project: "proj", Goal: "throwaway ask", OwnerID: "member-1",
+			SessionKind: sessionstore.SessionKindPRAsk, UpdatedAt: recent,
+			Label: sessionstore.LabelOpen,
+		},
+		"th-untitled": {
+			Project: "proj", OwnerID: "member-1", UpdatedAt: recent,
+			Label: sessionstore.LabelOpen,
+		},
+	}
+	for id, e := range seed {
+		if err := srv.sessions.Set(id, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const secretPrompt = "SECRET CUSTOMER PROMPT"
+	if err := srv.history.Append("th-untitled", history.Turn{
+		User: "member-1", Prompt: secretPrompt, Response: "ok", Status: "done", Project: "proj",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sid, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/today")
+	if !strings.Contains(body, `id="today-sessions"`) {
+		t.Fatal("missing your-sessions section")
+	}
+	if !strings.Contains(body, "owned active work") {
+		t.Fatal("missing owned session")
+	}
+	if !strings.Contains(body, "co-owned active work") {
+		t.Fatal("missing co-owned session")
+	}
+	if !strings.Contains(body, "/sessions/th-untitled") {
+		t.Fatal("untitled owned session should still link")
+	}
+	if strings.Contains(body, secretPrompt) {
+		t.Fatal("last prompt leaked onto Today")
+	}
+	for _, ban := range []string{"someone else's session", "engineered not owned", "finished last week", "throwaway ask"} {
+		if strings.Contains(body, ban) {
+			t.Fatalf("must not list %q", ban)
+		}
+	}
+	if !strings.Contains(body, "Nothing waiting on you") {
+		t.Fatal("healthy sessions should not look like an empty Today")
+	}
+	if !strings.Contains(body, `href="/sessions?owner=mine"`) {
+		t.Fatal("missing all-sessions link")
+	}
+
+	scoped := getPageBody(t, srv, sid, "/projects/proj/today")
+	if !strings.Contains(scoped, "owned active work") {
+		t.Fatal("workspace Today missing owned session")
+	}
+	if !strings.Contains(scoped, `href="/projects/proj/sessions?owner=mine"`) {
+		t.Fatal("workspace Today should link to scoped sessions")
+	}
+
+	code, got, countsBody := getNavCounts(t, srv, "/partials/nav/counts", &http.Cookie{Name: sessionCookieName, Value: sid})
+	if code != http.StatusOK {
+		t.Fatalf("counts=%d %s", code, countsBody)
+	}
+	if got["today"] != 0 {
+		t.Fatalf("nav pill=%d want 0 (healthy sessions are not waiting): %v", got["today"], got)
+	}
+}
+
+func TestTodayShowsRunningSessionEvenIfSettled(t *testing.T) {
+	srv, _, _ := authOnServer(t)
+	stale := time.Now().UTC().Add(-48 * time.Hour).Format(time.RFC3339)
+	if err := srv.sessions.Set("th-run", sessionstore.Entry{
+		Project: "proj", Goal: "still running after merge", OwnerID: "member-1",
+		UpdatedAt: stale, Label: sessionstore.LabelNeedsReview,
+		PRs: []sessionstore.TrackedPR{{
+			Number: 1, State: "MERGED", Owner: "acme", Repo: "proj",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.sessions.Set("th-shipped", sessionstore.Entry{
+		Project: "proj", Goal: "merged last week", OwnerID: "member-1",
+		UpdatedAt: stale, Label: sessionstore.LabelNeedsReview,
+		PRs: []sessionstore.TrackedPR{{
+			Number: 2, State: "MERGED", Owner: "acme", Repo: "proj",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cancel, err := srv.bot.InjectActiveRunForTest("th-run", "proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cancel)
+
+	sid, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/today")
+	if !strings.Contains(body, "still running after merge") {
+		t.Fatal("live run must stay on Today even when the PR is terminal and stale")
+	}
+	if !strings.Contains(body, `class="badge live">running</span>`) {
+		t.Fatal("missing running badge")
+	}
+	if strings.Contains(body, "merged last week") {
+		t.Fatal("stale shipped session without a live run must drop off")
+	}
+
+	partial := httptest.NewRequest(http.MethodGet, "/partials/today/list", nil)
+	partial.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	partial.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, partial)
+	if w.Code != http.StatusOK {
+		t.Fatalf("partial status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "still running after merge") {
+		t.Fatal("live-region partial dropped the running session")
+	}
+}
+
+func TestTodayActiveSessionsHideForbiddenProject(t *testing.T) {
+	srv := twoProjectAuthServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := srv.sessions.Set("sess-public", sessionstore.Entry{
+		Project: "public", OwnerID: "member-1", Goal: "public-active-session",
+		Label: sessionstore.LabelInProgress, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.sessions.Set("sess-secret", sessionstore.Entry{
+		Project: "secret", OwnerID: "member-1", Goal: "secret-active-session",
+		Label: sessionstore.LabelInProgress, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sid, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := getPageBody(t, srv, sid, "/today")
+	if !strings.Contains(body, "public-active-session") {
+		t.Fatal("missing visible active session")
+	}
+	if strings.Contains(body, "secret-active-session") {
+		t.Fatal("forbidden project session leaked into Today")
+	}
+}
+
+func TestClipTodaySessionsCapRunningFirstAndEmptyActor(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	rows := make([]history.Summary, 0, 42)
+	for i := range 41 {
+		rows = append(rows, history.Summary{
+			ThreadID:  fmt.Sprintf("s-%02d", i),
+			Project:   "proj",
+			OwnerID:   "u1",
+			Goal:      fmt.Sprintf("g-%02d", i),
+			Label:     sessionstore.LabelOpen,
+			UpdatedAt: now.Add(time.Duration(i) * time.Minute).UTC().Format(time.RFC3339),
+		})
+	}
+	rows = append(rows, history.Summary{
+		ThreadID:  "running-old",
+		Project:   "proj",
+		OwnerID:   "u1",
+		Goal:      "live run",
+		Label:     sessionstore.LabelOpen,
+		Running:   true,
+		UpdatedAt: now.Add(-48 * time.Hour).UTC().Format(time.RFC3339),
+	})
+	f := sessionFilters{State: "active", Owner: sessionOwnerMine, ViewerID: "u1"}
+	got, matched := clipTodaySessions(rows, f, now)
+	if matched != 42 {
+		t.Fatalf("matched=%d want 42", matched)
+	}
+	if len(got) != todaySessionCap {
+		t.Fatalf("shown=%d want %d", len(got), todaySessionCap)
+	}
+	if got[0].ThreadID != "running-old" {
+		t.Fatalf("running should sort first: %s", got[0].ThreadID)
+	}
+	if got[1].ThreadID != "s-40" {
+		t.Fatalf("newest idle after running: %s", got[1].ThreadID)
+	}
+
+	empty, n := clipTodaySessions(rows, sessionFilters{
+		State: "active", Owner: sessionOwnerMine, ViewerID: "",
+	}, now)
+	if n != 0 || len(empty) != 0 {
+		t.Fatalf("empty actor matched=%d shown=%d", n, len(empty))
+	}
+
+	other, n := clipTodaySessions(rows, sessionFilters{
+		State: "active", Owner: sessionOwnerMine, ViewerID: "other",
+	}, now)
+	if n != 0 || len(other) != 0 {
+		t.Fatalf("stranger matched=%d shown=%d", n, len(other))
 	}
 }

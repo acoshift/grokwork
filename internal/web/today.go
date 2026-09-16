@@ -1,13 +1,21 @@
 package web
 
 import (
+	"cmp"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/moonrhythm/hime"
 
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/history"
 )
+
+// todaySessionCap is how many of the viewer's active sessions Today may
+// return. TodaySessionMatched is the pre-cap total so the page can say so.
+const todaySessionCap = 40
 
 func (s *Server) todayPage(ctx *hime.Context) error {
 	d := s.todayPageData(ctx, strings.TrimSpace(ctx.FormValue("project")), false)
@@ -39,6 +47,10 @@ func (s *Server) todayPageData(ctx *hime.Context, project string, scoped bool) p
 	d.IsToday = true
 	d.Waiting = s.bot.ListWaitingOnYou(s.waitingQuery(ctx, project))
 	d.InboxUnread = s.inboxUnreadVisible(ctx)
+	sessions, matched := s.listTodaySessions(ctx, d.Waiting.Project)
+	d.TodaySessions = sessions
+	d.TodaySessionMatched = matched
+	d.TodaySessionShown = len(sessions)
 	if scoped {
 		d.Project = project
 		d.Title = project + " · Today"
@@ -46,6 +58,56 @@ func (s *Server) todayPageData(ctx *hime.Context, project string, scoped bool) p
 		d.Title = "Today"
 	}
 	return d
+}
+
+// listTodaySessions is /sessions?owner=mine&state=active for the Today page:
+// visibility first, then the same mine + active predicates, then a cap.
+// Empty actor matches nothing (auth off / unsigned). History list errors
+// degrade to an empty section so the waiting queue still renders.
+func (s *Server) listTodaySessions(ctx *hime.Context, project string) ([]history.Summary, int) {
+	actorID := strings.TrimSpace(s.fixActor(ctx).ID)
+	if actorID == "" || s.history == nil || s.sessions == nil {
+		return nil, 0
+	}
+	threads, err := s.history.List()
+	if err != nil {
+		return nil, 0
+	}
+	threads = mergeSessionRows(threads, s.sessions.List())
+	threads = s.filterThreadsVisible(ctx, threads)
+	threads = dropPRAskRows(threads)
+	annotateSessionRunning(threads, s.bot)
+	return clipTodaySessions(threads, sessionFilters{
+		State:    "active",
+		Owner:    sessionOwnerMine,
+		ViewerID: actorID,
+		Project:  project,
+	}, time.Now())
+}
+
+// clipTodaySessions applies the sessions-list mine/active filter, sorts live
+// runs first then newest UpdatedAt, and caps the page.
+func clipTodaySessions(threads []history.Summary, f sessionFilters, now time.Time) ([]history.Summary, int) {
+	rows := filterSessionRows(threads, f, now)
+	slices.SortFunc(rows, cmpTodaySession)
+	matched := len(rows)
+	if len(rows) > todaySessionCap {
+		rows = rows[:todaySessionCap]
+	}
+	return rows, matched
+}
+
+func cmpTodaySession(a, b history.Summary) int {
+	if a.Running != b.Running {
+		if a.Running {
+			return -1
+		}
+		return 1
+	}
+	if n := cmp.Compare(b.UpdatedAt, a.UpdatedAt); n != 0 {
+		return n
+	}
+	return cmp.Compare(a.ThreadID, b.ThreadID)
 }
 
 // waitingQuery builds the personal queue request. project is a data filter
