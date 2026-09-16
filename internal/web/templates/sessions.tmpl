@@ -32,6 +32,13 @@
     </select>
   </div>
   <div class="field">
+    <label for="owner">Owner</label>
+    <select id="owner" name="owner" data-autosubmit>
+      <option value="" {{if eq .SessionFilters.Owner ""}}selected{{end}}>Anyone</option>
+      <option value="mine" {{if eq .SessionFilters.Owner "mine"}}selected{{end}}>Mine</option>
+    </select>
+  </div>
+  <div class="field">
     <label for="q">Search</label>
     <input id="q" type="text" name="q" value="{{.SessionFilters.Query}}" placeholder="thread, goal, user">
   </div>

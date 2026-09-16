@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1244,6 +1245,7 @@ func (s *Server) sessionsList(ctx *hime.Context) error {
 	threads = dropPRAskRows(threads)
 	annotateSessionRunning(threads, s.bot)
 	f := parseSessionFilters(ctx, true)
+	f.ViewerID = strings.TrimSpace(s.fixActor(ctx).ID)
 	f.Projects = s.filterProjectNames(ctx)
 	f.Total = len(threads)
 	d := s.basePage(ctx)
@@ -2660,8 +2662,8 @@ func mergeSessionRows(hist []history.Summary, sessions []sessionstore.Listed) []
 	return hist
 }
 
-// applySessionOverlay copies lifecycle + primary PR fields from a session entry
-// onto a list row (history may already have turns / project).
+// applySessionOverlay copies lifecycle, ownership, and primary PR fields from a
+// session entry onto a list row (history may already have turns / project).
 func applySessionOverlay(row *history.Summary, se sessionstore.Listed) {
 	if row == nil {
 		return
@@ -2691,6 +2693,8 @@ func applySessionOverlay(row *history.Summary, se sessionstore.Listed) {
 	row.Resolution = strings.TrimSpace(e.Resolution)
 	row.HasPRs = e.HasAnyPR()
 	row.AllPRsTerminal = e.AllPRsTerminal()
+	row.OwnerID = e.OwnerID
+	row.CoOwnerIDs = slices.Clone(e.CoOwnerIDs)
 	if pr, ok := e.PrimaryPR(); ok {
 		row.PRNumber = pr.Number
 		row.PRState = strings.ToUpper(strings.TrimSpace(pr.State))

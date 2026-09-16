@@ -185,6 +185,10 @@ type Summary struct {
 	// Running is true when the bot has an active agent job on this thread
 	// (web overlay from StatusSnapshot; not stored in history JSON).
 	Running bool
+	// Thread ownership from the session overlay. History-only rows leave these
+	// empty, so they never match the sessions-list "mine" filter.
+	OwnerID    string
+	CoOwnerIDs []string
 }
 
 type Store struct {

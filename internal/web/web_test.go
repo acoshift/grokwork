@@ -1022,6 +1022,7 @@ func TestSessionsFilter(t *testing.T) {
 	has(body, "/sessions", `id="sessions-filters"`)
 	has(body, "/sessions", `name="project"`)
 	has(body, "/sessions", `name="state"`)
+	has(body, "/sessions", `name="owner"`)
 	has(body, "/sessions", `name="q"`)
 	has(body, "/sessions", `<option value="proj"`)
 	has(body, "/sessions", "/sessions/thread-99")
@@ -1080,6 +1081,82 @@ func TestSessionsFilter(t *testing.T) {
 	hasNot(body, "/projects/proj/sessions?state=done", `name="project"`)
 	has(body, "/projects/proj/sessions?state=done", "/sessions/thread-done")
 	hasNot(body, "/projects/proj/sessions?state=done", "/sessions/thread-99")
+	has(body, "/projects/proj/sessions?state=done", `name="owner"`)
+
+	// Auth off: no viewer, so mine matches nothing rather than every unowned row.
+	body = get("/sessions?owner=mine&state=all")
+	has(body, "/sessions?owner=mine&state=all", "No sessions match this filter")
+	hasNot(body, "/sessions?owner=mine&state=all", "/sessions/thread-99")
+	has(body, "/sessions?owner=mine&state=all", `<option value="mine" selected>Mine</option>`)
+
+	// Unknown owner values fall through to Anyone (no 4xx).
+	body = get("/sessions?owner=sql-injection&state=all")
+	has(body, "/sessions?owner=sql-injection&state=all", "/sessions/thread-99")
+	has(body, "/sessions?owner=sql-injection&state=all", `<option value="" selected>Anyone</option>`)
+}
+
+func TestSessionsFilterMine(t *testing.T) {
+	srv, _, _ := authOnServer(t)
+	recent := time.Now().UTC().Format(time.RFC3339)
+	seed := map[string]sessionstore.Entry{
+		"th-mine": {
+			Project: "proj", Goal: "owned by member", OwnerID: "member-1", OwnerName: "Member",
+			UpdatedAt: recent, Label: sessionstore.LabelOpen,
+		},
+		"th-co": {
+			Project: "proj", Goal: "co-owned by member", OwnerID: "allow-user", OwnerName: "Allowed",
+			CoOwnerIDs: []string{"member-1"}, UpdatedAt: recent, Label: sessionstore.LabelOpen,
+		},
+		"th-theirs": {
+			Project: "proj", Goal: "owned by someone else", OwnerID: "allow-user", OwnerName: "Allowed",
+			UpdatedAt: recent, Label: sessionstore.LabelOpen,
+		},
+		"th-engineer": {
+			Project: "proj", Goal: "engineered by member", Mode: "case", Phase: sessionstore.PhaseFixing,
+			OwnerID: "allow-user", EngineerID: "member-1", EngineerName: "Member",
+			UpdatedAt: recent, Label: sessionstore.LabelInProgress,
+		},
+		"th-unowned": {
+			Project: "proj", Goal: "no owner stamped", UpdatedAt: recent, Label: sessionstore.LabelOpen,
+		},
+	}
+	for id, e := range seed {
+		if err := srv.sessions.Set(id, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sid, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := getPageBody(t, srv, sid, "/sessions?owner=mine&state=all")
+	if !strings.Contains(body, "/sessions/th-mine") {
+		t.Fatal("mine dropped the owned session")
+	}
+	if !strings.Contains(body, "/sessions/th-co") {
+		t.Fatal("mine dropped the co-owned session")
+	}
+	for _, id := range []string{"th-theirs", "th-engineer", "th-unowned"} {
+		if strings.Contains(body, "/sessions/"+id) {
+			t.Fatalf("mine must not include %s", id)
+		}
+	}
+	if !strings.Contains(body, `<option value="mine" selected>Mine</option>`) {
+		t.Fatal("mine option not selected")
+	}
+
+	anyone := getPageBody(t, srv, sid, "/sessions?state=all")
+	for _, id := range []string{"th-mine", "th-co", "th-theirs", "th-engineer", "th-unowned"} {
+		if !strings.Contains(anyone, "/sessions/"+id) {
+			t.Fatalf("anyone dropped %s", id)
+		}
+	}
+
+	scoped := getPageBody(t, srv, sid, "/projects/proj/sessions?owner=mine&state=all")
+	if !strings.Contains(scoped, "/sessions/th-mine") || strings.Contains(scoped, "/sessions/th-theirs") {
+		t.Fatal("workspace mine filter did not match owner-only")
+	}
 }
 
 func TestSessionsActiveRecency(t *testing.T) {
@@ -1146,6 +1223,25 @@ func TestSessionsActiveRecency(t *testing.T) {
 	got = ids(filterSessionRows(rows, sessionFilters{State: "open"}, now))
 	if want := "open-old hist-fresh hist-stale"; got != want {
 		t.Fatalf("open: got %q want %q", got, want)
+	}
+
+	owned := []history.Summary{
+		{ThreadID: "mine-own", OwnerID: "u-me", Label: "open"},
+		{ThreadID: "mine-co", OwnerID: "u-them", CoOwnerIDs: []string{"u-other", "u-me"}, Label: "open"},
+		{ThreadID: "theirs", OwnerID: "u-them", Label: "open"},
+		{ThreadID: "unowned", Label: "open"},
+	}
+	got = ids(filterSessionRows(owned, sessionFilters{State: "all", Owner: sessionOwnerMine, ViewerID: "u-me"}, now))
+	if want := "mine-own mine-co"; got != want {
+		t.Fatalf("mine: got %q want %q", got, want)
+	}
+	got = ids(filterSessionRows(owned, sessionFilters{State: "all", Owner: sessionOwnerMine}, now))
+	if got != "" {
+		t.Fatalf("mine without viewer: got %q want no rows", got)
+	}
+	got = ids(filterSessionRows(owned, sessionFilters{State: "all"}, now))
+	if got != ids(owned) {
+		t.Fatalf("anyone: got %q want every row", got)
 	}
 }
 

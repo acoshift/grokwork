@@ -10,6 +10,11 @@ import (
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
+// sessionOwnerMine is the only value sessionFilters.Owner takes: sessions the
+// viewer owns or co-owns. An empty ViewerID makes "mine" match nothing rather
+// than matching every unowned row (same as the case board).
+const sessionOwnerMine = "mine"
+
 // activeRecency keeps freshly finished work on the default Active view:
 // settled rows still match "active" for this long after their last update,
 // then drop off. Settled = terminal label, closed case, non-case units with
@@ -23,11 +28,16 @@ type sessionFilters struct {
 	Project  string   // global hub only ("" = all projects; workspace fixes it via path)
 	Projects []string // dropdown options on the global hub
 	Total    int      // row count before filtering (for "x of y" chrome)
+	// Owner is "" (anyone) or sessionOwnerMine.
+	Owner string
+	// ViewerID is who "mine" means. Set by the list handlers from the signed-in
+	// actor; an empty id makes "mine" match nothing.
+	ViewerID string
 }
 
 // Filtered reports whether f narrows the list at all.
 func (f sessionFilters) Filtered() bool {
-	return f.State != "all" || f.Query != "" || f.Project != ""
+	return f.State != "all" || f.Query != "" || f.Project != "" || f.Owner != ""
 }
 
 // parseSessionFilters reads the sessions list query params. withProject is
@@ -54,6 +64,10 @@ func parseSessionFilters(ctx *hime.Context, withProject bool) sessionFilters {
 		}
 	}
 	f.State = state
+	owner := strings.ToLower(strings.TrimSpace(ctx.FormValue("owner")))
+	if owner == sessionOwnerMine {
+		f.Owner = owner
+	}
 	return f
 }
 
@@ -87,9 +101,17 @@ func filterSessionRows(threads []history.Summary, f sessionFilters, now time.Tim
 		if q != "" && !sessionQueryMatches(t, q) {
 			continue
 		}
+		if f.Owner == sessionOwnerMine && !sessionIsMine(t, f.ViewerID) {
+			continue
+		}
 		out = append(out, t)
 	}
 	return out
+}
+
+// sessionIsMine is thread ownership (owner or co-owner) for the list filter.
+func sessionIsMine(t history.Summary, viewerID string) bool {
+	return sessionstore.Entry{OwnerID: t.OwnerID, CoOwnerIDs: t.CoOwnerIDs}.CanControl(viewerID)
 }
 
 // sessionStateMatches matches a row against the state filter. Rows carry the

@@ -422,6 +422,7 @@ func (s *Server) sessionsScoped(ctx *hime.Context) error {
 		return forbiddenProject(ctx, err)
 	}
 	f := parseSessionFilters(ctx, false)
+	f.ViewerID = strings.TrimSpace(s.fixActor(ctx).ID)
 	threads := s.projectThreads(project)
 	annotateSessionRunning(threads, s.bot)
 	f.Total = len(threads)
