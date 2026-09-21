@@ -391,7 +391,7 @@
     {{if .Completion.Diff.FileCount}} · {{.Completion.Diff.FileCount}} file{{if ne .Completion.Diff.FileCount 1}}s{{end}}{{end}}
     {{if .Completion.Diff.Insertions}} · <span class="diff-add">+{{.Completion.Diff.Insertions}}</span>{{end}}
     {{if .Completion.Diff.Deletions}} · <span class="diff-del">-{{.Completion.Diff.Deletions}}</span>{{end}}
-    {{if .Completion.Diff.Dirty}} · <span class="badge status-error">uncommitted</span>{{end}}
+    {{if .Completion.ShowUncommitted}} · <span class="badge status-error">uncommitted</span>{{end}}
   </p>
   {{if .Completion.Diff.Risky}}
   <p class="sub" style="margin:0.35rem 0 0">Risky paths: {{range $i, $p := .Completion.Diff.Risky}}{{if $i}}, {{end}}<span class="mono">{{$p}}</span>{{end}}</p>

@@ -1,10 +1,10 @@
 package bot
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -173,9 +173,102 @@ func TestFormatCompletionCard(t *testing.T) {
 	}
 }
 
+func TestShowUncommitted(t *testing.T) {
+	reports := DiffSummary{
+		Dirty:      true,
+		DirtyStat:  "",
+		HasCommits: true,
+		FileCount:  9,
+		NameStatus: []string{"M\tapi/a.go", "?\treports/"},
+	}
+	tests := []struct {
+		name string
+		in   CompletionCardInput
+		want bool
+	}{
+		{
+			name: "legacy untracked leftover with PR",
+			in:   CompletionCardInput{PRNumber: 892, Diff: reports},
+			want: false,
+		},
+		{
+			name: "legacy untracked leftover after merge",
+			in: CompletionCardInput{
+				PRNumber: 867,
+				Diff: DiffSummary{
+					Dirty:      true,
+					HasCommits: false,
+					FileCount:  0,
+					NameStatus: []string{"?\treports/"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "tracked dirt on a PR",
+			in: CompletionCardInput{
+				PRNumber: 1,
+				Diff: DiffSummary{
+					Dirty:      true,
+					DirtyStat:  "a.go | 1 +",
+					HasCommits: true,
+					FileCount:  2,
+					NameStatus: []string{"M\ta.go"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "forgot to commit, untracked only",
+			in: CompletionCardInput{
+				Diff: DiffSummary{NameStatus: []string{"?\tnew.go"}},
+			},
+			want: true,
+		},
+		{
+			name: "new snapshot: commits + untracked, Dirty false",
+			in: CompletionCardInput{
+				PRNumber: 3,
+				Diff: DiffSummary{
+					HasCommits: true,
+					FileCount:  2,
+					NameStatus: []string{"M\ta.go", "?\treports/"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "clean",
+			in:   CompletionCardInput{Diff: DiffSummary{HasCommits: true, FileCount: 1}},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.in.ShowUncommitted(); got != tt.want {
+				t.Fatalf("got %v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCompletionHasContentSkipsUntrackedOnlyPR(t *testing.T) {
+	if completionHasContent(CompletionCardInput{
+		PRNumber: 867,
+		Diff:     DiffSummary{NameStatus: []string{"?\treports/"}},
+	}) {
+		t.Fatal("untracked leftovers on a PR are not a completion")
+	}
+	if !completionHasContent(CompletionCardInput{
+		Diff: DiffSummary{NameStatus: []string{"?\tnew.go"}},
+	}) {
+		t.Fatal("untracked-only with no PR is still a completion")
+	}
+}
+
 func TestCollectDiffSummary(t *testing.T) {
 	repo := initCompletionTestRepo(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// On main with no extra commits: empty-ish.
 	sum, err := CollectDiffSummary(ctx, repo, DefaultRiskyPathGlobs, "")
@@ -233,6 +326,54 @@ func TestCollectDiffSummary(t *testing.T) {
 	})
 	if card == "" || !strings.Contains(card, "risk") {
 		t.Fatalf("card=%q", card)
+	}
+
+	if err := os.MkdirAll(filepath.Join(repo, "reports"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "reports", "notes.txt"), []byte("scratch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".grok"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".grok", "scratch"), []byte("cli\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sum, err = CollectDiffSummary(ctx, repo, DefaultRiskyPathGlobs, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Dirty {
+		t.Fatalf("untracked leftovers must not set Dirty: %+v", sum)
+	}
+	if !slices.Contains(sum.NameStatus, "?\treports/notes.txt") && !slices.Contains(sum.NameStatus, "?\treports/") {
+		t.Fatalf("expected untracked reports in names=%v", sum.NameStatus)
+	}
+	for _, n := range sum.NameStatus {
+		if strings.Contains(n, ".grok") {
+			t.Fatalf("agent meta path leaked into names=%v", sum.NameStatus)
+		}
+	}
+	in := CompletionCardInput{PRNumber: 12, Diff: sum}
+	if in.ShowUncommitted() {
+		t.Fatal("committed branch with a PR and untracked notes must not show uncommitted")
+	}
+
+	if err := os.WriteFile(filepath.Join(repo, "README"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum, err = CollectDiffSummary(ctx, repo, DefaultRiskyPathGlobs, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sum.Dirty {
+		t.Fatalf("tracked edit must set Dirty: %+v", sum)
+	}
+	tracked := CompletionCardInput{PRNumber: 12, Diff: sum}
+	if !tracked.ShowUncommitted() {
+		t.Fatal("tracked dirt should still show uncommitted")
 	}
 }
 

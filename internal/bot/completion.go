@@ -44,6 +44,10 @@ type DiffSummary struct {
 	Insertions int
 	Deletions  int
 	FileCount  int
+	// Dirty is true when tracked files have staged or unstaged changes.
+	// Untracked leftovers (reports/, notes) do not set this; they appear as
+	// "?" entries in NameStatus. Older timeline records set Dirty for any
+	// porcelain including untracked — ShowUncommitted distinguishes those.
 	Dirty      bool
 	DirtyStat  string
 	Risky      []string
@@ -96,23 +100,27 @@ func CollectDiffSummary(ctx context.Context, cwd string, riskyGlobs []string, pr
 		}
 	}
 
-	if porcelain, pErr := gitOutput(ctx, cwd, "status", "--porcelain"); pErr == nil && strings.TrimSpace(porcelain) != "" {
-		out.Dirty = true
-		if ds, dErr := gitOutput(ctx, cwd, "diff", "--stat", "HEAD"); dErr == nil {
-			out.DirtyStat = strings.TrimSpace(ds)
-		}
-		// Include untracked / dirty paths in name list and risk scan.
+	if porcelain, pErr := gitOutput(ctx, cwd, "status", "--porcelain"); pErr == nil {
 		for line := range strings.SplitSeq(porcelain, "\n") {
-			line = strings.TrimSpace(line)
+			line = strings.TrimRight(line, "\r")
 			if line == "" {
 				continue
 			}
-			// XY<path> or XY path -> path (rename: "R  a -> b")
 			path := porcelainPath(line)
-			if path == "" {
+			if path == "" || isAgentMetaPath(path) {
 				continue
 			}
-			out.NameStatus = appendUniqueStatus(out.NameStatus, "?", path)
+			if strings.HasPrefix(line, "??") {
+				out.NameStatus = appendUniqueStatus(out.NameStatus, "?", path)
+				continue
+			}
+			out.Dirty = true
+			out.NameStatus = appendUniqueStatus(out.NameStatus, porcelainXYStatus(line), path)
+		}
+		if out.Dirty {
+			if ds, dErr := gitOutput(ctx, cwd, "diff", "--stat", "HEAD"); dErr == nil {
+				out.DirtyStat = strings.TrimSpace(ds)
+			}
 		}
 	}
 
@@ -220,6 +228,44 @@ func porcelainPath(line string) string {
 	return rest
 }
 
+func porcelainXYStatus(line string) string {
+	if len(line) < 2 {
+		return "M"
+	}
+	for _, c := range line[:2] {
+		if c != ' ' && c != '?' && c != '!' {
+			return string(c)
+		}
+	}
+	return "M"
+}
+
+func isAgentMetaPath(p string) bool {
+	p = filepath.ToSlash(strings.TrimSpace(p))
+	if after, ok := strings.CutPrefix(p, "./"); ok {
+		p = after
+	}
+	switch {
+	case p == ".grok" || strings.HasPrefix(p, ".grok/"):
+		return true
+	case p == ".claude" || strings.HasPrefix(p, ".claude/"):
+		return true
+	case p == ".cursor" || strings.HasPrefix(p, ".cursor/"):
+		return true
+	default:
+		return false
+	}
+}
+
+func (d DiffSummary) hasUntracked() bool {
+	for _, e := range d.NameStatus {
+		if strings.HasPrefix(e, "?\t") {
+			return true
+		}
+	}
+	return false
+}
+
 func appendUniqueStatus(list []string, status, path string) []string {
 	entry := status + "\t" + path
 	for _, e := range list {
@@ -324,8 +370,33 @@ type CompletionCardInput struct {
 }
 
 // completionHasContent reports whether the completion card has anything useful.
-func completionHasContent(d DiffSummary) bool {
-	return d.HasCommits || d.Dirty || d.FileCount > 0 || len(d.NameStatus) > 0
+// Untracked leftovers on a unit that already has a PR are not a completion —
+// recording them would replace the real diff summary with a red "uncommitted" badge.
+func completionHasContent(in CompletionCardInput) bool {
+	d := in.Diff
+	if d.HasCommits || d.Dirty || d.FileCount > 0 {
+		return true
+	}
+	if in.PRNumber > 0 || strings.TrimSpace(in.PRURL) != "" {
+		return false
+	}
+	return d.hasUntracked()
+}
+
+// ShowUncommitted is the session-page / Discord "uncommitted" signal.
+// Tracked dirt always counts. Untracked leftovers (reports/, notes) on a
+// branch that already has commits or a PR do not — including older timeline
+// records that set Dirty for any porcelain (those have empty DirtyStat).
+func (in CompletionCardInput) ShowUncommitted() bool {
+	d := in.Diff
+	shipped := in.PRNumber > 0 || strings.TrimSpace(in.PRURL) != "" || d.HasCommits || d.FileCount > 0
+	if d.Dirty {
+		if shipped && strings.TrimSpace(d.DirtyStat) == "" && d.hasUntracked() {
+			return false
+		}
+		return true
+	}
+	return !shipped && d.hasUntracked()
 }
 
 func completionStatus(in CompletionCardInput) string {
@@ -367,12 +438,13 @@ func completionBranchLabel(in CompletionCardInput) string {
 	return "`" + branch + "`"
 }
 
-func completionDiffLabel(d DiffSummary) string {
+func completionDiffLabel(in CompletionCardInput) string {
+	d := in.Diff
 	switch {
 	case d.FileCount > 0 || d.Insertions > 0 || d.Deletions > 0:
 		return fmt.Sprintf("%d file%s · +%d −%d",
 			d.FileCount, plural(d.FileCount), d.Insertions, d.Deletions)
-	case d.Dirty:
+	case in.ShowUncommitted():
 		return "uncommitted changes"
 	case d.HasCommits:
 		return "commits present (stat unavailable)"
@@ -423,7 +495,7 @@ func completionPRField(in CompletionCardInput) (name, value string) {
 // ok is false when there is nothing useful to show (no git changes).
 func FormatCompletionEmbed(in CompletionCardInput) (*discordgo.MessageEmbed, bool) {
 	d := in.Diff
-	if !completionHasContent(d) {
+	if !completionHasContent(in) {
 		return nil, false
 	}
 
@@ -454,7 +526,7 @@ func FormatCompletionEmbed(in CompletionCardInput) (*discordgo.MessageEmbed, boo
 			Name: "Base", Value: "`" + d.BaseRef + "`", Inline: true,
 		})
 	}
-	if diff := completionDiffLabel(d); diff != "" {
+	if diff := completionDiffLabel(in); diff != "" {
 		emb.Fields = append(emb.Fields, &discordgo.MessageEmbedField{
 			Name: "Diff", Value: diff, Inline: true,
 		})
@@ -499,7 +571,7 @@ func FormatCompletionEmbed(in CompletionCardInput) (*discordgo.MessageEmbed, boo
 // Returns empty string when there is nothing useful to show (no git changes).
 func FormatCompletionCard(in CompletionCardInput) string {
 	d := in.Diff
-	if !completionHasContent(d) {
+	if !completionHasContent(in) {
 		return ""
 	}
 
@@ -516,7 +588,7 @@ func FormatCompletionCard(in CompletionCardInput) string {
 		lines = append(lines, "**base:** `"+d.BaseRef+"`")
 	}
 
-	if diff := completionDiffLabel(d); diff != "" {
+	if diff := completionDiffLabel(in); diff != "" {
 		lines = append(lines, "**diff:** "+diff)
 	}
 
@@ -693,7 +765,7 @@ func (b *Bot) postCompletionSummary(s *discordgo.Session, threadID, project, cwd
 	}
 	// Durable first, render second: the record is the same for both surfaces, and
 	// a Discord failure below must not lose it.
-	if completionHasContent(diff) {
+	if completionHasContent(in) {
 		b.appendTimeline(threadID, timeline.KindCompletion, in)
 	}
 

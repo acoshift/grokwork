@@ -155,6 +155,80 @@ func TestWebNativeUnitGetsCompletionSummary(t *testing.T) {
 			t.Errorf("completion panel missing %q", want)
 		}
 	}
+	if strings.Contains(body, ">uncommitted<") {
+		t.Error("clean committed completion must not show uncommitted")
+	}
+}
+
+func TestCompletionUncommittedBadgeIgnoresUntrackedLeftovers(t *testing.T) {
+	srv, _, _ := testServer(t)
+	events := srv.bot.Events()
+	if events == nil {
+		t.Fatal("timeline store missing")
+	}
+	// Shape of live records: commit+PR already happened, git status still
+	// has ?? reports/ so older CollectDiffSummary set Dirty.
+	if _, err := events.Append("thread-99", timeline.KindCompletion, bot.CompletionCardInput{
+		Status:   "Done",
+		Project:  "proj",
+		Branch:   "grokwork/thread-99",
+		PRNumber: 892,
+		PRURL:    "https://example/prs/o/r/892",
+		Diff: bot.DiffSummary{
+			FileCount:  9,
+			Insertions: 70,
+			Deletions:  18,
+			HasCommits: true,
+			Dirty:      true,
+			NameStatus: []string{"M\tapi/a.go", "?\treports/"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99?project=proj", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="session-completion-panel"`) {
+		t.Fatal("completion panel missing")
+	}
+	if strings.Contains(body, ">uncommitted<") {
+		t.Fatal("untracked leftovers on a committed PR must not show uncommitted")
+	}
+}
+
+func TestCompletionUncommittedBadgeForTrackedDirt(t *testing.T) {
+	srv, _, _ := testServer(t)
+	events := srv.bot.Events()
+	if events == nil {
+		t.Fatal("timeline store missing")
+	}
+	if _, err := events.Append("thread-99", timeline.KindCompletion, bot.CompletionCardInput{
+		Status:  "Done",
+		Project: "proj",
+		Branch:  "grokwork/thread-99",
+		Diff: bot.DiffSummary{
+			Dirty:      true,
+			DirtyStat:  "app.go | 2 ++",
+			NameStatus: []string{"M\tapp.go"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/thread-99?project=proj", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), ">uncommitted<") {
+		t.Fatal("tracked uncommitted changes must keep the badge")
+	}
 }
 
 func TestNoCompletionPanelWithoutRecord(t *testing.T) {
