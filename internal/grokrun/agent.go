@@ -40,7 +40,7 @@ var claudeModelMarkers = []string{"claude", "anthropic", "opus", "sonnet", "haik
 
 // cursorModelMarkers identify names that belong to cursor-agent. Checked before
 // grok/claude because the catalog reuses those vendors' names
-// (cursor-grok-4.6-high, claude-opus-5-thinking-high, glm-5.2-high, kimi-k3-max).
+// (cursor-grok-4.7-high, claude-opus-5-thinking-high, glm-5.2-high, kimi-k3-max).
 var cursorModelMarkers = []string{"composer", "cursor-", "gpt-", "codex", "gemini", "glm", "kimi"}
 
 // cursorClaudeQualifiers are suffixes the Cursor catalog adds to Claude family
@@ -135,6 +135,8 @@ func ModelOptions() []ModelOption {
 		// Every name carries an effort suffix: grokCLIModel passes
 		// -m <base> --effort <level>. Rates key on the unsuffixed base
 		// (RateModel).
+		{Value: "grok-4.7-xhigh", Label: "grok-4.7-xhigh", Agent: AgentGrok},
+		{Value: "grok-4.7-high", Label: "grok-4.7-high", Agent: AgentGrok},
 		{Value: "grok-4.6-xhigh", Label: "grok-4.6-xhigh", Agent: AgentGrok},
 		{Value: "grok-4.6-high", Label: "grok-4.6-high", Agent: AgentGrok},
 		{Value: "grok-4.5-high", Label: "grok-4.5-high", Agent: AgentGrok},
@@ -168,6 +170,11 @@ func ModelOptions() []ModelOption {
 		{Value: "claude-fable-5-thinking-xhigh", Label: "claude-fable-5-thinking-xhigh", Agent: AgentCursor},
 		{Value: "claude-fable-5-thinking-high", Label: "claude-fable-5-thinking-high", Agent: AgentCursor},
 		{Value: "gpt-5.6-sol-medium", Label: "gpt-5.6-sol-medium", Agent: AgentCursor},
+		// cursor-grok-4.7-* is the picker id. cursor-agent's catalog id dropped
+		// the prefix (grok-4.7-high); cursorCLIModel strips it. Keeping the
+		// prefix here is what stops the name colliding with the grok CLI alias.
+		{Value: "cursor-grok-4.7-xhigh", Label: "cursor-grok-4.7-xhigh", Agent: AgentCursor},
+		{Value: "cursor-grok-4.7-high", Label: "cursor-grok-4.7-high", Agent: AgentCursor},
 		{Value: "cursor-grok-4.6-xhigh", Label: "cursor-grok-4.6-xhigh", Agent: AgentCursor},
 		{Value: "cursor-grok-4.6-high", Label: "cursor-grok-4.6-high", Agent: AgentCursor},
 		{Value: "gemini-3.8-flash-high", Label: "gemini-3.8-flash-high", Agent: AgentCursor},

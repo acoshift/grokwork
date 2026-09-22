@@ -9,6 +9,10 @@ func TestGrokCLIModel(t *testing.T) {
 	cases := []struct {
 		in, model, effort string
 	}{
+		{"grok-4.7-xhigh", "grok-4.7", "xhigh"},
+		{"grok-4.7-high", "grok-4.7", "high"},
+		{"grok-4.7", "grok-4.7", ""},
+		{" GROK-4.7-XHIGH ", "grok-4.7", "xhigh"},
 		{"grok-4.6-xhigh", "grok-4.6", "xhigh"},
 		{" GROK-4.6-XHIGH ", "grok-4.6", "xhigh"},
 		{"grok-4.6-high", "grok-4.6", "high"},
@@ -19,6 +23,7 @@ func TestGrokCLIModel(t *testing.T) {
 		{" GROK-4.5-LOW ", "grok-4.5", "low"},
 		// Cursor's xhigh id is a real catalog name and must not be rewritten
 		// if it ever reaches this helper.
+		{"cursor-grok-4.7-xhigh", "cursor-grok-4.7-xhigh", ""},
 		{"cursor-grok-4.6-xhigh", "cursor-grok-4.6-xhigh", ""},
 		{"", "", ""},
 	}
@@ -42,6 +47,8 @@ func TestGrokArgsXhighMapsToEffort(t *testing.T) {
 
 func TestRateModelStripsGrokAndClaudeEffort(t *testing.T) {
 	cases := []struct{ in, want string }{
+		{"grok-4.7-xhigh", "grok-4.7"},
+		{"grok-4.7-high", "grok-4.7"},
 		{"grok-4.6-xhigh", "grok-4.6"},
 		{" GROK-4.6-HIGH ", "grok-4.6"},
 		{"grok-4.5-low", "grok-4.5"},
@@ -51,6 +58,7 @@ func TestRateModelStripsGrokAndClaudeEffort(t *testing.T) {
 		{"claude-haiku-4-5-high", "claude-haiku-4-5"},
 		{"claude-opus-5", "claude-opus-5"},
 		// Cursor catalog ids keep their effort token.
+		{"cursor-grok-4.7-xhigh", "cursor-grok-4.7-xhigh"},
 		{"cursor-grok-4.6-xhigh", "cursor-grok-4.6-xhigh"},
 		{"claude-fable-5-1-thinking-xhigh", "claude-fable-5-1-thinking-xhigh"},
 		{"glm-5.2-high", "glm-5.2-high"},

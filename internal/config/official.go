@@ -347,7 +347,7 @@ func cursorModelKey(cell string) string {
 // bill at that price (effort suffixes, cursor- prefix).
 func cursorAliases(key string) []string {
 	switch {
-	case key == "grok-4.6" || key == "grok-4.5":
+	case key == "grok-4.7" || key == "grok-4.6" || key == "grok-4.5":
 		return []string{"cursor-" + key + "-high", "cursor-" + key + "-xhigh"}
 	case strings.HasPrefix(key, "claude-"):
 		// Docs write "Claude Fable 5.1"; picker ids hyphenate the minor

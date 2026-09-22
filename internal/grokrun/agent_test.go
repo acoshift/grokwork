@@ -132,7 +132,7 @@ func TestModelOptionsMatchInference(t *testing.T) {
 	if grok == 0 || claude == 0 || cursor == 0 {
 		t.Fatalf("options cover grok=%d claude=%d cursor=%d; all three must be offered", grok, claude, cursor)
 	}
-	if opts[0].Value != "grok-4.6-xhigh" || opts[0].Agent != AgentGrok {
+	if opts[0].Value != "grok-4.7-xhigh" || opts[0].Agent != AgentGrok {
 		t.Fatalf("first option is %q/%q; newest grok model must lead", opts[0].Value, opts[0].Agent)
 	}
 }
@@ -185,6 +185,9 @@ func TestAgentForModel(t *testing.T) {
 		want Agent
 		ok   bool
 	}{
+		{"grok-4.7-xhigh", AgentGrok, true},
+		{"grok-4.7-high", AgentGrok, true},
+		{"grok-4.7", AgentGrok, true},
 		{"grok-4.6-xhigh", AgentGrok, true},
 		{"grok-4.6-high", AgentGrok, true},
 		{"grok-4.6", AgentGrok, true},
@@ -215,6 +218,11 @@ func TestAgentForModel(t *testing.T) {
 		{"claude-fable-5-thinking-xhigh", AgentCursor, true},
 		// Unlisted Cursor Claude effort ids still belong to cursor-agent.
 		{"claude-opus-5-medium", AgentCursor, true},
+		// grok-4.7-<effort> above is the grok CLI alias. Cursor's catalog uses
+		// that same spelling; the picker offers cursor-grok-4.7-<effort> and
+		// the driver strips the prefix. The bare spelling stays grok.
+		{"cursor-grok-4.7-xhigh", AgentCursor, true},
+		{"cursor-grok-4.7-high", AgentCursor, true},
 		{"cursor-grok-4.6-xhigh", AgentCursor, true},
 		{"cursor-grok-4.6-high", AgentCursor, true},
 		{"gpt-5", AgentCursor, true},

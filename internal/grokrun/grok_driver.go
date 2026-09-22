@@ -155,9 +155,9 @@ func splitEffortSuffix(name string) (base, effort string) {
 
 // grokCLIModel maps a picker/stamp name onto the grok CLI's -m value and an
 // optional --effort. The CLI catalog is model ids only (`grok models` lists
-// grok-4.6, grok-4.5); effort is a flag, unlike cursor-agent where xhigh/low
-// are part of the model name. Passing grok-4.6-xhigh as -m fails with
-// "unknown model id". Cursor-hosted grok ids are left alone.
+// grok-4.7, grok-4.6, grok-4.5); effort is a flag, unlike cursor-agent where
+// xhigh/low are part of the model name. Passing grok-4.7-xhigh as -m fails
+// with "unknown model id". Cursor-hosted grok ids are left alone.
 func grokCLIModel(name string) (model, effort string) {
 	name = strings.TrimSpace(name)
 	if name == "" {

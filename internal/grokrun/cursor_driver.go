@@ -51,7 +51,7 @@ func (cursorDriver) args(in argInput) []string {
 		args = append(args, "--yolo")
 	}
 	if opt.Model != "" {
-		args = append(args, "--model", opt.Model)
+		args = append(args, "--model", cursorCLIModel(opt.Model))
 	}
 	// --resume is create-or-attach (verified: a never-seen UUID still starts
 	// a chat under that id). That is grok's -s, so ForceNewSession still
@@ -66,6 +66,20 @@ func (cursorDriver) args(in argInput) []string {
 		args = append(args, "--mode", "ask")
 	}
 	return append(args, opt.ExtraArgs...)
+}
+
+// cursorCLIModel maps a picker name onto cursor-agent's --model value.
+// Grok 4.7's catalog id is grok-4.7-<effort>. The picker keeps the cursor-
+// prefix so that spelling cannot collide with the grok CLI effort alias
+// (grokCLIModel turns grok-4.7-high into -m grok-4.7 --effort high).
+// 4.5 and 4.6 ids still include the prefix and pass through.
+func cursorCLIModel(name string) string {
+	trimmed := strings.TrimSpace(name)
+	rest, ok := strings.CutPrefix(strings.ToLower(trimmed), "cursor-grok-4.7")
+	if !ok || (rest != "" && !strings.HasPrefix(rest, "-")) {
+		return name
+	}
+	return "grok-4.7" + rest
 }
 
 func (cursorDriver) watchActivity(context.Context, string, string, func(string)) {}

@@ -37,6 +37,25 @@ func TestCursorArgsBaseline(t *testing.T) {
 	}
 }
 
+func TestCursorArgsGrok47StripsPickerPrefix(t *testing.T) {
+	args := cursorArgs(Options{Model: "cursor-grok-4.7-xhigh"})
+	if got := argValue(args, "--model"); got != "grok-4.7-xhigh" {
+		t.Fatalf("model=%q args=%v", got, args)
+	}
+	args = cursorArgs(Options{Model: " Cursor-Grok-4.7-High "})
+	if got := argValue(args, "--model"); got != "grok-4.7-high" {
+		t.Fatalf("model=%q args=%v", got, args)
+	}
+	// 4.6's catalog id still includes the prefix.
+	args = cursorArgs(Options{Model: "cursor-grok-4.6-xhigh"})
+	if got := argValue(args, "--model"); got != "cursor-grok-4.6-xhigh" {
+		t.Fatalf("model=%q args=%v", got, args)
+	}
+	if got := cursorCLIModel("cursor-grok-4.70-high"); got != "cursor-grok-4.70-high" {
+		t.Fatalf("cursorCLIModel(%q)=%q", "cursor-grok-4.70-high", got)
+	}
+}
+
 func TestCursorArgsNonStreamOmitsPartialFlag(t *testing.T) {
 	args := cursorDriver{}.args(argInput{opt: Options{}, format: "json"})
 	if slices.Contains(args, "--stream-partial-output") {

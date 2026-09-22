@@ -18,6 +18,8 @@ const xaiFixture = `#### Key Information
 
 | Model | Context | Input / 1M tokens | Cached input / 1M tokens | Output / 1M tokens |
 | --- | --- | --- | --- | --- |
+| grok-4.7 (< 200k prompt tokens) | 500k | $2.00 | $0.50 | $6.00 |
+| grok-4.7 (≥ 200k prompt tokens) | 500k | $4.00 | $1.00 | $12.00 |
 | grok-4.6 (< 200k prompt tokens) | 500k | $2.00 | $0.50 | $6.00 |
 | grok-4.6 (≥ 200k prompt tokens) | 500k | $4.00 | $1.00 | $12.00 |
 | grok-4.5 (< 200k prompt tokens) | 500k | $2.00 | $0.30 | $6.00 |
@@ -51,6 +53,7 @@ const cursorFixture = `## Cursor Models
 
 | Model | Provider | Input | Cache write | Cache read | Output | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| Grok 4.7 | Cursor | $2 | - | $0.5 | $6 | Jointly trained |
 | Grok 4.6 | Cursor | $2 | - | $0.5 | $6 | Jointly trained |
 | Grok 4.6 (Fast) | Cursor | $4 | - | $1 | $12 | Jointly trained |
 | [Composer 2.5](https://cursor.com/blog/composer-2-5) | Cursor | $0.5 | - | $0.2 | $2.5 | - |
@@ -74,7 +77,20 @@ const cursorFixture = `## Cursor Models
 
 func TestParseXAIRatesUsesStandardContextNotLong(t *testing.T) {
 	got := parseXAIRates([]byte(xaiFixture))
-	r, ok := got["grok-4.6"]
+	r, ok := got["grok-4.7"]
+	if !ok {
+		t.Fatal("missing grok-4.7")
+	}
+	assertRate(t, r, 2, 6, 0.5, -1)
+	if r, ok := (OfficialRateCatalog{rates: got}).RateFor("grok-4.7-xhigh"); !ok {
+		t.Fatal("RateFor must peel grok-4.7-xhigh to grok-4.7")
+	} else {
+		assertRate(t, r, 2, 6, 0.5, -1)
+	}
+	if _, ok := got["grok-4.7-xhigh"]; ok {
+		t.Fatal("effort aliases must not be stored; lookup peels the suffix")
+	}
+	r, ok = got["grok-4.6"]
 	if !ok {
 		t.Fatal("missing grok-4.6")
 	}
@@ -131,6 +147,8 @@ func TestParseCursorRatesAliasesPickerNames(t *testing.T) {
 	got := parseCursorRates([]byte(cursorFixture))
 	assertRate(t, got["composer-2.5"], 0.5, 2.5, 0.2, -1)
 	assertRate(t, got["composer-2.5-fast"], 3, 15, 0.5, -1)
+	assertRate(t, got["cursor-grok-4.7-xhigh"], 2, 6, 0.5, -1)
+	assertRate(t, got["cursor-grok-4.7-high"], 2, 6, 0.5, -1)
 	assertRate(t, got["cursor-grok-4.6-xhigh"], 2, 6, 0.5, -1)
 	assertRate(t, got["cursor-grok-4.6-high"], 2, 6, 0.5, -1)
 	assertRate(t, got["claude-fable-5-1-thinking-high"], 10, 50, 0.25, 12.5)
@@ -148,6 +166,9 @@ func TestParseCursorRatesAliasesPickerNames(t *testing.T) {
 	assertRate(t, got["glm-5.2-max"], 1.4, 4.4, 0.26, -1)
 	assertRate(t, got["kimi-k3-max"], 3, 15, 0.3, -1)
 	assertRate(t, got["kimi-k2.7-code"], 0.95, 4, 0.19, -1)
+	if _, ok := got["grok-4.7"]; ok {
+		t.Fatal("cursor grok-4.7 must not overwrite the xAI grok CLI row")
+	}
 	if _, ok := got["grok-4.6"]; ok {
 		t.Fatal("cursor grok-4.6 must not overwrite the xAI grok CLI row")
 	}
