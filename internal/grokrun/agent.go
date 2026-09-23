@@ -161,6 +161,14 @@ func ModelOptions() []ModelOption {
 		// cursor-agent. Claude-family ids here are Cursor's effort/speed variants,
 		// distinct from the Claude Code names above — picking one is how a start
 		// task runs Claude-quality models on cursor-agent.
+		//
+		// cursor-claude-opus-5-5-* is the picker id. The catalog id is
+		// claude-opus-5-5-<effort> (thinking is always on, so there is no
+		// thinking infix). That spelling is also what claudeCLIModel would
+		// turn into --model claude-opus-5-5 --effort <level>. The prefix keeps
+		// the two apart; cursorCLIModel strips it.
+		{Value: "cursor-claude-opus-5-5-xhigh", Label: "cursor-claude-opus-5-5-xhigh", Agent: AgentCursor},
+		{Value: "cursor-claude-opus-5-5-high", Label: "cursor-claude-opus-5-5-high", Agent: AgentCursor},
 		{Value: "composer-2.5", Label: "composer-2.5", Agent: AgentCursor},
 		{Value: "composer-2.5-fast", Label: "composer-2.5-fast", Agent: AgentCursor},
 		{Value: "claude-fable-5-1-thinking-xhigh", Label: "claude-fable-5-1-thinking-xhigh", Agent: AgentCursor},
@@ -202,9 +210,9 @@ func IsKnownModel(name string) bool {
 // with them. Empty for a name that is not curated.
 //
 // Cursor families follow the catalog prefix (gpt-*, composer-*, claude-*,
-// cursor-grok-*, gemini-*, glm-*, kimi-*). Grok and Claude each have a single
-// family matching the agent, so callers that only group when an agent has more
-// than one family leave those lists flat.
+// cursor-claude-*, cursor-grok-*, gemini-*, glm-*, kimi-*). Grok and Claude
+// each have a single family matching the agent, so callers that only group
+// when an agent has more than one family leave those lists flat.
 func ModelFamily(name string) string {
 	name = strings.TrimSpace(name)
 	for _, opt := range ModelOptions() {
@@ -224,7 +232,7 @@ func familyOf(opt ModelOption) string {
 			return "gpt"
 		case strings.HasPrefix(n, "composer"):
 			return "composer"
-		case strings.HasPrefix(n, "claude") || strings.Contains(n, "anthropic"):
+		case strings.Contains(n, "claude") || strings.Contains(n, "anthropic"):
 			return "claude"
 		case strings.Contains(n, "grok"):
 			return "grok"

@@ -349,6 +349,11 @@ func cursorAliases(key string) []string {
 	switch {
 	case key == "grok-4.7" || key == "grok-4.6" || key == "grok-4.5":
 		return []string{"cursor-" + key + "-high", "cursor-" + key + "-xhigh"}
+	case key == "claude-opus-5.5":
+		// Docs write "Claude Opus 5.5". The catalog id is
+		// claude-opus-5-5-<effort> with no thinking infix. The picker prefixes
+		// cursor- so that spelling stays free for a Claude Code effort alias.
+		return []string{"cursor-claude-opus-5-5-high", "cursor-claude-opus-5-5-xhigh"}
 	case strings.HasPrefix(key, "claude-"):
 		// Docs write "Claude Fable 5.1"; picker ids hyphenate the minor
 		// (claude-fable-5-1-thinking-high), matching the Claude CLI id.

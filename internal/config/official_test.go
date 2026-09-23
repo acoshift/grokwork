@@ -64,6 +64,7 @@ const cursorFixture = `## Cursor Models
 | Model | Provider | Input | Cache write | Cache read | Output | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | [Claude Fable 5.1](https://www.anthropic.com/claude) | Anthropic | $10 | $12.5 | $0.25 | $50 | - |
+| [Claude Opus 5.5](https://www.anthropic.com/claude/opus) | Anthropic | $4 | $5 | $0.2 | $20 | - |
 | [Claude Opus 5](https://www.anthropic.com/claude/opus) | Anthropic | $5 | $6.25 | $0.5 | $25 | Requires Max Mode |
 | [Claude Sonnet 5](https://www.anthropic.com/claude/sonnet) | Anthropic | $2 | $2.5 | $0.2 | $10 | - |
 | [Claude Fable 5](https://www.anthropic.com/claude) | Anthropic | $10 | $12.5 | $1 | $50 | - |
@@ -154,6 +155,14 @@ func TestParseCursorRatesAliasesPickerNames(t *testing.T) {
 	assertRate(t, got["claude-fable-5-1-thinking-high"], 10, 50, 0.25, 12.5)
 	assertRate(t, got["claude-fable-5-1-thinking-xhigh"], 10, 50, 0.25, 12.5)
 	assertRate(t, got["claude-opus-5-thinking-high"], 5, 25, 0.5, 6.25)
+	assertRate(t, got["cursor-claude-opus-5-5-high"], 4, 20, 0.2, 5)
+	assertRate(t, got["cursor-claude-opus-5-5-xhigh"], 4, 20, 0.2, 5)
+	if _, ok := got["claude-opus-5-5-thinking-high"]; ok {
+		t.Fatal("opus 5.5 has no thinking infix; rates must key on the picker id")
+	}
+	if _, ok := got["claude-opus-5-5-high"]; ok {
+		t.Fatal("opus 5.5 rates must use the cursor- picker prefix, not the Claude Code effort alias")
+	}
 	assertRate(t, got["claude-fable-5-thinking-high"], 10, 50, 1, 12.5)
 	assertRate(t, got["claude-fable-5-thinking-xhigh"], 10, 50, 1, 12.5)
 	if _, ok := got["claude-fable-5.1-thinking-high"]; ok {
@@ -174,6 +183,9 @@ func TestParseCursorRatesAliasesPickerNames(t *testing.T) {
 	}
 	if _, ok := got["claude-opus-5"]; ok {
 		t.Fatal("cursor claude-opus-5 must not overwrite the Anthropic CLI row")
+	}
+	if _, ok := got["claude-opus-5-5"]; ok {
+		t.Fatal("cursor claude-opus-5-5 must not overwrite an Anthropic CLI row")
 	}
 }
 

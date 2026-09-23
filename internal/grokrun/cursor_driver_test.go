@@ -56,6 +56,25 @@ func TestCursorArgsGrok47StripsPickerPrefix(t *testing.T) {
 	}
 }
 
+func TestCursorArgsOpus55StripsPickerPrefix(t *testing.T) {
+	args := cursorArgs(Options{Model: "cursor-claude-opus-5-5-xhigh"})
+	if got := argValue(args, "--model"); got != "claude-opus-5-5-xhigh" {
+		t.Fatalf("model=%q args=%v", got, args)
+	}
+	args = cursorArgs(Options{Model: " Cursor-Claude-Opus-5-5-High "})
+	if got := argValue(args, "--model"); got != "claude-opus-5-5-high" {
+		t.Fatalf("model=%q args=%v", got, args)
+	}
+	// A longer stem that only shares the prefix must pass through.
+	if got := cursorCLIModel("cursor-claude-opus-5-50-high"); got != "cursor-claude-opus-5-50-high" {
+		t.Fatalf("cursorCLIModel=%q", got)
+	}
+	// Thinking-infix Claude ids are already the catalog name.
+	if got := cursorCLIModel("claude-opus-5-thinking-high"); got != "claude-opus-5-thinking-high" {
+		t.Fatalf("cursorCLIModel=%q", got)
+	}
+}
+
 func TestCursorArgsNonStreamOmitsPartialFlag(t *testing.T) {
 	args := cursorDriver{}.args(argInput{opt: Options{}, format: "json"})
 	if slices.Contains(args, "--stream-partial-output") {

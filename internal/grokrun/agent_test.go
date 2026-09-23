@@ -174,6 +174,9 @@ func TestModelFamilyFollowsCatalog(t *testing.T) {
 	if got := ModelFamily("gemini-3.8-flash-high"); got != "gemini" {
 		t.Fatalf("gemini-3.8-flash-high family=%q", got)
 	}
+	if got := ModelFamily("cursor-claude-opus-5-5-high"); got != "claude" {
+		t.Fatalf("cursor-claude-opus-5-5-high family=%q", got)
+	}
 	if ModelFamilyLabel("gpt") != "GPT" {
 		t.Fatalf("label=%q", ModelFamilyLabel("gpt"))
 	}
@@ -215,6 +218,14 @@ func TestAgentForModel(t *testing.T) {
 		{"claude-fable-5-1-thinking-xhigh", AgentCursor, true},
 		{"claude-fable-5-1-thinking-high", AgentCursor, true},
 		{"claude-opus-5-thinking-high", AgentCursor, true},
+		// Opus 5.5's catalog id is claude-opus-5-5-<effort>, which collides
+		// with a Claude Code effort alias. The picker prefixes cursor- and
+		// the driver strips it. The bare catalog id stays unlisted and still
+		// belongs to cursor-agent; the unsuffixed base is Claude's.
+		{"cursor-claude-opus-5-5-xhigh", AgentCursor, true},
+		{"cursor-claude-opus-5-5-high", AgentCursor, true},
+		{"claude-opus-5-5-high", AgentCursor, true},
+		{"claude-opus-5-5", AgentClaude, true},
 		{"claude-fable-5-thinking-xhigh", AgentCursor, true},
 		// Unlisted Cursor Claude effort ids still belong to cursor-agent.
 		{"claude-opus-5-medium", AgentCursor, true},

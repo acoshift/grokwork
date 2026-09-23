@@ -69,17 +69,24 @@ func (cursorDriver) args(in argInput) []string {
 }
 
 // cursorCLIModel maps a picker name onto cursor-agent's --model value.
-// Grok 4.7's catalog id is grok-4.7-<effort>. The picker keeps the cursor-
-// prefix so that spelling cannot collide with the grok CLI effort alias
-// (grokCLIModel turns grok-4.7-high into -m grok-4.7 --effort high).
-// 4.5 and 4.6 ids still include the prefix and pass through.
+// The picker keeps a cursor- prefix on catalog ids that collide with another
+// CLI's effort alias, and this strips it:
+//   - grok-4.7-<effort> is the grok CLI's grok-4.7 --effort <level>
+//   - claude-opus-5-5-<effort> is Claude Code's claude-opus-5-5 --effort <level>
+//
+// 4.5 and 4.6 grok ids still include the prefix. Claude ids with a thinking
+// infix are already distinct from Claude Code and pass through.
 func cursorCLIModel(name string) string {
 	trimmed := strings.TrimSpace(name)
-	rest, ok := strings.CutPrefix(strings.ToLower(trimmed), "cursor-grok-4.7")
-	if !ok || (rest != "" && !strings.HasPrefix(rest, "-")) {
-		return name
+	lower := strings.ToLower(trimmed)
+	for _, prefix := range []string{"cursor-grok-4.7", "cursor-claude-opus-5-5"} {
+		rest, ok := strings.CutPrefix(lower, prefix)
+		if !ok || (rest != "" && !strings.HasPrefix(rest, "-")) {
+			continue
+		}
+		return strings.TrimPrefix(prefix, "cursor-") + rest
 	}
-	return "grok-4.7" + rest
+	return name
 }
 
 func (cursorDriver) watchActivity(context.Context, string, string, func(string)) {}

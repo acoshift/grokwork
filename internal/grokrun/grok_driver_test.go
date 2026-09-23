@@ -60,6 +60,8 @@ func TestRateModelStripsGrokAndClaudeEffort(t *testing.T) {
 		// Cursor catalog ids keep their effort token.
 		{"cursor-grok-4.7-xhigh", "cursor-grok-4.7-xhigh"},
 		{"cursor-grok-4.6-xhigh", "cursor-grok-4.6-xhigh"},
+		{"cursor-claude-opus-5-5-high", "cursor-claude-opus-5-5-high"},
+		{"cursor-claude-opus-5-5-xhigh", "cursor-claude-opus-5-5-xhigh"},
 		{"claude-fable-5-1-thinking-xhigh", "claude-fable-5-1-thinking-xhigh"},
 		{"glm-5.2-high", "glm-5.2-high"},
 		{"gpt-5.6-sol-medium", "gpt-5.6-sol-medium"},
