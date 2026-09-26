@@ -121,6 +121,12 @@ type Server struct {
 	suggestConflict func(ctx context.Context, cli grokrun.CLI, cwd string, timeout time.Duration, files []string, target, sha string, hooks *grokrun.SuggestStreamHooks) (string, error)
 	// deploysCLI, when set, replaces exec of the deploys binary (errors token mint).
 	deploysCLI deploys.CLIRunner
+	// cloneRepo, when set, replaces git/gh clone for adding a project.
+	// nil → gitworktree.CloneAt.
+	cloneRepo func(ctx context.Context, remote, dest, branch string) error
+	// cloneMu serializes clone-and-register so two posts cannot remove each
+	// other's checkout. It is not held across other config writes.
+	cloneMu sync.Mutex
 	// liveMu guards liveCache. SSE connections share host-wide fingerprints so
 	// an idle tab does not re-walk sessions, history, and boards every 2s.
 	liveMu    sync.Mutex
@@ -1597,16 +1603,18 @@ func (s *Server) projectConfigRedirect(ctx *hime.Context, name, okMsg string, er
 }
 
 func (s *Server) addProject(ctx *hime.Context) error {
-	name := ctx.PostFormValue("name")
-	path := ctx.PostFormValue("path")
-	err := s.cfg.AddProject(name, path)
-	s.auditAction(ctx, audit.ActionConfigAddProject, err, map[string]any{"name": name})
-	if err != nil {
-		return s.configRedirect(ctx, "", err)
+	source := strings.TrimSpace(ctx.PostFormValue("source"))
+	switch source {
+	case "clone":
+		return s.addProjectFromClone(ctx)
+	case "", "path":
+		if source == "" && strings.TrimSpace(ctx.PostFormValue("path")) == "" {
+			return s.projectNewRedirect(ctx, fmt.Errorf("project path is required"))
+		}
+		return s.addProjectFromPath(ctx)
+	default:
+		return s.projectNewRedirect(ctx, fmt.Errorf("unknown project source"))
 	}
-	// Land on the new project's settings page so repos/Discord/Linear can be
-	// configured right away.
-	return s.projectConfigRedirect(ctx, name, fmt.Sprintf("Added project %q", name), nil)
 }
 
 func (s *Server) removeProject(ctx *hime.Context) error {

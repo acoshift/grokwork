@@ -280,6 +280,9 @@ func TestPagesRender(t *testing.T) {
 		{"/config/storage", `id="page-config-storage"`},
 		{"/config/storage", `name="gcsBucket"`},
 		{"/config/projects/new", `id="page-config-project-new"`},
+		{"/config/projects/new", `id="proj-remote"`},
+		{"/config/projects/new", `name="source"`},
+		{"/config/projects/new", "does not change the project's primary branch"},
 		// Per-project settings: four sub-tab pages (Access is the default).
 		{"/config/projects/proj", `id="page-project-config"`},
 		{"/config/projects/proj", `id="project-config-tabs"`},

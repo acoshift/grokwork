@@ -2,9 +2,40 @@
 <div class="config-sub" id="page-config-project-new">
 {{template "config_sub_header" $}}
 <h1>Add project</h1>
-<div class="section card" id="projects">
+<div class="section card" id="project-clone">
+  <h2>Clone a repository</h2>
+  <p class="sub" style="margin-top:0">
+    Clones a full copy into <span class="mono">{{.Config.ReposRoot}}/&lt;name&gt;</span>
+    using this machine's <span class="mono">gh</span> login for GitHub and git or SSH credentials otherwise.
+    The URL is not stored. A fork stays that fork.
+    Branch is only the first checkout; it does not change the project's primary branch.
+  </p>
+  <form class="inline" method="post" action="{{route "config.addProject"}}" style="grid-template-columns: 1fr 1.6fr 0.9fr auto;">
+    {{template "csrf" $}}
+    <input type="hidden" name="source" value="clone">
+    <div>
+      <label for="proj-clone-name">Name</label>
+      <input id="proj-clone-name" type="text" name="name" placeholder="myapp" required autocomplete="off">
+    </div>
+    <div>
+      <label for="proj-remote">Repository</label>
+      <input id="proj-remote" type="text" name="remote" placeholder="owner/repo, https://…, or git@host:path" required autocomplete="off" spellcheck="false">
+    </div>
+    <div>
+      <label for="proj-branch">Branch</label>
+      <input id="proj-branch" type="text" name="branch" placeholder="default" autocomplete="off" spellcheck="false">
+    </div>
+    <button type="submit">Clone and add</button>
+  </form>
+</div>
+<div class="section card" id="project-path">
+  <h2>Use an existing folder</h2>
+  <p class="sub" style="margin-top:0">
+    For a checkout already on this machine, or a directory that holds several repositories.
+  </p>
   <form class="inline" method="post" action="{{route "config.addProject"}}">
     {{template "csrf" $}}
+    <input type="hidden" name="source" value="path">
     <div>
       <label for="proj-name">Name</label>
       <input id="proj-name" type="text" name="name" placeholder="myapp" required autocomplete="off">

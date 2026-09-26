@@ -6,7 +6,8 @@
   <h2>Remove project</h2>
   <p class="sub" style="margin-top:0">
     Removing the project also removes its channel mappings. Existing worktrees,
-    sessions, and history are not touched.
+    sessions, and history are not touched. A repository cloned from the add-project
+    page is left on disk; the path in the header is where it lives.
   </p>
   <form method="post" action="{{route "config.removeProject"}}" data-confirm="Remove {{.ProjectItem.Name}}?" data-confirm-title="Remove project" data-confirm-ok="Remove" data-confirm-danger>
     {{template "csrf" $}}

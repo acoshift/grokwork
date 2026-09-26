@@ -406,7 +406,10 @@ type Snapshot struct {
 	// WorktreeDir is the configured override (empty = default under DataDir).
 	WorktreeDir string
 	// WorktreesRoot is the effective absolute root for new worktrees.
-	WorktreesRoot       string
+	WorktreesRoot string
+	// ReposRoot is where "clone a repository" checkouts are created
+	// (<DataDir>/repos). Empty when DataDir is unset.
+	ReposRoot           string
 	WorktreeIdleTTLDays int // effective value (default 30 when unset)
 	// TerminalSessionTTLDays effective (0 = disabled when unset).
 	TerminalSessionTTLDays int
@@ -1108,6 +1111,26 @@ func (c *Config) SetConcurrencyLimits(maxConcurrentRuns, maxConcurrentRunsUser *
 	return c.saveLocked()
 }
 
+// ReposRoot is the directory "clone a repository" checkouts are created in
+// (<DataDir>/repos/<name>). Empty when DataDir is unset — callers must fail
+// rather than clone into a relative path. Not a config field: a persisted
+// root is another directory the worktree sweeper must be taught to ignore.
+func (c *Config) ReposRoot() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.reposRootLocked()
+}
+
+func (c *Config) reposRootLocked() string {
+	if strings.TrimSpace(c.DataDir) == "" {
+		return ""
+	}
+	return filepath.Join(c.DataDir, "repos")
+}
+
 // WorktreesRoot returns the directory that contains <project>/<unitID> worktrees.
 // Empty WorktreeDir → <DataDir>/worktrees. Relative WorktreeDir is resolved
 // against the config file directory.
@@ -1714,6 +1737,7 @@ func (c *Config) Snapshot() Snapshot {
 		WorktreeIsolation:         c.WorktreeIsolationEnabled(),
 		WorktreeDir:               strings.TrimSpace(c.WorktreeDir),
 		WorktreesRoot:             c.worktreesRootLocked(),
+		ReposRoot:                 c.reposRootLocked(),
 		WorktreeIdleTTLDays:       idleDays,
 		TerminalSessionTTLDays:    termDays,
 		AutoFixCI:                 c.AutoFixCI != nil && *c.AutoFixCI,
