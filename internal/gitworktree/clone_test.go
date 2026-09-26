@@ -198,9 +198,13 @@ func TestCloneWithGitLocal(t *testing.T) {
 }
 
 func TestCloneAtRejectsFlagBranch(t *testing.T) {
-	err := CloneAt(t.Context(), "https://example.com/acme/app", filepath.Join(t.TempDir(), "out"), "-evil")
+	const secret = "ghp_thisIsNotARealToken0123456789"
+	err := CloneAt(t.Context(), "https://example.com/acme/app", filepath.Join(t.TempDir(), "out"), "https://user:"+secret+"@github.com/acme/app")
 	if err == nil || !strings.Contains(err.Error(), "invalid branch") {
 		t.Fatalf("err=%v", err)
+	}
+	if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "https://") {
+		t.Fatalf("branch value leaked: %v", err)
 	}
 }
 

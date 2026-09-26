@@ -240,7 +240,9 @@ func sameSegments(a, b []string) bool {
 func CloneAt(ctx context.Context, remote, dest, branch string) error {
 	branch = strings.TrimSpace(branch)
 	if branch != "" && (!validAdoptSyntax(branch) || !validGitRefName(ctx, branch)) {
-		return fmt.Errorf("invalid branch %q", branch)
+		// Do not include the value. It is copied into the redirect query and
+		// the audit row, and the box is where a credentialed URL gets pasted.
+		return fmt.Errorf("invalid branch")
 	}
 	parsed, err := ParseCloneRemote(remote)
 	if err != nil {
