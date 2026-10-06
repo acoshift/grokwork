@@ -116,14 +116,16 @@ func FetchPullHead(ctx context.Context, cwd string, number int) error {
 	return runGit(ctx, cwd, "fetch", "--no-tags", "origin", fmt.Sprintf("pull/%d/head", number))
 }
 
-// MergeOriginBase merges origin/<base> into the current branch.
+// MergeOriginBase merges refs/remotes/origin/<base> into the current branch.
+// The qualified ref is required: merging the shorthand origin/<base> resolves
+// a local branch of that name when one exists, and fatals when both do.
 // On conflict returns err with "conflict" substring and leaves conflicted state.
 func MergeOriginBase(ctx context.Context, cwd, base string) error {
 	base = strings.TrimSpace(base)
 	if base == "" {
 		return fmt.Errorf("base branch required")
 	}
-	return runGit(ctx, cwd, "merge", "--no-edit", "origin/"+base)
+	return runGit(ctx, cwd, "merge", "--no-edit", qualifyOriginRef("origin/"+base))
 }
 
 // ConflictedFiles lists paths with unmerged index entries.

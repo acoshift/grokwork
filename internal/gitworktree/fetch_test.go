@@ -61,6 +61,48 @@ func TestPrimaryStartRefPreferred(t *testing.T) {
 	}
 }
 
+func TestEnsureUsesRemoteTrackingWhenOriginNameIsAmbiguous(t *testing.T) {
+	repo := initTestRepo(t)
+	ctx := t.Context()
+	base, err := gitOutput(ctx, repo, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base = strings.TrimSpace(base)
+	runGitTest(t, repo, "update-ref", "refs/remotes/origin/main", base)
+	runGitTest(t, repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+	// Move the local checkout and plant refs/heads/origin/main there. A
+	// shorthand start ref is then ambiguous, and falling back to HEAD would
+	// base the worktree on this commit instead of the remote-tracking tip.
+	if err := os.WriteFile(filepath.Join(repo, "later.txt"), []byte("later\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, repo, "add", "later.txt")
+	runGitTest(t, repo, "commit", "-m", "later")
+	later, err := gitOutput(ctx, repo, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	later = strings.TrimSpace(later)
+	if later == base {
+		t.Fatal("fixture did not advance HEAD")
+	}
+	runGitTest(t, repo, "update-ref", "refs/heads/origin/main", later)
+
+	tr, err := Ensure(ctx, repo, t.TempDir(), "app", "1556901710432043090")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := gitOutput(ctx, tr.Path, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(got) != base {
+		t.Fatalf("worktree HEAD=%s want remote tip %s (local HEAD %s)", strings.TrimSpace(got), base, later)
+	}
+}
+
 func TestEnsurePreferredNoHEADFallback(t *testing.T) {
 	repo := initTestRepo(t)
 	ctx := t.Context()

@@ -134,8 +134,28 @@ func commitRefExists(ctx context.Context, repo, ref string) bool {
 	if ref == "" {
 		return false
 	}
-	_, err := gitOutput(ctx, repo, "rev-parse", "--verify", ref+"^{commit}")
+	_, err := gitOutput(ctx, repo, "rev-parse", "--verify", qualifyOriginRef(ref)+"^{commit}")
 	return err == nil
+}
+
+// qualifyOriginRef rewrites a shorthand origin/<name> to refs/remotes/origin/<name>.
+// Git stores a fetch destination or revision "origin/main" as the local branch
+// refs/heads/origin/main, which then makes the shorthand ambiguous and hides
+// the remote-tracking ref. HEAD and already-qualified refs pass through.
+func qualifyOriginRef(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || ref == "HEAD" || strings.HasPrefix(ref, "refs/") {
+		return ref
+	}
+	rest, ok := strings.CutPrefix(ref, "origin/")
+	if !ok || rest == "" {
+		return ref
+	}
+	return "refs/remotes/origin/" + rest
+}
+
+func ambiguousObjectName(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "ambiguous")
 }
 
 // fetchBeforeCreate runs a short-throttle fetch and returns the start ref for

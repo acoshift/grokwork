@@ -87,6 +87,19 @@ func TestDirectShipFFSuccessAndNoop(t *testing.T) {
 		t.Fatalf("remote main=%s want %s", remoteMain, head)
 	}
 
+	// The post-push refresh must update the remote-tracking ref, not create
+	// a local branch named origin/main (that makes the shorthand ambiguous).
+	if _, err := gitOutput(ctx, main, "rev-parse", "--verify", "--quiet", "refs/heads/origin/main"); err == nil {
+		t.Fatal("direct ship created local branch refs/heads/origin/main")
+	}
+	tracked, err := gitOutput(ctx, main, "rev-parse", "refs/remotes/origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(tracked) != head {
+		t.Fatalf("refs/remotes/origin/main=%s want %s", strings.TrimSpace(tracked), head)
+	}
+
 	// Second ship is noop.
 	res2, err := DirectShipFF(ctx, main, worktree, branch, "main")
 	if err != nil {
@@ -215,6 +228,55 @@ func TestDirectShipFFCatchUpMergesThenShips(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(worktree, name)); err != nil {
 			t.Fatalf("missing %s after catch-up: %v", name, err)
 		}
+	}
+}
+
+func TestDirectShipFFCatchUpMergesRemoteWhenOriginNameIsAmbiguous(t *testing.T) {
+	ctx := t.Context()
+	remote, main, worktree, branch := setupDirectShipFixture(t)
+
+	oldMain, err := gitOutput(ctx, main, "rev-parse", "refs/remotes/origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldMain = strings.TrimSpace(oldMain)
+
+	if err := os.WriteFile(filepath.Join(worktree, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, worktree, "add", "a.txt")
+	runGitTest(t, worktree, "commit", "-m", "a")
+
+	advanceRemoteMain(t, remote, "b.txt", "b\n", "b")
+
+	// A local branch literally named origin/main, pointing at the old tip.
+	// Shorthand merge/rev-parse then fatals or reads this ref instead of
+	// refs/remotes/origin/main.
+	runGitTest(t, main, "update-ref", "refs/heads/origin/main", oldMain)
+
+	res, err := DirectShipFFCatchUp(ctx, main, worktree, branch, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Noop {
+		t.Fatalf("res=%+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(worktree, "b.txt")); err != nil {
+		t.Fatalf("catch-up did not merge remote main: %v", err)
+	}
+	shadow, err := gitOutput(ctx, main, "rev-parse", "refs/heads/origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(shadow) != oldMain {
+		t.Fatalf("local origin/main moved: %s want %s", strings.TrimSpace(shadow), oldMain)
+	}
+	tracked, err := gitOutput(ctx, main, "rev-parse", "refs/remotes/origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(tracked) != res.ToSHA {
+		t.Fatalf("refs/remotes/origin/main=%s want shipped %s", strings.TrimSpace(tracked), res.ToSHA)
 	}
 }
 

@@ -118,7 +118,10 @@ func DirectShipFF(ctx context.Context, mainRepo, worktreePath, sessionBranch, pr
 	// Best-effort fetch for fresher origin/primary and local tracking refs.
 	_ = runGit(ctx, mainRepo, "fetch", "origin", "--prune")
 
-	remoteRef := "origin/" + primary
+	// Qualified remote-tracking ref. "origin/<primary>" is a local branch name
+	// once refs/heads/origin/<primary> exists, so rev-parse would read that
+	// instead of what origin actually has.
+	remoteRef := qualifyOriginRef("origin/" + primary)
 	fromSHA, fromErr := gitOutput(ctx, mainRepo, "rev-parse", "--verify", remoteRef+"^{commit}")
 	if fromErr == nil {
 		out.FromSHA = strings.TrimSpace(fromSHA)
@@ -161,7 +164,9 @@ func DirectShipFF(ctx context.Context, mainRepo, worktreePath, sessionBranch, pr
 	if err := runGit(ctx, mainRepo, "push", "origin", sessionHead+":"+dest); err != nil {
 		return out, fmt.Errorf("push to %s rejected (non-fast-forward or protected): %w", primary, err)
 	}
-	// Refresh tracking ref best-effort.
+	// Refresh the remote-tracking ref. The destination must be
+	// refs/remotes/origin/<primary>; a shorthand destination creates
+	// refs/heads/origin/<primary> and makes "origin/<primary>" ambiguous.
 	_ = runGit(ctx, mainRepo, "fetch", "origin", primary+":"+remoteRef)
 	NoteFetched(mainRepo)
 	return out, nil

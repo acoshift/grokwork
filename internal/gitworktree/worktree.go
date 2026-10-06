@@ -420,11 +420,17 @@ func EnsureWith(ctx context.Context, repo, worktreesRoot, project, unitID string
 				"configured primary branch %q not found as %s (fetch origin or fix projects.*.primaryBranch)",
 				preferred, start)
 		}
-		err = runGit(ctx, repo, "worktree", "add", "-b", branch, path, start)
+		// Qualify origin/<name> so a local branch refs/heads/origin/<name> cannot
+		// make worktree add fatal with "ambiguous object name".
+		gitStart := qualifyOriginRef(start)
+		err = runGit(ctx, repo, "worktree", "add", "-b", branch, path, gitStart)
 		if err != nil {
-			// Fallback to HEAD if origin ref vanished mid-flight — only for heuristic start.
-			if preferred == "" && start != "HEAD" {
-				log.Printf("gitworktree: start %s failed (%v); retrying with HEAD", start, err)
+			// Fallback to HEAD if the origin ref vanished mid-flight — only for
+			// heuristic start. An ambiguous name is not "vanished": HEAD is the
+			// stale local checkout, and starting there is how a direct ship
+			// then fails to fast-forward primary.
+			if preferred == "" && start != "HEAD" && !ambiguousObjectName(err) {
+				log.Printf("gitworktree: start %s failed (%v); retrying with HEAD", gitStart, err)
 				err = runGit(ctx, repo, "worktree", "add", "-b", branch, path, "HEAD")
 			}
 		}
