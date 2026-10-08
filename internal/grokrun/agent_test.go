@@ -177,6 +177,12 @@ func TestModelFamilyFollowsCatalog(t *testing.T) {
 	if got := ModelFamily("cursor-claude-opus-5-5-high"); got != "claude" {
 		t.Fatalf("cursor-claude-opus-5-5-high family=%q", got)
 	}
+	if got := ModelFamily("cursor-claude-sonnet-5-5-high"); got != "claude" {
+		t.Fatalf("cursor-claude-sonnet-5-5-high family=%q", got)
+	}
+	if got := ModelFamily("claude-haiku-5-5-thinking-high"); got != "claude" {
+		t.Fatalf("claude-haiku-5-5-thinking-high family=%q", got)
+	}
 	if ModelFamilyLabel("gpt") != "GPT" {
 		t.Fatalf("label=%q", ModelFamilyLabel("gpt"))
 	}
@@ -207,8 +213,14 @@ func TestAgentForModel(t *testing.T) {
 		{"claude-fable-5-1", AgentClaude, true},
 		{"claude-fable-5", AgentClaude, true},
 		{"claude-opus-4-8", AgentClaude, true},
+		{"claude-opus-5-5-xhigh", AgentClaude, true},
+		{"claude-opus-5-5-high", AgentClaude, true},
 		{"claude-opus-5-high", AgentClaude, true},
 		{"claude-opus-5", AgentClaude, true},
+		{"claude-sonnet-5-5-high", AgentClaude, true},
+		{"claude-sonnet-5-5", AgentClaude, true},
+		{"claude-haiku-5-5-high", AgentClaude, true},
+		{"claude-haiku-5-5", AgentClaude, true},
 		{"  SONNET  ", AgentClaude, true},
 		// Third-party hosts prefix the vendor.
 		{"us.anthropic.claude-sonnet-4-5-20250929-v1:0", AgentClaude, true},
@@ -218,14 +230,19 @@ func TestAgentForModel(t *testing.T) {
 		{"claude-fable-5-1-thinking-xhigh", AgentCursor, true},
 		{"claude-fable-5-1-thinking-high", AgentCursor, true},
 		{"claude-opus-5-thinking-high", AgentCursor, true},
-		// Opus 5.5's catalog id is claude-opus-5-5-<effort>, which collides
-		// with a Claude Code effort alias. The picker prefixes cursor- and
-		// the driver strips it. The bare catalog id stays unlisted and still
-		// belongs to cursor-agent; the unsuffixed base is Claude's.
+		{"claude-haiku-5-5-thinking-xhigh", AgentCursor, true},
+		{"claude-haiku-5-5-thinking-high", AgentCursor, true},
+		// Opus 5.5 and Sonnet 5.5 catalog ids are claude-*-5-5-<effort>, which
+		// collide with Claude Code effort aliases. The picker prefixes cursor-
+		// and the driver strips it. Listed -high/-xhigh belong to Claude Code.
+		// An unlisted effort (medium) still belongs to cursor-agent.
 		{"cursor-claude-opus-5-5-xhigh", AgentCursor, true},
 		{"cursor-claude-opus-5-5-high", AgentCursor, true},
-		{"claude-opus-5-5-high", AgentCursor, true},
-		{"claude-opus-5-5", AgentClaude, true},
+		{"cursor-claude-sonnet-5-5-xhigh", AgentCursor, true},
+		{"cursor-claude-sonnet-5-5-high", AgentCursor, true},
+		{"claude-opus-5-5-medium", AgentCursor, true},
+		{"claude-sonnet-5-5-medium", AgentCursor, true},
+		{"claude-haiku-5-5-medium", AgentCursor, true},
 		{"claude-fable-5-thinking-xhigh", AgentCursor, true},
 		// Unlisted Cursor Claude effort ids still belong to cursor-agent.
 		{"claude-opus-5-medium", AgentCursor, true},

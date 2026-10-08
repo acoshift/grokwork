@@ -36,9 +36,13 @@ const anthropicFixture = `## Model pricing
 | Claude Mythos 5.1 (limited availability) | $10 / MTok | $12.50 / MTok | $20 / MTok | $0.25 / MTok | $50 / MTok |
 | Claude Fable 5 | $10 / MTok | $12.50 / MTok | $20 / MTok | $1 / MTok | $50 / MTok |
 | Claude Mythos 5 (limited availability) | $10 / MTok | $12.50 / MTok | $20 / MTok | $1 / MTok | $50 / MTok |
+| Claude Opus 5.5 | $4 / MTok | $5 / MTok | $8 / MTok | $0.20 / MTok | $20 / MTok |
 | Claude Opus 5 | $5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok |
 | Claude Opus 4.8 | $5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok |
+| Claude Sonnet 5.5 | $2 / MTok | $2.50 / MTok | $4 / MTok | $0.10 / MTok | $10 / MTok |
 | Claude Sonnet 5 | $2 / MTok | $2.50 / MTok | $4 / MTok | $0.20 / MTok | $10 / MTok |
+| Claude Haiku 5.5 (for prompts up to 100,000 tokens) | $0.10 / MTok | $0.125 / MTok | $0.20 / MTok | $0.01 / MTok | $0.50 / MTok |
+| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $0.50 / MTok | $0.625 / MTok | $1 / MTok | $0.05 / MTok | $2.50 / MTok |
 | Claude Haiku 4.5 | $1 / MTok | $1.25 / MTok | $2 / MTok | $0.10 / MTok | $5 / MTok |
 | Claude Opus 4.1 (retired, except on Bedrock) | $15 / MTok | $18.75 / MTok | $30 / MTok | $1.50 / MTok | $75 / MTok |
 
@@ -66,7 +70,9 @@ const cursorFixture = `## Cursor Models
 | [Claude Fable 5.1](https://www.anthropic.com/claude) | Anthropic | $10 | $12.5 | $0.25 | $50 | - |
 | [Claude Opus 5.5](https://www.anthropic.com/claude/opus) | Anthropic | $4 | $5 | $0.2 | $20 | - |
 | [Claude Opus 5](https://www.anthropic.com/claude/opus) | Anthropic | $5 | $6.25 | $0.5 | $25 | Requires Max Mode |
+| [Claude Sonnet 5.5](https://www.anthropic.com/claude/sonnet) | Anthropic | $2 | $2.5 | $0.1 | $10 | - |
 | [Claude Sonnet 5](https://www.anthropic.com/claude/sonnet) | Anthropic | $2 | $2.5 | $0.2 | $10 | - |
+| [Claude Haiku 5.5](https://www.anthropic.com/claude/haiku) | Anthropic | $0.1 | $0.125 | $0.01 | $0.5 | - |
 | [Claude Fable 5](https://www.anthropic.com/claude) | Anthropic | $10 | $12.5 | $1 | $50 | - |
 | [GPT-5.6 Sol](https://openai.com/) | OpenAI | $4 | $5 | $0.4 | $20 | - |
 | [Gemini 3.7 Flash](https://ai.google.dev/) | Google | $0.75 | - | $0.075 | $3.5 | - |
@@ -119,10 +125,29 @@ func TestParseXAIRatesUsesStandardContextNotLong(t *testing.T) {
 
 func TestParseAnthropicRates(t *testing.T) {
 	got := parseAnthropicRates([]byte(anthropicFixture))
+	assertRate(t, got["claude-opus-5-5"], 4, 20, 0.2, 5)
 	assertRate(t, got["claude-opus-5"], 5, 25, 0.5, 6.25)
 	assertRate(t, got["claude-opus-4-8"], 5, 25, 0.5, 6.25)
+	assertRate(t, got["claude-sonnet-5-5"], 2, 10, 0.1, 2.5)
 	assertRate(t, got["claude-sonnet-5"], 2, 10, 0.2, 2.5)
+	// The over-100k Haiku row must not replace the standard tier.
+	assertRate(t, got["claude-haiku-5-5"], 0.1, 0.5, 0.01, 0.125)
 	assertRate(t, got["claude-haiku-4-5"], 1, 5, 0.1, 1.25)
+	if r, ok := (OfficialRateCatalog{rates: got}).RateFor("claude-opus-5-5-xhigh"); !ok {
+		t.Fatal("RateFor must peel claude-opus-5-5-xhigh to claude-opus-5-5")
+	} else {
+		assertRate(t, r, 4, 20, 0.2, 5)
+	}
+	if r, ok := (OfficialRateCatalog{rates: got}).RateFor("claude-sonnet-5-5-high"); !ok {
+		t.Fatal("RateFor must peel claude-sonnet-5-5-high to claude-sonnet-5-5")
+	} else {
+		assertRate(t, r, 2, 10, 0.1, 2.5)
+	}
+	if r, ok := (OfficialRateCatalog{rates: got}).RateFor("claude-haiku-5-5-high"); !ok {
+		t.Fatal("RateFor must peel claude-haiku-5-5-high to claude-haiku-5-5")
+	} else {
+		assertRate(t, r, 0.1, 0.5, 0.01, 0.125)
+	}
 	assertRate(t, got["claude-fable-5-1"], 10, 50, 0.25, 12.5)
 	if r, ok := (OfficialRateCatalog{rates: got}).RateFor("claude-fable-5-1-xhigh"); !ok {
 		t.Fatal("RateFor must peel claude-fable-5-1-xhigh to claude-fable-5-1")
@@ -162,6 +187,19 @@ func TestParseCursorRatesAliasesPickerNames(t *testing.T) {
 	}
 	if _, ok := got["claude-opus-5-5-high"]; ok {
 		t.Fatal("opus 5.5 rates must use the cursor- picker prefix, not the Claude Code effort alias")
+	}
+	assertRate(t, got["cursor-claude-sonnet-5-5-high"], 2, 10, 0.1, 2.5)
+	assertRate(t, got["cursor-claude-sonnet-5-5-xhigh"], 2, 10, 0.1, 2.5)
+	if _, ok := got["claude-sonnet-5-5-thinking-high"]; ok {
+		t.Fatal("sonnet 5.5 has no thinking infix; rates must key on the picker id")
+	}
+	if _, ok := got["claude-sonnet-5-5-high"]; ok {
+		t.Fatal("sonnet 5.5 rates must use the cursor- picker prefix, not the Claude Code effort alias")
+	}
+	assertRate(t, got["claude-haiku-5-5-thinking-high"], 0.1, 0.5, 0.01, 0.125)
+	assertRate(t, got["claude-haiku-5-5-thinking-xhigh"], 0.1, 0.5, 0.01, 0.125)
+	if _, ok := got["claude-haiku-5-5"]; ok {
+		t.Fatal("cursor haiku 5.5 must key on the thinking id, not the Claude Code base")
 	}
 	assertRate(t, got["claude-fable-5-thinking-high"], 10, 50, 1, 12.5)
 	assertRate(t, got["claude-fable-5-thinking-xhigh"], 10, 50, 1, 12.5)

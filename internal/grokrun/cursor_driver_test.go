@@ -75,6 +75,23 @@ func TestCursorArgsOpus55StripsPickerPrefix(t *testing.T) {
 	}
 }
 
+func TestCursorArgsSonnet55StripsPickerPrefix(t *testing.T) {
+	args := cursorArgs(Options{Model: "cursor-claude-sonnet-5-5-xhigh"})
+	if got := argValue(args, "--model"); got != "claude-sonnet-5-5-xhigh" {
+		t.Fatalf("model=%q args=%v", got, args)
+	}
+	args = cursorArgs(Options{Model: " Cursor-Claude-Sonnet-5-5-High "})
+	if got := argValue(args, "--model"); got != "claude-sonnet-5-5-high" {
+		t.Fatalf("model=%q args=%v", got, args)
+	}
+	if got := cursorCLIModel("cursor-claude-sonnet-5-50-high"); got != "cursor-claude-sonnet-5-50-high" {
+		t.Fatalf("cursorCLIModel=%q", got)
+	}
+	if got := cursorCLIModel("claude-haiku-5-5-thinking-high"); got != "claude-haiku-5-5-thinking-high" {
+		t.Fatalf("cursorCLIModel=%q", got)
+	}
+}
+
 func TestCursorArgsNonStreamOmitsPartialFlag(t *testing.T) {
 	args := cursorDriver{}.args(argInput{opt: Options{}, format: "json"})
 	if slices.Contains(args, "--stream-partial-output") {

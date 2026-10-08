@@ -73,13 +73,14 @@ func (cursorDriver) args(in argInput) []string {
 // CLI's effort alias, and this strips it:
 //   - grok-4.7-<effort> is the grok CLI's grok-4.7 --effort <level>
 //   - claude-opus-5-5-<effort> is Claude Code's claude-opus-5-5 --effort <level>
+//   - claude-sonnet-5-5-<effort> is Claude Code's claude-sonnet-5-5 --effort <level>
 //
 // 4.5 and 4.6 grok ids still include the prefix. Claude ids with a thinking
 // infix are already distinct from Claude Code and pass through.
 func cursorCLIModel(name string) string {
 	trimmed := strings.TrimSpace(name)
 	lower := strings.ToLower(trimmed)
-	for _, prefix := range []string{"cursor-grok-4.7", "cursor-claude-opus-5-5"} {
+	for _, prefix := range []string{"cursor-grok-4.7", "cursor-claude-opus-5-5", "cursor-claude-sonnet-5-5"} {
 		rest, ok := strings.CutPrefix(lower, prefix)
 		if !ok || (rest != "" && !strings.HasPrefix(rest, "-")) {
 			continue

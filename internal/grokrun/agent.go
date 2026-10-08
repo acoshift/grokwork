@@ -147,12 +147,18 @@ func ModelOptions() []ModelOption {
 		// on the unsuffixed base. Cursor thinking ids are listed below.
 		{Value: "claude-fable-5-1-xhigh", Label: "claude-fable-5-1-xhigh", Agent: AgentClaude},
 		{Value: "claude-fable-5-1-high", Label: "claude-fable-5-1-high", Agent: AgentClaude},
+		{Value: "claude-opus-5-5-xhigh", Label: "claude-opus-5-5-xhigh", Agent: AgentClaude},
+		{Value: "claude-opus-5-5-high", Label: "claude-opus-5-5-high", Agent: AgentClaude},
 		{Value: "claude-opus-5-xhigh", Label: "claude-opus-5-xhigh", Agent: AgentClaude},
 		{Value: "claude-opus-5-high", Label: "claude-opus-5-high", Agent: AgentClaude},
 		{Value: "claude-opus-4-8-xhigh", Label: "claude-opus-4-8-xhigh", Agent: AgentClaude},
 		{Value: "claude-opus-4-8-high", Label: "claude-opus-4-8-high", Agent: AgentClaude},
+		{Value: "claude-sonnet-5-5-xhigh", Label: "claude-sonnet-5-5-xhigh", Agent: AgentClaude},
+		{Value: "claude-sonnet-5-5-high", Label: "claude-sonnet-5-5-high", Agent: AgentClaude},
 		{Value: "claude-sonnet-5-xhigh", Label: "claude-sonnet-5-xhigh", Agent: AgentClaude},
 		{Value: "claude-sonnet-5-high", Label: "claude-sonnet-5-high", Agent: AgentClaude},
+		{Value: "claude-haiku-5-5-xhigh", Label: "claude-haiku-5-5-xhigh", Agent: AgentClaude},
+		{Value: "claude-haiku-5-5-high", Label: "claude-haiku-5-5-high", Agent: AgentClaude},
 		{Value: "claude-haiku-4-5-xhigh", Label: "claude-haiku-4-5-xhigh", Agent: AgentClaude},
 		{Value: "claude-haiku-4-5-high", Label: "claude-haiku-4-5-high", Agent: AgentClaude},
 		{Value: "claude-fable-5-xhigh", Label: "claude-fable-5-xhigh", Agent: AgentClaude},
@@ -162,13 +168,18 @@ func ModelOptions() []ModelOption {
 		// distinct from the Claude Code names above — picking one is how a start
 		// task runs Claude-quality models on cursor-agent.
 		//
-		// cursor-claude-opus-5-5-* is the picker id. The catalog id is
-		// claude-opus-5-5-<effort> (thinking is always on, so there is no
-		// thinking infix). That spelling is also what claudeCLIModel would
-		// turn into --model claude-opus-5-5 --effort <level>. The prefix keeps
-		// the two apart; cursorCLIModel strips it.
+		// cursor-claude-opus-5-5-* and cursor-claude-sonnet-5-5-* are picker
+		// ids. The catalog ids are claude-opus-5-5-<effort> and
+		// claude-sonnet-5-5-<effort> (no thinking infix). Those spellings are
+		// also what claudeCLIModel would turn into --model <base> --effort
+		// <level>. The prefix keeps the two apart; cursorCLIModel strips it.
+		// Haiku 5.5's thinking ids already differ from the Claude Code alias.
 		{Value: "cursor-claude-opus-5-5-xhigh", Label: "cursor-claude-opus-5-5-xhigh", Agent: AgentCursor},
 		{Value: "cursor-claude-opus-5-5-high", Label: "cursor-claude-opus-5-5-high", Agent: AgentCursor},
+		{Value: "cursor-claude-sonnet-5-5-xhigh", Label: "cursor-claude-sonnet-5-5-xhigh", Agent: AgentCursor},
+		{Value: "cursor-claude-sonnet-5-5-high", Label: "cursor-claude-sonnet-5-5-high", Agent: AgentCursor},
+		{Value: "claude-haiku-5-5-thinking-xhigh", Label: "claude-haiku-5-5-thinking-xhigh", Agent: AgentCursor},
+		{Value: "claude-haiku-5-5-thinking-high", Label: "claude-haiku-5-5-thinking-high", Agent: AgentCursor},
 		{Value: "composer-2.5", Label: "composer-2.5", Agent: AgentCursor},
 		{Value: "composer-2.5-fast", Label: "composer-2.5-fast", Agent: AgentCursor},
 		{Value: "claude-fable-5-1-thinking-xhigh", Label: "claude-fable-5-1-thinking-xhigh", Agent: AgentCursor},

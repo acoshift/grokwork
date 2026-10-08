@@ -181,6 +181,10 @@ func TestClaudeCLIModel(t *testing.T) {
 		{"claude-fable-5-1", "claude-fable-5-1", ""},
 		{"claude-haiku-4-5", "claude-haiku-4-5", ""},
 		{"claude-haiku-4-5-high", "claude-haiku-4-5", "high"},
+		{"claude-opus-5-5-high", "claude-opus-5-5", "high"},
+		{"claude-sonnet-5-5-xhigh", "claude-sonnet-5-5", "xhigh"},
+		{"claude-haiku-5-5-high", "claude-haiku-5-5", "high"},
+		{"claude-haiku-5-5-thinking-high", "claude-haiku-5-5-thinking-high", ""},
 		// Cursor thinking ids must not be rewritten if they reach this helper.
 		{"claude-fable-5-1-thinking-high", "claude-fable-5-1-thinking-high", ""},
 		{"claude-fable-5-1-thinking-xhigh", "claude-fable-5-1-thinking-xhigh", ""},
