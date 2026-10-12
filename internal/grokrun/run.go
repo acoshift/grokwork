@@ -36,6 +36,10 @@ type Options struct {
 	// treats an empty --tools value as unrestricted, so we rewrite it to a
 	// single non-agentic built-in and deny MCP meta-tools (see toolsOffAllowlist).
 	Tools *string
+	// DisallowedTools is a comma-separated built-in deny list. The grok driver
+	// passes it as --disallowed-tools. Claude and cursor ignore it: claude
+	// tools-off is an empty --tools, and cursor has no tool deny flag.
+	DisallowedTools string
 	// AllowMCP, when true with a non-empty Tools allowlist, omits --deny MCPTool
 	// so Grok can attach user/repo MCP servers (including grokwork). Trusted
 	// projects only: repo .grok/config.toml MCP is otherwise RCE on investigate.
@@ -774,7 +778,13 @@ func SummarizeTitle(ctx context.Context, cli CLI, taskPrompt, cwd string, timeou
 		Model:            cli.Model,
 		MaxTurns:         1,
 		Timeout:          timeout,
-		Tools:            &noTools,
+		Tools: &noTools,
+		// The tools-off pin is ask_user_question, and this call has one turn.
+		// The model spends that turn asking which title to use; the CLI answers
+		// that nobody is there and exits before any title text. Denying the pin
+		// leaves nothing to call, so the title comes back in the same turn.
+		// The pin stays: an empty --tools is unrestricted.
+		DisallowedTools:  "ask_user_question",
 		NoSubagents:      true,
 		NoPlan:           true,
 		NoMemory:         true,

@@ -88,6 +88,29 @@ func TestGrokArgsAllowMCPOmitsDeny(t *testing.T) {
 	}
 }
 
+func TestGrokArgsTitleDisallowsAskUser(t *testing.T) {
+	empty := ""
+	args := grokArgs(Options{
+		Tools:           &empty,
+		DisallowedTools: "ask_user_question",
+		MaxTurns:        1,
+	})
+	if argValue(args, "--tools") != toolsOffAllowlist {
+		t.Fatalf("tools-off pin: %v", args)
+	}
+	if got := argValue(args, "--disallowed-tools"); got != "ask_user_question" {
+		t.Fatalf("--disallowed-tools=%q in %v", got, args)
+	}
+}
+
+func TestGrokArgsToolsOffKeepsAskUser(t *testing.T) {
+	empty := ""
+	args := grokArgs(Options{Tools: &empty, MaxTurns: 1})
+	if slices.Contains(args, "--disallowed-tools") {
+		t.Fatalf("tools-off must keep the pin unless DisallowedTools is set: %v", args)
+	}
+}
+
 func TestGrokArgsInvestigateStillDeniesMCP(t *testing.T) {
 	tools := "read_file,grep"
 	args := grokArgs(Options{Tools: &tools, MaxTurns: 1})

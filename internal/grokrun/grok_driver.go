@@ -49,6 +49,9 @@ func (grokDriver) args(in argInput) []string {
 		args = append(args, "-s", in.runSessionID)
 	}
 	args = append(args, toolFlags(opt.Tools, opt.AllowMCP)...)
+	if deny := strings.TrimSpace(opt.DisallowedTools); deny != "" {
+		args = append(args, "--disallowed-tools", deny)
+	}
 	if opt.NoSubagents {
 		args = append(args, "--no-subagents")
 	}
