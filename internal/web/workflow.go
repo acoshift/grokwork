@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -20,6 +21,28 @@ import (
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
+
+// statusError is an HTTP failure that has not been written yet.
+// Context.Error writes the body and returns nil, so a helper that returns
+// it looks successful and the caller renders a second response
+// ("superfluous response.WriteHeader").
+type statusError struct {
+	code int
+	msg  string
+}
+
+func (e statusError) Error() string { return e.msg }
+
+func httpStatus(code int, msg string) error {
+	return statusError{code: code, msg: msg}
+}
+
+func writeStatus(ctx *hime.Context, err error) error {
+	if se, ok := errors.AsType[statusError](err); ok {
+		return ctx.Status(se.code).Error(se.msg)
+	}
+	return ctx.Status(http.StatusInternalServerError).Error(err.Error())
+}
 
 // ghRun returns the injectable Runner (tests set s.ghRunner).
 func (s *Server) ghRun() ghpr.Runner {
@@ -507,7 +530,7 @@ func (s *Server) linearDetail(ctx *hime.Context) error {
 func (s *Server) prDetail(ctx *hime.Context) error {
 	d, err := s.prDetailPageData(ctx, true)
 	if err != nil {
-		return err
+		return writeStatus(ctx, err)
 	}
 	return s.viewPage(ctx, "pr_detail", d)
 }
@@ -518,7 +541,7 @@ func (s *Server) prDetail(ctx *hime.Context) error {
 func (s *Server) partialPRGates(ctx *hime.Context) error {
 	d, err := s.prDetailPageData(ctx, false)
 	if err != nil {
-		return err
+		return writeStatus(ctx, err)
 	}
 	return s.viewFragment(ctx, "pr_detail", "pr_gates", d)
 }
@@ -532,12 +555,12 @@ func (s *Server) prDetailPageData(ctx *hime.Context, full bool) (pageData, error
 	nStr := strings.TrimSpace(ctx.PathValue("n"))
 	n, err := strconv.Atoi(nStr)
 	if err != nil || n <= 0 || owner == "" || repo == "" {
-		return pageData{}, ctx.Status(http.StatusBadRequest).Error("invalid PR path")
+		return pageData{}, httpStatus(http.StatusBadRequest, "invalid PR path")
 	}
 	project := strings.TrimSpace(ctx.FormValue("project"))
 	project, ref, cwd, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
-		return pageData{}, ctx.Status(http.StatusForbidden).Error(err.Error())
+		return pageData{}, httpStatus(http.StatusForbidden, err.Error())
 	}
 	owner, repo = ref.Owner, ref.Repo
 	selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
