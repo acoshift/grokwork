@@ -55,7 +55,8 @@
       {{else}}
       <span class="m-row-t mono">{{.ThreadID}}</span>
       {{end}}
-      <span class="m-row-s">{{if .Goal}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{if .Label}}{{.Label}} · {{end}}{{if .PRNumber}}PR #{{.PRNumber}}{{if .PRState}} {{.PRState}}{{end}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{relativeAge .UpdatedAt}}{{end}}</span>
+      <span class="m-row-s">{{if .Goal}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{if .Label}}{{.Label}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{relativeAge .UpdatedAt}}{{end}}</span>
+      {{if .PRs}}<span class="m-row-s session-prs">{{template "session_pr_chips" .}}</span>{{end}}
     </span>
     {{if .Running}}<span class="badge live">running</span>{{end}}
   </a>
@@ -81,21 +82,7 @@
       <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}{{if or $.Project .Project}}?project={{urlquery (or $.Project .Project)}}{{end}}">{{.ThreadID}}</a></td>
       {{if not $.Project}}<td>{{if .Project}}<a href="/projects/{{.Project}}">{{.Project}}</a>{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
       <td>{{template "session_row_state" .}}</td>
-      <td>
-        {{if .PRNumber}}
-          {{if and .PROwner .PRRepo}}
-          <a class="badge{{if eq .PRState "MERGED"}} status-merged{{else if eq .PRState "CLOSED"}} status-cancelled{{else if eq .PRState "OPEN"}} live{{end}}"
-             href="/prs/{{.PROwner}}/{{.PRRepo}}/{{.PRNumber}}{{if or $.Project .Project}}?project={{urlquery (or $.Project .Project)}}{{end}}">#{{.PRNumber}}{{if .PRState}} · {{.PRState}}{{end}}</a>
-          {{else if .PRURL}}
-          <a class="badge{{if eq .PRState "MERGED"}} status-merged{{else if eq .PRState "CLOSED"}} status-cancelled{{else if eq .PRState "OPEN"}} live{{end}}"
-             href="{{.PRURL}}" target="_blank" rel="noopener">#{{.PRNumber}}{{if .PRState}} · {{.PRState}}{{end}} ↗</a>
-          {{else}}
-          <span class="badge">#{{.PRNumber}}{{if .PRState}} · {{.PRState}}{{end}}</span>
-          {{end}}
-        {{else}}
-        <span class="muted">—</span>
-        {{end}}
-      </td>
+      <td class="session-prs">{{if .PRs}}{{template "session_pr_links" .}}{{else}}<span class="muted">—</span>{{end}}</td>
       <td class="mono">{{.TurnCount}}</td>
       <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
       <td class="mono muted">{{if .UpdatedAt}}{{relativeAge .UpdatedAt}}{{else}}—{{end}}</td>

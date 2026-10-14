@@ -2679,7 +2679,7 @@ func mergeSessionRows(hist []history.Summary, sessions []sessionstore.Listed) []
 	return hist
 }
 
-// applySessionOverlay copies lifecycle, ownership, and primary PR fields from a
+// applySessionOverlay copies lifecycle, ownership, and tracked PRs from a
 // session entry onto a list row (history may already have turns / project).
 func applySessionOverlay(row *history.Summary, se sessionstore.Listed) {
 	if row == nil {
@@ -2712,6 +2712,7 @@ func applySessionOverlay(row *history.Summary, se sessionstore.Listed) {
 	row.AllPRsTerminal = e.AllPRsTerminal()
 	row.OwnerID = e.OwnerID
 	row.CoOwnerIDs = slices.Clone(e.CoOwnerIDs)
+	row.PRs = summaryPRs(e.PRs)
 	if pr, ok := e.PrimaryPR(); ok {
 		row.PRNumber = pr.Number
 		row.PRState = strings.ToUpper(strings.TrimSpace(pr.State))
@@ -2720,4 +2721,31 @@ func applySessionOverlay(row *history.Summary, se sessionstore.Listed) {
 		row.PRURL = pr.URL
 		row.PRTitle = pr.Title
 	}
+}
+
+// summaryPRs copies tracked PRs onto a list row. Display state folds an open
+// draft into DRAFT. Checks-failing is reported only while the PR is open.
+func summaryPRs(prs []sessionstore.TrackedPR) []history.SummaryPR {
+	if len(prs) == 0 {
+		return nil
+	}
+	out := make([]history.SummaryPR, 0, len(prs))
+	for _, p := range prs {
+		if p.Number <= 0 {
+			continue
+		}
+		state := strings.ToUpper(strings.TrimSpace(p.State))
+		if p.IsDraft && (state == "" || state == "OPEN") {
+			state = "DRAFT"
+		}
+		out = append(out, history.SummaryPR{
+			Number:  p.Number,
+			State:   state,
+			Owner:   p.Owner,
+			Repo:    p.Repo,
+			URL:     p.URL,
+			Failing: ghpr.ChecksFailing(p.Checks) && !ghpr.IsTerminal(p.State),
+		})
+	}
+	return out
 }

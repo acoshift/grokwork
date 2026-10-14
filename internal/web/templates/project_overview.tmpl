@@ -100,7 +100,8 @@
         {{else}}
         <span class="m-row-t mono">{{.ThreadID}}</span>
         {{end}}
-        <span class="m-row-s">{{if .Goal}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if .Label}}{{.Label}} · {{end}}{{if .PRNumber}}PR #{{.PRNumber}}{{if .PRState}} {{.PRState}}{{end}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{relativeAge .UpdatedAt}}{{end}}</span>
+        <span class="m-row-s">{{if .Goal}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if .Label}}{{.Label}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{relativeAge .UpdatedAt}}{{end}}</span>
+        {{if .PRs}}<span class="m-row-s session-prs">{{template "session_pr_chips" .}}</span>{{end}}
       </span>
     </a>
     {{end}}
@@ -123,16 +124,7 @@
       <tr>
         <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}">{{.ThreadID}}</a></td>
         <td>{{template "session_row_state" .}}</td>
-        <td>
-          {{if and .PRNumber .PROwner .PRRepo}}
-          <a class="badge{{if eq .PRState "MERGED"}} status-merged{{else if eq .PRState "CLOSED"}} status-cancelled{{else if eq .PRState "OPEN"}} live{{end}}"
-             href="/prs/{{.PROwner}}/{{.PRRepo}}/{{.PRNumber}}?project={{urlquery $.Project}}">#{{.PRNumber}}{{if .PRState}} · {{.PRState}}{{end}}</a>
-          {{else if .PRNumber}}
-          <span class="badge">#{{.PRNumber}}{{if .PRState}} · {{.PRState}}{{end}}</span>
-          {{else}}
-          <span class="muted">—</span>
-          {{end}}
-        </td>
+        <td class="session-prs">{{if .PRs}}{{template "session_pr_links" .}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono">{{.TurnCount}}</td>
         <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono muted">{{if .UpdatedAt}}{{relativeAge .UpdatedAt}}{{else}}—{{end}}</td>

@@ -3155,6 +3155,13 @@
       border-color: hsl(var(--red-500) / 20%);
     }
     .badge.status-error::before { background: var(--danger); }
+    /* Several PR chips on one session row; wrap instead of overflowing. */
+    .session-prs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      align-items: center;
+    }
 
     /* ── PR cells (Ship board) ───────────────────────────────────────── */
     td.pr-cell { min-width: 16rem; }

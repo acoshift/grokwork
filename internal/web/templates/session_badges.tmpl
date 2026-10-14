@@ -1,4 +1,15 @@
-{{/* Shared session-row state badges — used by sessions list and project overview. */}}
+{{/* Shared session-row badges — sessions list, Today, and project overview.
+     session_pr_links emits anchors; session_pr_chips emits spans so a row
+     that is itself an <a> can still show PR state. */}}
+{{define "prBadgeClass"}}{{if .Failing}} status-error{{else if eq .State "MERGED"}} status-merged{{else if eq .State "CLOSED"}} status-cancelled{{else if eq .State "OPEN"}} live{{end}}{{end}}
+{{define "prBadgeLabel"}}{{if .Failing}}CI failing{{else}}{{.State}}{{end}}{{end}}
+{{define "session_pr_links"}}
+{{$project := .Project}}
+{{range .PRs}}{{if .Number}}{{if and .Owner .Repo}}<a class="badge{{template "prBadgeClass" .}}" title="{{.Owner}}/{{.Repo}}#{{.Number}}" href="/prs/{{.Owner}}/{{.Repo}}/{{.Number}}{{if $project}}?project={{urlquery $project}}{{end}}">#{{.Number}}{{if or .Failing .State}} · {{template "prBadgeLabel" .}}{{end}}</a>{{else if .URL}}<a class="badge{{template "prBadgeClass" .}}" href="{{.URL}}" target="_blank" rel="noopener">#{{.Number}}{{if or .Failing .State}} · {{template "prBadgeLabel" .}}{{end}} ↗</a>{{else}}<span class="badge{{template "prBadgeClass" .}}">#{{.Number}}{{if or .Failing .State}} · {{template "prBadgeLabel" .}}{{end}}</span>{{end}}{{end}}{{end}}
+{{end}}
+{{define "session_pr_chips"}}
+{{range .PRs}}{{if .Number}}<span class="badge{{template "prBadgeClass" .}}">#{{.Number}}{{if or .Failing .State}} · {{template "prBadgeLabel" .}}{{end}}</span>{{end}}{{end}}
+{{end}}
 {{define "session_row_state"}}
 {{if and (eq .Mode "case") (eq .Phase "closed")}}
 <span class="badge status-cancelled">closed</span>

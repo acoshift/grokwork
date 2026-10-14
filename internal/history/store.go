@@ -170,9 +170,12 @@ type Summary struct {
 	SessionKind string // imported_pr / pr_review / empty ordinary work
 	Phase       string // case phase (incl. closed)
 	Resolution  string // case resolution when closed
-	// Primary tracked PR (if any) for list badges/links.
+	// PRs is every tracked pull request, in store order. The primary fields
+	// below stay for a single slot (first open, else last).
+	PRs []SummaryPR
+	// Primary tracked PR (if any) for callers that still want one slot.
 	PRNumber int
-	PRState  string // OPEN | MERGED | CLOSED
+	PRState  string // OPEN | MERGED | CLOSED (raw; draft is SummaryPR.State)
 	PROwner  string
 	PRRepo   string
 	PRURL    string
@@ -189,6 +192,19 @@ type Summary struct {
 	// empty, so they never match the sessions-list "mine" filter.
 	OwnerID    string
 	CoOwnerIDs []string
+}
+
+// SummaryPR is one tracked pull request on a session list row.
+// State is the display state: OPEN, DRAFT, MERGED, CLOSED, or empty.
+// Failing is set only while the PR is still open and its checks rollup
+// reports failures — a merged PR keeps its last failing rollup string.
+type SummaryPR struct {
+	Number  int
+	State   string
+	Owner   string
+	Repo    string
+	URL     string
+	Failing bool
 }
 
 type Store struct {

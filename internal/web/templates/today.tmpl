@@ -49,6 +49,7 @@
     <article class="card">
       <header class="meta">
         {{template "session_row_state" .}}
+        {{template "session_pr_links" .}}
         {{if not $.Project}}{{if .Project}}<span class="mono">{{.Project}}</span>{{end}}{{end}}
         {{if .UpdatedAt}}<span class="muted mono">{{relativeAge .UpdatedAt}}</span>{{end}}
       </header>
