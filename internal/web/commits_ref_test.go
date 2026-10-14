@@ -212,6 +212,12 @@ func assertRepoPickOmitsRef(t *testing.T, body string) {
 	if !strings.Contains(body, `id="repo-pick" name="repo_full" data-autosubmit`) {
 		t.Fatal("repo pick must stay data-autosubmit")
 	}
+	if !strings.Contains(body, `<select id="ref" name="ref" class="mono" data-autosubmit>`) {
+		t.Fatal("ref pick must data-autosubmit")
+	}
+	if strings.Contains(body, `>Apply</button>`) {
+		t.Fatal("commits filter must not render an Apply button")
+	}
 	i := strings.Index(body, `sel.addEventListener('change'`)
 	if i < 0 {
 		t.Fatal("repo-pick change listener missing")
@@ -230,7 +236,7 @@ func assertRepoPickOmitsRef(t *testing.T, body string) {
 		submit = submit[:end]
 	}
 	if strings.Contains(submit, "disabled") {
-		t.Fatal("Apply submit must keep the chosen ref")
+		t.Fatal("filter submit must keep the chosen ref")
 	}
 }
 

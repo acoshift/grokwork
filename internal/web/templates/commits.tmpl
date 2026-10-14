@@ -27,13 +27,12 @@
   </div>
   <div class="field">
     <label for="ref">Ref</label>
-    <select id="ref" name="ref" class="mono">
+    <select id="ref" name="ref" class="mono" data-autosubmit>
       {{range .CommitRefOptions}}
       <option value="{{.}}"{{if eq . $.CommitRef}} selected{{end}}>{{.}}</option>
       {{end}}
     </select>
   </div>
-  <button type="submit" class="btn-secondary">Apply</button>
 </form>
 <form method="post" action="/projects/{{.Project}}/commits/fetch" id="commits-fetch" hx-boost="false" style="display:contents">
   {{template "csrf" .}}
@@ -87,7 +86,8 @@
   }
   // Target-phase listener runs before the document data-autosubmit listener
   // bubbles. Drop the previous ref so the next checkout's own primary is
-  // chosen even when that branch name also exists there. Apply still posts ref.
+  // chosen even when that branch name also exists there. A ref change leaves
+  // the select enabled, so that autosubmit posts the chosen ref.
   sel.addEventListener('change', function(){
     sync();
     var refEl=document.getElementById('ref');

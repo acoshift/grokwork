@@ -1268,7 +1268,7 @@ func TestCommitsListAndDetail(t *testing.T) {
 		`action="/projects/proj/commits/fetch"`,
 		`>Fetch</button>`,
 		// No origin in fixture repo → default ref falls back to HEAD.
-		`<select id="ref" name="ref"`,
+		`<select id="ref" name="ref" class="mono" data-autosubmit>`,
 		`<option value="HEAD" selected>HEAD</option>`,
 		`type="hidden" name="ref" value="HEAD"`,
 	} {
@@ -1278,6 +1278,9 @@ func TestCommitsListAndDetail(t *testing.T) {
 	}
 	if strings.Contains(body, `type="text" name="ref"`) || strings.Contains(body, `placeholder="origin/main"`) {
 		t.Fatal("ref filter must be a branch dropdown, not a text input")
+	}
+	if strings.Contains(body, `>Apply</button>`) {
+		t.Fatal("commits filter must not render an Apply button; ref autosubmits")
 	}
 	// Limit filter removed; fixed page size + pagination instead.
 	if strings.Contains(body, `name="n"`) || strings.Contains(body, `for="n"`) {
