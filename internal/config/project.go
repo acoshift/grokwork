@@ -70,8 +70,10 @@ type ProjectConfig struct {
 	// onto (typically staging/production). Empty = feature off. Primary is
 	// never a valid runtime target even if listed. Single path component each.
 	CherryPickTargets []string `json:"cherryPickTargets,omitempty"`
-	// ForcePushTargets, when true, the commits UI force-pushes one SHA onto
-	// CherryPickTargets instead of cherry-picking. nil/false = cherry-pick.
+	// ForcePushTargets, when true, the commits UI points one SHA at
+	// CherryPickTargets instead of cherry-picking. A missing remote branch is
+	// created; an existing one is fast-forwarded or moved with a lease.
+	// nil/false = cherry-pick.
 	ForcePushTargets *bool `json:"forcePushTargets,omitempty"`
 	// SLA are this project's per-severity case deadlines, keyed by severity
 	// (see sla.go). Absent or empty means this project has no SLAs, which is

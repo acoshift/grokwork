@@ -21,12 +21,14 @@ type ForcePushResult struct {
 	ToSHA   string
 	Noop    bool
 	Forced  bool // true only when the lease (non-ff) path ran
+	Created bool // remote branch was absent; a regular push created it
 }
 
-// ForcePush points origin/<target> at SHA. Fast-forward when possible;
+// ForcePush points origin/<target> at SHA. When that remote branch does not
+// exist, a regular push creates it. When it does, fast-forward when possible;
 // otherwise --force-with-lease= with an explicit expected SHA. It never
 // checkouts, resets, or switches the shared main repo, never uses a bare
-// force flag, never uses a + refspec, and never creates a missing remote branch.
+// force flag, and never uses a + refspec.
 func ForcePush(ctx context.Context, opts ForcePushOpts) (ForcePushResult, error) {
 	var out ForcePushResult
 	repo := strings.TrimSpace(opts.Repo)
@@ -48,17 +50,17 @@ func ForcePush(ctx context.Context, opts ForcePushOpts) (ForcePushResult, error)
 	defer unlock()
 
 	fetchErr := runGit(ctx, repo, "fetch", "origin", "--prune")
-	if missing := forcePushMissing(ctx, repo, target, sha); len(missing) > 0 {
-		if isShallowRepo(ctx, repo) {
-			_ = runGit(ctx, repo, "fetch", "origin", "--prune", "--unshallow")
-			missing = forcePushMissing(ctx, repo, target, sha)
+	fetchedOK := fetchErr == nil
+	if !commitRefExists(ctx, repo, sha) && isShallowRepo(ctx, repo) {
+		if runGit(ctx, repo, "fetch", "origin", "--prune", "--unshallow") == nil {
+			fetchedOK = true
 		}
-		if len(missing) > 0 {
-			if fetchErr != nil {
-				return out, scrubCherryPickErr(fmt.Errorf("fetch origin: %w", fetchErr), repo)
-			}
-			return out, fmt.Errorf("cannot resolve %s", strings.Join(missing, ", "))
+	}
+	if !commitRefExists(ctx, repo, sha) {
+		if !fetchedOK {
+			return out, scrubCherryPickErr(fmt.Errorf("fetch origin: %w", fetchErr), repo)
 		}
+		return out, fmt.Errorf("cannot resolve %s", shortSHA(sha))
 	}
 
 	full, err := resolveForcePushCommit(ctx, repo, sha)
@@ -67,15 +69,45 @@ func ForcePush(ctx context.Context, opts ForcePushOpts) (ForcePushResult, error)
 	}
 	out.ToSHA = full
 
-	remoteRef := "origin/" + target
-	fromSHA, err := gitOutput(ctx, repo, "rev-parse", "--verify", remoteRef+"^{commit}")
-	if err != nil || fromSHA == "" {
-		return out, fmt.Errorf("target branch %q not found as %s after fetch (refusing push that would create it)", target, remoteRef)
+	fromSHA, present := remoteTargetCommit(ctx, repo, target)
+	if present && fromSHA == "" && isShallowRepo(ctx, repo) {
+		if runGit(ctx, repo, "fetch", "origin", "--prune", "--unshallow") == nil {
+			fetchedOK = true
+		}
+		fromSHA, present = remoteTargetCommit(ctx, repo, target)
 	}
-	out.FromSHA = fromSHA
+	if fromSHA != "" {
+		out.FromSHA = fromSHA
+	}
 
+	// A configured primary is refused even when origin/<name> is absent, so
+	// the create path cannot invent the primary on a first push.
+	if pref := strings.TrimSpace(opts.PreferredPrimary); pref != "" && pref == target {
+		return out, fmt.Errorf("refuse to force-push onto project primary %q", target)
+	}
 	if name, _, rerr := ResolvePrimaryBranch(ctx, repo, strings.TrimSpace(opts.PreferredPrimary)); rerr == nil && name == target {
 		return out, fmt.Errorf("refuse to force-push onto project primary %q", target)
+	}
+
+	if present && fromSHA == "" {
+		if !fetchedOK {
+			return out, scrubCherryPickErr(fmt.Errorf("fetch origin: %w", fetchErr), repo)
+		}
+		return out, fmt.Errorf("cannot resolve origin/%s", target)
+	}
+	if !present {
+		if !fetchedOK {
+			return out, scrubCherryPickErr(fmt.Errorf("fetch origin: %w", fetchErr), repo)
+		}
+		// No observed tip, so this must not lease or overwrite diverged history.
+		// A branch that appears in the race is fast-forwarded or rejected.
+		if err := pushTarget(ctx, repo, full, target, "", true); err != nil {
+			return out, scrubCherryPickErr(fmt.Errorf("push to %s rejected while creating it: %w", target, err), repo)
+		}
+		out.Created = true
+		_ = runGit(ctx, repo, "fetch", "origin", target+":refs/remotes/origin/"+target)
+		NoteFetched(repo)
+		return out, nil
 	}
 
 	if fromSHA == full {
@@ -108,15 +140,21 @@ func normalizeForcePushSHA(in string) (string, error) {
 	return s, nil
 }
 
-func forcePushMissing(ctx context.Context, repo, target, sha string) []string {
-	var missing []string
-	if !commitRefExists(ctx, repo, "origin/"+target) {
-		missing = append(missing, "origin/"+target)
+// remoteTargetCommit reports the commit refs/remotes/origin/<target> peels to.
+// present is false when that remote-tracking ref does not exist. present is
+// true and sha is empty when the ref exists but does not peel to a commit
+// object this checkout has — that is not "absent", and must not be created over.
+func remoteTargetCommit(ctx context.Context, repo, target string) (sha string, present bool) {
+	ref := qualifyOriginRef("origin/" + target)
+	raw, err := gitOutput(ctx, repo, "rev-parse", "--verify", ref)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return "", false
 	}
-	if !commitRefExists(ctx, repo, sha) {
-		missing = append(missing, shortSHA(sha))
+	peeled, err := gitOutput(ctx, repo, "rev-parse", "--verify", strings.TrimSpace(raw)+"^{commit}")
+	if err != nil || strings.TrimSpace(peeled) == "" {
+		return "", true
 	}
-	return missing
+	return strings.TrimSpace(peeled), true
 }
 
 func resolveForcePushCommit(ctx context.Context, repo, sha string) (string, error) {

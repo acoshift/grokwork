@@ -602,12 +602,15 @@ func (s *Server) postCommitsForcePush(ctx *hime.Context) error {
 	}
 	p.Detail["noop"] = res.Noop
 	p.Detail["forced"] = res.Forced
+	p.Detail["created"] = res.Created
 	s.auditAction(ctx, audit.ActionGitForcePush, err, p.Detail)
 	if err != nil {
 		return p.redirect(s, ctx, "", err)
 	}
 	okMsg := fmt.Sprintf("%s is already at %s. Nothing pushed.", p.Target, shortSHA(res.ToSHA))
-	if !res.Noop && res.Forced {
+	if res.Created {
+		okMsg = fmt.Sprintf("Created %s at %s.", p.Target, shortSHA(res.ToSHA))
+	} else if !res.Noop && res.Forced {
 		okMsg = fmt.Sprintf("Force-pushed %s (%s → %s). Unique commits on %s that are not in %s are no longer on that branch.",
 			p.Target, shortSHA(res.FromSHA), shortSHA(res.ToSHA), p.Target, shortSHA(res.ToSHA))
 	} else if !res.Noop {

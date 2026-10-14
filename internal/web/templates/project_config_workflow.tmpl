@@ -91,7 +91,7 @@
           <input type="radio" name="forcePushTargets" value="1" {{if .ProjectItem.ForcePushTargets}}checked{{end}}>
           <span class="dot"></span>
           <span class="t">Force-push <span class="flag warn">rewinds</span></span>
-          <span class="d">Move the target to one commit. Fast-forward when possible; <span class="mono">--force-with-lease</span> otherwise. GitHub must allow force-pushes on those branches for rewind.</span>
+          <span class="d">Move the target to one commit. Creates the branch when it does not exist yet. Fast-forward when possible; <span class="mono">--force-with-lease</span> otherwise. GitHub must allow force-pushes on those branches for rewind.</span>
         </label>
       </div>
       <div class="form-actions"><button type="submit">Save target branches</button></div>

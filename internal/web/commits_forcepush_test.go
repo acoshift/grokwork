@@ -30,6 +30,7 @@ func TestCommitsForcePushMarkupWhenConfigured(t *testing.T) {
 		`type="radio" name="sha"`,
 		`data-confirm-title="Force-push to branch"`,
 		`data-idle-label="Force-push"`,
+		`If that branch does not exist yet, it is created.`,
 		`>staging</option>`,
 		`>Force-push</button>`,
 		`Select one commit, then Confirm.`,
@@ -54,6 +55,8 @@ func TestCommitsForcePushMarkupWhenConfigured(t *testing.T) {
 		`id="commit-cherrypick-actions"`,
 		`action="/projects/proj/commits/force-push"`,
 		`data-confirm-title="Force-push to branch"`,
+		`If that branch does not exist yet, it is created.`,
+		`If the branch does not exist yet, it is created.`,
 		`>Force-push</button>`,
 	} {
 		if !strings.Contains(detail, want) {
@@ -155,6 +158,58 @@ func TestCommitsForcePushFF(t *testing.T) {
 	}
 	if strings.TrimSpace(got) != sha {
 		t.Fatalf("staging=%s want %s", got, sha)
+	}
+	assertAuditAction(t, srv, audit.ActionGitForcePush, true)
+}
+
+func TestCommitsForcePushCreatesMissingBranch(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	_, main := setupWebCherryPickRepo(t)
+	pointProjectAt(t, cfg, main)
+	if err := cfg.SetProjectCherryPickConfig("proj", []string{"production"}, true); err != nil {
+		t.Fatal(err)
+	}
+	sha, err := gitworktreeOutput(t, main, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := gitworktreeOutput(t, main, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postUnauthed(t, srv, "/projects/proj/commits/force-push", url.Values{
+		"owner": {"acme"}, "repo": {"app"}, "target": {"production"}, "sha": {sha},
+	})
+	if w.Code != http.StatusFound && w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d loc=%s body=%s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if strings.Contains(loc, "err=") {
+		t.Fatalf("redirect err: %s", loc)
+	}
+	if !strings.Contains(loc, "Created+") || strings.Contains(loc, "Force-pushed") || strings.Contains(loc, "Updated+") {
+		t.Fatalf("want Created flash: %s", loc)
+	}
+	remote, err := gitworktreeOutput(t, main, "ls-remote", "--heads", "origin", "production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(remote, sha) {
+		t.Fatalf("remote production=%q want %s", remote, sha)
+	}
+	tracked, err := gitworktreeOutput(t, main, "rev-parse", "--verify", "refs/remotes/origin/production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tracked != sha {
+		t.Fatalf("tracking=%s want %s", tracked, sha)
+	}
+	after, err := gitworktreeOutput(t, main, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("HEAD moved %s -> %s", before, after)
 	}
 	assertAuditAction(t, srv, audit.ActionGitForcePush, true)
 }

@@ -102,20 +102,69 @@ func TestForcePushStaleLease(t *testing.T) {
 	}
 }
 
-func TestForcePushRefusesMissingTarget(t *testing.T) {
+func TestForcePushCreatesMissingTarget(t *testing.T) {
 	ctx := t.Context()
 	_, main := setupCherryPickFixture(t)
 	sha := commitOnMain(t, main, "x.txt", "x\n", "x")
-	_, err := ForcePush(ctx, ForcePushOpts{Repo: main, Target: "no-such-target", SHA: sha, PreferredPrimary: "main"})
+	res, err := ForcePush(ctx, ForcePushOpts{Repo: main, Target: "production", SHA: sha, PreferredPrimary: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Created || res.Forced || res.Noop || res.FromSHA != "" || res.ToSHA != sha {
+		t.Fatalf("create: %+v", res)
+	}
+	if got := originSHA(t, main, "production"); got != sha {
+		t.Fatalf("production=%s want %s", got, sha)
+	}
+	local, err := gitOutput(ctx, main, "branch", "--list", "production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(local) != "" {
+		t.Fatalf("created a local branch: %q", local)
+	}
+	assertMainCleanOnMain(t, main)
+
+	again, err := ForcePush(ctx, ForcePushOpts{Repo: main, Target: "production", SHA: sha, PreferredPrimary: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Created || !again.Noop || again.Forced || again.ToSHA != sha {
+		t.Fatalf("second: %+v", again)
+	}
+
+	newer := commitOnMain(t, main, "y.txt", "y\n", "y")
+	up, err := ForcePush(ctx, ForcePushOpts{Repo: main, Target: "production", SHA: newer, PreferredPrimary: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up.Created || up.Forced || up.Noop || up.FromSHA != sha || up.ToSHA != newer {
+		t.Fatalf("ff after create: %+v", up)
+	}
+	back, err := ForcePush(ctx, ForcePushOpts{Repo: main, Target: "production", SHA: sha, PreferredPrimary: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Created || !back.Forced || back.FromSHA != newer || back.ToSHA != sha {
+		t.Fatalf("rewind after create: %+v", back)
+	}
+	assertMainCleanOnMain(t, main)
+}
+
+func TestForcePushRefusesCreatingPrimary(t *testing.T) {
+	ctx := t.Context()
+	_, main := setupCherryPickFixture(t)
+	sha := commitOnMain(t, main, "x.txt", "x\n", "x")
+	_, err := ForcePush(ctx, ForcePushOpts{Repo: main, Target: "release", SHA: sha, PreferredPrimary: "release"})
 	if err == nil {
 		t.Fatal("expected refuse")
 	}
-	if !strings.Contains(err.Error(), "no-such-target") {
+	if !strings.Contains(err.Error(), "primary") {
 		t.Fatalf("err: %v", err)
 	}
-	out, _ := gitOutput(ctx, main, "ls-remote", "--heads", "origin", "no-such-target")
+	out, _ := gitOutput(ctx, main, "ls-remote", "--heads", "origin", "release")
 	if strings.TrimSpace(out) != "" {
-		t.Fatalf("created remote branch: %q", out)
+		t.Fatalf("created primary: %q", out)
 	}
 }
 

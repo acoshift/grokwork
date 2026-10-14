@@ -46,7 +46,7 @@
   {{if .ForcePushTargets}}
   <button type="button" id="btn-commits-cherrypick" class="btn-secondary" form="commits-cherrypick"{{if not .Commits}} disabled{{end}}
     data-idle-label="Force-push"
-    data-confirm="Moves the target branch to the selected commit and pushes. Fast-forward when possible; otherwise force-with-lease. Commits only on the target disappear from that branch. It does not start an agent and does not merge a PR."
+    data-confirm="Moves the target branch to the selected commit and pushes. If that branch does not exist yet, it is created. Fast-forward when possible; otherwise force-with-lease. Commits only on the target disappear from that branch. It does not start an agent and does not merge a PR."
     data-confirm-title="Force-push to branch" data-confirm-ok="Force-push" data-confirm-danger
     data-confirm-select="target" data-confirm-select-label="Target branch"
     data-confirm-wait="Updating the target branch…">Force-push</button>
