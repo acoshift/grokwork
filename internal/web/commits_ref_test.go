@@ -113,8 +113,26 @@ func TestCommitsRefDropdownFollowsRepoPrimary(t *testing.T) {
 	if strings.Contains(body, `class="flash err"`) {
 		t.Fatalf("project primary main errored: %s", body)
 	}
-	if err := cfg.SetProjectPrimaryBranch("proj", ""); err != nil {
-		t.Fatal(err)
+
+	// primaryBranch stays main. both has origin/main and origin/master, and
+	// origin/HEAD points at master. Empty ref and a ref that is not a commit
+	// here both follow origin/HEAD, not the project primary.
+	const both = "/projects/proj/commits?owner=acme&repo=both"
+	body = get(both)
+	assertSelectedRef(t, body, "origin/master")
+	if logRef != "origin/master" {
+		t.Fatalf("both with no ref, primaryBranch=main logged %q", logRef)
+	}
+	if strings.Contains(body, `<option value="origin/main" selected>`) {
+		t.Fatal("project primary main selected on a master checkout that also has main")
+	}
+	body = get(both + "&ref=origin/does-not-exist")
+	assertSelectedRef(t, body, "origin/master")
+	if logRef != "origin/master" {
+		t.Fatalf("both with missing ref, primaryBranch=main logged %q", logRef)
+	}
+	if strings.Contains(body, `class="flash err"`) || strings.Contains(body, "unknown revision") {
+		t.Fatalf("missing ref errored while primaryBranch=main: %s", body)
 	}
 
 	body = get(api + "&ref=HEAD")

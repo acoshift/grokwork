@@ -86,15 +86,10 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 		return s.viewPage(ctx, "commits", d)
 	}
 	// Keep a requested ref that is a commit here. Otherwise this checkout's
-	// primary: a project primary only when that commit exists, else origin/HEAD,
-	// then the usual candidate names, else HEAD. A carried origin/main on a
-	// master checkout must not stick, and neither does a project primary that
-	// this checkout does not have.
-	pref := ""
-	if s.cfg != nil {
-		pref = s.cfg.ProjectPrimaryBranch(project)
-	}
-	ref = gitworktree.ResolveCommitsRef(ctx.Context(), repoPath, ref, pref)
+	// own primary (origin/HEAD, then the usual candidate names, else HEAD).
+	// A project primary is not used: it can name a branch this repo has that
+	// is not its primary, and a repo switch posts an empty ref.
+	ref = gitworktree.ResolveCommitsRef(ctx.Context(), repoPath, ref)
 	d.CommitRef = ref
 	d.CommitRefOptions = commitsRefOptions(ctx.Context(), repoPath, ref)
 	// Fetch one extra row so we know whether a next page exists.

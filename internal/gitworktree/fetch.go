@@ -100,26 +100,21 @@ var PrimaryBranchCandidateNames = []string{
 // a short branch name (no origin/, no '/'); empty keeps the heuristic. When
 // preferred is non-empty, always returns "origin/<preferred>" (may not exist)
 // so string callers get a deterministic ref for git to reject. The commits
-// list uses ResolveCommitsRef, which ignores a preferred name that is not a
-// commit on that checkout.
+// list uses ResolveCommitsRef, which does not take the project primary.
 func PrimaryStartRef(ctx context.Context, repo, preferred string) string {
 	return resolveNewBranchStart(ctx, repo, preferred)
 }
 
 // ResolveCommitsRef is the ref the commits list should show. A requested ref
-// that is a commit on repo is kept. Otherwise the default is origin/<preferred>
-// when that commit exists, else this checkout's own primary: origin/HEAD when
-// it points at a commit, else the first existing PrimaryBranchCandidateNames
-// tip, else HEAD. A preferred name that is not a commit on this checkout is
-// ignored — unlike PrimaryStartRef, which still returns origin/<preferred>.
-func ResolveCommitsRef(ctx context.Context, repo, requested, preferred string) string {
+// that is a commit on repo is kept. An empty or missing ref uses this
+// checkout's own primary only: origin/HEAD when it points at a commit, else
+// the first existing PrimaryBranchCandidateNames tip, else HEAD. A project
+// primary branch is not consulted — a name that exists here but is not this
+// checkout's primary must not survive a repo switch.
+func ResolveCommitsRef(ctx context.Context, repo, requested string) string {
 	requested = strings.TrimSpace(requested)
 	if requested != "" && commitRefExists(ctx, repo, requested) {
 		return requested
-	}
-	preferred = strings.TrimSpace(preferred)
-	if preferred != "" && commitRefExists(ctx, repo, "origin/"+preferred) {
-		return "origin/" + preferred
 	}
 	return resolveNewBranchStart(ctx, repo, "")
 }
