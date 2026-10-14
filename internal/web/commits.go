@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -78,20 +79,24 @@ func (s *Server) commitsList(ctx *hime.Context) error {
 			ref = "HEAD"
 		}
 		d.CommitRef = ref
+		d.CommitRefOptions = []string{ref}
 		if d.Error == "" {
 			d.Error = pathErr.Error()
 		}
 		return s.viewPage(ctx, "commits", d)
 	}
-	// Empty ref → primary tip (same as new worktree base), not stale local HEAD.
-	if ref == "" {
-		pref := ""
-		if s.cfg != nil {
-			pref = s.cfg.ProjectPrimaryBranch(project)
-		}
-		ref = gitworktree.PrimaryStartRef(ctx.Context(), repoPath, pref)
+	// Keep a requested ref that is a commit here. Otherwise this checkout's
+	// primary: a project primary only when that commit exists, else origin/HEAD,
+	// then the usual candidate names, else HEAD. A carried origin/main on a
+	// master checkout must not stick, and neither does a project primary that
+	// this checkout does not have.
+	pref := ""
+	if s.cfg != nil {
+		pref = s.cfg.ProjectPrimaryBranch(project)
 	}
+	ref = gitworktree.ResolveCommitsRef(ctx.Context(), repoPath, ref, pref)
 	d.CommitRef = ref
+	d.CommitRefOptions = commitsRefOptions(ctx.Context(), repoPath, ref)
 	// Fetch one extra row so we know whether a next page exists.
 	list, listErr := ghpr.ListCommitsWith(ctx.Context(), s.ghRun(), repoPath, ghpr.CommitListOpts{
 		Ref:   ref,
@@ -147,6 +152,19 @@ func (s *Server) postCommitsFetch(ctx *hime.Context) error {
 	}
 	gitworktree.NoteFetched(path)
 	return s.commitsListRedirect(ctx, project, active.Owner, active.Repo, ref, "Fetched remotes (full history)", nil)
+}
+
+// commitsRefOptions is the ref dropdown. A branch-list failure leaves the
+// active ref in place and does not fail the commit list.
+func commitsRefOptions(ctx context.Context, repo, active string) []string {
+	branches, err := gitworktree.OriginTrackingRefs(ctx, repo)
+	if err != nil {
+		branches = nil
+	}
+	if active != "" && !slices.Contains(branches, active) {
+		branches = append(branches, active)
+	}
+	return branches
 }
 
 func (s *Server) commitsListRedirect(ctx *hime.Context, project, owner, repo, ref, okMsg string, err error) error {

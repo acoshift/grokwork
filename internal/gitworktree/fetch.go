@@ -96,13 +96,51 @@ var PrimaryBranchCandidateNames = []string{
 	"dev",
 }
 
-// PrimaryStartRef is the tip new managed worktrees are based on, and the
-// default ref for the commits browser. preferred is a short branch name (no
-// origin/, no '/'); empty keeps the heuristic. When preferred is non-empty,
-// always returns "origin/<preferred>" (may not exist) so string callers get a
-// deterministic ref for git to reject.
+// PrimaryStartRef is the tip new managed worktrees are based on. preferred is
+// a short branch name (no origin/, no '/'); empty keeps the heuristic. When
+// preferred is non-empty, always returns "origin/<preferred>" (may not exist)
+// so string callers get a deterministic ref for git to reject. The commits
+// list uses ResolveCommitsRef, which ignores a preferred name that is not a
+// commit on that checkout.
 func PrimaryStartRef(ctx context.Context, repo, preferred string) string {
 	return resolveNewBranchStart(ctx, repo, preferred)
+}
+
+// ResolveCommitsRef is the ref the commits list should show. A requested ref
+// that is a commit on repo is kept. Otherwise the default is origin/<preferred>
+// when that commit exists, else this checkout's own primary: origin/HEAD when
+// it points at a commit, else the first existing PrimaryBranchCandidateNames
+// tip, else HEAD. A preferred name that is not a commit on this checkout is
+// ignored — unlike PrimaryStartRef, which still returns origin/<preferred>.
+func ResolveCommitsRef(ctx context.Context, repo, requested, preferred string) string {
+	requested = strings.TrimSpace(requested)
+	if requested != "" && commitRefExists(ctx, repo, requested) {
+		return requested
+	}
+	preferred = strings.TrimSpace(preferred)
+	if preferred != "" && commitRefExists(ctx, repo, "origin/"+preferred) {
+		return "origin/" + preferred
+	}
+	return resolveNewBranchStart(ctx, repo, "")
+}
+
+// OriginTrackingRefs lists remote-tracking branches under refs/remotes/origin
+// as shorthand origin/<name>, in refname order. origin/HEAD is omitted. Callers
+// that render a dropdown should keep the active ref when this returns an error.
+func OriginTrackingRefs(ctx context.Context, repo string) ([]string, error) {
+	out, err := gitOutput(ctx, repo, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin")
+	if err != nil {
+		return nil, err
+	}
+	var refs []string
+	for line := range strings.SplitSeq(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "origin/HEAD" || !strings.HasPrefix(line, "origin/") {
+			continue
+		}
+		refs = append(refs, line)
+	}
+	return refs, nil
 }
 
 // resolveNewBranchStart picks the tip for a newly created managed branch.

@@ -1007,12 +1007,15 @@ type pageData struct {
 	DiffReview *diffReviewData
 	FileFrag   *fileFragData
 	// Commits UI
-	Commits       []ghpr.CommitSummary
-	Commit        ghpr.CommitDetail
-	CommitRef     string
-	CommitPage    int
-	CommitHasPrev bool
-	CommitHasNext bool
+	Commits   []ghpr.CommitSummary
+	Commit    ghpr.CommitDetail
+	CommitRef string
+	// CommitRefOptions is the ref dropdown: origin/<branch> for this checkout,
+	// plus CommitRef when it is not one of those branches (HEAD, a SHA).
+	CommitRefOptions []string
+	CommitPage       int
+	CommitHasPrev    bool
+	CommitHasNext    bool
 	// 1-based position of the first/last row on this page within the full
 	// log (total is unknown — git log has no cheap count). Zero when empty.
 	CommitRangeStart  int

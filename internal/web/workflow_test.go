@@ -1268,12 +1268,16 @@ func TestCommitsListAndDetail(t *testing.T) {
 		`action="/projects/proj/commits/fetch"`,
 		`>Fetch</button>`,
 		// No origin in fixture repo → default ref falls back to HEAD.
-		`value="HEAD"`,
-		`placeholder="origin/main"`,
+		`<select id="ref" name="ref"`,
+		`<option value="HEAD" selected>HEAD</option>`,
+		`type="hidden" name="ref" value="HEAD"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("list missing %q in %s", want, body)
 		}
+	}
+	if strings.Contains(body, `type="text" name="ref"`) || strings.Contains(body, `placeholder="origin/main"`) {
+		t.Fatal("ref filter must be a branch dropdown, not a text input")
 	}
 	// Limit filter removed; fixed page size + pagination instead.
 	if strings.Contains(body, `name="n"`) || strings.Contains(body, `for="n"`) {
@@ -1546,6 +1550,10 @@ func TestCommitsListPagination(t *testing.T) {
 	if !strings.Contains(body, `page=2`) || !strings.Contains(body, `data-pager-next rel="next"`) {
 		t.Fatalf("missing next (Older) link: %s", body)
 	}
+	// Resolved ref stays on the pager. This fixture has no origin branch, so HEAD.
+	if !strings.Contains(body, `ref=HEAD`) {
+		t.Fatalf("pager missing resolved ref: %s", body)
+	}
 	if strings.Contains(body, `data-pager-prev rel="prev"`) { // page 1: Newer renders disabled
 		t.Fatal("page 1 must not link a newer page")
 	}
@@ -1612,8 +1620,8 @@ func TestCommitsDefaultRefPrimary(t *testing.T) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, `value="origin/main"`) {
-		t.Fatalf("default ref input want origin/main: %s", body)
+	if !strings.Contains(body, `<option value="origin/main" selected>origin/main</option>`) {
+		t.Fatalf("default ref dropdown want origin/main selected: %s", body)
 	}
 	if !strings.Contains(body, `· ref <span class="mono">origin/main</span>`) {
 		t.Fatalf("default ref banner want origin/main: %s", body)
@@ -1629,7 +1637,7 @@ func TestCommitsDefaultRefPrimary(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("explicit status=%d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), `value="HEAD"`) {
+	if !strings.Contains(w.Body.String(), `<option value="HEAD" selected>HEAD</option>`) {
 		t.Fatalf("explicit ref=HEAD not honored: %s", w.Body.String())
 	}
 	if logRef != "HEAD" {

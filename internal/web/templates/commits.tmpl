@@ -27,7 +27,11 @@
   </div>
   <div class="field">
     <label for="ref">Ref</label>
-    <input id="ref" type="text" name="ref" value="{{.CommitRef}}" placeholder="origin/main" class="mono">
+    <select id="ref" name="ref" class="mono">
+      {{range .CommitRefOptions}}
+      <option value="{{.}}"{{if eq . $.CommitRef}} selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
   </div>
   <button type="submit" class="btn-secondary">Apply</button>
 </form>
@@ -81,7 +85,14 @@
     document.getElementById('commits-owner').value=p[0]||'';
     document.getElementById('commits-repo').value=p[1]||'';
   }
-  sel.addEventListener('change', sync);
+  // Target-phase listener runs before the document data-autosubmit listener
+  // bubbles. Drop the previous ref so the next checkout's own primary is
+  // chosen even when that branch name also exists there. Apply still posts ref.
+  sel.addEventListener('change', function(){
+    sync();
+    var refEl=document.getElementById('ref');
+    if(refEl) refEl.disabled=true;
+  });
   form.addEventListener('submit', sync);
   sync();
 })();
