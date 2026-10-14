@@ -45,6 +45,9 @@ type actionsRunRow struct {
 	ghpr.RunInfo
 	Bucket   string
 	ShortSHA string
+	// Age is CreatedAt in the process local zone. GitHub's createdAt is UTC
+	// and this column has no zone label.
+	Age string
 }
 
 // actionsJobRow is one job on the run detail page.
@@ -202,9 +205,20 @@ func decorateActionsRuns(runs []ghpr.RunInfo) []actionsRunRow {
 			RunInfo:  r,
 			Bucket:   ghpr.RunBucket(r.Status, r.Conclusion),
 			ShortSHA: shortSHA(r.HeadSHA),
+			Age:      actionsRunAge(r.CreatedAt),
 		})
 	}
 	return out
+}
+
+// actionsRunAge formats a run's created time for the Recent runs Age column.
+// GitHub's createdAt is UTC. shortTime prints the time value's own location,
+// which is the wrong hour wherever the host is not UTC.
+func actionsRunAge(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return shortTime(t.In(time.Local))
 }
 
 func (s *Server) actionsRunsPartial(ctx *hime.Context) error {

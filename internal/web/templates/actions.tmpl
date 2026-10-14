@@ -194,7 +194,7 @@
       <td class="mono">{{if .WorkflowID}}<a href="/projects/{{$.Project}}/actions?owner={{urlquery $.ActiveOwner}}&amp;repo={{urlquery $.ActiveRepo}}&amp;workflow={{.WorkflowID}}" title="Filter runs to this workflow">{{.WorkflowName}}</a>{{else}}{{.WorkflowName}}{{end}}</td>
       <td class="mono">{{.Branch}}{{if .ShortSHA}} <span class="muted">@ {{.ShortSHA}}</span>{{end}}</td>
       <td class="muted">{{.Event}}</td>
-      <td class="mono muted">{{if not .CreatedAt.IsZero}}{{shortTime .CreatedAt}}{{end}}</td>
+      <td class="mono muted">{{.Age}}</td>
       <td>{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener" hx-boost="false">GitHub</a>{{end}}</td>
     </tr>
   {{end}}

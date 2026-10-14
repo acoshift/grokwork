@@ -218,10 +218,36 @@ func TestActionsRunsPartial(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := getActionsFragment(t, srv, sid, "/partials/projects/proj/actions/runs?owner=acme&repo=app")
-	for _, want := range []string{"Deploy run", "workflow_dispatch", "GitHub"} {
+	// Fixture createdAt is 2026-08-01T12:00:00Z. The cell must be that instant
+	// in the process local zone, not the UTC wall clock shortTime would print.
+	created := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	localWall := created.In(time.Local).Format("2006-01-02 15:04")
+	utcWall := created.UTC().Format("2006-01-02 15:04")
+	for _, want := range []string{"Deploy run", "workflow_dispatch", "GitHub", ">" + localWall + "<"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("runs partial missing %q:\n%s", want, body)
 		}
+	}
+	if utcWall != localWall && strings.Contains(body, ">"+utcWall+"<") {
+		t.Fatalf("age column shows UTC wall clock %q:\n%s", utcWall, body)
+	}
+}
+
+func TestActionsRunAgeUsesLocalZone(t *testing.T) {
+	utc := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	plus7 := time.Date(2026, 8, 1, 19, 0, 0, 0, time.FixedZone("+07", 7*3600))
+	if !plus7.Equal(utc) {
+		t.Fatal("fixture instants differ")
+	}
+	want := utc.In(time.Local).Format("2006-01-02 15:04")
+	if got := actionsRunAge(utc); got != want {
+		t.Fatalf("utc stamp age=%q want %q", got, want)
+	}
+	if got := actionsRunAge(plus7); got != want {
+		t.Fatalf("same instant with a +07 offset age=%q want %q (printed the source zone)", got, want)
+	}
+	if got := actionsRunAge(time.Time{}); got != "" {
+		t.Fatalf("zero age=%q", got)
 	}
 }
 
