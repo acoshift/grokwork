@@ -4369,6 +4369,10 @@
       cursor: pointer;
     }
     .composer-send:hover { opacity: 0.85; }
+    /* The in-flight spinner is a ::before flex item on every submit button.
+       On the icon-only send control that puts a second glyph to the left of
+       the arrow. Hide the arrow so the spinner takes its place. */
+    .composer-send.is-loading > svg { display: none; }
     .composer-fix {
       flex-shrink: 0;
       height: 2.15rem;
