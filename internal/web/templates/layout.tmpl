@@ -3155,8 +3155,12 @@
       border-color: hsl(var(--red-500) / 20%);
     }
     .badge.status-error::before { background: var(--danger); }
-    /* Several PR chips on one session row; wrap instead of overflowing. */
-    .session-prs {
+    /* Several PR chips on one session row; wrap instead of overflowing.
+       The flex box is the inner list (and the phone span), never the td.
+       display:flex on a td replaces table-cell, so the cell's border-bottom
+       paints at the chip box and cuts through the row when another column wraps. */
+    span.session-prs,
+    .session-pr-list {
       display: flex;
       flex-wrap: wrap;
       gap: 0.3rem;

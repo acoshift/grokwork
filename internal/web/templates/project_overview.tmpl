@@ -124,7 +124,7 @@
       <tr>
         <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}">{{.ThreadID}}</a></td>
         <td>{{template "session_row_state" .}}</td>
-        <td class="session-prs">{{if .PRs}}{{template "session_pr_links" .}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="session-prs">{{if .PRs}}<span class="session-pr-list">{{template "session_pr_links" .}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono">{{.TurnCount}}</td>
         <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono muted">{{if .UpdatedAt}}{{relativeAge .UpdatedAt}}{{else}}—{{end}}</td>

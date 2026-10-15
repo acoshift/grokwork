@@ -119,6 +119,16 @@ func TestSessionRowsShowEveryPRState(t *testing.T) {
 				}
 			}
 		}
+		if path == "/sessions" || path == "/projects/proj/sessions" || path == "/projects/proj" {
+			// Chips sit in an inner list. display:flex on the td itself
+			// replaces table-cell and the row border paints through the cell.
+			if strings.Contains(body, `<td class="session-prs"><a`) {
+				t.Fatalf("%s put PR chips directly in the cell", path)
+			}
+			if !strings.Contains(body, `<span class="session-pr-list">`) {
+				t.Fatalf("%s missing PR chip list", path)
+			}
+		}
 		if path == "/sessions" || path == "/projects/proj/sessions" {
 			table := body[strings.Index(body, `id="sessions-table"`):]
 			i := strings.Index(table, ">th-none</a>")
