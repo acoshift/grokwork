@@ -150,6 +150,11 @@ func (b *Bot) ListShipBoardAmong(projectFilter, stateFilter string, among []stri
 		running := b.isThreadBusy(listed.ThreadID)
 		qlen := b.queueLen(listed.ThreadID)
 		for _, pr := range e.PRs {
+			// Same rule as the PR page: an imported shell is not a second
+			// session on a PR a work unit already opened.
+			if importedPRShadowed(list, listed, pr) {
+				continue
+			}
 			row := shipRowFrom(listed.ThreadID, e, pr, goal, running, qlen)
 			b.enrichTeamReview(&row)
 			all = append(all, row)

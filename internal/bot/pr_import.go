@@ -12,6 +12,9 @@ import (
 
 // importOpenGitHubPRs binds open GitHub PRs that no session tracks yet.
 // Called at the start of each PR-status poll so Ship stays a session-store read.
+// A shadow shell left by an earlier cycle is removed first: a multi-repo run
+// opens the other repos on feature branches, which the importer treats as
+// human PRs until the creating session records them.
 func (b *Bot) importOpenGitHubPRs() int {
 	if b == nil || b.cfg == nil || b.sessions == nil {
 		return 0
@@ -20,6 +23,7 @@ func (b *Bot) importOpenGitHubPRs() int {
 	if ctx.Err() != nil {
 		return 0
 	}
+	b.dropShadowImportedPRs()
 	created := 0
 	for _, project := range b.cfg.ProjectNames() {
 		if ctx.Err() != nil {
@@ -148,4 +152,152 @@ func (b *Bot) auditPRImport(unitID, project, owner, repo string, number int, err
 	if appendErr := b.audit.Append(ev); appendErr != nil {
 		log.Printf("warn: audit %s: %v", audit.ActionPRImport, appendErr)
 	}
+}
+
+// sessionCreatesPR reports whether e is a work unit that can be the session
+// that opened a PR. Imported shells and agent-review units bind a PR without
+// being that session.
+func sessionCreatesPR(e sessionstore.Entry) bool {
+	return !e.IsImportedPR() && !e.IsPRReview() && !e.IsPRAsk()
+}
+
+// importedShellUntouched reports whether e is still the importer's empty
+// shell. The first real run clears SessionKindImportedPR, so a cwd, branch,
+// agent session, or owner means someone has taken the unit over.
+func importedShellUntouched(e sessionstore.Entry) bool {
+	if !e.IsImportedPR() {
+		return false
+	}
+	if strings.TrimSpace(e.SessionID) != "" || strings.TrimSpace(e.Cwd) != "" || strings.TrimSpace(e.WorktreeBranch) != "" {
+		return false
+	}
+	return strings.TrimSpace(e.OwnerID) == ""
+}
+
+// strictSamePR matches owner/repo#n only. SamePR also treats a bare number as
+// the same PR, and one project can have that number in two repos (deploys #25
+// is both admin and collector). A shadow delete must not use that rule.
+func strictSamePR(a, b sessionstore.TrackedPR) bool {
+	a.FillOwnerRepoFromURL()
+	b.FillOwnerRepoFromURL()
+	if a.Number <= 0 || a.Number != b.Number {
+		return false
+	}
+	if a.Owner == "" || b.Owner == "" || a.Repo == "" || b.Repo == "" {
+		return false
+	}
+	return strings.EqualFold(a.Owner, b.Owner) && strings.EqualFold(a.Repo, b.Repo)
+}
+
+// creatorBindsPR returns the work unit in project that already tracks pr.
+func creatorBindsPR(list []sessionstore.Listed, project string, pr sessionstore.TrackedPR, except string) (string, bool) {
+	project = strings.TrimSpace(project)
+	if project == "" || pr.Number <= 0 {
+		return "", false
+	}
+	for _, listed := range list {
+		if listed.ThreadID == except || !sessionCreatesPR(listed.Entry) {
+			continue
+		}
+		if !strings.EqualFold(listed.Project, project) {
+			continue
+		}
+		e := listed.Entry
+		e.NormalizePRs()
+		for _, got := range e.PRs {
+			if strictSamePR(got, pr) {
+				return listed.ThreadID, true
+			}
+		}
+	}
+	return "", false
+}
+
+// importedPRShadowed reports whether pr on an imported shell is already
+// tracked by a work session in the same project. The PR page and the ship
+// board then belong to that session.
+func importedPRShadowed(list []sessionstore.Listed, shell sessionstore.Listed, pr sessionstore.TrackedPR) bool {
+	if !shell.IsImportedPR() {
+		return false
+	}
+	_, ok := creatorBindsPR(list, shell.Project, pr, shell.ThreadID)
+	return ok
+}
+
+// dropShadowImportedPRs deletes imported shells whose PRs are all tracked by
+// a work session in the same project.
+//
+// The importer skips managed branches (grokwork/<thread>). A session that
+// opens PRs in several repos of one project uses ordinary feature branches
+// for the other repos, and the poller can import those before
+// refreshPRAfterTask records them on the creator. Each PR then shows the
+// creator and a shell. The creator is the session that opened it.
+func (b *Bot) dropShadowImportedPRs() int {
+	if b == nil || b.sessions == nil {
+		return 0
+	}
+	list := b.sessions.List()
+	var drop []string
+	for _, listed := range list {
+		if !importedShellUntouched(listed.Entry) || b.isThreadBusy(listed.ThreadID) {
+			continue
+		}
+		e := listed.Entry
+		e.NormalizePRs()
+		if len(e.PRs) == 0 {
+			continue
+		}
+		shadowed := true
+		for _, pr := range e.PRs {
+			if _, ok := creatorBindsPR(list, e.Project, pr, listed.ThreadID); !ok {
+				shadowed = false
+				break
+			}
+		}
+		if shadowed {
+			drop = append(drop, listed.ThreadID)
+		}
+	}
+	n := 0
+	for _, id := range drop {
+		if b.deleteImportedShadow(id) {
+			n++
+		}
+	}
+	return n
+}
+
+// dropShadowsIfCreator removes imported duplicates of every PR threadID tracks,
+// once that unit is a work session rather than a shell.
+func (b *Bot) dropShadowsIfCreator(threadID string) {
+	if b == nil || b.sessions == nil || threadID == "" {
+		return
+	}
+	e, ok := b.sessions.Get(threadID)
+	if !ok || !sessionCreatesPR(e) {
+		return
+	}
+	b.dropShadowImportedPRs()
+}
+
+func (b *Bot) deleteImportedShadow(threadID string) bool {
+	if b == nil || b.sessions == nil || threadID == "" {
+		return false
+	}
+	if err := b.sessions.Delete(threadID); err != nil {
+		log.Printf("pr-import: drop shadow session %s: %v", threadID, err)
+		return false
+	}
+	if b.history != nil {
+		if err := b.history.Delete(threadID); err != nil {
+			log.Printf("pr-import: drop shadow history %s: %v", threadID, err)
+		}
+	}
+	if b.events != nil {
+		if err := b.events.Delete(threadID); err != nil {
+			log.Printf("pr-import: drop shadow timeline %s: %v", threadID, err)
+		}
+	}
+	log.Printf("pr-import: dropped shadow unit=%s", threadID)
+	return true
 }

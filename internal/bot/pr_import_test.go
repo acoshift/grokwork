@@ -211,3 +211,206 @@ func TestImportListFailureDoesNotDropSessions(t *testing.T) {
 		t.Fatal("existing session dropped")
 	}
 }
+
+func TestDropShadowImportedPRsFromMultiRepoSession(t *testing.T) {
+	b, store := testBotSessions(t)
+	drainBotOnCleanup(t, b)
+
+	api := sessionstore.TrackedPR{
+		Owner: "acme", Repo: "api", Number: 4, State: "OPEN", HeadRef: "feat/api",
+		URL: "https://github.com/acme/api/pull/4", Title: "api change",
+	}
+	web := sessionstore.TrackedPR{
+		Owner: "acme", Repo: "web", Number: 8, State: "OPEN", HeadRef: "feat/web",
+		URL: "https://github.com/acme/web/pull/8", Title: "web change",
+	}
+	creator := sessionstore.Entry{Project: "app", Goal: "ship both repos"}
+	creator.UpsertPR(api)
+	creator.UpsertPR(web)
+	if err := store.Set("thread-creator", creator); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id, project string
+		pr          sessionstore.TrackedPR
+	}{
+		{"w_shadow_api", "app", api},
+		{"w_shadow_web", "app", web},
+		{"w_other_project", "other", api},
+	} {
+		shell := sessionstore.Entry{
+			Project: tc.project, SessionKind: sessionstore.SessionKindImportedPR,
+			Goal: tc.pr.Title, OwnerName: "zoe",
+		}
+		shell.UpsertPR(tc.pr)
+		if err := store.Set(tc.id, shell); err != nil {
+			t.Fatal(err)
+		}
+	}
+	human := sessionstore.Entry{
+		Project: "app", SessionKind: sessionstore.SessionKindImportedPR, Goal: "Human opened this",
+	}
+	human.UpsertPR(sessionstore.TrackedPR{
+		Owner: "acme", Repo: "api", Number: 99, State: "OPEN", HeadRef: "feat/human",
+		URL: "https://github.com/acme/api/pull/99",
+	})
+	if err := store.Set("w_human", human); err != nil {
+		t.Fatal(err)
+	}
+	// A shell that has already run is a normal work unit (the kind is cleared
+	// at claim). It stays, next to the session that opened the PR.
+	started := sessionstore.Entry{
+		Project: "app", SessionID: "sess-started", Goal: "address already started",
+	}
+	started.UpsertPR(web)
+	if err := store.Set("w_started", started); err != nil {
+		t.Fatal(err)
+	}
+	review := sessionstore.Entry{
+		Project: "app", SessionKind: sessionstore.SessionKindPRReview, Goal: "Review acme/web#8",
+	}
+	review.UpsertPR(web)
+	if err := store.Set("thread-review", review); err != nil {
+		t.Fatal(err)
+	}
+
+	// The page hides the untouched shell as soon as the creator is bound,
+	// before the poller deletes it.
+	hits := b.FindPRSessions("app", "acme", "web", 8)
+	if len(hits) != 3 {
+		t.Fatalf("FindPRSessions before drop: %+v", hits)
+	}
+	for _, h := range hits {
+		if h.ThreadID == "w_shadow_web" {
+			t.Fatal("untouched shadow must not be listed on the PR")
+		}
+	}
+	if got := b.FindByPR("app", "acme", "web", 8, false); len(got) != 2 {
+		t.Fatalf("Address hits = %+v, want creator and the started shell", got)
+	}
+
+	if n := b.dropShadowImportedPRs(); n != 2 {
+		t.Fatalf("dropped=%d want 2", n)
+	}
+	for _, id := range []string{"w_shadow_api", "w_shadow_web"} {
+		if _, ok := store.Get(id); ok {
+			t.Fatalf("%s still stored", id)
+		}
+	}
+	for _, id := range []string{"thread-creator", "w_other_project", "w_human", "w_started", "thread-review"} {
+		if _, ok := store.Get(id); !ok {
+			t.Fatalf("%s was deleted", id)
+		}
+	}
+	hits = b.FindPRSessions("app", "acme", "api", 4)
+	if len(hits) != 1 || hits[0].ThreadID != "thread-creator" {
+		t.Fatalf("api PR sessions: %+v", hits)
+	}
+	if other := b.FindPRSessions("other", "acme", "api", 4); len(other) != 1 || other[0].ThreadID != "w_other_project" {
+		t.Fatalf("other project: %+v", other)
+	}
+	if humanHits := b.FindPRSessions("app", "acme", "api", 99); len(humanHits) != 1 || !storeMust(t, store, "w_human").IsImportedPR() {
+		t.Fatalf("human PR: %+v", humanHits)
+	}
+
+	pc := b.cfg.Projects["app"]
+	pc.GitHub = &config.ProjectGitHubConfig{Repos: []config.GitHubRepoRef{
+		{Owner: "acme", Repo: "api"},
+		{Owner: "acme", Repo: "web"},
+	}}
+	b.cfg.Projects["app"] = pc
+	b.SetGHRunner(func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		switch {
+		case strings.Contains(joined, "--repo acme/api"):
+			return []byte(`[{"number":4,"url":"https://github.com/acme/api/pull/4","title":"api change","state":"OPEN","author":{"login":"zoe"},"headRefName":"feat/api"}]`), nil
+		case strings.Contains(joined, "--repo acme/web"):
+			return []byte(`[{"number":8,"url":"https://github.com/acme/web/pull/8","title":"web change","state":"OPEN","author":{"login":"zoe"},"headRefName":"feat/web"}]`), nil
+		default:
+			t.Fatalf("unexpected gh: %v", args)
+			return nil, nil
+		}
+	})
+	if n := b.importOpenGitHubPRs(); n != 0 {
+		t.Fatalf("reimported=%d", n)
+	}
+	if store.Count() != 5 {
+		t.Fatalf("count=%d want creator+other+human+started+review", store.Count())
+	}
+}
+
+func TestDropShadowKeepsSameNumberInAnotherRepo(t *testing.T) {
+	b, store := testBotSessions(t)
+	drainBotOnCleanup(t, b)
+	admin := sessionstore.TrackedPR{
+		Owner: "deploys-app", Repo: "admin", Number: 25, State: "OPEN",
+		URL: "https://github.com/deploys-app/admin/pull/25",
+	}
+	collector := sessionstore.TrackedPR{
+		Owner: "deploys-app", Repo: "collector", Number: 25, State: "OPEN",
+		URL: "https://github.com/deploys-app/collector/pull/25",
+	}
+	work := sessionstore.Entry{Project: "deploys", Goal: "admin change"}
+	work.UpsertPR(admin)
+	if err := store.Set("thread-admin", work); err != nil {
+		t.Fatal(err)
+	}
+	shell := sessionstore.Entry{
+		Project: "deploys", SessionKind: sessionstore.SessionKindImportedPR, Goal: "collector change",
+	}
+	shell.UpsertPR(collector)
+	if err := store.Set("w_collector", shell); err != nil {
+		t.Fatal(err)
+	}
+	if n := b.dropShadowImportedPRs(); n != 0 {
+		t.Fatalf("dropped=%d", n)
+	}
+	hits := b.FindPRSessions("deploys", "deploys-app", "collector", 25)
+	if len(hits) != 1 || hits[0].ThreadID != "w_collector" {
+		t.Fatalf("%+v", hits)
+	}
+	adminHits := b.FindPRSessions("deploys", "deploys-app", "admin", 25)
+	if len(adminHits) != 1 || adminHits[0].ThreadID != "thread-admin" {
+		t.Fatalf("admin: %+v", adminHits)
+	}
+}
+
+func TestApplyPRInfoDropsShadowImport(t *testing.T) {
+	b, store := testBotSessions(t)
+	drainBotOnCleanup(t, b)
+	if err := store.Set("thread-creator", sessionstore.Entry{Project: "app", Goal: "ship both repos"}); err != nil {
+		t.Fatal(err)
+	}
+	shell := sessionstore.Entry{
+		Project: "app", SessionKind: sessionstore.SessionKindImportedPR, Goal: "api change", OwnerName: "zoe",
+	}
+	shell.UpsertPR(sessionstore.TrackedPR{
+		Owner: "acme", Repo: "api", Number: 4, State: "OPEN",
+		URL: "https://github.com/acme/api/pull/4", HeadRef: "feat/api",
+	})
+	if err := store.Set("w_shadow_api", shell); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.applyPRInfo(nil, "thread-creator", ghpr.Info{
+		Number: 4, URL: "https://github.com/acme/api/pull/4", Title: "api change",
+		State: "OPEN", Owner: "acme", Repo: "api", HeadRef: "feat/api",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := store.Get("w_shadow_api"); ok {
+		t.Fatal("shadow survived the creator binding the PR")
+	}
+	hits := b.FindPRSessions("app", "acme", "api", 4)
+	if len(hits) != 1 || hits[0].ThreadID != "thread-creator" {
+		t.Fatalf("%+v", hits)
+	}
+}
+
+func storeMust(t *testing.T, store *sessionstore.Store, id string) sessionstore.Entry {
+	t.Helper()
+	e, ok := store.Get(id)
+	if !ok {
+		t.Fatalf("missing %s", id)
+	}
+	return e
+}

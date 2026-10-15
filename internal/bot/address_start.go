@@ -404,6 +404,7 @@ func (b *Bot) bindTrackedPR(threadID, project string, tracked sessionstore.Track
 		return err
 	}
 	if ok {
+		b.dropShadowsIfCreator(threadID)
 		return nil
 	}
 	e := sessionstore.Entry{
@@ -417,7 +418,11 @@ func (b *Bot) bindTrackedPR(threadID, project string, tracked sessionstore.Track
 		ensureSessionOwner(&e, actor.ID, actor.String())
 	}
 	e.UpsertPR(tracked)
-	return b.sessions.Set(threadID, e)
+	if err := b.sessions.Set(threadID, e); err != nil {
+		return err
+	}
+	b.dropShadowsIfCreator(threadID)
+	return nil
 }
 
 // BuildAddressCIPrompt is the single-PR CI fix task body for web (uses buildFixCIPrompt core).

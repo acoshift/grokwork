@@ -797,6 +797,63 @@ func TestPRDetailSessionLink(t *testing.T) {
 	}
 }
 
+func TestPRDetailOmitsShadowImportedSession(t *testing.T) {
+	srv := workflowServer(t)
+	pr := sessionstore.TrackedPR{
+		URL: "https://github.com/acme/app/pull/9", Number: 9,
+		Owner: "acme", Repo: "app", State: "OPEN",
+	}
+	if err := srv.sessions.Set("thread-creator", sessionstore.Entry{
+		SessionID: "sess-creator", Project: "proj", Goal: "Implement customer broadcast",
+		WorktreeBranch: "grokwork/thread-creator",
+		PRs:            []sessionstore.TrackedPR{pr},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.sessions.Set("w_shadow_pr", sessionstore.Entry{
+		Project: "proj", SessionKind: sessionstore.SessionKindImportedPR,
+		Goal: "feat: broadcast a chat text", OwnerName: "zoe",
+		PRs: []sessionstore.TrackedPR{pr},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.sessions.Set("thread-review", sessionstore.Entry{
+		Project: "proj", SessionKind: sessionstore.SessionKindPRReview,
+		Goal: "Review the broadcast PR",
+		PRs:  []sessionstore.TrackedPR{pr},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/prs/acme/app/9?project=proj", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"Implement customer broadcast",
+		"Review the broadcast PR",
+		"Sessions (2)",
+		`href="/sessions/thread-creator?project=proj"`,
+		"Go to session (2)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+	for _, absent := range []string{
+		"w_shadow_pr",
+		"feat: broadcast a chat text",
+		`<span class="badge">imported</span>`,
+		"Sessions (3)",
+	} {
+		if strings.Contains(body, absent) {
+			t.Fatalf("shadow session leaked %q", absent)
+		}
+	}
+}
+
 func TestSessionDiff(t *testing.T) {
 	srv := workflowServer(t)
 	projPath, ok := srv.cfg.ProjectPath("proj")

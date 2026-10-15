@@ -271,6 +271,55 @@ func TestShipBoardMergesUnitsOnOnePR(t *testing.T) {
 	}
 }
 
+func TestShipBoardOmitsShadowImportedPR(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		Projects: config.PathProjects(map[string]string{"alpha": filepath.Join(dir, "alpha")}),
+		DataDir:  dir,
+	}
+	if err := os.MkdirAll(cfg.Projects["alpha"].Path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr := sessionstore.TrackedPR{
+		URL: "https://github.com/acme/alpha/pull/7", Number: 7,
+		Owner: "acme", Repo: "alpha", State: "OPEN", Title: "fix retry queue",
+	}
+	if err := store.Set("t-work", sessionstore.Entry{
+		SessionID: "s-work", Project: "alpha", Goal: "ship the fix",
+		PRs: []sessionstore.TrackedPR{pr},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("w_shadow", sessionstore.Entry{
+		Project: "alpha", SessionKind: sessionstore.SessionKindImportedPR,
+		Goal: "fix retry queue", OwnerName: "zoe",
+		PRs: []sessionstore.TrackedPR{pr},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b := New(cfg, store, hist)
+	drainBotOnCleanup(t, b)
+	board := b.ListShipBoard("alpha", "all")
+	if len(board.Rows) != 1 {
+		t.Fatalf("want 1 row, got %d: %+v", len(board.Rows), board.Rows)
+	}
+	row := board.Rows[0]
+	if row.SessionCount != 1 || row.ThreadID != "t-work" || row.Imported || row.Goal != "ship the fix" {
+		t.Fatalf("shadow counted as a session: %+v", row)
+	}
+	if _, ok := store.Get("w_shadow"); !ok {
+		t.Fatal("board read must not delete the shell")
+	}
+}
+
 // TestMergeShipRows pins the per-field merge rules. It works on rows directly
 // because turn stamps still refresh UpdatedAt, so the recency tiebreaks
 // are unreachable through the store.

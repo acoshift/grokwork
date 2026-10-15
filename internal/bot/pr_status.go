@@ -63,6 +63,11 @@ func (b *Bot) runPRStatusPoller() {
 func (b *Bot) runPRStatusPollCycle(reason string) {
 	log.Printf("bg: pr-status poll start reason=%s", reason)
 	start := time.Now()
+	// Every cycle, not only the 10-minute import: a merged PR is no longer
+	// listed, so a shadow of it would otherwise stay forever.
+	if n := b.dropShadowImportedPRs(); n > 0 {
+		log.Printf("bg: pr-status dropped %d shadow imported PR session(s)", n)
+	}
 	imported := 0
 	if b.shouldImportOpenPRs(reason, start) {
 		imported = b.importOpenGitHubPRs()
@@ -402,6 +407,10 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 	} else {
 		return nil
 	}
+
+	// The creator just recorded this PR. Drop imported shells the poller
+	// minted for it while the run was still in flight.
+	b.dropShadowsIfCreator(threadID)
 
 	b.syncReviewStoreFromPR(info)
 	b.announcePRTimeline(s, threadID, prevSnap, info)

@@ -11,7 +11,9 @@ import (
 // Agentic PR-review units (SessionKindPRReview) are always excluded — they bind
 // the PR for the detail Sessions list only, never for Address reuse.
 // Imported shells (SessionKindImportedPR) are included so Address reuses the
-// tracker instead of minting a second unit.
+// tracker instead of minting a second unit, unless a work session already
+// tracks the PR. That shell is the importer's duplicate of the session that
+// opened it (multi-repo feature branches are not grokwork/<thread>).
 func (b *Bot) FindByPR(project, owner, repo string, number int, includeTerminal bool) []IssueSessionHit {
 	return b.findPRHits(project, owner, repo, number, includeTerminal, false)
 }
@@ -38,12 +40,41 @@ func (b *Bot) findPRHits(project, owner, repo string, number int, includeTermina
 		return nil
 	}
 	list := b.sessions.List()
-	var hits []IssueSessionHit
+	var matched []sessionstore.Listed
 	for _, listed := range list {
 		if !strings.EqualFold(listed.Project, project) {
 			continue
 		}
 		if !entryBindsPR(listed.Entry, target) {
+			continue
+		}
+		matched = append(matched, listed)
+	}
+	// A work session that tracks this exact owner/repo#n is the one that opened
+	// it. Hide the imported shell even when that work session is terminal, so
+	// Address does not offer the duplicate and the Sessions list does not count
+	// it. strictSamePR, not SamePR: a bare number is not identity when the
+	// project has that number in two repos.
+	hasCreator := false
+	for _, listed := range matched {
+		if !sessionCreatesPR(listed.Entry) {
+			continue
+		}
+		e := listed.Entry
+		e.NormalizePRs()
+		for _, pr := range e.PRs {
+			if strictSamePR(pr, target) {
+				hasCreator = true
+				break
+			}
+		}
+		if hasCreator {
+			break
+		}
+	}
+	var hits []IssueSessionHit
+	for _, listed := range matched {
+		if hasCreator && listed.IsImportedPR() {
 			continue
 		}
 		if !includeReview && listed.IsPRReview() {
