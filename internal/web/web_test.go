@@ -1575,6 +1575,39 @@ func TestNavIconsAreInlineSVG(t *testing.T) {
 	}
 }
 
+// TestIOSStatusBarIsFlatAndDiffTextDoesNotInflate pins two iOS/iPadOS fixes.
+// Liquid Glass stays a live blur unless a sticky box touching the top edge
+// has an opaque background — a fixed strip keeps the transparent mode.
+// iOS also enlarges some flex lines in a diff (the long ones), so the patch
+// has to set text-size-adjust itself — inheriting it is not enough there.
+func TestIOSStatusBarIsFlatAndDiffTextDoesNotInflate(t *testing.T) {
+	srv, _, _ := testServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`-webkit-text-size-adjust: 100%`,
+		`text-size-adjust: 100%`,
+		`height: env(safe-area-inset-top, 0px)`,
+		`margin-bottom: calc(-1 * env(safe-area-inset-top, 0px))`,
+		`.dpatch, .dl, .dl .ln, .dl .dc`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("page CSS missing %q", want)
+		}
+	}
+	if strings.Contains(body, `backdrop-filter: blur(10px)`) {
+		t.Fatal("review bar must not use backdrop-filter; iOS samples it into the status bar")
+	}
+	if strings.Contains(body, "body::before {\n      content: \"\";\n      display: block;\n      position: fixed;") {
+		t.Fatal("status-bar strip must be sticky; fixed keeps iOS 26 glass transparent")
+	}
+}
+
 // TestOverviewMobileBrowseListsWorkspaceSections pins the phone-only Browse
 // block on the project overview: every workspace section that is not a bottom
 // tab (or the Start-task top-bar chip) must appear here, or mobile users have

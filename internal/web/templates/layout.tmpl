@@ -209,8 +209,32 @@
     * { box-sizing: border-box; }
     /* iOS Safari (26 Liquid Glass especially) samples the document background
        for the browser chrome tint. Keep <html> on the page bg so the title
-       bar has a stable sample target when fixed overlays come and go. */
-    html { background-color: var(--bg); }
+       bar has a stable sample target when fixed overlays come and go.
+       text-size-adjust stops iOS from enlarging some blocks on its own —
+       long flex lines in a diff are the ones that blow up. Desktop ignores it. */
+    html {
+      background-color: var(--bg);
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
+    /* iOS 26 samples a sticky box that touches the top edge and, when its
+       background is opaque, paints the status bar as that flat colour.
+       position:fixed does not: it keeps the bar in the transparent glass
+       mode, and the box is clipped before it can paint behind the bar.
+       The negative margin leaves the strip out of flow; the safe-area
+       padding on the header and main is what clears the content.
+       Height is 0 where there is no inset (desktop). */
+    body::before {
+      content: "";
+      display: block;
+      position: sticky;
+      top: 0;
+      height: env(safe-area-inset-top, 0px);
+      margin-bottom: calc(-1 * env(safe-area-inset-top, 0px));
+      background-color: var(--bg);
+      z-index: 70;
+      pointer-events: none;
+    }
     body {
       margin: 0;
       font-family: var(--font);
@@ -243,14 +267,15 @@
       height: 100dvh;
       display: flex;
       flex-direction: column;
-      padding: 1.35rem 0.95rem 1.1rem;
+      padding: calc(1.35rem + env(safe-area-inset-top, 0px)) 0.95rem 1.1rem;
+      background-color: var(--bg);
       border-right: 1px solid var(--border);
       overflow-y: auto;
       scrollbar-width: thin;
     }
     main.main {
       min-width: 0;
-      padding: 2rem 2.4rem 4rem;
+      padding: calc(2rem + env(safe-area-inset-top, 0px)) 2.4rem 4rem;
     }
     /* ── Login gate ──────────────────────────────────────────────────────
        The public page has no sidebar, so the whole viewport is the frame and
@@ -1156,14 +1181,17 @@
     /* Top progress bar for boosted page navigations (JS toggles .on/.done). */
     #page-loader {
       position: fixed;
-      top: 0;
+      /* Below the status-bar strip. A fixed top:0 layer is what keeps iOS 26
+         Liquid Glass in the transparent mode that smears the top of the page. */
+      top: env(safe-area-inset-top, 0px);
       left: 0;
       right: 0;
       height: 2px;
-      z-index: 50;
+      z-index: 75;
       pointer-events: none;
       opacity: 0;
-      transition: opacity 0.15s ease;
+      visibility: hidden;
+      transition: opacity 0.15s ease, visibility 0s linear 0.15s;
     }
     #page-loader::before {
       content: "";
@@ -1173,7 +1201,11 @@
       background: var(--accent);
       box-shadow: 0 0 8px hsl(var(--blue-500) / 45%);
     }
-    #page-loader.on { opacity: 1; }
+    #page-loader.on {
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.15s ease, visibility 0s;
+    }
     #page-loader.on::before {
       width: 80%;
       transition: width 6s cubic-bezier(0.05, 0.65, 0.15, 1);
@@ -2888,8 +2920,8 @@
     .md table tr:last-child td { border-bottom: 1px solid var(--border); }
     .pr-rail {
       position: sticky;
-      top: 1.25rem;
-      max-height: calc(100vh - 2.5rem);
+      top: calc(1.25rem + env(safe-area-inset-top, 0px));
+      max-height: calc(100vh - 2.5rem - env(safe-area-inset-top, 0px));
       overflow-y: auto;
       display: flex;
       flex-direction: column;
@@ -3477,7 +3509,7 @@
     /* ── Project settings: sub-tabs + team policy + member roster ────── */
     .cfg-tabs {
       position: sticky;
-      top: 0;
+      top: env(safe-area-inset-top, 0px);
       z-index: 5;
       display: flex;
       /* Override the sidebar's element-level nav { flex-direction: column }. */
@@ -4471,15 +4503,17 @@
     /* Index-only page; hunks stream per file. content-visibility keeps
        loaded-but-offscreen diffs out of layout/paint so huge changesets
        stay smooth. */
-    html:has(#diff-review) { scroll-padding-top: 7rem; }
+    html:has(#diff-review) { scroll-padding-top: calc(7rem + env(safe-area-inset-top, 0px)); }
     .rv-tadd { color: var(--ok); font-weight: 600; }
     .rv-tdel { color: var(--danger); font-weight: 600; }
     .review-bar {
-      position: sticky; top: 0; z-index: 30;
+      position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30;
       display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
       margin: 1rem 0; padding: 0.5rem 0.65rem;
-      background: color-mix(in srgb, var(--bg) 84%, transparent);
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      /* Opaque on purpose. A translucent sticky bar at the top edge is what
+         iOS 26 Liquid Glass samples, and backdrop-filter turns that sample
+         into the blurry status-bar strip. */
+      background: var(--bg);
       border: 1px solid var(--border); border-radius: var(--radius-lg);
       box-shadow: var(--shadow-1);
     }
@@ -4503,8 +4537,8 @@
     }
     .review-cols { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 1.1rem; align-items: start; }
     .file-rail {
-      position: sticky; top: 4.6rem;
-      max-height: calc(100vh - 5.6rem);
+      position: sticky; top: calc(4.6rem + env(safe-area-inset-top, 0px));
+      max-height: calc(100vh - 5.6rem - env(safe-area-inset-top, 0px));
       overflow-y: auto; overscroll-behavior: contain;
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius-lg); box-shadow: var(--shadow-1);
@@ -4552,7 +4586,7 @@
     }
     .fcard.is-current { border-color: var(--focus-border); box-shadow: 0 0 0 1px var(--focus-border), var(--shadow-1); }
     .fhead {
-      position: sticky; top: 4.35rem; z-index: 5;
+      position: sticky; top: calc(4.35rem + env(safe-area-inset-top, 0px)); z-index: 5;
       display: flex; align-items: center; gap: 0.55rem;
       padding: 0.5rem 0.75rem;
       background: var(--surface);
@@ -4601,6 +4635,12 @@
     }
     @keyframes rv-shimmer { to { background-position: -200% 0; } }
     .dpatch { font-family: var(--mono); font-size: 0.78rem; line-height: 1.45; padding: 0.35rem 0 0.6rem; min-width: max-content; }
+    /* Repeated on the line, not only on html: iOS still boosts a flex row of
+       pre text (the long lines, so only some files) when the value is inherited. */
+    .dpatch, .dl, .dl .ln, .dl .dc {
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
     .dl { display: flex; }
     .dl .ln {
       flex: none; width: 3.1em; padding-right: 0.7em; text-align: right;
@@ -4660,7 +4700,7 @@
         flex-wrap: wrap;
         align-items: center;
         gap: 0.5rem 0.9rem;
-        padding: 0.8rem 1rem;
+        padding: calc(0.8rem + env(safe-area-inset-top, 0px)) 1rem 0.8rem;
         border-right: none;
         border-bottom: 1px solid var(--border);
         overflow: visible;
@@ -4862,7 +4902,7 @@
       /* Login renders no tab bar (it lives in the skipped sidebar), so the
          gate keeps its own optical centring instead of reserving room. */
       .wrap.is-login main.main {
-        padding: 3rem 1.25rem calc(5rem + env(safe-area-inset-bottom));
+        padding: calc(3rem + env(safe-area-inset-top, 0px)) 1.25rem calc(5rem + env(safe-area-inset-bottom));
       }
       .login-mark { width: 3.75rem; height: 3.75rem; border-radius: 1.15rem; }
       /* iOS large-title feel for page headings (top-level and detail rows). */
@@ -5036,6 +5076,9 @@
          dismiss; a real document-background change on open/close is what
          makes the title bar release back to --bg. */
       html:has(body.rail-sheet-open) {
+        background-color: color-mix(in srgb, #000 38%, var(--bg));
+      }
+      body.rail-sheet-open::before {
         background-color: color-mix(in srgb, #000 38%, var(--bg));
       }
       .rail-scrim {
