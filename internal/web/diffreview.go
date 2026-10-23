@@ -255,7 +255,7 @@ func (s *Server) sessionDiffFile(ctx *hime.Context) error {
 	if !ok {
 		return ctx.Status(http.StatusNotFound).Error("unknown session/thread")
 	}
-	cwd, project := s.resolveSessionDiffCwd(ent, threadID)
+	cwd, project := s.resolveSessionDiffCwd(ctx.Context(), ent, threadID)
 	if cwd == "" {
 		return ctx.Status(http.StatusNotFound).Error(fmt.Sprintf("worktree no longer on disk for this session (project=%q)", project))
 	}

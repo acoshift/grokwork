@@ -740,6 +740,11 @@ func terminalPRState(states []string) (done bool, state string) {
 	return true, terminal
 }
 
+// HeadBranch returns the current branch name for a checkout, or empty.
+func HeadBranch(ctx context.Context, path string) string {
+	return headBranch(ctx, path)
+}
+
 // headBranch returns the current branch name for a worktree, or empty.
 func headBranch(ctx context.Context, path string) string {
 	if path == "" {

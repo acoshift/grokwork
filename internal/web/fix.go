@@ -876,7 +876,7 @@ func (s *Server) sessionPageData(ctx *hime.Context, threadID string) pageData {
 		if d.DiscordURL == "" {
 			d.DiscordURL = bot.DiscordThreadURL(s.cfg.ProjectDiscordGuildID(ent.Project), threadID)
 		}
-		cwd, _ := s.resolveSessionDiffCwd(ent, threadID)
+		cwd, _ := s.resolveSessionDiffCwd(ctx.Context(), ent, threadID)
 		d.HasWorktree = cwd != ""
 		s.attachSessionErrorBanner(&d, ent, threadID)
 	}

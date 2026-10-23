@@ -797,7 +797,7 @@ func (s *Server) sessionDiffPage(ctx *hime.Context) error {
 	if !ok {
 		return ctx.Status(http.StatusNotFound).Error("unknown session/thread")
 	}
-	cwd, project := s.resolveSessionDiffCwd(ent, threadID)
+	cwd, project := s.resolveSessionDiffCwd(ctx.Context(), ent, threadID)
 	base := s.sessionDiffBase(ctx.Context(), ent, cwd, ctx.FormValue("base"))
 	var index ghpr.DiffIndex
 	var diffErr error
@@ -889,7 +889,11 @@ func (s *Server) sessionPRBaseName(ctx context.Context, ent sessionstore.Entry, 
 // worktree-diff page. It never falls back to the main project checkout or the
 // bot process cwd — a removed/pruned worktree returns empty so the UI can show
 // an error instead of an empty or misleading main-branch diff.
-func (s *Server) resolveSessionDiffCwd(ent sessionstore.Entry, threadID string) (cwd, project string) {
+//
+// A multi-repo project path is not itself a git checkout. When the session's
+// PR branch is checked out in one child repo, that child is the diff root.
+// A sibling sitting on a different branch is not.
+func (s *Server) resolveSessionDiffCwd(ctx context.Context, ent sessionstore.Entry, threadID string) (cwd, project string) {
 	project = strings.TrimSpace(ent.Project)
 	mainCwd := strings.TrimSpace(ent.MainCwd)
 	if mainCwd == "" && project != "" {
@@ -917,7 +921,50 @@ func (s *Server) resolveSessionDiffCwd(ent sessionstore.Entry, threadID string) 
 	if c := strings.TrimSpace(ent.Cwd); gitworktree.IsRepo(c) {
 		return c, project
 	}
+	if child := nestedDiffCheckout(ctx, ent, mainCwd); child != "" {
+		return child, project
+	}
 	return "", project
+}
+
+// nestedDiffCheckout is the child repo of a multi-repo project whose HEAD is
+// the session's PR branch. A project path that is itself a git repo returns
+// empty so a pruned worktree cannot fall back to that checkout.
+func nestedDiffCheckout(ctx context.Context, ent sessionstore.Entry, projectPath string) string {
+	projectPath = strings.TrimSpace(projectPath)
+	if projectPath == "" || gitworktree.IsRepo(projectPath) {
+		return ""
+	}
+	ent.NormalizePRs()
+	if len(ent.PRs) == 0 {
+		return ""
+	}
+	ordered := make([]sessionstore.TrackedPR, 0, len(ent.PRs)+1)
+	if pr, ok := ent.PrimaryPR(); ok {
+		ordered = append(ordered, pr)
+	}
+	ordered = append(ordered, ent.PRs...)
+	seen := map[string]bool{}
+	for _, pr := range ordered {
+		pr.FillOwnerRepoFromURL()
+		branch := gitworktree.NormalizeAdoptBranch(pr.HeadRef)
+		if branch == "" || pr.Repo == "" {
+			continue
+		}
+		key := pr.Owner + "/" + pr.Repo + "@" + branch
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		local, err := gitworktree.ResolveLocalRepo(ctx, projectPath, pr.Owner, pr.Repo)
+		if err != nil || !gitworktree.IsRepo(local) {
+			continue
+		}
+		if gitworktree.HeadBranch(ctx, local) == branch {
+			return local
+		}
+	}
+	return ""
 }
 
 // annotateClickUpTaskWorkState marks ClickUp tasks FIXING for active Fixes sessions.

@@ -1018,6 +1018,122 @@ func TestSessionDiffIsolationOffUsesMainCwd(t *testing.T) {
 	}
 }
 
+func TestSessionDiffMultiRepoUsesChildCheckout(t *testing.T) {
+	srv := workflowServer(t)
+	projPath, ok := srv.cfg.ProjectPath("proj")
+	if !ok {
+		t.Fatal("proj path")
+	}
+	// Parent is a folder of checkouts, not a git repo.
+	if err := os.RemoveAll(filepath.Join(projPath, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	landing := filepath.Join(projPath, "hah-landing")
+	other := filepath.Join(projPath, "other")
+	if err := execGitInit(t, landing); err != nil {
+		t.Fatal(err)
+	}
+	if err := execGitInit(t, other); err != nil {
+		t.Fatal(err)
+	}
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=t@e.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=t@e.com",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	primaryCmd := exec.Command("git", "-C", landing, "rev-parse", "--abbrev-ref", "HEAD")
+	primaryOut, err := primaryCmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	primary := strings.TrimSpace(string(primaryOut))
+	git(landing, "checkout", "-b", "blog/author-mdx-format")
+	git(other, "checkout", "-b", "unrelated")
+
+	if err := srv.sessions.Set("multi-1", sessionstore.Entry{
+		SessionID: "s", Project: "proj", Cwd: projPath, MainCwd: projPath,
+		PRs: []sessionstore.TrackedPR{{
+			URL: "https://github.com/healthathome/hah-landing/pull/75", Number: 75, State: "OPEN",
+			Owner: "healthathome", Repo: "hah-landing", HeadRef: "blog/author-mdx-format",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var sawDir string
+	orig := srv.ghRunner
+	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		if name == "git" && len(args) > 0 && args[0] == "diff" {
+			sawDir = dir
+		}
+		return orig(ctx, dir, name, args...)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sessions/multi-1/diff", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "worktree no longer on disk") {
+		t.Fatalf("child checkout must be the diff root: %s", body)
+	}
+	if sawDir != landing {
+		t.Fatalf("diff cwd=%q want %q", sawDir, landing)
+	}
+	if !strings.Contains(body, "wt.go") {
+		t.Fatalf("missing diff index: %s", body)
+	}
+
+	sawDir = ""
+	req = httptest.NewRequest(http.MethodGet, "/sessions/multi-1/diff/file?path=wt.go", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("frag status=%d body=%s", w.Code, w.Body.String())
+	}
+	if sawDir != landing {
+		t.Fatalf("file diff cwd=%q want %q", sawDir, landing)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/sessions/multi-1", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	sess := w.Body.String()
+	if !strings.Contains(sess, `href="/sessions/multi-1/diff?project=proj">Worktree diff</a>`) {
+		t.Fatalf("want enabled Worktree diff link, got %s", sess)
+	}
+
+	// The sibling is on a different branch. Once the PR branch is not checked
+	// out, the button must not diff that sibling or the parent folder.
+	git(landing, "checkout", primary)
+	sawDir = ""
+	req = httptest.NewRequest(http.MethodGet, "/sessions/multi-1/diff", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	body = w.Body.String()
+	if !strings.Contains(body, "worktree no longer on disk") {
+		t.Fatalf("want missing-worktree error when no child has the PR branch, got %s", body)
+	}
+	if sawDir != "" {
+		t.Fatalf("git diff ran in %q", sawDir)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/sessions/multi-1", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	sess = w.Body.String()
+	if !strings.Contains(sess, `href="/sessions/multi-1/diff?project=proj" aria-disabled="true" title="Worktree no longer on disk">Worktree diff</a>`) {
+		t.Fatalf("want disabled Worktree diff link, got %s", sess)
+	}
+}
+
 func TestSessionDiffDiscoversWorktreeWhenSessionMetadataEmpty(t *testing.T) {
 	srv := workflowServer(t)
 	// Corrupted/minimal session (issues only) — no project/cwd. Real bug path:
