@@ -22,6 +22,8 @@ func TestWebTaskKindMapping(t *testing.T) {
 		"investigate":   KindStartInvestigate,
 		"explain":       KindStartExplain,
 		"plan":          KindStartPlan,
+		"operate":       KindStartOperate,
+		" OPERATE ":     KindStartOperate,
 		"nonsense":      KindTask,
 	}
 	for in, want := range cases {

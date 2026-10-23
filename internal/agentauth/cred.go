@@ -28,6 +28,9 @@ type Caps struct {
 	GCPErrorsRead     bool
 	SentryRead        bool
 	DeploysErrorsRead bool
+	// Operate is deploy, Actions dispatch, and cherry-pick for this session.
+	// It is not on the ship or investigate defaults: a fix run must not deploy.
+	Operate bool
 }
 
 // DefaultShipCaps is the unrestricted ship/fix tool set (rev 3).

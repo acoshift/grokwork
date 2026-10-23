@@ -252,7 +252,35 @@ func (b *Bot) StartTask(opts StartTaskOpts) (queuePos int, err error) {
 			}
 			return 0, err
 		}
+		if err := b.refuseShipOnOperateSession(threadID); err != nil {
+			if b.runs != nil {
+				b.runs.RemoveTaskFiles(threadID, taskID)
+			}
+			return 0, err
+		}
 		if err := b.refusePlanOnExistingMode(threadID); err != nil {
+			if b.runs != nil {
+				b.runs.RemoveTaskFiles(threadID, taskID)
+			}
+			return 0, err
+		}
+	}
+	if kind == KindStartOperate {
+		if err := b.requireCanStartOperate(opts.Proj.Name, opts.Actor.ID); err != nil {
+			if b.runs != nil {
+				b.runs.RemoveTaskFiles(threadID, taskID)
+			}
+			return 0, err
+		}
+		if err := b.refuseOperateOnExistingMode(threadID); err != nil {
+			if b.runs != nil {
+				b.runs.RemoveTaskFiles(threadID, taskID)
+			}
+			return 0, err
+		}
+	}
+	if kind == KindStartFix {
+		if err := b.refuseShipOnOperateSession(threadID); err != nil {
 			if b.runs != nil {
 				b.runs.RemoveTaskFiles(threadID, taskID)
 			}

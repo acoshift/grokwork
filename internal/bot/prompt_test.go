@@ -47,9 +47,21 @@ func TestParseStartAndQueueCommands(t *testing.T) {
 	if p.Kind != KindStartPlan || !strings.Contains(p.Prompt, "file a plan issue") {
 		t.Fatalf("/plan: kind=%d prompt=%q", p.Kind, p.Prompt)
 	}
+	p = ParseMessage("<@1> /start operate deploy api to prod", "1")
+	if p.Kind != KindStartOperate || !strings.Contains(p.Prompt, "deploy api to prod") {
+		t.Fatalf("start operate: kind=%d prompt=%q", p.Kind, p.Prompt)
+	}
+	p = ParseMessage("<@1> /operate cherry-pick onto staging", "1")
+	if p.Kind != KindStartOperate || !strings.Contains(p.Prompt, "cherry-pick onto staging") {
+		t.Fatalf("/operate: kind=%d prompt=%q", p.Kind, p.Prompt)
+	}
 	p = ParseMessage("<@1> plan the refactor", "1")
 	if p.Kind != KindTask {
 		t.Fatalf("freeform plan should be task, kind=%d", p.Kind)
+	}
+	p = ParseMessage("<@1> operate the deploy", "1")
+	if p.Kind != KindTask {
+		t.Fatalf("freeform operate should be task, kind=%d", p.Kind)
 	}
 	p = ParseMessage("<@1> /queue", "1")
 	if p.Kind != KindQueue {

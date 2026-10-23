@@ -23,7 +23,7 @@ type StartWebTaskOpts struct {
 	// same local short name Discord uses for a new thread, then SummarizeTitle
 	// may replace it asynchronously. An explicit Title is never overwritten.
 	Title string
-	Mode  string // "" | "fix" | "investigate" | "explain" | "plan"
+	Mode  string // "" | "fix" | "investigate" | "explain" | "plan" | "operate"
 	// Model names the model this session should run on, stamping the agent that
 	// owns it. Empty means "whatever config says", which stays unstamped so the
 	// existing resolve-at-run-start path applies. Requires builder-class caps.
@@ -84,6 +84,11 @@ func (b *Bot) StartWebTask(opts StartWebTaskOpts) (FixStartResult, error) {
 	}
 	if WantsPlanStartMode(opts.Mode) {
 		if err := b.requireCanStartPlan(project, opts.Actor.ID); err != nil {
+			return FixStartResult{}, err
+		}
+	}
+	if WantsOperateStartMode(opts.Mode) {
+		if err := b.requireCanStartOperate(project, opts.Actor.ID); err != nil {
 			return FixStartResult{}, err
 		}
 	}
@@ -253,6 +258,8 @@ func webTaskKind(mode string) Kind {
 		return KindStartExplain
 	case ModePlan:
 		return KindStartPlan
+	case ModeOperate:
+		return KindStartOperate
 	default:
 		return KindTask
 	}
@@ -262,6 +269,12 @@ func webTaskKind(mode string) Kind {
 // issue, no ship). Empty mode is never plan — plan is not a project default.
 func WantsPlanStartMode(mode string) bool {
 	return strings.ToLower(strings.TrimSpace(mode)) == ModePlan
+}
+
+// WantsOperateStartMode reports whether a start mode requests Operate.
+// Empty mode is never operate — operate is not a project default.
+func WantsOperateStartMode(mode string) bool {
+	return strings.ToLower(strings.TrimSpace(mode)) == ModeOperate
 }
 
 // WantsFixStartMode reports whether a start mode (or project default when
@@ -304,6 +317,45 @@ func (b *Bot) requireCanStartFix(project, userID string) error {
 func (b *Bot) requireCanStartPlan(project, userID string) error {
 	if err := b.requireCanStartFix(project, userID); err != nil {
 		return ErrCannotStartPlan
+	}
+	return nil
+}
+
+// requireCanStartOperate is the same CanShip gate as plan, with an operate-specific error.
+func (b *Bot) requireCanStartOperate(project, userID string) error {
+	if err := b.requireCanStartFix(project, userID); err != nil {
+		return ErrCannotStartOperate
+	}
+	return nil
+}
+
+// refuseOperateOnExistingMode fails when the unit already has a Mode other than operate.
+func (b *Bot) refuseOperateOnExistingMode(threadID string) error {
+	if b == nil || b.sessions == nil {
+		return nil
+	}
+	e, ok := b.sessions.Get(threadID)
+	if !ok {
+		return nil
+	}
+	mode := strings.TrimSpace(e.Mode)
+	if mode == "" || mode == ModeOperate {
+		return nil
+	}
+	return fmt.Errorf("%w (mode=%s)", ErrOperateModeConflict, mode)
+}
+
+// refuseShipOnOperateSession fails when /start fix or /start plan targets an operate unit.
+func (b *Bot) refuseShipOnOperateSession(threadID string) error {
+	if b == nil || b.sessions == nil {
+		return nil
+	}
+	e, ok := b.sessions.Get(threadID)
+	if !ok {
+		return nil
+	}
+	if strings.TrimSpace(e.Mode) == ModeOperate {
+		return ErrOperateRejectsShip
 	}
 	return nil
 }

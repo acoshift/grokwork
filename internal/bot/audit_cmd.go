@@ -61,6 +61,8 @@ func taskAuditKind(k Kind) string {
 		return "explain"
 	case KindStartPlan:
 		return "plan"
+	case KindStartOperate:
+		return "operate"
 	default:
 		return "task"
 	}

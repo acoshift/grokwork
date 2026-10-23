@@ -90,12 +90,13 @@
      freeform can ship. */}}
 {{$caseInvestigate := and .SessionEntry.IsCase (not .SessionEntry.IsCaseClosed) (not .SessionEntry.IsCaseShipPhase)}}
 {{$investigate := and (eq .SessionEntry.Mode "investigate") (not .SessionEntry.IsCase)}}
+{{$operate := eq .SessionEntry.Mode "operate"}}
 {{$canStartFix := and $investigate .CanStartFixMode}}
 <div class="composer-dock" id="session-continue-form">
   <form method="post" action="/sessions/{{.ThreadID}}/continue" enctype="multipart/form-data" class="composer">
     {{template "csrf" $}}
     <label for="continue-prompt" class="sr-only">Prompt</label>
-    <textarea id="continue-prompt" name="prompt" rows="1" required placeholder="{{if or $caseInvestigate $investigate}}What should the agent look into?{{else}}What should happen next?{{end}}"></textarea>
+    <textarea id="continue-prompt" name="prompt" rows="1" required placeholder="{{if $operate}}What operation should run?{{else if or $caseInvestigate $investigate}}What should the agent look into?{{else}}What should happen next?{{end}}"></textarea>
     <button type="button" class="composer-attach" id="btn-attach" title="Attach files" aria-label="Attach files">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
     </button>
@@ -108,7 +109,7 @@
     {{end}}
   </form>
   <div class="attach-chips" id="continue-attach-chips" hidden></div>
-  <p class="composer-hint"><span>{{if $caseInvestigate}}Queues a read-only investigate on this case. Never opens PRs.{{else if $canStartFix}}Continue stays read-only. Fix &amp; ship implements in this session.{{else if $investigate}}Queues a read-only investigate. Never opens PRs.{{else}}Queues a follow-up on this session.{{end}}</span><span class="composer-kbd"><kbd>⌘</kbd><kbd>↩</kbd> send</span></p>
+  <p class="composer-hint"><span>{{if $operate}}Follow-ups stay in operate. No code edits, no pull request.{{else if $caseInvestigate}}Queues a read-only investigate on this case. Never opens PRs.{{else if $canStartFix}}Continue stays read-only. Fix &amp; ship implements in this session.{{else if $investigate}}Queues a read-only investigate. Never opens PRs.{{else}}Queues a follow-up on this session.{{end}}</span><span class="composer-kbd"><kbd>⌘</kbd><kbd>↩</kbd> send</span></p>
 </div>
 {{end}}
 

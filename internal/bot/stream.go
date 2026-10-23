@@ -555,6 +555,7 @@ const (
 	laneInvestigate phaseLaneKind = "investigate"
 	laneExplain     phaseLaneKind = "explain"
 	lanePlan        phaseLaneKind = "plan"
+	laneOperate     phaseLaneKind = "operate"
 	laneNone        phaseLaneKind = "none"
 )
 
@@ -588,6 +589,8 @@ func phaseLaneFor(prefixKind string, direct bool) phaseLane {
 		return phaseLane{kind: laneExplain, labels: []string{"draft"}}
 	case "plan":
 		return phaseLane{kind: lanePlan, labels: []string{"read", "draft", "file"}}
+	case "operate":
+		return phaseLane{kind: laneOperate, labels: []string{"read", "check", "run"}}
 	case "none":
 		return phaseLane{kind: laneNone, labels: nil}
 	default:
@@ -715,9 +718,37 @@ func (t *thoughtTracker) classify(line string) int {
 		return classifyShipPhase(line)
 	case laneInvestigate, lanePlan:
 		return classifyInvestigatePhase(line)
+	case laneOperate:
+		return classifyOperatePhase(line)
 	default:
 		return -1
 	}
+}
+
+// Operate-lane indices. check stays unlit: nothing in the tool stream is a
+// distinct "check" step, and lighting it from shell would imply a shell the
+// mode does not have.
+const (
+	phaseOpRead = iota
+	phaseOpCheck
+	phaseOpRun
+)
+
+func classifyOperatePhase(line string) int {
+	name, detailL, combined := parseActivityLine(line)
+	if name == "" && detailL == "" {
+		return -1
+	}
+	if strings.Contains(name, "ops_") || strings.Contains(combined, "ops_") {
+		return phaseOpRun
+	}
+	if isEditActivity(name, detailL) {
+		return -1
+	}
+	if isReadActivity(name, detailL) {
+		return phaseOpRead
+	}
+	return -1
 }
 
 // classifyPhase is the ship-lane classifier (tests + callers that only mean ship).

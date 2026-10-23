@@ -113,7 +113,10 @@ func ListCommitsWith(ctx context.Context, run Runner, cwd string, opts CommitLis
 	if skip > 0 {
 		args = append(args, "--skip", strconv.Itoa(skip))
 	}
-	args = append(args, ref)
+	// --end-of-options keeps a caller-supplied ref from being parsed as a
+	// log option (`--output=`, `--ext-diff`). A bare "--" would make the
+	// ref a pathspec and return no commits.
+	args = append(args, "--end-of-options", ref)
 	raw, err := run(ctx, cwd, "git", args...)
 	if err != nil {
 		return nil, err

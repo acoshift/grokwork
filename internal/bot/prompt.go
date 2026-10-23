@@ -33,6 +33,7 @@ const (
 	KindStartFix
 	KindStartExplain
 	KindStartPlan
+	KindStartOperate
 	KindCase
 	KindEscalate
 	KindCloseCase
@@ -249,7 +250,8 @@ func isDequeueCommand(lower string) bool {
 func isStartCommand(lower, text string) bool {
 	return strings.HasPrefix(lower, "/start ") || lower == "/start" ||
 		strings.HasPrefix(lower, "/investigate ") || lower == "/investigate" ||
-		strings.HasPrefix(lower, "/plan ") || lower == "/plan"
+		strings.HasPrefix(lower, "/plan ") || lower == "/plan" ||
+		strings.HasPrefix(lower, "/operate ") || lower == "/operate"
 }
 
 func isCaseCommand(lower string) bool {
@@ -335,6 +337,8 @@ func parseStartCommand(text string) Parsed {
 			return Parsed{Kind: KindStartExplain, Prompt: body, Arg: sub}
 		case "plan":
 			return Parsed{Kind: KindStartPlan, Prompt: body, Arg: sub}
+		case "operate":
+			return Parsed{Kind: KindStartOperate, Prompt: body, Arg: sub}
 		default:
 			// /start <freeform as investigate-or-fix via default>
 			return Parsed{Kind: KindStartFix, Prompt: rest, Arg: "fix"}
@@ -343,6 +347,8 @@ func parseStartCommand(text string) Parsed {
 		return Parsed{Kind: KindStartInvestigate, Prompt: rest, Arg: "investigate"}
 	case "/plan":
 		return Parsed{Kind: KindStartPlan, Prompt: rest, Arg: "plan"}
+	case "/operate":
+		return Parsed{Kind: KindStartOperate, Prompt: rest, Arg: "operate"}
 	default:
 		return Parsed{Kind: KindTask, Prompt: text}
 	}
@@ -437,9 +443,10 @@ func HelpText() string {
 		"• `/queue` — list queued follow-ups (author + intent)",
 		"• `/dequeue N` — remove queue item N (1-based; owner/co-owner/project admin, or your own)",
 		"• `/cancel-mine` — remove your queued items",
-		"• `/start investigate|fix|explain|plan <task>` — set session mode and run",
+		"• `/start investigate|fix|explain|plan|operate <task>` — set session mode and run",
 		"• `/investigate <task>` — read-only investigate (no PR / no direct ship)",
 		"• `/plan <task>` — read-only plan; host files a GitHub issue labelled `plan`",
+		"• `/operate <task>` — operations only (deploy, GitHub Actions, cherry-pick); no code edits, no PR",
 		"• `/case [severity] [ref:ID] <title>` — open a support case (Mode=case, phase intake)",
 		"• `/escalate [note]` — case → phase fixing (Mode stays case); next run gets escalation package",
 		"• `/answer [note]` — case → answered (knowledge path)",

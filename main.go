@@ -105,6 +105,9 @@ func main() {
 	t = time.Now()
 	addr := cfg.ListenAddr()
 	webSrv := web.New(cfg, sessions, hist, b)
+	// The agent plane is created in bot.New, before this engine exists.
+	// Operate tools read the engine at call time.
+	b.SetDeploys(webSrv.Deploys())
 	// Reconcile deploy records before the server accepts triggers, so a lane
 	// left behind by a crash cannot race a fresh deploy. Nothing is auto-resumed:
 	// shell steps are not idempotent, so recovery is an explicit human redeploy.

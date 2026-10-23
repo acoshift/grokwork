@@ -32,15 +32,16 @@
           <option value="investigate">Investigate</option>
           <option value="explain">Explain</option>
           <option value="plan">Plan</option>
+          <option value="operate">Operate</option>
         {{else}}
           <option value="investigate" selected>Investigate</option>
           <option value="explain">Explain</option>
         {{end}}
       </select>
       {{if .CanStartFixMode}}
-      <p class="rail-note" style="margin-top:0.4rem">Investigate never opens PRs or ships. Plan reads the repo, asks if needed, then opens a GitHub issue labelled <span class="mono">plan</span> — no code edits, no PR.</p>
+      <p class="rail-note" style="margin-top:0.4rem">Investigate never opens PRs or ships. Plan reads the repo, asks if needed, then opens a GitHub issue labelled <span class="mono">plan</span> — no code edits, no PR. Operate triggers deploys, GitHub Actions, and cherry-picks through the same gates as the web UI — no code edits, no PR.</p>
       {{else}}
-      <p class="rail-note" style="margin-top:0.4rem">Fix &amp; ship and Plan require builder-class project caps (<span class="mono">startSessions</span> + <span class="mono">githubWrites</span>). Investigate never opens PRs or ships.</p>
+      <p class="rail-note" style="margin-top:0.4rem">Fix &amp; ship, Plan, and Operate require builder-class project caps (<span class="mono">startSessions</span> + <span class="mono">githubWrites</span>). Investigate never opens PRs or ships.</p>
       {{end}}
     </div>
     {{if .CanSelectModel}}
@@ -73,6 +74,7 @@
   <p class="sub" style="margin-top:0.35rem">
     When a run ships:
     {{if .StartDirectShip}}<span class="badge">Direct to primary</span> — Grok fast-forwards the project default branch and pushes; no PR.{{else}}<span class="badge">PR mode</span> — the session works on a managed branch and opens a pull request.{{end}}
+    Operate does not edit code and does not open a pull request.
   </p>
   {{if ne .StartDefaultMode "fix"}}<p class="sub" style="margin-top:0.35rem">Project default mode is <span class="mono">{{.StartDefaultMode}}</span>.</p>{{end}}
   {{end}}

@@ -136,6 +136,82 @@ func TestBuildRunPolicyPlanNonShipFileOnly(t *testing.T) {
 	}
 }
 
+func TestBuildRunPolicyOperateFileOnly(t *testing.T) {
+	pol := BuildRunPolicy(PolicyInput{
+		RequestedMode:    ModeOperate,
+		Caps:             config.BuiltinCapabilityTemplates["builder"],
+		ConfigYolo:       true,
+		ShipMode:         sessionstore.ShipModeDirect,
+		InvestigateTools: "bash,run_terminal_command",
+		Agent:            grokrun.AgentClaude,
+	})
+	if pol.Mode != ModeOperate || pol.RunKind != RunKindOperate {
+		t.Fatalf("mode=%q runKind=%q", pol.Mode, pol.RunKind)
+	}
+	if pol.AllowPR || pol.AllowDirectShip || pol.AllowDirectIntegrate {
+		t.Fatalf("operate must not ship: %+v", pol)
+	}
+	if pol.Yolo || pol.IncludeGHToken || pol.InvestigateShell || !pol.NoSubagents {
+		t.Fatalf("operate gates: %+v", pol)
+	}
+	if pol.PrefixKind != "operate" || pol.PostCompletion != "none" {
+		t.Fatalf("prefix=%q post=%q", pol.PrefixKind, pol.PostCompletion)
+	}
+	if pol.Tools == nil || *pol.Tools != grokrun.AgentClaude.ExplainTools() {
+		t.Fatalf("tools=%v", pol.Tools)
+	}
+	if strings.Contains(*pol.Tools, "Bash") || strings.Contains(*pol.Tools, "run_terminal_command") || strings.Contains(*pol.Tools, "write_file") {
+		t.Fatalf("operate tools must be file-read: %s", *pol.Tools)
+	}
+}
+
+func TestBuildRunPolicyOperateStaysOperateWithoutGithubWrites(t *testing.T) {
+	pol := BuildRunPolicy(PolicyInput{
+		RequestedMode: ModeOperate,
+		Caps:          config.BuiltinCapabilityTemplates["investigator"],
+		ConfigYolo:    true,
+		ShipMode:      sessionstore.ShipModePR,
+	})
+	if pol.Coerced || pol.Mode != ModeOperate || pol.RunKind != RunKindOperate {
+		t.Fatalf("operate must not coerce to investigate: %+v", pol)
+	}
+	if pol.Tools == nil || *pol.Tools != grokrun.AgentGrok.ExplainTools() {
+		t.Fatalf("tools=%v", pol.Tools)
+	}
+	if pol.AllowPR || pol.Yolo || pol.IncludeGHToken {
+		t.Fatalf("gates: %+v", pol)
+	}
+}
+
+func TestBuildRunPolicyOperateSessionRejectsFix(t *testing.T) {
+	pol := BuildRunPolicy(PolicyInput{
+		SessionMode:      ModeOperate,
+		RequestedMode:    ModeFix,
+		RequestedRunKind: RunKindFix,
+		Caps:             config.BuiltinCapabilityTemplates["builder"],
+		ConfigYolo:       true,
+		ShipMode:         sessionstore.ShipModeDirect,
+	})
+	if pol.Mode != ModeOperate || pol.RunKind != RunKindOperate {
+		t.Fatalf("mode=%q runKind=%q", pol.Mode, pol.RunKind)
+	}
+	if pol.AllowPR || pol.AllowDirectShip || pol.AllowDirectIntegrate || pol.Tools == nil {
+		t.Fatalf("fix on an operate session must stay file-only: %+v", pol)
+	}
+}
+
+func TestOperatePromptNoPR(t *testing.T) {
+	p := operatePromptPrefix("grokwork/1")
+	for _, need := range []string{"OPERATE", "ops_deploy", "ops_cherry_pick", "expectSha", "do not push", "SESSION_DONE"} {
+		if !strings.Contains(p, need) {
+			t.Fatalf("missing %q in\n%s", need, p)
+		}
+	}
+	if strings.Contains(p, "gh pr create") {
+		t.Fatalf("operate must not instruct opening a PR:\n%s", p)
+	}
+}
+
 func TestBuildRunPolicyAnsweredUsesExplainFileTools(t *testing.T) {
 	pol := BuildRunPolicy(PolicyInput{
 		SessionMode:  ModeCase,

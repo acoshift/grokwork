@@ -507,6 +507,8 @@ func TestPhaseLaneFor(t *testing.T) {
 		{"investigate", false, "read → dig → report"},
 		{"explain", false, "draft"},
 		{"plan", false, "read → draft → file"},
+		{"operate", false, "read → check → run"},
+		{"operate", true, "read → check → run"},
 		{"none", false, ""},
 	}
 	for _, tc := range cases {
@@ -515,6 +517,23 @@ func TestPhaseLaneFor(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("phaseLaneFor(%q, %v)=%q want %q", tc.prefix, tc.direct, got, tc.want)
 		}
+	}
+}
+
+func TestClassifyOperatePhase(t *testing.T) {
+	tr := newThoughtTracker(phaseLaneFor("operate", false))
+	tr.OnActivity("read_file: main.go")
+	_, phases := tr.Progress()
+	if phases != "**read** → check → run" {
+		t.Fatalf("read: %q", phases)
+	}
+	tr.OnActivity("ops_deploy: prod")
+	_, phases = tr.Progress()
+	if phases != "✓read → check → **run**" {
+		t.Fatalf("run: %q", phases)
+	}
+	if classifyOperatePhase("search_replace: a.go") != -1 {
+		t.Fatal("edits must not light an operate chip")
 	}
 }
 

@@ -36,6 +36,12 @@ const (
 	ToolGCPErrorsList     = "gcp_errors_list"
 	ToolGCPErrorsGet      = "gcp_errors_get"
 	ToolReviewersList     = "reviewers_list"
+	ToolOpsCatalog        = "ops_catalog"
+	ToolOpsWorkflows      = "ops_workflows"
+	ToolOpsLog            = "ops_log"
+	ToolOpsDeploy         = "ops_deploy"
+	ToolOpsDispatch       = "ops_dispatch"
+	ToolOpsCherryPick     = "ops_cherry_pick"
 )
 
 // ToolDef is an MCP tools/list entry.
@@ -87,6 +93,18 @@ func ToolDefs() []ToolDef {
 		{Name: ToolGCPErrorsList, Description: "List Google Cloud Error Reporting groups for this project's configured GCP project. Do not call GCP HTTP.", InputSchema: obj(map[string]any{"period": str, "sort": str, "limit": num, "cursor": str, "service": str})},
 		{Name: ToolGCPErrorsGet, Description: "Get one GCP error group by id or Cloud Console URL. Do not call GCP HTTP.", InputSchema: obj(map[string]any{"ref": str, "period": str}, "ref")},
 		{Name: ToolReviewersList, Description: "List team-review-eligible project members (canonical actor ids for review_request).", InputSchema: obj(nil)},
+		{Name: ToolOpsCatalog, Description: "List deploy environments, cherry-pick targets, repos, and the primary tip SHA for this session's project. No local paths. Does not change anything.", InputSchema: obj(map[string]any{"owner": str, "repo": str})},
+		{Name: ToolOpsWorkflows, Description: "List dispatchable GitHub Actions workflows (name, path, inputs, allowed refs). Disabled workflows are omitted.", InputSchema: obj(map[string]any{"owner": str, "repo": str})},
+		{Name: ToolOpsLog, Description: "List recent commits on a ref (sha and subject) so you can pick SHAs or expectSha. Empty ref is the project primary. Limit defaults to 15, max 30.", InputSchema: obj(map[string]any{"ref": str, "limit": num, "owner": str, "repo": str})},
+		{Name: ToolOpsDeploy, Description: "Trigger a deploy through the same gates as the web UI. Empty ref deploys the project primary. For a gated environment pass expectSha from ops_catalog or ops_log. If the tool says the ref moved, stop.", InputSchema: obj(map[string]any{
+			"service": str, "env": str, "ref": str, "expectSha": str, "owner": str, "repo": str,
+		}, "service", "env")},
+		{Name: ToolOpsDispatch, Description: "Dispatch a GitHub Actions workflow. inputs is an object of workflow_dispatch input names. A refusal is final.", InputSchema: obj(map[string]any{
+			"workflow": str, "ref": str, "inputs": map[string]any{"type": "object"}, "owner": str, "repo": str,
+		}, "workflow", "ref")},
+		{Name: ToolOpsCherryPick, Description: "Cherry-pick commits onto an allowlisted branch and fast-forward push. Never force-pushes. On conflict, returns a page for a human to resolve — do not edit the files.", InputSchema: obj(map[string]any{
+			"target": str, "shas": map[string]any{"type": "array", "items": str}, "owner": str, "repo": str,
+		}, "target", "shas")},
 	}
 }
 
@@ -120,6 +138,8 @@ func toolAllowed(name string, c agentauth.Caps) bool {
 		return c.SentryRead
 	case ToolGCPErrorsList, ToolGCPErrorsGet:
 		return c.GCPErrorsRead
+	case ToolOpsCatalog, ToolOpsWorkflows, ToolOpsLog, ToolOpsDeploy, ToolOpsDispatch, ToolOpsCherryPick:
+		return c.Operate
 	default:
 		return false
 	}
@@ -220,6 +240,27 @@ func Call(ctx context.Context, svc *agentapi.Service, token, name string, args m
 		return svc.GetGCPError(ctx, token, strArg(args, "ref"), strArg(args, "period"))
 	case ToolReviewersList:
 		return svc.ListReviewers(token)
+	case ToolOpsCatalog:
+		return svc.OpsCatalog(ctx, token, strArg(args, "owner"), strArg(args, "repo"))
+	case ToolOpsWorkflows:
+		return svc.OpsWorkflows(ctx, token, strArg(args, "owner"), strArg(args, "repo"))
+	case ToolOpsLog:
+		return svc.OpsLog(ctx, token, strArg(args, "ref"), strArg(args, "owner"), strArg(args, "repo"), intArg(args, "limit"))
+	case ToolOpsDeploy:
+		return svc.OpsDeploy(ctx, token, agentapi.OpsDeployRequest{
+			Service: strArg(args, "service"), Env: strArg(args, "env"), Ref: strArg(args, "ref"),
+			ExpectSHA: strArg(args, "expectSha"), Owner: strArg(args, "owner"), Repo: strArg(args, "repo"),
+		})
+	case ToolOpsDispatch:
+		return svc.OpsDispatch(ctx, token, agentapi.OpsDispatchRequest{
+			Workflow: strArg(args, "workflow"), Ref: strArg(args, "ref"),
+			Inputs: mapStringArg(args, "inputs"), Owner: strArg(args, "owner"), Repo: strArg(args, "repo"),
+		})
+	case ToolOpsCherryPick:
+		return svc.OpsCherryPick(ctx, token, agentapi.OpsCherryPickRequest{
+			Target: strArg(args, "target"), SHAs: shaListArg(args, "shas"),
+			Owner: strArg(args, "owner"), Repo: strArg(args, "repo"),
+		})
 	default:
 		return nil, fmt.Errorf("unknown tool %q", name)
 	}
@@ -240,6 +281,103 @@ func strArg(args map[string]any, k string) string {
 	default:
 		return strings.TrimSpace(fmt.Sprint(t))
 	}
+}
+
+func shaListArg(args map[string]any, k string) []string {
+	v, ok := args[k]
+	if !ok || v == nil {
+		return nil
+	}
+	switch t := v.(type) {
+	case string:
+		return splitSHAs(t)
+	case []string:
+		return cleanArgSHAs(t)
+	case []any:
+		var out []string
+		for _, item := range t {
+			s := strings.TrimSpace(fmt.Sprint(item))
+			if s != "" {
+				out = append(out, splitSHAs(s)...)
+			}
+		}
+		return out
+	default:
+		return splitSHAs(fmt.Sprint(t))
+	}
+}
+
+func splitSHAs(s string) []string {
+	s = strings.ReplaceAll(s, ",", " ")
+	var out []string
+	for part := range strings.FieldsSeq(s) {
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func cleanArgSHAs(in []string) []string {
+	var out []string
+	for _, s := range in {
+		out = append(out, splitSHAs(s)...)
+	}
+	return out
+}
+
+func mapStringArg(args map[string]any, k string) map[string]string {
+	v, ok := args[k]
+	if !ok || v == nil {
+		return nil
+	}
+	switch t := v.(type) {
+	case map[string]string:
+		return t
+	case map[string]any:
+		return stringifyMap(t)
+	case string:
+		var m map[string]any
+		if json.Unmarshal([]byte(t), &m) != nil {
+			return nil
+		}
+		return stringifyMap(m)
+	default:
+		return nil
+	}
+}
+
+func stringifyMap(m map[string]any) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		if v == nil {
+			continue
+		}
+		switch t := v.(type) {
+		case string:
+			out[k] = t
+		case bool:
+			if t {
+				out[k] = "true"
+			} else {
+				out[k] = "false"
+			}
+		case json.Number:
+			out[k] = t.String()
+		case float64:
+			if t == float64(int64(t)) {
+				out[k] = strconv.FormatInt(int64(t), 10)
+			} else {
+				out[k] = strconv.FormatFloat(t, 'f', -1, 64)
+			}
+		default:
+			out[k] = strings.TrimSpace(fmt.Sprint(t))
+		}
+	}
+	return out
 }
 
 func intArg(args map[string]any, k string) int {

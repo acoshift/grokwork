@@ -175,6 +175,7 @@ func (b *Bot) initAgentPlane() {
 		OnReviewRequested: func(req reviewstore.Request) {
 			b.NotifyTeamReviewRequested(req)
 		},
+		Operate: b,
 	}
 	sock := agentmcp.ShortUnixPath(filepath.Join(b.cfg.DataDir, "agent.sock"))
 	b.agent = &agentPlane{Auth: auth, API: api, Storage: storage, Bridge: &agentmcp.Bridge{Service: api}, Sock: sock}
@@ -292,6 +293,10 @@ func (b *Bot) AgentAPI() *agentapi.Service {
 // it never attaches — writing .cursor/mcp.json into the worktree would
 // pollute the session branch. always is the per-project AgentMCPAlways
 // opt-in (trusted teams); tools-off and explain still never attach.
+// Operate attaches even for grok: the ops tools are the only mutation path,
+// and grok cannot allow one named server. Dropping --deny MCPTool also
+// attaches every ambient server in the operator's user config — the same
+// side effect ship already accepts. Cursor never attaches.
 func mcpCapsForRun(agent grokrun.Agent, pol RunPolicy, always bool) (agentauth.Caps, bool) {
 	if agent == grokrun.AgentCursor {
 		return agentauth.Caps{}, false
@@ -300,6 +305,11 @@ func mcpCapsForRun(agent grokrun.Agent, pol RunPolicy, always bool) (agentauth.C
 	// otherwise attach Claude (and grok when always) the same as investigate.
 	if pol.Mode == ModeExplain || pol.PrefixKind == "explain" {
 		return agentauth.Caps{}, false
+	}
+	if pol.Mode == ModeOperate || pol.PrefixKind == "operate" {
+		caps := agentauth.DefaultInvestigateCaps()
+		caps.Operate = true
+		return caps, true
 	}
 	if pol.Tools == nil {
 		return agentauth.DefaultShipCaps(), true
@@ -455,7 +465,13 @@ func agentMCPPromptContract(caps agentauth.Caps) string {
 			"Do not paste full stacks or request payloads into Discord; summarize.",
 		)
 	}
-	if caps.SessionDone || caps.SessionAbandon {
+	if caps.Operate {
+		lines = append(lines,
+			"Deploys, GitHub Actions, and cherry-picks go through ops_catalog, ops_workflows, ops_log, ops_deploy, ops_dispatch, and ops_cherry_pick.",
+			"Do not git or gh around them. A refusal is final. Do not edit source.",
+			"End with SESSION_DONE only after a tool result confirms the operation. Do not abandon unless asked.",
+		)
+	} else if caps.SessionDone || caps.SessionAbandon {
 		lines = append(lines,
 			"When the task is complete you may call session_done (or session_abandon if giving up),",
 			"and/or end with SESSION_DONE: / SESSION_ABANDON: markers.",

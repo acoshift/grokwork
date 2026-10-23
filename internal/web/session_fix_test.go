@@ -57,6 +57,40 @@ func TestInvestigateSessionOffersStartFix(t *testing.T) {
 	}
 }
 
+func TestOperateSessionComposer(t *testing.T) {
+	srv, _, _ := fixEnabledServer(t)
+	_ = srv.cfg.AddProjectAllowedUser("proj", "member-1")
+	if err := srv.sessions.Set("op-th", sessionstore.Entry{
+		Project: "proj", Mode: bot.ModeOperate, OwnerID: "member-1", Origin: "web",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sid, _, err := srv.LoginAs("member-1", "Member", config.WebRoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/sessions/op-th?project=proj", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sid})
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="session-mode">operate`,
+		`placeholder="What operation should run?"`,
+		"Follow-ups stay in operate. No code edits, no pull request.",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, `id="btn-start-fix"`) {
+		t.Fatal("operate session must not offer Fix & ship")
+	}
+}
+
 func TestFixSessionHidesStartFix(t *testing.T) {
 	srv, _, _ := fixEnabledServer(t)
 	_ = srv.cfg.AddProjectAllowedUser("proj", "member-1")

@@ -17,6 +17,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/config"
+	"github.com/acoshift/grokwork/internal/deploy"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/grokrun"
@@ -158,6 +159,9 @@ type Bot struct {
 
 	// agent is the in-session MCP control plane (nil when DataDir unavailable).
 	agent *agentPlane
+	// deploys is the web server's engine, installed after web.New. Operate
+	// tools read it at call time.
+	deploys *deploy.Engine
 
 	// Background workers (idle sweep, idle fetch, PR poller, board digest,
 	// gateway watch, process-log trim, SLA inbox) share this context. Stop
@@ -984,7 +988,7 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		b.handleWatch(s, m)
 	case KindUnwatch:
 		b.handleUnwatch(s, m)
-	case KindStartInvestigate, KindStartFix, KindStartExplain, KindStartPlan, KindTask:
+	case KindStartInvestigate, KindStartFix, KindStartExplain, KindStartPlan, KindStartOperate, KindTask:
 		log.Printf("task: starting async for msg=%s kind=%d", m.ID, parsed.Kind)
 		// Immediate typing indicator while we open the thread / claim the queue.
 		go func() {
@@ -1690,7 +1694,7 @@ func (b *Bot) handleTaskOrigin(
 	}
 
 	// Start commands: ensure prompt body is the task text.
-	if parsed.Kind == KindStartInvestigate || parsed.Kind == KindStartFix || parsed.Kind == KindStartExplain || parsed.Kind == KindStartPlan {
+	if parsed.Kind == KindStartInvestigate || parsed.Kind == KindStartFix || parsed.Kind == KindStartExplain || parsed.Kind == KindStartPlan || parsed.Kind == KindStartOperate {
 		if strings.TrimSpace(parsed.Prompt) == "" {
 			parsed.Prompt = "Investigate the codebase for the issue described in this thread."
 			if parsed.Kind == KindStartFix {
@@ -1698,6 +1702,9 @@ func (b *Bot) handleTaskOrigin(
 			}
 			if parsed.Kind == KindStartPlan {
 				parsed.Prompt = "Plan the work described in this thread."
+			}
+			if parsed.Kind == KindStartOperate {
+				parsed.Prompt = "Run the operation described in this thread. Do not edit code."
 			}
 		}
 	}
@@ -1763,6 +1770,15 @@ func (b *Bot) handleTaskOrigin(
 				deny("You're not allowed to start plan tasks on this project (need startSessions and githubWrites).")
 				return
 			}
+			if err := b.refuseShipOnOperateSession(threadID); err != nil {
+				b.auditCmd(audit.ActionSessionStart, item.actor, threadID, proj.Name, err,
+					startDetail(nil))
+				b.postOrEditThreadStatus(s, threadID, statusMsgID, err.Error(), actionBarDone(threadID, b.sessionWebURL(threadID)))
+				if b.runs != nil {
+					b.runs.RemoveTaskFiles(threadID, taskID)
+				}
+				return
+			}
 			if err := b.refusePlanOnExistingMode(threadID); err != nil {
 				b.auditCmd(audit.ActionSessionStart, item.actor, threadID, proj.Name, err,
 					startDetail(nil))
@@ -1772,7 +1788,30 @@ func (b *Bot) handleTaskOrigin(
 				}
 				return
 			}
+		case KindStartOperate:
+			if !caps.CanShip() {
+				deny("You're not allowed to start operate tasks on this project (need startSessions and githubWrites).")
+				return
+			}
+			if err := b.refuseOperateOnExistingMode(threadID); err != nil {
+				b.auditCmd(audit.ActionSessionStart, item.actor, threadID, proj.Name, err,
+					startDetail(nil))
+				b.postOrEditThreadStatus(s, threadID, statusMsgID, err.Error(), actionBarDone(threadID, b.sessionWebURL(threadID)))
+				if b.runs != nil {
+					b.runs.RemoveTaskFiles(threadID, taskID)
+				}
+				return
+			}
 		case KindStartFix:
+			if err := b.refuseShipOnOperateSession(threadID); err != nil {
+				b.auditCmd(audit.ActionSessionStart, item.actor, threadID, proj.Name, err,
+					startDetail(nil))
+				b.postOrEditThreadStatus(s, threadID, statusMsgID, err.Error(), actionBarDone(threadID, b.sessionWebURL(threadID)))
+				if b.runs != nil {
+					b.runs.RemoveTaskFiles(threadID, taskID)
+				}
+				return
+			}
 			// Mode=case: /start fix is escalate (FileEscalation or builder-class).
 			// Non-case: hard-require CanShip — no silent coerce to investigate.
 			isCase := false
@@ -2217,6 +2256,8 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		prefix = explainPromptPrefix()
 	case "plan":
 		prefix = planPromptPrefix(wtBranch)
+	case "operate":
+		prefix = operatePromptPrefix(wtBranch)
 	case "none":
 		// Should not reach here (bail above); refuse remote prefix.
 		prefix = investigatePromptPrefix(wtBranch, pol.InvestigateShell)
@@ -2777,8 +2818,19 @@ func (b *Bot) resolveRunPolicy(threadID, project string, item taskItem, shipMode
 	case KindStartPlan:
 		forceInv = false
 		reqMode = ModePlan
+		if sessionMode == ModeOperate {
+			reqMode = ModeOperate
+		}
+	case KindStartOperate:
+		forceInv = false
+		reqMode = ModeOperate
 	case KindStartFix:
-		reqMode = ModeFix
+		if sessionMode == ModeOperate {
+			forceInv = false
+			reqMode = ModeOperate
+		} else {
+			reqMode = ModeFix
+		}
 	}
 	tools := ""
 	if b.cfg != nil {
@@ -2946,6 +2998,14 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string) {
 		reqMode = ModePlan
 		reqRunKind = RunKindPlan
 		forceInv = false
+		if sessionMode == ModeOperate {
+			reqMode = ModeOperate
+			reqRunKind = RunKindOperate
+		}
+	case KindStartOperate:
+		reqMode = ModeOperate
+		reqRunKind = RunKindOperate
+		forceInv = false
 	case KindStartFix:
 		if sessionMode == ModeCase {
 			// Same as /escalate (K17): require escalate caps; never silently promote.
@@ -2955,6 +3015,9 @@ func (b *Bot) snapshotPolicyOntoItem(item *taskItem, project string) {
 				sessionPhase = sessionstore.PhaseFixing
 			}
 			// else: leave phase unchanged; RunPolicy stays non-ship for investigate phase
+		} else if sessionMode == ModeOperate {
+			reqMode = ModeOperate
+			reqRunKind = RunKindOperate
 		} else {
 			reqMode = ModeFix
 			if sessionMode == ModeInvestigate || sessionMode == "" {

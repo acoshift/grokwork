@@ -137,7 +137,7 @@ func (b *Bot) StartContinue(opts ContinueOpts) (FixStartResult, error) {
 	// direct-to-primary sessions never open a PR — do not tell the continue
 	// prompt otherwise (a "push to main" follow-up plus "do not merge" is
 	// what makes the agent refuse a land-on-primary request).
-	if e.Mode != ModePlan && !e.IsDirectShip() && !strings.Contains(strings.ToLower(prompt), "do not merge") {
+	if e.Mode != ModePlan && e.Mode != ModeOperate && !e.IsDirectShip() && !strings.Contains(strings.ToLower(prompt), "do not merge") {
 		if _, ok := existingPRForPrompt(e); ok {
 			prompt = prompt + "\n\n(Update the existing PR; do not open a new one; do not merge.)"
 		} else {

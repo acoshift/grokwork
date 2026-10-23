@@ -60,6 +60,9 @@ func TestListCommitsWith(t *testing.T) {
 	if !strings.Contains(joined, "log") || !strings.Contains(joined, "main") || !strings.Contains(joined, "-n 10") {
 		t.Fatalf("args %v", saw)
 	}
+	if len(saw) < 2 || saw[len(saw)-2] != "--end-of-options" || saw[len(saw)-1] != "main" {
+		t.Fatalf("ref not isolated from options: %v", saw)
+	}
 }
 
 func TestFetchWith(t *testing.T) {

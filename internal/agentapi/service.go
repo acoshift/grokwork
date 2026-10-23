@@ -55,6 +55,8 @@ type Service struct {
 	RepoDir func(project string) string
 	// GH runner optional.
 	GH ghpr.Runner
+	// Operate is set by the bot. Nil means operation tools are unavailable.
+	Operate OperateHost
 
 	ClickUpEnabled     func(project string) bool
 	ClickUpAPIKey      func(project string) string

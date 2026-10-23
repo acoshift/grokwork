@@ -28,6 +28,15 @@ var (
 	// with another Mode. ensureSessionMode is first-writer-wins, so allowing the
 	// run would plan once then let the next KindTask follow-up ship.
 	ErrPlanModeConflict = errors.New("this session is already in another mode — start a new session to plan")
+	// ErrCannotStartOperate is the same CanShip gate as fix and plan.
+	ErrCannotStartOperate = errors.New("you're not allowed to start operate tasks on this project (need startSessions and githubWrites)")
+	// ErrOperateModeConflict is /start operate on a unit already in another mode.
+	// ensureSessionMode is first-writer-wins, so one operate run would not stick
+	// and the next follow-up would ship.
+	ErrOperateModeConflict = errors.New("this session is already in another mode — start a new session to operate")
+	// ErrOperateRejectsShip is /start fix or /start plan on an operate unit.
+	// One ship run would edit code on a session that was started not to.
+	ErrOperateRejectsShip = errors.New("this session is operate — start a new session to fix or plan")
 	// ErrCannotSelectModel is returned when the actor names a model without
 	// builder-class caps. Choosing the model chooses the spend, so it sits behind
 	// the same gate as shipping rather than plain startSessions.

@@ -70,8 +70,11 @@ func TestDefaultInvestigateCapsAreReadOnly(t *testing.T) {
 	if !c.SessionFiles {
 		t.Fatal("investigate may send files to the bound session")
 	}
-	if c.SessionDone || c.SessionAbandon || c.ReviewRequest || c.StorageWrite {
+	if c.SessionDone || c.SessionAbandon || c.ReviewRequest || c.StorageWrite || c.Operate {
 		t.Fatalf("workflow writes must be off: %+v", c)
+	}
+	if DefaultShipCaps().Operate {
+		t.Fatal("ship caps must not include Operate")
 	}
 }
 

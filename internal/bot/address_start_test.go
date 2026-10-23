@@ -472,6 +472,51 @@ func TestStartContinuePlanOmitsDoNotMerge(t *testing.T) {
 	}
 }
 
+func TestStartContinueOperateOmitsDoNotMerge(t *testing.T) {
+	b, _ := testAddressBot(t)
+	t.Cleanup(func() { WaitIdleForTest(b, 5*time.Second) })
+	if err := b.sessions.Set("op-cont", sessionstore.Entry{
+		Project: "app", Origin: SourceWeb, Mode: ModeOperate,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := b.StartContinue(ContinueOpts{
+		ThreadID: "op-cont", Prompt: "deploy api to prod",
+		Actor: Actor{ID: "u", DisplayName: "U"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created {
+		t.Fatal("continue must not create")
+	}
+	waitHistory(t, b, "op-cont", 1)
+	th, _ := b.history.Get("op-cont")
+	if strings.Contains(strings.ToLower(th.Turns[0].Prompt), "do not merge") {
+		t.Fatalf("operate continue must not mention merge: %q", th.Turns[0].Prompt)
+	}
+	e, ok := b.sessions.Get("op-cont")
+	if !ok || e.Mode != ModeOperate {
+		t.Fatalf("follow-up rewrote mode: ok=%v mode=%q", ok, e.Mode)
+	}
+}
+
+func TestStartContinueFixOnOperateRefused(t *testing.T) {
+	b, _ := testAddressBot(t)
+	if err := b.sessions.Set("op-fix", sessionstore.Entry{
+		Project: "app", Origin: SourceWeb, Mode: ModeOperate,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := b.StartContinue(ContinueOpts{
+		ThreadID: "op-fix", Prompt: "ship the change",
+		Actor: Actor{ID: "u", DisplayName: "U"}, Kind: KindStartFix,
+	})
+	if !errors.Is(err, ErrOperateRejectsShip) {
+		t.Fatalf("%v", err)
+	}
+}
+
 func TestStartContinueUnknownThread(t *testing.T) {
 	b, _ := testAddressBot(t)
 	_, err := b.StartContinue(ContinueOpts{ThreadID: "missing", Prompt: "x", Actor: Actor{ID: "u"}})

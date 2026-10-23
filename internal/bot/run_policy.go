@@ -15,6 +15,9 @@ const (
 	ModeExplain     = "explain"
 	ModeFix         = "fix"
 	ModePlan        = "plan"
+	// ModeOperate is an explicit start choice (deploy, Actions, cherry-pick).
+	// It is never a project default: ValidDefaultModes does not include it.
+	ModeOperate = "operate"
 	// ModeCase is Wave 3; recognized for freeform inherit if set later.
 	ModeCase = "case"
 )
@@ -25,6 +28,7 @@ const (
 	RunKindInvestigate = "investigate"
 	RunKindExplain     = "explain"
 	RunKindPlan        = "plan"
+	RunKindOperate     = "operate"
 )
 
 // RunPolicy is the bot-enforced gate set for one Grok child run (K2).
@@ -38,7 +42,7 @@ type RunPolicy struct {
 	Tools                *string // nil unrestricted; non-nil → allowlist / tools-off
 	NoSubagents          bool
 	IncludeGHToken       bool
-	PrefixKind           string // "remote" | "investigate" | "explain" | "plan" | "none"
+	PrefixKind           string // "remote" | "investigate" | "explain" | "plan" | "operate" | "none"
 	RefreshPR            bool
 	RefreshPRWarnOnly    bool
 	PostCompletion       string // "eng" | "dossier" | "none"
@@ -112,7 +116,17 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 	// D2: without GithubWrites cannot ship (never half-fix).
 	// Keep Mode=case when already a case (K17); only drop to ModeInvestigate for non-case.
 	coerced := false
-	if !in.ForceInvestigate && mode != ModeInvestigate && mode != ModeExplain && mode != ModePlan && !in.Caps.GithubWrites {
+	// An operate session that was asked to fix or plan stays operate. The
+	// start path refuses that pair; this is the choke point a missed caller
+	// cannot ship through.
+	sessionMode := strings.TrimSpace(strings.ToLower(in.SessionMode))
+	operateBelt := false
+	if sessionMode == ModeOperate && (mode == ModeFix || mode == ModePlan) {
+		mode = ModeOperate
+		operateBelt = true
+	}
+
+	if !in.ForceInvestigate && mode != ModeInvestigate && mode != ModeExplain && mode != ModePlan && mode != ModeOperate && !in.Caps.GithubWrites {
 		wantShip := mode == "" || mode == ModeFix || mode == ModeCase
 		if wantShip {
 			if mode == ModeCase {
@@ -137,9 +151,14 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 			rk = RunKindExplain
 		case ModePlan:
 			rk = RunKindPlan
+		case ModeOperate:
+			rk = RunKindOperate
 		default:
 			rk = RunKindFix
 		}
+	}
+	if operateBelt && (rk == RunKindFix || rk == RunKindPlan || rk == "") {
+		rk = RunKindOperate
 	}
 
 	phase := strings.TrimSpace(strings.ToLower(in.SessionPhase))
@@ -172,6 +191,32 @@ func BuildRunPolicy(in PolicyInput) RunPolicy {
 			PrefixKind:           "plan",
 			RefreshPR:            false,
 			RefreshPRWarnOnly:    true,
+			PostCompletion:       "none",
+			RefreshBrief:         false,
+			AllowUpload:          true,
+			AllowDirectIntegrate: false,
+			DirtyTreeWarn:        true,
+			Coerced:              coerced,
+		}
+	}
+
+	if mode == ModeOperate {
+		// ExplainTools is file-only. A project investigateTools override is
+		// grok vocabulary and can list a shell; operate must not apply it.
+		toolsCopy := in.Agent.ExplainTools()
+		return RunPolicy{
+			Mode:                 ModeOperate,
+			Phase:                phase,
+			RunKind:              RunKindOperate,
+			AllowPR:              false,
+			AllowDirectShip:      false,
+			Yolo:                 false,
+			Tools:                &toolsCopy,
+			NoSubagents:          true,
+			IncludeGHToken:       false,
+			PrefixKind:           "operate",
+			RefreshPR:            false,
+			RefreshPRWarnOnly:    false,
 			PostCompletion:       "none",
 			RefreshBrief:         false,
 			AllowUpload:          true,
@@ -433,6 +478,36 @@ func planPromptPrefix(branch string) string {
 		"",
 		"Keep each Breakdown item one line, self-contained, implementable by one agent session. Typical size: 3–8 items.",
 		"End with an unindented SESSION_DONE: only when the verdict is ship, PLAN_ISSUE is present, and you asked no DECISION questions.",
+		"",
+		"Filesystem scope: stay inside this unit's cwd/worktree and the project repo for code inspection.",
+		"Do NOT scan the user's home directory or protected folders for secrets.",
+	}
+	lines = append(lines, artifactPromptLines(branch != "")...)
+	if branch != "" {
+		lines = append([]string{
+			"Isolated git worktree for this workflow unit / thread.",
+			"Branch: " + branch + " (do not push).",
+			"",
+		}, lines...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// operatePromptPrefix is the operations contract: no source edits, no PR.
+// Mutations go through grokwork MCP. A CLI that cannot see those tools stops.
+func operatePromptPrefix(branch string) string {
+	lines := []string{
+		"You are running an operation on a shared workflow unit (Discord thread and/or web session).",
+		"Mode: OPERATE — do not edit source, commit, push, open a pull request, or merge.",
+		"No shell. Do not improvise with git or gh.",
+		"Operations go only through the grokwork MCP tools ops_catalog, ops_workflows, ops_log, ops_deploy, ops_dispatch, and ops_cherry_pick.",
+		"If those tools are not in your tool list, stop and say this CLI cannot run operations.",
+		"Each tool uses the same gates as the web UI. A refusal is final.",
+		"On a cherry-pick conflict, stop and report the conflict page. Do not resolve it by editing files.",
+		"Before a production deploy or a cherry-pick onto a release branch, restate the exact target, then call the tool once.",
+		"Do not claim success unless the tool result says the operation completed.",
+		"For a gated environment, pass expectSha from ops_catalog or ops_log. If the tool says the ref moved, stop and ask again. Do not deploy the new SHA.",
+		"After a confirmed operation you may end with SESSION_DONE. Do not abandon unless asked.",
 		"",
 		"Filesystem scope: stay inside this unit's cwd/worktree and the project repo for code inspection.",
 		"Do NOT scan the user's home directory or protected folders for secrets.",

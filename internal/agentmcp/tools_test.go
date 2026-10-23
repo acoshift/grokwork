@@ -150,10 +150,17 @@ func TestToolDefsForInvestigateOmitsWrites(t *testing.T) {
 			t.Fatalf("missing read tool %s: %+v", name, defs)
 		}
 	}
-	for _, name := range []string{ToolSessionDone, ToolSessionAbandon, ToolReviewRequest, ToolReviewersList, ToolStoragePut, ToolStorageDelete} {
+	for _, name := range []string{ToolSessionDone, ToolSessionAbandon, ToolReviewRequest, ToolReviewersList, ToolStoragePut, ToolStorageDelete, ToolOpsCatalog, ToolOpsDeploy, ToolOpsDispatch, ToolOpsCherryPick} {
 		if got[name] {
 			t.Fatalf("investigate catalog must not list %s", name)
 		}
+	}
+	ship := map[string]bool{}
+	for _, d := range ToolDefsFor(agentauth.DefaultShipCaps()) {
+		ship[d.Name] = true
+	}
+	if ship[ToolOpsDeploy] || ship[ToolOpsCherryPick] {
+		t.Fatal("ship catalog must not list ops tools")
 	}
 }
 
@@ -266,5 +273,93 @@ func TestToolDefsForSentryAndGCPCaps(t *testing.T) {
 	}
 	if names[ToolGCPErrorsGet] || names[ToolDeploysErrorsGet] {
 		t.Fatal("other providers leaked")
+	}
+}
+
+type stubOperate struct {
+	deploy   agentapi.OpsDeployRequest
+	dispatch agentapi.OpsDispatchRequest
+	cherry   agentapi.OpsCherryPickRequest
+}
+
+func (s *stubOperate) OpsCatalog(context.Context, agentauth.Cred, string, string) (agentapi.OpsCatalogResult, error) {
+	return agentapi.OpsCatalogResult{Project: "app"}, nil
+}
+func (s *stubOperate) OpsWorkflows(context.Context, agentauth.Cred, string, string) (agentapi.OpsWorkflowsResult, error) {
+	return agentapi.OpsWorkflowsResult{}, nil
+}
+func (s *stubOperate) OpsLog(context.Context, agentauth.Cred, string, string, string, int) (agentapi.OpsLogResult, error) {
+	return agentapi.OpsLogResult{}, nil
+}
+func (s *stubOperate) OpsDeploy(_ context.Context, _ agentauth.Cred, req agentapi.OpsDeployRequest) (agentapi.OpsDeployResult, error) {
+	s.deploy = req
+	return agentapi.OpsDeployResult{RunID: "r1", Service: req.Service, Env: req.Env}, nil
+}
+func (s *stubOperate) OpsDispatch(_ context.Context, _ agentauth.Cred, req agentapi.OpsDispatchRequest) (agentapi.OpsDispatchResult, error) {
+	s.dispatch = req
+	return agentapi.OpsDispatchResult{Status: "dispatched"}, nil
+}
+func (s *stubOperate) OpsCherryPick(_ context.Context, _ agentauth.Cred, req agentapi.OpsCherryPickRequest) (agentapi.OpsCherryPickResult, error) {
+	s.cherry = req
+	return agentapi.OpsCherryPickResult{Status: "pushed", Target: req.Target}, nil
+}
+
+func TestOpsToolsRequireOperateCap(t *testing.T) {
+	auth := agentauth.NewStore()
+	host := &stubOperate{}
+	svc := &agentapi.Service{Auth: auth, Operate: host}
+	for _, caps := range []agentauth.Caps{agentauth.DefaultInvestigateCaps(), agentauth.DefaultShipCaps()} {
+		raw, _, err := auth.Mint("t1", "app", "a", "", caps, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = Call(t.Context(), svc, raw, ToolOpsDeploy, map[string]any{"service": "api", "env": "prod"})
+		if err == nil || !strings.Contains(err.Error(), "forbidden") {
+			t.Fatalf("caps %+v: %v", caps, err)
+		}
+	}
+	if host.deploy.Service != "" {
+		t.Fatal("forbidden call reached the host")
+	}
+	caps := agentauth.DefaultInvestigateCaps()
+	caps.Operate = true
+	raw, _, err := auth.Mint("t1", "app", "a", "", caps, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defs, err := CatalogForToken(svc, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saw bool
+	for _, d := range defs {
+		if d.Name == ToolOpsDeploy {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatal("operate catalog missing ops_deploy")
+	}
+	out, err := Call(t.Context(), svc, raw, ToolOpsDeploy, map[string]any{"service": "api", "env": "prod", "expectSha": "abc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, ok := out.(agentapi.OpsDeployResult)
+	if !ok || res.RunID != "r1" || host.deploy.Service != "api" || host.deploy.ExpectSHA != "abc" {
+		t.Fatalf("%T %+v host=%+v", out, out, host.deploy)
+	}
+	if _, err := Call(t.Context(), svc, raw, ToolOpsCherryPick, map[string]any{"target": "staging", "shas": "aaa, bbb"}); err != nil {
+		t.Fatal(err)
+	}
+	if host.cherry.Target != "staging" || len(host.cherry.SHAs) != 2 || host.cherry.SHAs[0] != "aaa" || host.cherry.SHAs[1] != "bbb" {
+		t.Fatalf("shas=%v", host.cherry.SHAs)
+	}
+	if _, err := Call(t.Context(), svc, raw, ToolOpsDispatch, map[string]any{
+		"workflow": "deploy.yml", "ref": "main", "inputs": map[string]any{"env": "prod", "dry": true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if host.dispatch.Workflow != "deploy.yml" || host.dispatch.Inputs["env"] != "prod" || host.dispatch.Inputs["dry"] != "true" {
+		t.Fatalf("dispatch=%+v", host.dispatch)
 	}
 }

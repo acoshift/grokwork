@@ -136,6 +136,16 @@ func TestMCPCapsForRun(t *testing.T) {
 	if _, ok := mcpCapsForRun(grokrun.AgentCursor, RunPolicy{Tools: &tools}, true); ok {
 		t.Fatal("cursor investigate")
 	}
+	op := RunPolicy{Mode: ModeOperate, PrefixKind: "operate", Tools: &explain}
+	for _, agent := range []grokrun.Agent{grokrun.AgentGrok, grokrun.AgentClaude} {
+		caps, ok := mcpCapsForRun(agent, op, false)
+		if !ok || !caps.Operate || caps.SessionDone || caps.StorageWrite {
+			t.Fatalf("%s operate: %+v ok=%v", agent, caps, ok)
+		}
+	}
+	if _, ok := mcpCapsForRun(grokrun.AgentCursor, op, true); ok {
+		t.Fatal("cursor operate must not attach MCP")
+	}
 }
 
 func TestPrepareAgentMCPStripsDisabledErrorCaps(t *testing.T) {
@@ -203,6 +213,26 @@ func TestAgentMCPPromptContractInvestigateOmitsWrites(t *testing.T) {
 	}
 	if !strings.Contains(p, "read-only") {
 		t.Fatalf("want read-only note:\n%s", p)
+	}
+	for _, name := range []string{"ops_deploy", "ops_dispatch", "ops_cherry_pick"} {
+		if strings.Contains(p, name) {
+			t.Fatalf("investigate prompt must not name %q:\n%s", name, p)
+		}
+	}
+}
+
+func TestAgentMCPPromptContractOperate(t *testing.T) {
+	t.Parallel()
+	caps := agentauth.DefaultInvestigateCaps()
+	caps.Operate = true
+	p := agentMCPPromptContract(caps)
+	for _, name := range []string{"ops_catalog", "ops_workflows", "ops_log", "ops_deploy", "ops_dispatch", "ops_cherry_pick", "SESSION_DONE"} {
+		if !strings.Contains(p, name) {
+			t.Fatalf("missing %q in\n%s", name, p)
+		}
+	}
+	if strings.Contains(p, "do not mark the session done") || strings.Contains(p, "read-only") {
+		t.Fatalf("operate contract must allow SESSION_DONE and must not say read-only:\n%s", p)
 	}
 }
 
