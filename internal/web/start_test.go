@@ -232,6 +232,7 @@ func TestStartPageShowsFormForMember(t *testing.T) {
 		`id="btn-start"`,
 		`<form class="stack" method="post" action="/projects/proj/start" enctype="multipart/form-data">`,
 		`name="prompt"`,
+		`id="start-prompt" name="prompt" rows="8" required data-file-drop`,
 		`name="title"`,
 		`name="mode"`,
 		`id="start-images"`,

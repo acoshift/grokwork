@@ -338,6 +338,7 @@ func TestCaseNewPageRendersImageInput(t *testing.T) {
 		`name="images"`,
 		`enctype="multipart/form-data"`,
 		`id="case-attach-chips"`,
+		`id="case-notes" name="notes" rows="6" data-file-drop`,
 		"With notes or files",
 	} {
 		if !strings.Contains(body, want) {
@@ -371,6 +372,8 @@ func TestSessionPageRendersAttachControls(t *testing.T) {
 		`id="continue-images"`,
 		`id="btn-attach"`,
 		`id="continue-attach-chips"`,
+		`id="continue-prompt" name="prompt" rows="1" required data-file-drop`,
+		`textarea[data-file-drop]`,
 		`id="btn-continue"`,
 		`id="session-continue-form"`,
 	} {

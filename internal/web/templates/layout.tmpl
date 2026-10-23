@@ -4335,9 +4335,17 @@
       border-radius: 1.1rem;
       box-shadow: var(--shadow-2);
       padding: 0.5rem 0.55rem 0.5rem 0.7rem;
-      transition: border-color 0.12s ease;
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
     }
     .composer:focus-within { border-color: var(--focus-border); }
+    .composer.is-drag {
+      border-color: var(--text);
+      box-shadow: var(--shadow-2), inset 0 0 0 1px var(--text), 0 0 0 4px var(--ring);
+    }
+    textarea.is-drag {
+      border-color: var(--text);
+      box-shadow: inset 0 0 0 1px var(--text), 0 0 0 4px var(--ring);
+    }
     .composer textarea {
       flex: 1;
       min-width: 0;
@@ -6269,7 +6277,11 @@
     // Attach chips for any file input marked data-attach-chips.
     // DataTransfer keeps a mutable selection so chips can remove individual
     // files (input.files is otherwise read-only). Paste-to-attach works when
-    // the form also has a textarea.
+    // the form also has a textarea. A textarea marked data-file-drop accepts
+    // a file drop into the same selection: on the session dock the whole
+    // composer is the hit target (the field is one line), and on start/case
+    // the textarea itself is, because that form is the whole card. The files
+    // page keeps its own #files-drop handler — that form has no textarea.
     function fmtBytes(n) {
       if (n >= 1048576) return (n / 1048576).toFixed(1) + " MiB";
       if (n >= 1024) return (n / 1024).toFixed(1) + " KiB";
@@ -6339,6 +6351,43 @@
         }
       }
 
+      function dragHasFiles(transfer) {
+        if (!transfer || !transfer.types) return false;
+        for (var i = 0; i < transfer.types.length; i++) {
+          if (transfer.types[i] === "Files") return true;
+        }
+        return false;
+      }
+      // One drop target per box. Re-binding the same node (two inputs, or a
+      // settle that did not replace the form) would append each file twice.
+      function wireFileDrop(el) {
+        if (!el || el._gwFileDrop) return;
+        el._gwFileDrop = true;
+        el.addEventListener("dragenter", function (e) {
+          if (!dragHasFiles(e.dataTransfer)) return;
+          e.preventDefault();
+        });
+        el.addEventListener("dragover", function (e) {
+          if (!dragHasFiles(e.dataTransfer)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+          el.classList.add("is-drag");
+        });
+        el.addEventListener("dragleave", function (e) {
+          if (e.relatedTarget && el.contains(e.relatedTarget)) return;
+          el.classList.remove("is-drag");
+        });
+        el.addEventListener("drop", function (e) {
+          el.classList.remove("is-drag");
+          if (!dragHasFiles(e.dataTransfer)) return;
+          e.preventDefault();
+          var files = e.dataTransfer.files;
+          if (!files || !files.length) return;
+          for (var i = 0; i < files.length; i++) dt.items.add(files[i]);
+          sync();
+        });
+      }
+
       var form = input.closest("form");
       if (form) {
         var ta = form.querySelector("textarea");
@@ -6364,6 +6413,10 @@
               sync();
             }
           });
+        }
+        var zones = form.querySelectorAll("textarea[data-file-drop]");
+        for (var z = 0; z < zones.length; z++) {
+          wireFileDrop(zones[z].closest(".composer") || zones[z]);
         }
       }
     }
