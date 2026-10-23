@@ -49,7 +49,8 @@ func (s *Server) postPRAsk(ctx *hime.Context) error {
 	}
 
 	selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
-	detail, _ := ghpr.ViewPRDetailWith(ctx.Context(), s.ghRun(), cwd, selector)
+	// The ask prompt gets the description and the patch, not the comment thread.
+	detail, _ := ghpr.ViewPRDetailOpts(ctx.Context(), s.ghRun(), cwd, selector, ghpr.PRDetailOptions{})
 	prURL := strings.TrimSpace(detail.URL)
 	if prURL == "" {
 		prURL = selector

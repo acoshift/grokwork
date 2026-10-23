@@ -49,7 +49,7 @@ func addressEnabledServer(t *testing.T) (*Server, *bot.Bot) {
 			return []byte(`{
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"CI PR","state":"OPEN",
 				"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","headRefOid":"abc","headRefName":"feat",
-				"baseRefName":"main","body":"b","author":{"login":"z"},"additions":1,"deletions":0,"changedFiles":1,
+				"baseRefName":"main","body":"b","author":{"login":"z"},"additions":1,"deletions":0,"changedFiles":1,"comments":[],
 				"statusCheckRollup":[{"__typename":"CheckRun","name":"ci","conclusion":"FAILURE","status":"COMPLETED"}]
 			}`), nil
 		case strings.Contains(joined, "pr checks"):

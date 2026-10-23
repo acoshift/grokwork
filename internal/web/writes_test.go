@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,10 +27,15 @@ func writeEnabledServer(t *testing.T) (*Server, *config.Config, *[]string) {
 	if err := cfg.SetProjectGitHubRepos("proj", []config.GitHubRepoRef{{Owner: "acme", Repo: "app"}}); err != nil {
 		t.Fatal(err)
 	}
-	var calls []string
+	var (
+		mu    sync.Mutex
+		calls []string
+	)
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		joined := name + " " + strings.Join(args, " ")
+		mu.Lock()
 		calls = append(calls, joined)
+		mu.Unlock()
 		switch {
 		case strings.Contains(joined, "issue comment"):
 			// verify body-file
@@ -62,7 +68,7 @@ func writeEnabledServer(t *testing.T) (*Server, *config.Config, *[]string) {
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"APPROVED","headRefOid":"a","headRefName":"f",
 				"baseRefName":"main","body":"b","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","author":{"login":"z"},
-				"additions":1,"deletions":0,"changedFiles":1
+				"additions":1,"deletions":0,"changedFiles":1,"comments":[]
 			}`), nil
 		case strings.Contains(joined, "pr checks"):
 			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil
@@ -135,7 +141,7 @@ func captureCommentBodies(t *testing.T) (*Server, *config.Config, *[]string) {
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"APPROVED","headRefOid":"a","headRefName":"f",
 				"baseRefName":"main","body":"b","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","author":{"login":"z"},
-				"additions":1,"deletions":0,"changedFiles":1
+				"additions":1,"deletions":0,"changedFiles":1,"comments":[]
 			}`), nil
 		default:
 			t.Fatalf("unexpected: %s", joined)
@@ -462,15 +468,18 @@ func TestAdminMergeUpdatesSessions(t *testing.T) {
 
 func TestMergePreflightConflict(t *testing.T) {
 	srv, _, calls := writeEnabledServer(t)
+	var mu sync.Mutex
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
+		mu.Lock()
 		*calls = append(*calls, joined)
+		mu.Unlock()
 		if strings.HasPrefix(joined, "pr view") {
 			return []byte(`{
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"","headRefOid":"a","headRefName":"f",
 				"baseRefName":"main","body":"","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","author":{"login":"z"},
-				"additions":0,"deletions":0,"changedFiles":0
+				"additions":0,"deletions":0,"changedFiles":0,"comments":[]
 			}`), nil
 		}
 		if strings.HasPrefix(joined, "pr checks") {
@@ -509,15 +518,18 @@ func TestMergePreflightConflict(t *testing.T) {
 
 func TestMergePreflightConflictHTMXTrigger(t *testing.T) {
 	srv, _, calls := writeEnabledServer(t)
+	var mu sync.Mutex
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
+		mu.Lock()
 		*calls = append(*calls, joined)
+		mu.Unlock()
 		if strings.HasPrefix(joined, "pr view") {
 			return []byte(`{
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"","headRefOid":"a","headRefName":"f",
 				"baseRefName":"main","body":"","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","author":{"login":"z"},
-				"additions":0,"deletions":0,"changedFiles":0
+				"additions":0,"deletions":0,"changedFiles":0,"comments":[]
 			}`), nil
 		}
 		if strings.HasPrefix(joined, "pr checks") {
@@ -551,9 +563,12 @@ func TestMergePreflightConflictHTMXTrigger(t *testing.T) {
 
 func TestMergeBlockedPreflightShowsAlert(t *testing.T) {
 	srv, _, calls := writeEnabledServer(t)
+	var mu sync.Mutex
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
+		mu.Lock()
 		*calls = append(*calls, joined)
+		mu.Unlock()
 		if strings.HasPrefix(joined, "pr view") {
 			// mergeable=MERGEABLE but branch protection blocks — the case we
 			// used to miss until gh pr merge failed.
@@ -561,7 +576,7 @@ func TestMergeBlockedPreflightShowsAlert(t *testing.T) {
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","headRefOid":"a","headRefName":"f",
 				"baseRefName":"main","body":"","mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED","author":{"login":"z"},
-				"additions":0,"deletions":0,"changedFiles":0
+				"additions":0,"deletions":0,"changedFiles":0,"comments":[]
 			}`), nil
 		}
 		if strings.HasPrefix(joined, "pr checks") {
@@ -604,15 +619,18 @@ func TestMergeBlockedPreflightShowsAlert(t *testing.T) {
 func TestMergeGHErrorShowsAlertWhenStatusClean(t *testing.T) {
 	// Status can race (CLEAN then policy rejects); still surface gh's reason.
 	srv, _, calls := writeEnabledServer(t)
+	var mu sync.Mutex
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		joined := strings.Join(args, " ")
+		mu.Lock()
 		*calls = append(*calls, joined)
+		mu.Unlock()
 		if strings.HasPrefix(joined, "pr view") {
 			return []byte(`{
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"APPROVED","headRefOid":"a","headRefName":"f",
 				"baseRefName":"main","body":"","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","author":{"login":"z"},
-				"additions":0,"deletions":0,"changedFiles":0
+				"additions":0,"deletions":0,"changedFiles":0,"comments":[]
 			}`), nil
 		}
 		if strings.HasPrefix(joined, "pr checks") {
@@ -850,7 +868,7 @@ func TestPRDetailHidesCloseAndMergeWhenMerged(t *testing.T) {
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"MERGED",
 				"isDraft":false,"reviewDecision":"APPROVED","headRefOid":"a","headRefName":"f",
 				"baseRefName":"main","body":"b","mergeable":"UNKNOWN","author":{"login":"z"},
-				"additions":1,"deletions":0,"changedFiles":1
+				"additions":1,"deletions":0,"changedFiles":1,"comments":[]
 			}`), nil
 		case strings.Contains(joined, "pr checks"):
 			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil

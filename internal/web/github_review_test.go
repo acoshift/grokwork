@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,6 +41,7 @@ func githubReviewServer(t *testing.T) (*Server, *config.Config, *[]ghReviewCall)
 		srv.bot.SetReviews(rev)
 	}
 	calls := make([]ghReviewCall, 0, 4)
+	var mu sync.Mutex
 	srv.ghRunner = func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 		call := ghReviewCall{args: append([]string{name}, args...)}
 		for i, a := range args {
@@ -49,7 +51,9 @@ func githubReviewServer(t *testing.T) (*Server, *config.Config, *[]ghReviewCall)
 				}
 			}
 		}
+		mu.Lock()
 		calls = append(calls, call)
+		mu.Unlock()
 		joined := name + " " + strings.Join(args, " ")
 		switch {
 		case strings.Contains(joined, "pr review"):
@@ -59,7 +63,7 @@ func githubReviewServer(t *testing.T) (*Server, *config.Config, *[]ghReviewCall)
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","headRefOid":"abc1234","headRefName":"f",
 				"baseRefName":"main","body":"b","mergeable":"MERGEABLE","author":{"login":"z"},
-				"additions":1,"deletions":0,"changedFiles":1
+				"additions":1,"deletions":0,"changedFiles":1,"comments":[]
 			}`), nil
 		case strings.Contains(joined, "pr checks"):
 			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil

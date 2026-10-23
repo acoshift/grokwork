@@ -564,7 +564,9 @@ func (s *Server) prDetailPageData(ctx *hime.Context, full bool) (pageData, error
 	}
 	owner, repo = ref.Owner, ref.Repo
 	selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
-	detail, viewErr := ghpr.ViewPRDetailWith(ctx.Context(), s.ghRun(), cwd, selector)
+	// The gates partial repaints the strip on sse:ship. It does not render the
+	// conversation, so it must not pay for comments on every tick.
+	detail, viewErr := ghpr.ViewPRDetailOpts(ctx.Context(), s.ghRun(), cwd, selector, ghpr.PRDetailOptions{Comments: full})
 	d := s.basePage(ctx)
 	d.Title = fmt.Sprintf("%s/%s#%d", owner, repo, n)
 	d.IsShip = true

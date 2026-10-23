@@ -196,7 +196,8 @@ func TestViewPRDetailWithMock(t *testing.T) {
 				"author":{"login":"zoe"},
 				"additions":10,
 				"deletions":2,
-				"changedFiles":3
+				"changedFiles":3,
+				"comments":[]
 			}`), nil
 		case strings.HasPrefix(joined, "pr checks"):
 			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil
@@ -278,5 +279,130 @@ func TestViewPRDetailComments(t *testing.T) {
 	// Newest kept, oldest dropped.
 	if last := d.Comments[len(d.Comments)-1]; last.Body != fmt.Sprintf("c%d", over-1) {
 		t.Fatalf("cap dropped the wrong end: last=%q", last.Body)
+	}
+}
+
+// TestViewPRDetailCommentsAreBounded pins the production path: gh pr view is
+// not asked for comments, because that flag paginates the entire thread, and
+// the newest MaxPRComments come back from one comments(last:) query.
+func TestViewPRDetailCommentsAreBounded(t *testing.T) {
+	const total = MaxPRComments + 7
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		switch {
+		case strings.HasPrefix(joined, "pr view"):
+			for i, a := range args {
+				if a == "--json" && i+1 < len(args) && strings.Contains(args[i+1], "comments") {
+					t.Errorf("pr view --json must not request comments: %s", args[i+1])
+				}
+			}
+			return []byte(`{
+				"number":9,
+				"url":"https://github.com/o/r/pull/9",
+				"state":"OPEN",
+				"body":"b"
+			}`), nil
+		case strings.Contains(joined, "api graphql"):
+			if !strings.Contains(joined, "comments(last:") {
+				t.Errorf("comment query must be bounded: %s", joined)
+			}
+			if !strings.Contains(joined, "last="+fmt.Sprint(MaxPRComments)) {
+				t.Errorf("comment query last=%s", joined)
+			}
+			var b strings.Builder
+			b.WriteString(`{"data":{"repository":{"pullRequest":{"comments":{"totalCount":`)
+			fmt.Fprintf(&b, "%d", total)
+			b.WriteString(`,"nodes":[`)
+			for i := range MaxPRComments {
+				if i > 0 {
+					b.WriteByte(',')
+				}
+				// Window is the newest MaxPRComments, oldest first inside it.
+				n := total - MaxPRComments + i
+				fmt.Fprintf(&b, `{"author":{"login":"u%d"},"body":"c%d","url":"u","createdAt":"2026-07-21T10:00:00Z"}`, n, n)
+			}
+			b.WriteString(`]}}}}}`)
+			return []byte(b.String()), nil
+		case strings.HasPrefix(joined, "pr checks"):
+			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil
+		default:
+			t.Fatalf("unexpected %v", args)
+			return nil, nil
+		}
+	}
+	d, err := ViewPRDetailWith(t.Context(), run, "/repo", "https://github.com/o/r/pull/9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Comments) != MaxPRComments || d.CommentsOmitted != 7 {
+		t.Fatalf("bounded comments: n=%d omitted=%d", len(d.Comments), d.CommentsOmitted)
+	}
+	if d.Comments[0].Body != fmt.Sprintf("c%d", total-MaxPRComments) {
+		t.Fatalf("window started at %q", d.Comments[0].Body)
+	}
+	if last := d.Comments[len(d.Comments)-1]; last.Body != fmt.Sprintf("c%d", total-1) || last.Author != fmt.Sprintf("u%d", total-1) {
+		t.Fatalf("newest comment = %+v", last)
+	}
+	if d.Checks != "✓ 1" {
+		t.Fatalf("checks=%q", d.Checks)
+	}
+	if d.Truncated {
+		t.Fatal("comments must not set the body-truncation flag")
+	}
+}
+
+func TestViewPRDetailCommentFailureKeepsSnapshot(t *testing.T) {
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		switch {
+		case strings.HasPrefix(joined, "pr view"):
+			return []byte(`{
+				"number":9,
+				"url":"https://github.com/o/r/pull/9",
+				"title":"T",
+				"state":"OPEN",
+				"body":"b",
+				"mergeable":"MERGEABLE"
+			}`), nil
+		case strings.Contains(joined, "api graphql"):
+			return nil, fmt.Errorf("boom")
+		case strings.HasPrefix(joined, "pr checks"):
+			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil
+		default:
+			t.Errorf("unexpected %v", args)
+			return nil, fmt.Errorf("unexpected")
+		}
+	}
+	d, err := ViewPRDetailWith(t.Context(), run, "/repo", "https://github.com/o/r/pull/9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Title != "T" || d.Mergeable != "MERGEABLE" || d.Checks != "✓ 1" {
+		t.Fatalf("snapshot lost: %+v", d)
+	}
+	if len(d.Comments) != 0 || d.CommentsOmitted != 0 {
+		t.Fatalf("comments=%d omitted=%d", len(d.Comments), d.CommentsOmitted)
+	}
+}
+
+func TestViewPRDetailOptsSkipsComments(t *testing.T) {
+	run := func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		switch {
+		case strings.HasPrefix(joined, "pr view"):
+			return []byte(`{"number":9,"url":"https://github.com/o/r/pull/9","state":"OPEN","body":"b"}`), nil
+		case strings.Contains(joined, "api graphql"):
+			t.Errorf("gates path fetched comments: %s", joined)
+			return []byte(`{"data":{"repository":{"pullRequest":{"comments":{"totalCount":1,"nodes":[{"author":{"login":"a"},"body":"nope","url":"u","createdAt":"2026-07-21T10:00:00Z"}]}}}}}`), nil
+		default:
+			return []byte(`[]`), nil
+		}
+	}
+	d, err := ViewPRDetailOpts(t.Context(), run, "/repo", "https://github.com/o/r/pull/9", PRDetailOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Comments) != 0 || d.CommentsOmitted != 0 {
+		t.Fatalf("comments=%d omitted=%d", len(d.Comments), d.CommentsOmitted)
 	}
 }

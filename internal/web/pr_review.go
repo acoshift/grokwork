@@ -45,7 +45,8 @@ func (s *Server) postPRAgentReview(ctx *hime.Context) error {
 	// Best-effort PR metadata for prompt context: a failed view still leaves the
 	// agent enough (owner/repo/number) to fetch the PR itself.
 	selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
-	detail, _ := ghpr.ViewPRDetailWith(ctx.Context(), s.ghRun(), cwd, selector)
+	// Prompt context is title, head, and body. The conversation is not copied in.
+	detail, _ := ghpr.ViewPRDetailOpts(ctx.Context(), s.ghRun(), cwd, selector, ghpr.PRDetailOptions{})
 	prURL := strings.TrimSpace(detail.URL)
 	if prURL == "" {
 		prURL = selector

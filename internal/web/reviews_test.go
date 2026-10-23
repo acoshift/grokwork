@@ -40,7 +40,7 @@ func reviewEnabledServer(t *testing.T) (*Server, *config.Config) {
 				"number":9,"url":"https://github.com/acme/app/pull/9","title":"T","state":"OPEN",
 				"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","headRefOid":"abc1234","headRefName":"f",
 				"baseRefName":"main","body":"b","mergeable":"MERGEABLE","author":{"login":"z"},
-				"additions":1,"deletions":0,"changedFiles":1
+				"additions":1,"deletions":0,"changedFiles":1,"comments":[]
 			}`), nil
 		case strings.Contains(joined, "pr checks"):
 			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil

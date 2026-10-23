@@ -1269,7 +1269,8 @@ func (b *Bot) ensurePRAskCheckout(ctx context.Context, proj projectRef, threadID
 	sha := ""
 	if owner != "" && repo != "" {
 		selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
-		if detail, err := ghpr.ViewPRDetailWith(ctx, b.ghRun(), proj.Cwd, selector); err == nil {
+		// Head SHA only. Asking for the conversation is what makes this call slow.
+		if detail, err := ghpr.ViewPRDetailOpts(ctx, b.ghRun(), proj.Cwd, selector, ghpr.PRDetailOptions{}); err == nil {
 			sha = strings.TrimSpace(detail.HeadSHA)
 		}
 	}

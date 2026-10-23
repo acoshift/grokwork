@@ -221,7 +221,8 @@ func (s *Server) postPRMerge(ctx *hime.Context) error {
 	}
 	owner, repo = ref.Owner, ref.Repo
 	selector := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, n)
-	detail, viewErr := ghpr.ViewPRDetailWith(ctx.Context(), s.ghRun(), cwd, selector)
+	// Preflight reads merge state, not the conversation.
+	detail, viewErr := ghpr.ViewPRDetailOpts(ctx.Context(), s.ghRun(), cwd, selector, ghpr.PRDetailOptions{})
 	if viewErr != nil {
 		s.auditAction(ctx, audit.ActionPRMerge, viewErr, map[string]any{
 			"owner": owner, "repo": repo, "number": n, "phase": "view",
