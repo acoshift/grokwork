@@ -57,6 +57,20 @@ func (b *Bot) ensureAdoptedPRWorktree(ctx context.Context, proj projectRef, thre
 		PreferredPrimary: primary,
 	})
 	if err != nil {
+		// The first turn of a project that is not itself a git repo runs in
+		// the project directory and the agent checks the PR branch out in a
+		// nested repo. A later turn must not abort: git will not check that
+		// branch out twice, and this path must not move it. Stay on the
+		// project cwd so the agent session resumes where it started.
+		// Another unit's worktree still fails — two runs cannot share it.
+		if gitworktree.CheckedOutAtMain(err, repo) {
+			cwd := proj.Cwd
+			if cwd == "" {
+				cwd = repo
+			}
+			log.Printf("task: PR branch %s already checked out at %s — continuing in %s thread=%s", branch, repo, cwd, threadID)
+			return cwd, "", true, nil
+		}
 		return "", "", true, err
 	}
 	b.stampAdoptedWorktree(threadID, tree.Path, tree.Branch, repo)

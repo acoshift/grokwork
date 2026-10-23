@@ -2,6 +2,7 @@ package gitworktree
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -109,7 +110,7 @@ func EnsureAdopted(ctx context.Context, repo, worktreesRoot, project, unitID str
 	}
 
 	if other := adoptCheckoutConflict(ctx, repo, path, branch); other != "" {
-		return Tree{}, fmt.Errorf("branch %q is already checked out at %s", branch, other)
+		return Tree{}, &ErrBranchCheckedOut{Branch: branch, Path: other}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -156,6 +157,30 @@ func resolveAdoptStart(ctx context.Context, repo, branch string, pullNumber int)
 		}
 	}
 	return "", fmt.Errorf("PR branch %q not found locally or on origin", branch)
+}
+
+// ErrBranchCheckedOut is returned when a PR head is already checked out
+// somewhere else. Path is that checkout. The branch is left where it is.
+type ErrBranchCheckedOut struct {
+	Branch string
+	Path   string
+}
+
+func (e *ErrBranchCheckedOut) Error() string {
+	if e == nil {
+		return "branch is already checked out"
+	}
+	return fmt.Sprintf("branch %q is already checked out at %s", e.Branch, e.Path)
+}
+
+// CheckedOutAtMain reports whether err is a refusal because branch is already
+// checked out at repo's main working tree (not some other linked worktree).
+func CheckedOutAtMain(err error, repo string) bool {
+	e, ok := errors.AsType[*ErrBranchCheckedOut](err)
+	if !ok || e == nil {
+		return false
+	}
+	return absPathBestEffort(e.Path) == absPathBestEffort(repo)
 }
 
 // adoptCheckoutConflict returns the path of another worktree (including the

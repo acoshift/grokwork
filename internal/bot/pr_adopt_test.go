@@ -156,6 +156,185 @@ func TestResolveRunCwdAdoptsImportedPRHead(t *testing.T) {
 	}
 }
 
+func TestResolveRunCwdContinuesWhenPRBranchCheckedOut(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "proj")
+	landing := filepath.Join(parent, "hah-landing")
+	if err := os.MkdirAll(landing, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, landing)
+	runGitIn(t, landing, "checkout", "-b", "blog/author-mdx-format")
+
+	cfg := &config.Config{
+		GrokBin:           "false",
+		Projects:          config.PathProjects(map[string]string{"healthathome": parent}),
+		Channels:          map[string]string{"ch1": "healthathome"},
+		DataDir:           filepath.Join(dir, "data"),
+		ConfigPath:        filepath.Join(dir, "config.json"),
+		WorktreeIsolation: new(true),
+		MaxTurns:          5,
+		TimeoutMs:         5000,
+		Yolo:              new(true),
+	}
+	store, err := sessionstore.New(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := New(cfg, store, hist)
+	unit := gitworktree.NewWebUnitID()
+	e := sessionstore.Entry{
+		Project:   "healthathome",
+		SessionID: "sess-1",
+		Cwd:       parent,
+		MainCwd:   parent,
+		Origin:    SourceWeb,
+	}
+	e.UpsertPR(sessionstore.TrackedPR{
+		Owner: "healthathome", Repo: "hah-landing", Number: 75, State: "OPEN",
+		HeadRef: "blog/author-mdx-format",
+		URL:     "https://github.com/healthathome/hah-landing/pull/75",
+	})
+	if err := store.Set(unit, e); err != nil {
+		t.Fatal(err)
+	}
+
+	cwd, branch, err := b.resolveRunCwd(t.Context(), projectRef{Name: "healthathome", Cwd: parent}, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cwd != parent || branch != "" {
+		t.Fatalf("cwd=%q branch=%q want project cwd and no worktree branch", cwd, branch)
+	}
+	wt := gitworktree.WorktreePath(cfg.WorktreesRoot(), "healthathome", unit)
+	if _, statErr := os.Stat(wt); !os.IsNotExist(statErr) {
+		t.Fatalf("worktree created at %s: %v", wt, statErr)
+	}
+	got, ok := store.Get(unit)
+	if !ok || got.WorktreeBranch != "" || got.Cwd != parent {
+		t.Fatalf("session stamped cwd=%q branch=%q", got.Cwd, got.WorktreeBranch)
+	}
+
+	// A later turn hits the same checkout and still continues.
+	cwd2, branch2, err := b.resolveRunCwd(t.Context(), projectRef{Name: "healthathome", Cwd: parent}, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cwd2 != parent || branch2 != "" {
+		t.Fatalf("second turn cwd=%q branch=%q", cwd2, branch2)
+	}
+}
+
+func TestResolveRunCwdContinuesInProjectCheckout(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, proj)
+	runGitIn(t, proj, "checkout", "-b", "feat-x")
+
+	cfg := &config.Config{
+		GrokBin:           "false",
+		Projects:          config.PathProjects(map[string]string{"app": proj}),
+		Channels:          map[string]string{"ch1": "app"},
+		DataDir:           filepath.Join(dir, "data"),
+		ConfigPath:        filepath.Join(dir, "config.json"),
+		WorktreeIsolation: new(true),
+		MaxTurns:          5,
+		TimeoutMs:         5000,
+		Yolo:              new(true),
+	}
+	store, err := sessionstore.New(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := New(cfg, store, hist)
+	unit := gitworktree.NewWebUnitID()
+	e := sessionstore.Entry{
+		Project: "app", SessionID: "sess-1", Cwd: proj, MainCwd: proj, Origin: SourceWeb,
+	}
+	e.UpsertPR(sessionstore.TrackedPR{
+		Owner: "acme", Repo: "app", Number: 4, State: "OPEN", HeadRef: "feat-x",
+		URL: "https://github.com/acme/app/pull/4",
+	})
+	if err := store.Set(unit, e); err != nil {
+		t.Fatal(err)
+	}
+
+	cwd, branch, err := b.resolveRunCwd(t.Context(), projectRef{Name: "app", Cwd: proj}, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cwd != proj || branch != "" {
+		t.Fatalf("cwd=%q branch=%q", cwd, branch)
+	}
+	if head := gitOutTrim(t, proj, "rev-parse", "--abbrev-ref", "HEAD"); head != "feat-x" {
+		t.Fatalf("HEAD moved to %q", head)
+	}
+}
+
+func TestResolveRunCwdRefusesPRBranchInOtherWorktree(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, proj)
+	primary := gitOutTrim(t, proj, "rev-parse", "--abbrev-ref", "HEAD")
+	runGitIn(t, proj, "checkout", "-b", "feat-x")
+	runGitIn(t, proj, "commit", "--allow-empty", "-m", "feat")
+	runGitIn(t, proj, "checkout", primary)
+	other := filepath.Join(dir, "other")
+	runGitIn(t, proj, "worktree", "add", other, "feat-x")
+
+	cfg := &config.Config{
+		GrokBin:           "false",
+		Projects:          config.PathProjects(map[string]string{"app": proj}),
+		Channels:          map[string]string{"ch1": "app"},
+		DataDir:           filepath.Join(dir, "data"),
+		ConfigPath:        filepath.Join(dir, "config.json"),
+		WorktreeIsolation: new(true),
+		MaxTurns:          5,
+		TimeoutMs:         5000,
+		Yolo:              new(true),
+	}
+	store, err := sessionstore.New(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := New(cfg, store, hist)
+	unit := gitworktree.NewWebUnitID()
+	e := sessionstore.Entry{Project: "app", Origin: SourceWeb}
+	e.UpsertPR(sessionstore.TrackedPR{
+		Owner: "acme", Repo: "app", Number: 12, State: "OPEN", HeadRef: "feat-x",
+		URL: "https://github.com/acme/app/pull/12",
+	})
+	if err := store.Set(unit, e); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = b.resolveRunCwd(t.Context(), projectRef{Name: "app", Cwd: proj}, unit)
+	if err == nil || !strings.Contains(err.Error(), "already checked out") {
+		t.Fatalf("got %v", err)
+	}
+	if gitworktree.CheckedOutAtMain(err, proj) {
+		t.Fatal("other worktree must not count as the main checkout")
+	}
+}
+
 func TestEnsureShipModeImportedPRStaysPR(t *testing.T) {
 	b, store := testBotSessions(t)
 	on := true

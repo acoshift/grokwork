@@ -1194,7 +1194,11 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 			return "", "", aerr
 		}
 		if adopted {
-			log.Printf("task: adopted PR head branch=%s cwd=%s thread=%s", br, path, threadID)
+			if br == "" {
+				log.Printf("task: PR head stays checked out cwd=%s thread=%s", path, threadID)
+			} else {
+				log.Printf("task: adopted PR head branch=%s cwd=%s thread=%s", br, path, threadID)
+			}
 			return path, br, nil
 		}
 	}
@@ -2078,6 +2082,15 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 		close(stopProgress)
 		progressWG.Wait()
 		log.Printf("error: worktree thread=%s: %v", threadID, wtErr)
+		b.appendTimeline(threadID, timeline.KindNotice, timeline.Notice{
+			Level: "warn",
+			Text:  "Could not start the run: " + wtErr.Error(),
+		})
+		b.appendTimeline(threadID, timeline.KindRunDone, timeline.RunDone{
+			Status:  "error",
+			Error:   wtErr.Error(),
+			Elapsed: formatElapsed(time.Since(job.start)),
+		})
 		if present && statusID != "" {
 			if editErr := discordEditComponents(s, threadID, statusID, "Failed · worktree", actionBarDone(threadID, b.sessionWebURL(threadID)), true); editErr != nil {
 				log.Printf("error: edit status: %v", editErr)

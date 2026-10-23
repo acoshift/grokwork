@@ -1,6 +1,7 @@
 package gitworktree
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,6 +112,13 @@ func TestEnsureAdoptedRefusesCheckedOutElsewhere(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already checked out") {
 		t.Fatalf("got %v", err)
+	}
+	if !CheckedOutAtMain(err, repo) {
+		t.Fatalf("main checkout conflict: %v", err)
+	}
+	busy, ok := errors.AsType[*ErrBranchCheckedOut](err)
+	if !ok || busy.Branch != "feat-busy" {
+		t.Fatalf("typed error: %v", err)
 	}
 }
 
