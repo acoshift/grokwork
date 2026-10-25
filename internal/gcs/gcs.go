@@ -9,11 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/acoshift/grokwork/internal/filename"
 )
 
 // Binary is the gcloud executable name. Tests PATH-poison gcloud so the real
@@ -139,46 +140,8 @@ func ValidateObjectPath(p string) error {
 }
 
 // SanitizeFilename cleans a client-supplied filename for use as an object leaf.
-// Mirrors bot.sanitizeFilename without importing internal/bot.
 func SanitizeFilename(name string) string {
-	name = strings.TrimSpace(name)
-	name = filepath.Base(name)
-	if name == "." || name == ".." || name == string(filepath.Separator) {
-		name = "file"
-	}
-	var b strings.Builder
-	for _, r := range name {
-		switch {
-		case unicode.IsLetter(r), unicode.IsDigit(r):
-			b.WriteRune(r)
-		case r == '.' || r == '-' || r == '_' || r == ' ':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-	name = strings.TrimSpace(b.String())
-	name = strings.Trim(name, ".")
-	if name == "" {
-		name = "file"
-	}
-	const max = 120
-	if len(name) > max {
-		ext := filepath.Ext(name)
-		base := strings.TrimSuffix(name, ext)
-		if len(ext) > 20 {
-			ext = ext[:20]
-		}
-		keep := max - len(ext)
-		if keep < 1 {
-			keep = 1
-		}
-		if len(base) > keep {
-			base = base[:keep]
-		}
-		name = base + ext
-	}
-	return name
+	return filename.Sanitize(name)
 }
 
 // requireObject rejects an empty object argument. joinObject(prefix, "") is

@@ -8,19 +8,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 func TestSanitizeFilename(t *testing.T) {
 	cases := map[string]string{
-		"error.log":                       "error.log",
-		"../../etc/passwd":                "passwd",
-		"weird name!!.txt":                "weird name__.txt",
-		"":                                "file",
-		".":                               "file",
-		"..":                              "file",
-		"a/b/c.png":                       "c.png",
+		"error.log":        "error.log",
+		"../../etc/passwd": "passwd",
+		"weird name!!.txt": "weird name__.txt",
+		"":                 "file",
+		".":                "file",
+		"..":               "file",
+		"a/b/c.png":        "c.png",
+		"สวัสดี.txt":       "สวัสดี.txt",
+		"ข้อมูลลูกค้า.xlsx":               "ข้อมูลลูกค้า.xlsx",
+		"ที่อยู่จัดส่ง.csv":               "ที่อยู่จัดส่ง.csv",
 		strings.Repeat("x", 200) + ".log": "", // length capped; checked below
 	}
 	for in, want := range cases {
@@ -104,6 +108,39 @@ func TestDownloadAttachments(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(dir, "err.log"))
 	if err != nil || string(raw) != "boom\n" {
 		t.Fatalf("err.log: %q %v", raw, err)
+	}
+}
+
+func TestDownloadAttachmentsThai(t *testing.T) {
+	const body = "สวัสดีครับ ข้อมูลลูกค้า\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	files, err := downloadAttachments(context.Background(), []*discordgo.MessageAttachment{
+		{ID: "1", URL: srv.URL + "/note", Filename: "ที่อยู่จัดส่ง.txt", Size: len(body), ContentType: "text/plain"},
+	}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("got %d files", len(files))
+	}
+	if files[0].Filename != "ที่อยู่จัดส่ง.txt" {
+		t.Fatalf("filename=%q", files[0].Filename)
+	}
+	if !utf8.ValidString(files[0].Filename) {
+		t.Fatal("filename is not valid utf-8")
+	}
+	raw, err := os.ReadFile(files[0].Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != body {
+		t.Fatalf("body=%q", raw)
 	}
 }
 

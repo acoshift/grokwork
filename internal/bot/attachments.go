@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/filename"
 	"github.com/acoshift/grokwork/internal/history"
 )
 
@@ -244,44 +244,7 @@ func hasMessageReference(m *discordgo.MessageCreate) bool {
 }
 
 func sanitizeFilename(name string) string {
-	name = strings.TrimSpace(name)
-	name = filepath.Base(name)
-	if name == "." || name == ".." || name == string(filepath.Separator) {
-		name = "file"
-	}
-	var b strings.Builder
-	for _, r := range name {
-		switch {
-		case unicode.IsLetter(r), unicode.IsDigit(r):
-			b.WriteRune(r)
-		case r == '.' || r == '-' || r == '_' || r == ' ':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-	name = strings.TrimSpace(b.String())
-	name = strings.Trim(name, ".")
-	if name == "" {
-		name = "file"
-	}
-	const max = 120
-	if len(name) > max {
-		ext := filepath.Ext(name)
-		base := strings.TrimSuffix(name, ext)
-		if len(ext) > 20 {
-			ext = ext[:20]
-		}
-		keep := max - len(ext)
-		if keep < 1 {
-			keep = 1
-		}
-		if len(base) > keep {
-			base = base[:keep]
-		}
-		name = base + ext
-	}
-	return name
+	return filename.Sanitize(name)
 }
 
 func completeAttachment(sa savedAttachment) savedAttachment {
