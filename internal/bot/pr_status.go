@@ -6,11 +6,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/gitworktree"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -129,6 +131,16 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) prPollStats {
 		e := listed.Entry
 		e.NormalizePRs()
 		threadID := listed.ThreadID
+		if e.HasAnyPR() {
+			if n := b.dropOffCatalogPRs(threadID); n > 0 {
+				e2, ok := b.sessions.Get(threadID)
+				if !ok {
+					continue
+				}
+				e = e2
+				e.NormalizePRs()
+			}
+		}
 		if !e.HasAnyPR() {
 			continue
 		}
@@ -169,7 +181,7 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) prPollStats {
 				log.Printf("pr-status: skip thread=%s: no PR selector (need URL or number)", threadID)
 				continue
 			}
-			info, err := ghpr.View(ctx, repoDir, sel)
+			info, err := ghpr.ViewWith(ctx, b.ghRun(), repoDir, sel)
 			if err != nil {
 				log.Printf("pr-status: poll thread=%s pr=%s cwd=%q: %v", threadID, sel, repoDir, err)
 				continue
@@ -216,6 +228,16 @@ func (b *Bot) refreshPRAfterTask(s *discordgo.Session, threadID, repoDir, branch
 			repoDir = b.prViewCwd(e)
 		}
 	}
+	// A citation of an upstream PR is not this project's work. Drop any that
+	// an earlier run already bound before this refresh looks at the reply.
+	if n := b.dropOffCatalogPRs(threadID); n > 0 {
+		if e, ok := b.sessions.Get(threadID); ok {
+			prev = e
+			prev.NormalizePRs()
+		} else {
+			prev = sessionstore.Entry{}
+		}
+	}
 	// Branch discovery needs a real git worktree; URL refreshes do not.
 	if repoDir == "" && branch == "" && !prev.HasAnyPR() && strings.TrimSpace(replyText) == "" {
 		return
@@ -239,7 +261,7 @@ func (b *Bot) refreshPRAfterTask(s *discordgo.Session, threadID, repoDir, branch
 			if sel == "" {
 				continue
 			}
-			info, err := ghpr.View(ctx, repoDir, sel)
+			info, err := ghpr.ViewWith(ctx, b.ghRun(), repoDir, sel)
 			if err != nil {
 				log.Printf("pr-status: refresh tracked %s cwd=%q: %v", sel, repoDir, err)
 				continue
@@ -273,10 +295,20 @@ func (b *Bot) discoverPRInfos(ctx context.Context, repoDir string, prev sessions
 		out = append(out, info)
 	}
 
-	// 1) All PR URLs in the model reply (multi-PR / multi-repo).
+	// 1) PR URLs in the model reply (multi-PR / multi-repo).
+	// A reply also cites upstream library PRs ("see oven-sh/bun#45631").
+	// The catalog's GitHub owner is the boundary: sibling repos in that org
+	// are still this project's (hah-platform tracks hah-webadmin from a
+	// platform checkout), a different owner is not. An empty catalog stays
+	// open so a failed remote discovery cannot drop real PRs.
+	catalog, catalogKnown := b.projectRepoCatalog(prev.Project)
 	if replyText != "" {
 		for _, u := range ghpr.ParseGitHubPRURLs(replyText) {
-			info, err := ghpr.View(ctx, repoDir, u.URL)
+			if catalogKnown && !ownerInCatalog(catalog, u.Owner) {
+				log.Printf("pr-status: skip off-catalog url %s/%s#%d project=%s", u.Owner, u.Repo, u.Number, prev.Project)
+				continue
+			}
+			info, err := ghpr.ViewWith(ctx, b.ghRun(), repoDir, u.URL)
 			if err != nil {
 				log.Printf("pr-status: view by URL %s: %v", u.URL, err)
 				// Still track minimally from the URL so we can retry later.
@@ -299,7 +331,7 @@ func (b *Bot) discoverPRInfos(ctx context.Context, repoDir string, prev sessions
 		branch = strings.TrimSpace(prev.WorktreeBranch)
 	}
 	if branch != "" && repoDir != "" && gitworktree.IsRepo(repoDir) {
-		if info, err := ghpr.ViewByHead(ctx, repoDir, branch); err == nil {
+		if info, err := ghpr.ViewByHeadWith(ctx, b.ghRun(), repoDir, branch); err == nil {
 			add(info)
 		}
 	}
@@ -317,11 +349,100 @@ func (b *Bot) discoverPRInfos(ctx context.Context, repoDir string, prev sessions
 		if _, ok := seen[key]; ok {
 			continue
 		}
-		if info, err := ghpr.View(ctx, repoDir, sel); err == nil {
+		if info, err := ghpr.ViewWith(ctx, b.ghRun(), repoDir, sel); err == nil {
 			add(info)
 		}
 	}
 	return out
+}
+
+// projectRepoCatalog returns the project's GitHub repos.
+// known is false when the catalog is missing or empty, so callers do not
+// treat "we could not tell" as "this repo is foreign".
+func (b *Bot) projectRepoCatalog(project string) ([]config.GitHubRepoRef, bool) {
+	if b == nil || b.cfg == nil {
+		return nil, false
+	}
+	project = strings.TrimSpace(project)
+	if project == "" {
+		return nil, false
+	}
+	refs, err := b.cfg.ProjectRepoCatalogWith(b.bgContext(), project, nil)
+	if err != nil || len(refs) == 0 {
+		return nil, false
+	}
+	return refs, true
+}
+
+// ownerInCatalog reports whether owner matches any repo in catalog.
+// Match is the GitHub owner, not the repo name: one project tracks several
+// repos under the same org, and a library PR is a different owner.
+func ownerInCatalog(catalog []config.GitHubRepoRef, owner string) bool {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return false
+	}
+	return slices.ContainsFunc(catalog, func(r config.GitHubRepoRef) bool {
+		return strings.EqualFold(r.Owner, owner)
+	})
+}
+
+// prOutsideProjectCatalog reports that pr's owner is not in a known catalog.
+// Unknown owner, or an empty catalog, is not outside.
+func (b *Bot) prOutsideProjectCatalog(project string, pr sessionstore.TrackedPR) bool {
+	pr.FillOwnerRepoFromURL()
+	if pr.Owner == "" {
+		return false
+	}
+	catalog, known := b.projectRepoCatalog(project)
+	if !known {
+		return false
+	}
+	return !ownerInCatalog(catalog, pr.Owner)
+}
+
+// dropOffCatalogPRs removes tracked PRs whose GitHub owner is outside the
+// project's catalog. A citation bound on an earlier run (oven-sh/bun on
+// deploys) stops being polled, shown on Ship, and offered to /fix-ci.
+func (b *Bot) dropOffCatalogPRs(threadID string) int {
+	if b == nil || b.sessions == nil || threadID == "" {
+		return 0
+	}
+	e, ok := b.sessions.Get(threadID)
+	if !ok {
+		return 0
+	}
+	e.NormalizePRs()
+	if len(e.PRs) == 0 {
+		return 0
+	}
+	catalog, known := b.projectRepoCatalog(e.Project)
+	if !known {
+		return 0
+	}
+	project := e.Project
+	outside := func(pr sessionstore.TrackedPR) bool {
+		pr.FillOwnerRepoFromURL()
+		if pr.Owner == "" {
+			return false
+		}
+		return !ownerInCatalog(catalog, pr.Owner)
+	}
+	if !slices.ContainsFunc(e.PRs, outside) {
+		return 0
+	}
+	var dropped int
+	_, _, err := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+		dropped = ent.DropPRs(outside)
+	})
+	if err != nil {
+		log.Printf("pr-status: drop off-catalog thread=%s: %v", threadID, err)
+		return 0
+	}
+	if dropped > 0 {
+		log.Printf("pr-status: dropped %d off-catalog PR(s) thread=%s project=%s", dropped, threadID, project)
+	}
+	return dropped
 }
 
 // tryCleanupTerminalPR removes worktree/session when idle and all tracked PRs are terminal.
@@ -362,6 +483,13 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 	e.NormalizePRs()
 
 	pr := trackedFromInfo(info)
+	if b.prOutsideProjectCatalog(e.Project, pr) {
+		if ok {
+			b.dropOffCatalogPRs(threadID)
+		}
+		log.Printf("pr-status: ignore off-catalog %s/%s#%d project=%s thread=%s", pr.Owner, pr.Repo, pr.Number, e.Project, threadID)
+		return nil
+	}
 	var prevSnap ghpr.Snapshot
 	if existing, found := e.FindPR(pr.Selector()); found {
 		prevSnap = ghpr.Snapshot{

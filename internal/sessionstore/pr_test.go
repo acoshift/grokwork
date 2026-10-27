@@ -4,6 +4,31 @@ import (
 	"testing"
 )
 
+func TestDropPRsRefreshesLegacyMirror(t *testing.T) {
+	e := Entry{}
+	e.UpsertPR(TrackedPR{
+		URL: "https://github.com/oven-sh/bun/pull/45631", Number: 45631, State: "OPEN",
+		Owner: "oven-sh", Repo: "bun", Title: "aot",
+	})
+	e.UpsertPR(TrackedPR{
+		URL: "https://github.com/acme/app/pull/40", Number: 40, State: "OPEN",
+		Owner: "acme", Repo: "app", Title: "bump",
+	})
+	n := e.DropPRs(func(pr TrackedPR) bool { return pr.Repo == "bun" })
+	if n != 1 || len(e.PRs) != 1 || e.PRs[0].Number != 40 {
+		t.Fatalf("n=%d prs=%+v", n, e.PRs)
+	}
+	if e.PRNumber != 40 || e.PRURL != "https://github.com/acme/app/pull/40" {
+		t.Fatalf("legacy number=%d url=%s", e.PRNumber, e.PRURL)
+	}
+	if e.DropPRs(func(TrackedPR) bool { return false }) != 0 {
+		t.Fatal("keep-all must not drop")
+	}
+	if e.DropPRs(func(TrackedPR) bool { return true }) != 1 || len(e.PRs) != 0 || e.PRNumber != 0 || e.PRURL != "" {
+		t.Fatalf("cleared prs=%d number=%d url=%q", len(e.PRs), e.PRNumber, e.PRURL)
+	}
+}
+
 func TestFormatParseAskPRKey(t *testing.T) {
 	key := FormatAskPRKey("Acme", "App", 9)
 	if key != "acme/app#9" {

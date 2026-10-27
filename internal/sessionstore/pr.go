@@ -3,6 +3,7 @@ package sessionstore
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -183,6 +184,23 @@ func (e *Entry) UpsertPR(pr TrackedPR) {
 	}
 	e.PRs = append(e.PRs, pr)
 	e.syncLegacyFromPRs()
+}
+
+// DropPRs removes tracked PRs for which drop returns true and refreshes the
+// legacy single-PR mirror. Returns how many were removed.
+func (e *Entry) DropPRs(drop func(TrackedPR) bool) int {
+	if e == nil || drop == nil {
+		return 0
+	}
+	e.NormalizePRs()
+	n := len(e.PRs)
+	e.PRs = slices.DeleteFunc(e.PRs, drop)
+	dropped := n - len(e.PRs)
+	if dropped == 0 {
+		return 0
+	}
+	e.syncLegacyFromPRs()
+	return dropped
 }
 
 // SamePR reports whether two tracked PRs refer to the same pull request.

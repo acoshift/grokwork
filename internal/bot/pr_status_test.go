@@ -462,3 +462,176 @@ func TestTryCleanupTerminalPRDefersWhenBusy(t *testing.T) {
 		t.Fatalf("PR fields lost after cleanup: num=%d state=%q", e.PRNumber, e.PRState)
 	}
 }
+
+// A reply that cites an upstream library PR must not bind it. A URL in the
+// project's own catalog, in the same reply, still binds.
+func TestRefreshPRAfterTaskSkipsLibraryURL(t *testing.T) {
+	b, store := testBotSessions(t)
+	drainBotOnCleanup(t, b)
+	withProjectGitHub(t, b.cfg, "app", "Acme", "App")
+	const id = "w_lib_url"
+	if err := store.Set(id, sessionstore.Entry{
+		Project: "app", SessionID: "s", UpdatedAt: "2026-10-26T23:44:48Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.SetGHRunner(func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "oven-sh/bun") {
+			t.Fatalf("library PR must not be viewed: %s", joined)
+		}
+		if strings.Contains(joined, "pr checks") {
+			return []byte(`[]`), nil
+		}
+		if strings.Contains(joined, "acme/app/pull/40") {
+			return []byte(`{"number":40,"url":"https://github.com/acme/app/pull/40","title":"bump","state":"OPEN","isDraft":false,"headRefOid":"abc","headRefName":"bun-1.4.4"}`), nil
+		}
+		t.Fatalf("unexpected gh: %s", joined)
+		return nil, nil
+	})
+	reply := "Those flags are only in https://github.com/oven-sh/bun/pull/45631.\n\nhttps://github.com/acme/app/pull/40"
+	b.refreshPRAfterTask(nil, id, "", "", reply)
+	e, ok := store.Get(id)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	e.NormalizePRs()
+	if len(e.PRs) != 1 || e.PRs[0].Number != 40 || !strings.EqualFold(e.PRs[0].Repo, "app") {
+		t.Fatalf("prs=%+v", e.PRs)
+	}
+	if e.PRNumber != 40 {
+		t.Fatalf("legacy number=%d", e.PRNumber)
+	}
+	if e.UpdatedAt != "2026-10-26T23:44:48Z" {
+		t.Fatalf("UpdatedAt=%q", e.UpdatedAt)
+	}
+}
+
+// An already-bound library PR is removed on the next poll. A catalog PR and a
+// number-only legacy row stay. gh is not asked about the library PR.
+func TestPollDropsTrackedLibraryPR(t *testing.T) {
+	b, store := testBotSessions(t)
+	drainBotOnCleanup(t, b)
+	withProjectGitHub(t, b.cfg, "app", "acme", "app")
+	e := sessionstore.Entry{Project: "app", SessionID: "s", UpdatedAt: "2026-10-26T23:44:48Z"}
+	e.UpsertPR(sessionstore.TrackedPR{
+		URL: "https://github.com/oven-sh/bun/pull/45631", Number: 45631, State: "OPEN",
+		Owner: "oven-sh", Repo: "bun", Title: "aot",
+	})
+	e.UpsertPR(sessionstore.TrackedPR{
+		URL: "https://github.com/acme/app/pull/40", Number: 40, State: "MERGED",
+		Owner: "acme", Repo: "app", Title: "bump",
+	})
+	e.UpsertPR(sessionstore.TrackedPR{Number: 3, State: "MERGED"})
+	if err := store.Set("w_lib_bound", e); err != nil {
+		t.Fatal(err)
+	}
+	b.SetGHRunner(func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		t.Fatalf("gh called: %s", strings.Join(args, " "))
+		return nil, nil
+	})
+	b.pollPRStatuses(nil)
+	got, ok := store.Get("w_lib_bound")
+	if !ok {
+		t.Fatal("session missing")
+	}
+	got.NormalizePRs()
+	if len(got.PRs) != 2 || got.PRs[0].Number != 40 || got.PRs[1].Number != 3 {
+		t.Fatalf("prs=%+v", got.PRs)
+	}
+	if got.UpdatedAt != "2026-10-26T23:44:48Z" {
+		t.Fatalf("UpdatedAt=%q", got.UpdatedAt)
+	}
+}
+
+// No configured catalog and no discoverable remote: do not treat every tracked
+// PR as foreign. Projects that learn their repo from origin depend on this.
+func TestPollKeepsPRWhenCatalogUnknown(t *testing.T) {
+	b, store := testBotSessions(t)
+	drainBotOnCleanup(t, b)
+	e := sessionstore.Entry{Project: "app", SessionID: "s"}
+	e.UpsertPR(sessionstore.TrackedPR{
+		URL: "https://github.com/acme/app/pull/7", Number: 7, State: "OPEN",
+		Owner: "acme", Repo: "app", Title: "fix",
+	})
+	if err := store.Set("w_nocat", e); err != nil {
+		t.Fatal(err)
+	}
+	b.SetGHRunner(func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "pr checks") {
+			return []byte(`[]`), nil
+		}
+		if strings.Contains(joined, "acme/app/pull/7") {
+			return []byte(`{"number":7,"url":"https://github.com/acme/app/pull/7","title":"fix","state":"OPEN","headRefOid":"abc","headRefName":"feat"}`), nil
+		}
+		t.Fatalf("unexpected gh: %s", joined)
+		return nil, nil
+	})
+	b.pollPRStatuses(nil)
+	got, ok := store.Get("w_nocat")
+	if !ok {
+		t.Fatal("session missing")
+	}
+	got.NormalizePRs()
+	if len(got.PRs) != 1 || got.PRs[0].Number != 7 || got.PRs[0].Repo != "app" {
+		t.Fatalf("prs=%+v", got.PRs)
+	}
+}
+
+// Same GitHub owner, different repo: a platform checkout still tracks
+// hah-webadmin. Only a different owner (the library) is removed.
+func TestPollKeepsSameOwnerSiblingRepo(t *testing.T) {
+	b, store := testBotSessions(t)
+	drainBotOnCleanup(t, b)
+	withProjectGitHub(t, b.cfg, "app", "acme", "app")
+	e := sessionstore.Entry{Project: "app", SessionID: "s"}
+	e.UpsertPR(sessionstore.TrackedPR{
+		URL: "https://github.com/acme/lib/pull/8", Number: 8, State: "MERGED",
+		Owner: "acme", Repo: "lib", Title: "sibling",
+	})
+	e.UpsertPR(sessionstore.TrackedPR{
+		URL: "https://github.com/oven-sh/bun/pull/45631", Number: 45631, State: "OPEN",
+		Owner: "oven-sh", Repo: "bun", Title: "aot",
+	})
+	if err := store.Set("w_sibling", e); err != nil {
+		t.Fatal(err)
+	}
+	b.SetGHRunner(func(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+		t.Fatalf("gh called: %s", strings.Join(args, " "))
+		return nil, nil
+	})
+	b.pollPRStatuses(nil)
+	got, ok := store.Get("w_sibling")
+	if !ok {
+		t.Fatal("session missing")
+	}
+	got.NormalizePRs()
+	if len(got.PRs) != 1 || got.PRs[0].Number != 8 || got.PRs[0].Repo != "lib" {
+		t.Fatalf("prs=%+v", got.PRs)
+	}
+}
+
+func TestApplyPRInfoIgnoresOffCatalog(t *testing.T) {
+	b, store := testBotSessions(t)
+	drainBotOnCleanup(t, b)
+	withProjectGitHub(t, b.cfg, "app", "acme", "app")
+	if err := store.Set("w_apply_lib", sessionstore.Entry{Project: "app", SessionID: "s"}); err != nil {
+		t.Fatal(err)
+	}
+	info := ghpr.Info{
+		Number: 45631, URL: "https://github.com/oven-sh/bun/pull/45631",
+		Title: "aot", State: "OPEN", Owner: "oven-sh", Repo: "bun",
+	}
+	if err := b.applyPRInfo(nil, "w_apply_lib", info); err != nil {
+		t.Fatal(err)
+	}
+	e, ok := store.Get("w_apply_lib")
+	if !ok {
+		t.Fatal("session missing")
+	}
+	e.NormalizePRs()
+	if e.HasAnyPR() {
+		t.Fatalf("library PR bound: %+v", e.PRs)
+	}
+}
