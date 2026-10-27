@@ -131,7 +131,9 @@ type Config struct {
 	// nil/omitted → DefaultWorktreeIdleTTLDays (30). 0 disables idle cleanup.
 	WorktreeIdleTTLDays *int `json:"worktreeIdleTTLDays,omitempty"`
 	// TerminalSessionTTLDays is days since last update before deleting
-	// done/abandoned session tombstones. nil/omitted → 0 (disabled). 0 disables.
+	// done/abandoned session tombstones. The same sweep removes that session's
+	// attachment bytes, and bytes left behind by sessions already deleted.
+	// The turn log stays. nil/omitted → 0 (disabled). 0 disables.
 	TerminalSessionTTLDays *int `json:"terminalSessionTTLDays,omitempty"`
 	// LogTailLines is how many trailing lines of data/stdout.log and
 	// data/stderr.log to keep. nil/omitted → DefaultLogTailLines. 0 disables.

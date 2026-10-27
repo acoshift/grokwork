@@ -26,7 +26,8 @@
   </form>
   <p class="sub" style="margin:0.5rem 0 0">
     Idle TTL prunes after that many days without activity (default <span class="mono">30</span>);
-    done/abandoned TTL deletes terminal sessions that long after their last update (default off).
+    done/abandoned TTL deletes terminal sessions that long after their last update (default off)
+    and removes their uploaded files. The turn log stays.
     <span class="mono">0</span> disables either.
   </p>
   <p class="sub" style="margin:0.5rem 0 0">Effective root for new worktrees: <span class="mono">{{.Config.WorktreesRoot}}</span></p>

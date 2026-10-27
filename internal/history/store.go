@@ -302,7 +302,9 @@ func (s *Store) Get(threadID string) (Thread, error) {
 //
 // Summaries are cached in memory and rebuilt only after Append/Delete. The SSE
 // idle tick called this on every connection every 2s, and each call parsed every
-// transcript just to read the last turn's metadata.
+// transcript just to read the last turn's metadata. DropFiles does not
+// invalidate: a summary has no file names, and the history fingerprint does
+// not either, so a rev bump would reparse every transcript for no refresh.
 func (s *Store) List() ([]Summary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -439,6 +441,120 @@ func (s *Store) Delete(threadID string) error {
 	}
 	s.invalidateListLocked()
 	return errors.Join(jsonErr, dirErr)
+}
+
+// DropFiles removes a thread's attachment and artifact bytes and clears the
+// allowlists the session page renders as download links. The turn log stays,
+// so the sessions list and spend still have the transcript.
+//
+// The allowlist is cleared before the directory is removed. saveLocked
+// recreates the artifact sidecar when Thread.Artifacts is non-empty, so the
+// slices are nil first and the directory goes second. A crash between the two
+// leaves the directory for the next call; the reverse order would leave names
+// in the log and no directory for a later sweep to find.
+//
+// The bool is false when there was nothing to remove, so a sweep does not
+// count a session that never had files.
+func (s *Store) DropFiles(threadID string) (bool, error) {
+	if s == nil {
+		return false, fmt.Errorf("nil store")
+	}
+	if !validThreadID(threadID) {
+		return false, fmt.Errorf("invalid thread id")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, statErr := os.Stat(s.filesRoot(threadID))
+	hadDir := statErr == nil
+
+	th, err := s.loadLocked(threadID)
+	if err != nil {
+		return false, err
+	}
+	rewritten := false
+	if clearFileAllowlists(&th) {
+		// Artifacts is nil, so this save does not recreate the sidecar.
+		if err := s.saveLocked(th); err != nil {
+			return false, err
+		}
+		rewritten = true
+	}
+	if err := os.RemoveAll(s.filesRoot(threadID)); err != nil && !os.IsNotExist(err) {
+		return rewritten, err
+	}
+	return rewritten || hadDir, nil
+}
+
+// clearFileAllowlists nils the session and per-turn file lists. False when
+// the log already named nothing, so DropFiles does not rewrite it.
+func clearFileAllowlists(th *Thread) bool {
+	if th == nil {
+		return false
+	}
+	changed := len(th.Artifacts) > 0
+	th.Artifacts = nil
+	for i := range th.Turns {
+		if len(th.Turns[i].Attachments) == 0 && len(th.Turns[i].Artifacts) == 0 {
+			continue
+		}
+		th.Turns[i].Attachments = nil
+		th.Turns[i].Artifacts = nil
+		changed = true
+	}
+	return changed
+}
+
+// ThreadsWithFiles returns thread ids that still have an attachment directory
+// (data/history/<id>/). The turn log alone is not included.
+func (s *Store) ThreadsWithFiles() ([]string, error) {
+	if s == nil {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		id := e.Name()
+		if !validThreadID(id) {
+			continue
+		}
+		out = append(out, id)
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+// FilesActivity is the clock for reclaiming a thread's attachment directory:
+// the last turn's timestamp when the log has one that parses, otherwise the
+// directory's mtime. Zero means there is nothing to time.
+func (s *Store) FilesActivity(threadID string) time.Time {
+	if s == nil || !validThreadID(threadID) {
+		return time.Time{}
+	}
+	s.mu.Lock()
+	th, err := s.loadLocked(threadID)
+	s.mu.Unlock()
+	if err == nil && len(th.Turns) > 0 {
+		if t, perr := time.Parse(time.RFC3339, th.Turns[len(th.Turns)-1].At); perr == nil {
+			return t
+		}
+	}
+	st, err := os.Stat(s.filesRoot(threadID))
+	if err != nil {
+		return time.Time{}
+	}
+	return st.ModTime()
 }
 
 func (s *Store) path(threadID string) string {

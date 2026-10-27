@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAppendGetList(t *testing.T) {
@@ -445,6 +446,192 @@ func TestLegacyJSONArtifactsMigrateOnSave(t *testing.T) {
 	}
 	if len(th.Turns) != 2 {
 		t.Fatalf("turns=%d", len(th.Turns))
+	}
+}
+
+func TestDropFilesKeepsTurnLog(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shot := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(shot, []byte("png-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendFiles("t1", Turn{
+		Prompt: "see", Response: "done", Status: "done", Project: "app",
+		Usage:     &Usage{InputTokens: 4, OutputTokens: 2},
+		Artifacts: []Attachment{{Name: "report.xlsx", Size: 5}},
+	}, []File{{Path: shot, Name: "shot.png", ContentType: "image/png"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PutArtifact("t1", File{Bytes: []byte("sheet"), Name: "report.xlsx"}); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyDir := filepath.Join(dir, "history")
+	legacy := []byte(`{
+  "threadId": "legacy",
+  "project": "app",
+  "turns": [{"at": "2020-01-01T00:00:00Z", "prompt": "old", "response": "kept", "status": "done", "attachments": [{"name": "a.txt", "size": 1}]}],
+  "artifacts": [{"name": "legacy.xlsx", "size": 3, "rel": "out/legacy.xlsx"}]
+}
+`)
+	if err := os.WriteFile(filepath.Join(legacyDir, "legacy.json"), legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(legacyDir, "legacy", "out"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "legacy", "out", "legacy.xlsx"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "legacy", "artifacts.json"), []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if f, _, err := s.OpenFile("t1", 1, "shot.png"); err != nil {
+		t.Fatal(err)
+	} else {
+		f.Close()
+	}
+	if dropped, err := s.DropFiles("t1"); err != nil || !dropped {
+		t.Fatalf("drop t1 dropped=%v err=%v", dropped, err)
+	}
+	if dropped, err := s.DropFiles("legacy"); err != nil || !dropped {
+		t.Fatalf("drop legacy dropped=%v err=%v", dropped, err)
+	}
+	if dropped, err := s.DropFiles("missing"); err != nil || dropped {
+		t.Fatalf("drop missing dropped=%v err=%v", dropped, err)
+	}
+	if _, err := s.DropFiles("../etc"); err == nil {
+		t.Fatal("invalid thread id")
+	}
+
+	th, err := s.Get("t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Turns) != 1 || th.Turns[0].Prompt != "see" || th.Turns[0].Response != "done" {
+		t.Fatalf("transcript: %+v", th.Turns)
+	}
+	if th.Turns[0].Usage == nil || th.Turns[0].Usage.InputTokens != 4 || th.Turns[0].Usage.OutputTokens != 2 {
+		t.Fatalf("usage: %+v", th.Turns[0].Usage)
+	}
+	if len(th.Turns[0].Attachments) != 0 || len(th.Turns[0].Artifacts) != 0 || len(th.Artifacts) != 0 {
+		t.Fatalf("allowlist still set: %+v artifacts=%+v", th.Turns[0], th.Artifacts)
+	}
+	if _, _, err := s.OpenFile("t1", 1, "shot.png"); err == nil {
+		t.Fatal("attachment still opens")
+	}
+	if _, _, err := s.OpenArtifact("t1", "report.xlsx"); err == nil {
+		t.Fatal("artifact still opens")
+	}
+	raw, err := os.ReadFile(filepath.Join(legacyDir, "t1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"attachments"`) || strings.Contains(string(raw), `"artifacts"`) {
+		t.Fatalf("turn log still names files: %s", raw)
+	}
+	if _, err := os.Stat(filepath.Join(legacyDir, "t1")); !os.IsNotExist(err) {
+		t.Fatalf("files dir still present: %v", err)
+	}
+
+	th, err = s.Get("legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Turns) != 1 || th.Turns[0].Prompt != "old" || th.Turns[0].Response != "kept" {
+		t.Fatalf("legacy transcript: %+v", th.Turns)
+	}
+	if len(th.Artifacts) != 0 || len(th.Turns[0].Attachments) != 0 {
+		t.Fatalf("legacy allowlist resurrected: %+v", th)
+	}
+	raw, err = os.ReadFile(filepath.Join(legacyDir, "legacy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"artifacts"`) || strings.Contains(string(raw), `"attachments"`) {
+		t.Fatalf("legacy log still names files: %s", raw)
+	}
+	if _, err := os.Stat(filepath.Join(legacyDir, "legacy")); !os.IsNotExist(err) {
+		t.Fatalf("legacy files dir still present: %v", err)
+	}
+
+	// A second call, and a log with no files, must not rewrite or invent a directory.
+	before, err := os.ReadFile(filepath.Join(legacyDir, "t1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dropped, err := s.DropFiles("t1"); err != nil || dropped {
+		t.Fatalf("second drop dropped=%v err=%v", dropped, err)
+	}
+	after, err := os.ReadFile(filepath.Join(legacyDir, "t1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("second DropFiles rewrote a clean log")
+	}
+
+	list, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("list=%+v", list)
+	}
+}
+
+func TestFilesActivityPrefersLastTurn(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turned := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	note := filepath.Join(t.TempDir(), "a.txt")
+	if err := os.WriteFile(note, []byte("a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendFiles("t1", Turn{
+		At: turned.Format(time.RFC3339), Prompt: "see", Status: "done",
+	}, []File{{Path: note, Name: "a.txt"}}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := os.Chtimes(filepath.Join(dir, "history", "t1"), now, now); err != nil {
+		t.Fatal(err)
+	}
+	got := s.FilesActivity("t1")
+	if !got.Equal(turned) {
+		t.Fatalf("activity=%s want turn %s", got, turned)
+	}
+
+	orphan := filepath.Join(dir, "history", "orphan")
+	if err := os.MkdirAll(orphan, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(orphan, past, past); err != nil {
+		t.Fatal(err)
+	}
+	got = s.FilesActivity("orphan")
+	if got.IsZero() || got.After(time.Now().Add(-24*time.Hour)) {
+		t.Fatalf("orphan activity=%s want the directory mtime", got)
+	}
+
+	ids, err := s.ThreadsWithFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(ids, ",") != "orphan,t1" {
+		t.Fatalf("ids=%v", ids)
+	}
+	if !s.FilesActivity("nope").IsZero() {
+		t.Fatal("missing thread should have no activity")
 	}
 }
 

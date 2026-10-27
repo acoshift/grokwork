@@ -11,6 +11,7 @@ import (
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/gitworktree"
+	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/sessionstore"
 )
 
@@ -396,9 +397,12 @@ func TestPruneTerminalSessions(t *testing.T) {
 	cfg.TerminalSessionTTLDays = new(30)
 	b := New(cfg, sessions, nil)
 
-	n := b.pruneTerminalSessions(time.Now(), 30*24*time.Hour)
+	n, files := b.pruneTerminalSessions(time.Now(), 30*24*time.Hour)
 	if n != 2 {
 		t.Fatalf("removed=%d want 2 (old done + old abandoned)", n)
+	}
+	if files != 0 {
+		t.Fatalf("files=%d want 0 (no history store)", files)
 	}
 	if _, ok := sessions.Get("old-done"); ok {
 		t.Fatal("old-done should be deleted")
@@ -414,7 +418,186 @@ func TestPruneTerminalSessions(t *testing.T) {
 	}
 
 	// disabled TTL
-	if n := b.pruneTerminalSessions(time.Now(), 0); n != 0 {
-		t.Fatalf("disabled n=%d", n)
+	if n, files := b.pruneTerminalSessions(time.Now(), 0); n != 0 || files != 0 {
+		t.Fatalf("disabled n=%d files=%d", n, files)
 	}
+}
+
+func TestSweepTerminalSessionsDropsStaleFiles(t *testing.T) {
+	data := t.TempDir()
+	oldAt := time.Now().Add(-40 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	newAt := time.Now().UTC().Format(time.RFC3339)
+	writeSessions(t, data, map[string]sessionstore.Entry{
+		"old-done": {
+			Project:   "app",
+			Label:     sessionstore.LabelDone,
+			UpdatedAt: oldAt,
+		},
+		"old-empty": {
+			Project:   "app",
+			Label:     sessionstore.LabelAbandoned,
+			UpdatedAt: oldAt,
+		},
+		"fresh-done": {
+			Project:   "app",
+			Label:     sessionstore.LabelDone,
+			UpdatedAt: newAt,
+		},
+		"active": {
+			Project:   "app",
+			Label:     sessionstore.LabelInProgress,
+			UpdatedAt: oldAt,
+		},
+		"case-open": {
+			Project:   "app",
+			Mode:      "case",
+			Phase:     "fixing",
+			Label:     sessionstore.LabelDone,
+			UpdatedAt: oldAt,
+		},
+	})
+	sessions, err := sessionstore.New(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"old-done", "fresh-done", "active", "case-open", "hist-old", "hist-new", "hist-busy"} {
+		at := oldAt
+		if id == "fresh-done" || id == "hist-new" {
+			at = newAt
+		}
+		seedHistoryFiles(t, hist, id, at)
+	}
+	orphan := filepath.Join(data, "history", "orphan-dir", "1")
+	if err := os.MkdirAll(orphan, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orphan, "x.bin"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-40 * 24 * time.Hour)
+	if err := os.Chtimes(filepath.Join(data, "history", "orphan-dir"), past, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(data, "history", "orphan-new"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Projects: config.PathProjects(map[string]string{"app": t.TempDir()}),
+		DataDir:  data,
+	}
+	cfg.TerminalSessionTTLDays = new(30)
+	b := New(cfg, sessions, hist)
+	st := b.stateFor("hist-busy")
+	st.mu.Lock()
+	st.job = &runJob{start: time.Now(), project: "app"}
+	st.mu.Unlock()
+
+	nSess, nFiles := b.sweepTerminalSessions()
+	if nSess != 2 {
+		t.Fatalf("sessions=%d want 2 (old-done, old-empty)", nSess)
+	}
+	if nFiles != 3 {
+		t.Fatalf("files=%d want 3 (old-done, hist-old, orphan-dir)", nFiles)
+	}
+
+	assertHistoryFilesGone(t, hist, "old-done")
+	assertHistoryFilesKept(t, hist, "fresh-done")
+	assertHistoryFilesKept(t, hist, "active")
+	assertHistoryFilesKept(t, hist, "case-open")
+	assertHistoryFilesGone(t, hist, "hist-old")
+	assertHistoryFilesKept(t, hist, "hist-new")
+	assertHistoryFilesKept(t, hist, "hist-busy")
+	if _, err := os.Stat(filepath.Join(data, "history", "orphan-dir")); !os.IsNotExist(err) {
+		t.Fatalf("orphan-dir still present: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(data, "history", "orphan-new")); err != nil {
+		t.Fatalf("recent orphan dir should remain: %v", err)
+	}
+	if _, ok := sessions.Get("fresh-done"); !ok {
+		t.Fatal("fresh-done session should remain")
+	}
+	if _, ok := sessions.Get("case-open"); !ok {
+		t.Fatal("open case should remain")
+	}
+	if _, ok := sessions.Get("old-done"); ok {
+		t.Fatal("old-done session should be deleted")
+	}
+	if _, ok := sessions.Get("old-empty"); ok {
+		t.Fatal("old-empty session should be deleted")
+	}
+
+	// Second pass is a no-op: kept files stay, gone files stay gone.
+	nSess, nFiles = b.sweepTerminalSessions()
+	if nSess != 0 || nFiles != 0 {
+		t.Fatalf("second sweep sessions=%d files=%d", nSess, nFiles)
+	}
+	assertHistoryFilesKept(t, hist, "fresh-done")
+}
+
+func seedHistoryFiles(t *testing.T, h *history.Store, threadID, at string) {
+	t.Helper()
+	note := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(note, []byte("hi"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.AppendFiles(threadID, history.Turn{
+		At:       at,
+		Prompt:   "see " + threadID,
+		Response: "ok",
+		Status:   "done",
+		Project:  "app",
+		Usage:    &history.Usage{InputTokens: 3, OutputTokens: 1},
+		Artifacts: []history.Attachment{{
+			Name: "out.txt", Size: 2,
+		}},
+	}, []history.File{{
+		Path: note, Name: "note.txt", ContentType: "text/plain",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.PutArtifact(threadID, history.File{Name: "out.txt", Bytes: []byte("go")}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertHistoryFilesGone(t *testing.T, h *history.Store, threadID string) {
+	t.Helper()
+	th, err := h.Get(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(th.Turns) != 1 || th.Turns[0].Prompt != "see "+threadID || th.Turns[0].Response != "ok" {
+		t.Fatalf("%s transcript: %+v", threadID, th.Turns)
+	}
+	if th.Turns[0].Usage == nil || th.Turns[0].Usage.InputTokens != 3 {
+		t.Fatalf("%s usage: %+v", threadID, th.Turns[0].Usage)
+	}
+	if len(th.Turns[0].Attachments) != 0 || len(th.Turns[0].Artifacts) != 0 || len(th.Artifacts) != 0 {
+		t.Fatalf("%s allowlist still set: turns=%+v artifacts=%+v", threadID, th.Turns[0], th.Artifacts)
+	}
+	if _, _, err := h.OpenFile(threadID, 1, "note.txt"); err == nil {
+		t.Fatalf("%s attachment still opens", threadID)
+	}
+	if _, _, err := h.OpenArtifact(threadID, "out.txt"); err == nil {
+		t.Fatalf("%s artifact still opens", threadID)
+	}
+}
+
+func assertHistoryFilesKept(t *testing.T, h *history.Store, threadID string) {
+	t.Helper()
+	f, _, err := h.OpenFile(threadID, 1, "note.txt")
+	if err != nil {
+		t.Fatalf("%s attachment: %v", threadID, err)
+	}
+	f.Close()
+	f, _, err = h.OpenArtifact(threadID, "out.txt")
+	if err != nil {
+		t.Fatalf("%s artifact: %v", threadID, err)
+	}
+	f.Close()
 }

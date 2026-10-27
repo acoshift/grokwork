@@ -58,11 +58,11 @@ func (b *Bot) runIdleSweepCycle(reason string) {
 	log.Printf("bg: idle sweep start reason=%s worktreeTTL=%s terminalSessionTTL=%s", reason, ttl, termTTL)
 	start := time.Now()
 	nWT := b.sweepIdleWorktrees()
-	nSess := b.sweepTerminalSessions()
+	nSess, nFiles := b.sweepTerminalSessions()
 	nAsk := b.sweepPRAskUnits()
 	nCP := gitworktree.SweepExpiredCherryPicks(b.bgContext(), b.cfg.DataDir)
-	log.Printf("bg: idle sweep done reason=%s worktrees=%d terminalSessions=%d prAsks=%d cherrypickJobs=%d elapsed=%s",
-		reason, nWT, nSess, nAsk, nCP, time.Since(start).Round(time.Millisecond))
+	log.Printf("bg: idle sweep done reason=%s worktrees=%d terminalSessions=%d historyFiles=%d prAsks=%d cherrypickJobs=%d elapsed=%s",
+		reason, nWT, nSess, nFiles, nAsk, nCP, time.Since(start).Round(time.Millisecond))
 }
 
 // sweepIdleWorktrees applies the configured TTL (0 disables).
@@ -76,25 +76,31 @@ func (b *Bot) sweepIdleWorktrees() int {
 }
 
 // sweepTerminalSessions deletes done/abandoned session tombstones older than
-// TerminalSessionTTL (based on UpdatedAt). 0 / unset disables.
-func (b *Bot) sweepTerminalSessions() int {
+// TerminalSessionTTL (based on UpdatedAt) and drops their attachment bytes.
+// The turn log stays. 0 / unset disables both. The file count includes a
+// catch-up over directories whose session row is already gone.
+func (b *Bot) sweepTerminalSessions() (sessions, files int) {
 	ttl := b.cfg.TerminalSessionTTL()
 	if ttl <= 0 {
 		log.Printf("bg: terminal-session sweep skipped (ttl disabled)")
-		return 0
+		return 0, 0
 	}
-	return b.pruneTerminalSessions(time.Now(), ttl)
+	now := time.Now()
+	sessions, files = b.pruneTerminalSessions(now, ttl)
+	files += b.sweepStaleHistoryFiles(now, ttl)
+	return sessions, files
 }
 
 // pruneTerminalSessions removes store entries whose effective label is done or
 // abandoned and whose UpdatedAt is at least ttl in the past. Busy threads are
-// skipped. Leftover worktrees are removed best-effort before Delete.
-func (b *Bot) pruneTerminalSessions(now time.Time, ttl time.Duration) int {
+// skipped. Open cases are skipped until they are closed. Leftover worktrees
+// are removed best-effort before Delete. After the row is gone, attachment
+// bytes are removed too. files is how many of those threads had bytes removed.
+func (b *Bot) pruneTerminalSessions(now time.Time, ttl time.Duration) (removed, files int) {
 	if b == nil || b.sessions == nil || ttl <= 0 {
-		return 0
+		return 0, 0
 	}
 	cutoff := now.Add(-ttl)
-	removed := 0
 	for _, listed := range b.sessions.List() {
 		e := listed.Entry
 		if !sessionstore.IsTerminalLabel(e.EffectiveLabel()) {
@@ -136,8 +142,74 @@ func (b *Bot) pruneTerminalSessions(now time.Time, ttl time.Duration) int {
 		}
 		log.Printf("terminal-session: deleted thread=%s label=%s last=%s", threadID, e.EffectiveLabel(), e.UpdatedAt)
 		removed++
+		if b.dropHistoryFiles(threadID) {
+			log.Printf("terminal-session: dropped files thread=%s", threadID)
+			files++
+		}
 	}
-	return removed
+	return removed, files
+}
+
+// dropHistoryFiles removes attachment bytes for a thread that no longer has a
+// session row. A row that reappeared, or a thread that is busy again, is left
+// alone so a run that started during the sweep keeps the files it just wrote.
+func (b *Bot) dropHistoryFiles(threadID string) bool {
+	if b == nil || b.history == nil || strings.TrimSpace(threadID) == "" {
+		return false
+	}
+	if b.isThreadBusy(threadID) {
+		log.Printf("terminal-session: keep files busy thread=%s", threadID)
+		return false
+	}
+	if b.sessions != nil {
+		if _, ok := b.sessions.Get(threadID); ok {
+			log.Printf("terminal-session: keep files session exists thread=%s", threadID)
+			return false
+		}
+	}
+	dropped, err := b.history.DropFiles(threadID)
+	if err != nil {
+		log.Printf("warn: terminal-session drop files thread=%s: %v", threadID, err)
+		return false
+	}
+	return dropped
+}
+
+// sweepStaleHistoryFiles drops attachment directories whose session row is
+// already gone and whose last turn (or, with no log, the directory mtime) is
+// at least ttl old. Sessions that still have a row are left to
+// pruneTerminalSessions, which only drops files once it has deleted the row.
+func (b *Bot) sweepStaleHistoryFiles(now time.Time, ttl time.Duration) int {
+	if b == nil || b.history == nil || ttl <= 0 {
+		return 0
+	}
+	ids, err := b.history.ThreadsWithFiles()
+	if err != nil {
+		log.Printf("warn: terminal-session list history files: %v", err)
+		return 0
+	}
+	cutoff := now.Add(-ttl)
+	n := 0
+	for _, id := range ids {
+		if b.sessions != nil {
+			if _, ok := b.sessions.Get(id); ok {
+				continue
+			}
+		}
+		if b.isThreadBusy(id) {
+			continue
+		}
+		act := b.history.FilesActivity(id)
+		if act.IsZero() || act.After(cutoff) {
+			continue
+		}
+		if !b.dropHistoryFiles(id) {
+			continue
+		}
+		log.Printf("terminal-session: dropped files thread=%s last=%s", id, formatLast(act))
+		n++
+	}
+	return n
 }
 
 // WorktreeInfo is a per-thread worktree row for the admin UI.
