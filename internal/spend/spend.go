@@ -1,8 +1,9 @@
 // Package spend aggregates what agent runs cost.
 //
 // The inputs are the per-turn token records in internal/history and the per-model
-// rate table in internal/config; the output is a rollup by project, by actor, and
-// by session. Nothing here talks to a CLI or a store directly — it is a pure fold
+// rate table in internal/config; the output is a rollup by project, by actor,
+// by session, and by UTC month. Nothing here talks to a CLI or a store
+// directly — it is a pure fold
 // over turns, so the interesting cases (a model with no rate, a project the viewer
 // may not see) are testable without a filesystem.
 //
@@ -14,13 +15,14 @@
 //     unpriced" rather than quietly under-reporting the total.
 //   - Visibility is applied per turn, not per report. A rollup that spans projects
 //     is a cross-project read, so a member must never see a project's spend
-//     through the actor or session totals either.
+//     through the actor, session, or month totals either.
 package spend
 
 import (
 	"cmp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/history"
@@ -91,6 +93,12 @@ type Report struct {
 	ByProject []Row
 	ByActor   []Row
 	BySession []Row
+	// ByMonth is one row per UTC calendar month (Key "2006-01"), newest first.
+	// A turn whose timestamp cannot be read lands in the empty-key row rather
+	// than being dropped, so the month rows still add up to Total. Months with
+	// no turns are absent: an invented row would read as a measured cost of
+	// nothing.
+	ByMonth []Row
 	// UnpricedModels names the models that carried tokens but produced no dollars,
 	// sorted. This is the actionable half of "no cost shown": it turns a mystery
 	// into a list of rows to fill in on the rate table.
@@ -106,6 +114,7 @@ func Build(src ThreadSource, p Pricer, q Query) (Report, error) {
 	projects := map[string]*Row{}
 	actors := map[string]*Row{}
 	sessions := map[string]*Row{}
+	months := map[string]*Row{}
 	unpriced := map[string]bool{}
 	wantActor := strings.TrimSpace(q.ActorID)
 
@@ -141,6 +150,9 @@ func Build(src ThreadSource, p Pricer, q Query) (Report, error) {
 			bucket(projects, project).addLabeled(turn, tokens, dollars, ok, project, project)
 			bucket(actors, actorKey).addLabeled(turn, tokens, dollars, ok, actorLabel, project)
 			bucket(sessions, th.ThreadID).addLabeled(turn, tokens, dollars, ok, sessionLabel(turn), project)
+			// No project on a month row: one month spans every project in the
+			// report, and stamping the first one would make the row look scoped.
+			bucket(months, monthKey(turn.At)).add(turn, tokens, dollars, ok)
 		}
 		return nil
 	})
@@ -151,6 +163,7 @@ func Build(src ThreadSource, p Pricer, q Query) (Report, error) {
 	out.ByProject = sortedRows(projects)
 	out.ByActor = sortedRows(actors)
 	out.BySession = sortedRows(sessions)
+	out.ByMonth = sortedMonths(months)
 	for name := range unpriced {
 		out.UnpricedModels = append(out.UnpricedModels, name)
 	}
@@ -204,6 +217,24 @@ func turnTokens(turn history.Turn) config.TokenCounts {
 		t.Input = u.TotalTokens
 	}
 	return t
+}
+
+// monthKey is the UTC calendar month of a turn timestamp, "2006-01".
+//
+// Turns are stamped with time.Now().UTC(), but a hand-written offset is still
+// converted before the month is taken: 2026-08-01 00:30 +07 is still July in
+// UTC. An empty or unparseable timestamp returns "" so the caller can keep the
+// turn in an explicit unknown row instead of dropping its cost.
+func monthKey(at string) string {
+	at = strings.TrimSpace(at)
+	if at == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339Nano, at)
+	if err != nil {
+		return ""
+	}
+	return t.UTC().Format("2006-01")
 }
 
 // turnActor identifies who ran a turn. The id is the key because display names
@@ -285,6 +316,20 @@ func sortedRows(m map[string]*Row) []Row {
 			return c
 		}
 		return cmp.Compare(a.Key, b.Key)
+	})
+	return out
+}
+
+// sortedMonths orders month buckets newest first. "2006-01" sorts
+// lexicographically in calendar order, and an empty key (unreadable timestamp)
+// is the smallest string, so descending order puts it last.
+func sortedMonths(m map[string]*Row) []Row {
+	out := make([]Row, 0, len(m))
+	for _, r := range m {
+		out = append(out, *r)
+	}
+	slices.SortFunc(out, func(a, b Row) int {
+		return cmp.Compare(b.Key, a.Key)
 	})
 	return out
 }

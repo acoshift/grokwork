@@ -60,6 +60,34 @@
 </div>
 {{end}}
 
+<div class="section" id="spend-by-month">
+  <h2>By month <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Spend.ByMonth}})</span></h2>
+  <p class="sub">UTC calendar months, newest first. A turn counts in the month its timestamp falls in.</p>
+  {{if .Spend.ByMonth}}
+  <div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Month</th><th>Cost</th><th>Tokens</th><th>Turns</th><th>Models</th><th>Last run</th></tr>
+    </thead>
+    <tbody>
+      {{range .Spend.ByMonth}}
+      <tr>
+        <td class="mono">{{if .Key}}{{.Key}}{{else}}<span class="muted">unknown</span>{{end}}</td>
+        <td>{{cost .}}</td>
+        <td>{{tokens .TotalTokens}}</td>
+        <td>{{.Turns}}</td>
+        <td class="mono muted">{{models .}}</td>
+        <td class="mono muted">{{shortTime .LastAt}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty">Nothing to report.</div>
+  {{end}}
+</div>
+
 {{if not .Project}}
 <div class="section" id="spend-by-project">
   <h2>By project <span class="muted" style="font-weight:500;font-size:0.9rem">({{len .Spend.ByProject}})</span></h2>

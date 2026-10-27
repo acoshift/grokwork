@@ -73,7 +73,9 @@ func TestSpendPageReportsCostTokensAndUnpricedModels(t *testing.T) {
 		// The unpriced model is named, not silently dropped.
 		`id="spend-unpriced"`,
 		"grok-4.5",
-		// Rollups by project, person and session.
+		// Rollups by month, project, person and session.
+		`id="spend-by-month"`,
+		"2026-07",
 		`href="/projects/proj/spend"`,
 		"alice",
 		"bob",
@@ -140,9 +142,62 @@ func TestSpendScopedPageStaysInsideTheWorkspace(t *testing.T) {
 		t.Fatalf("scoped cost missing: %s", body)
 	}
 	// A one-project page has no By project table — the column would repeat the
-	// heading on every row.
+	// heading on every row. The month split stays: it is how that project's
+	// cost landed over time.
 	if strings.Contains(body, `id="spend-by-project"`) {
 		t.Fatal("scoped page must not render the by-project table")
+	}
+	if !strings.Contains(body, `id="spend-by-month"`) || !strings.Contains(body, "2026-07") {
+		t.Fatalf("scoped page missing the month table: %s", body)
+	}
+}
+
+// The month table is its own rollup, newest first, on the same page as the
+// all-time total. Order is checked inside the month section so a "last run"
+// cell elsewhere cannot satisfy it.
+func TestSpendPageSplitsCostByMonth(t *testing.T) {
+	srv, cfg, _ := testServer(t)
+	opusRates(t, cfg)
+	july := usageTurn("proj", "u1", "alice", "claude-opus-5", &history.Usage{InputTokens: 1_000_000})
+	july.At = "2026-07-20T10:00:00Z"
+	august := usageTurn("proj", "u2", "bob", "claude-opus-5", &history.Usage{OutputTokens: 1_000_000})
+	august.At = "2026-08-02T08:00:00Z"
+	for _, seed := range []struct {
+		thread string
+		turn   history.Turn
+	}{
+		{"t-july", july},
+		{"t-august", august},
+	} {
+		if err := srv.history.Append(seed.thread, seed.turn); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/spend", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	start := strings.Index(body, `id="spend-by-month"`)
+	end := strings.Index(body, `id="spend-by-project"`)
+	if start < 0 || end < 0 || start > end {
+		t.Fatalf("month section missing or out of place")
+	}
+	section := body[start:end]
+	aug := strings.Index(section, "2026-08")
+	jul := strings.Index(section, "2026-07")
+	if aug < 0 || jul < 0 || aug > jul {
+		t.Fatalf("months not newest-first:\n%s", section)
+	}
+	if !strings.Contains(section, "$25.00") || !strings.Contains(section, "$5.00") {
+		t.Fatalf("month costs missing:\n%s", section)
+	}
+	// The all-time total is still both months.
+	if !strings.Contains(body, "$30.00") {
+		t.Fatalf("total missing both months: %s", body)
 	}
 }
 
@@ -161,8 +216,11 @@ func TestSpendPageFiltersByProjectVisibility(t *testing.T) {
 		usageTurn("public", "member-1", "Member", "claude-opus-5", &history.Usage{InputTokens: 1_000_000})); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.history.Append("th-secret",
-		usageTurn("secret", "member-1", "Member", "claude-opus-5", &history.Usage{InputTokens: 7_000_000})); err != nil {
+	secret := usageTurn("secret", "member-1", "Member", "claude-opus-5", &history.Usage{InputTokens: 7_000_000})
+	// A different month from the public turn, so a leak shows up as a month
+	// the member was never in, not only as a bigger total.
+	secret.At = "2026-08-02T08:00:00Z"
+	if err := srv.history.Append("th-secret", secret); err != nil {
 		t.Fatal(err)
 	}
 
@@ -194,7 +252,7 @@ func TestSpendPageFiltersByProjectVisibility(t *testing.T) {
 	if !strings.Contains(body, `href="/projects/public/spend"`) {
 		t.Fatalf("member missing own project: %s", body)
 	}
-	if strings.Contains(body, "/projects/secret/spend") || strings.Contains(body, "th-secret") {
+	if strings.Contains(body, "/projects/secret/spend") || strings.Contains(body, "th-secret") || strings.Contains(body, "2026-08") {
 		t.Fatalf("member sees hidden project's spend: %s", body)
 	}
 	// 7M hidden tokens must not reach the total or the person row either.
@@ -208,7 +266,7 @@ func TestSpendPageFiltersByProjectVisibility(t *testing.T) {
 	// An admin sees both, which is what makes the filtering above a real filter
 	// rather than an empty store.
 	adminBody := get("admin-1", "/spend", config.WebRoleAdmin)
-	if !strings.Contains(adminBody, "/projects/secret/spend") || !strings.Contains(adminBody, "$35.00") {
+	if !strings.Contains(adminBody, "/projects/secret/spend") || !strings.Contains(adminBody, "$35.00") || !strings.Contains(adminBody, "2026-08") {
 		t.Fatalf("admin must see every project: %s", adminBody)
 	}
 

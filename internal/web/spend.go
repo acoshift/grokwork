@@ -15,9 +15,9 @@ import (
 // Spend reporting: what the agent runs cost.
 //
 // Two pages over one rollup — the global lead view (/spend) and the workspace one
-// (/projects/{p}/spend) — because "which project is burning money" and "who in
-// this project is burning it" are different questions with the same arithmetic
-// behind them.
+// (/projects/{p}/spend) — because "which project is burning money", "who in
+// this project is burning it", and "which month it landed in" are different
+// questions with the same arithmetic behind them.
 //
 // Visibility is enforced by handing spend.Build a per-project gate rather than by
 // filtering rows afterwards. A rollup is a cross-project read: the actor and

@@ -246,6 +246,119 @@ func TestBuildFiltersByVisibility(t *testing.T) {
 	}
 }
 
+// Months are UTC calendar buckets, newest first, and they obey the same gates
+// as every other row. An offset that is still the previous UTC day stays in
+// that month; a missing month is not invented; an unreadable timestamp is its
+// own row so the month rows still sum to the total.
+func TestBuildSplitsCostByMonth(t *testing.T) {
+	src := threads{{
+		ThreadID: "t1", Project: "app",
+		Turns: []history.Turn{
+			// 1M input = $5, July.
+			turn("app", "u1", "alice", "claude-opus-5", usage(1_000_000, 0, 0, 0), "2026-07-31T23:00:00Z"),
+			// 00:30 +07 on 1 Aug is 17:30 UTC on 31 Jul — still July. 1M output = $25.
+			turn("app", "u2", "bob", "claude-opus-5", usage(0, 0, 0, 1_000_000), "2026-08-01T00:30:00+07:00"),
+			// No usage: must not open a month of its own.
+			{At: "2026-06-01T00:00:00Z", Prompt: "old", Project: "app", Status: "done"},
+		},
+	}, {
+		ThreadID: "t2", Project: "api",
+		Turns: []history.Turn{
+			// Fractional seconds. 2M cache read = $1, September.
+			turn("api", "u1", "alice", "claude-opus-5", usage(0, 2_000_000, 0, 0), "2026-09-15T12:00:00.5Z"),
+			// Unreadable stamp, still $5 of input. Its own row, not September.
+			turn("api", "u1", "alice", "claude-opus-5", usage(1_000_000, 0, 0, 0), "not-a-time"),
+			// August has nothing. 1M output on an unpriced model, October: tokens
+			// count, dollars do not, and the row is not a $0.
+			turn("api", "u2", "bob", "grok-4.5", usage(0, 0, 0, 1_000_000), "2026-10-02T00:00:00Z"),
+		},
+	}}
+	rep, err := Build(src, pricer(t), Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.ByMonth) != 4 {
+		t.Fatalf("months=%+v", rep.ByMonth)
+	}
+	wantKeys := []string{"2026-10", "2026-09", "2026-07", ""}
+	for i, key := range wantKeys {
+		if rep.ByMonth[i].Key != key {
+			t.Fatalf("month[%d]=%q want %q (full=%+v)", i, rep.ByMonth[i].Key, key, rep.ByMonth)
+		}
+	}
+	// June never had a priced turn, and August had none at all.
+	for _, r := range rep.ByMonth {
+		if r.Key == "2026-06" || r.Key == "2026-08" {
+			t.Fatalf("invented empty month: %+v", r)
+		}
+	}
+
+	july := rowByKey(t, rep.ByMonth, "2026-07")
+	if july.Turns != 2 || july.Project != "" {
+		t.Fatalf("july=%+v", july)
+	}
+	if july.Dollars < 29.999 || july.Dollars > 30.001 || july.Partial() {
+		t.Fatalf("july cost=%+v", july)
+	}
+	sep := rowByKey(t, rep.ByMonth, "2026-09")
+	if sep.Turns != 1 || sep.Dollars < 0.999 || sep.Dollars > 1.001 {
+		t.Fatalf("september=%+v", sep)
+	}
+	unknown := rowByKey(t, rep.ByMonth, "")
+	if unknown.Turns != 1 || unknown.Dollars < 4.999 || unknown.Dollars > 5.001 {
+		t.Fatalf("unknown month=%+v", unknown)
+	}
+	oct := rowByKey(t, rep.ByMonth, "2026-10")
+	if oct.HasCost() || oct.Dollars != 0 || oct.Unpriced != 1 || oct.TotalTokens() != 1_000_000 {
+		t.Fatalf("unpriced month must not read as $0: %+v", oct)
+	}
+
+	var turns int
+	var dollars float64
+	for _, r := range rep.ByMonth {
+		turns += r.Turns
+		dollars += r.Dollars
+	}
+	if turns != rep.Total.Turns || dollars < rep.Total.Dollars-0.001 || dollars > rep.Total.Dollars+0.001 {
+		t.Fatalf("months do not sum to total: months turns=%d $%v total=%+v", turns, dollars, rep.Total)
+	}
+
+	// A hidden project's month must not appear, and must not inflate a month
+	// the viewer can otherwise see.
+	rep, err = Build(src, pricer(t), Query{Visible: func(p string) bool { return p == "app" }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.ByMonth) != 1 || rep.ByMonth[0].Key != "2026-07" || rep.ByMonth[0].Turns != 2 {
+		t.Fatalf("visibility leaked into months: %+v", rep.ByMonth)
+	}
+
+	// Actor scope drops the other person's July turn ($25) and every other month.
+	rep, err = Build(src, pricer(t), Query{ActorID: "u1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.ByMonth) != 3 {
+		t.Fatalf("actor months=%+v", rep.ByMonth)
+	}
+	july = rowByKey(t, rep.ByMonth, "2026-07")
+	if july.Turns != 1 || july.Dollars < 4.999 || july.Dollars > 5.001 {
+		t.Fatalf("actor july=%+v", july)
+	}
+	if _, ok := monthPresent(rep.ByMonth, "2026-10"); ok {
+		t.Fatalf("bob's october leaked into alice's months: %+v", rep.ByMonth)
+	}
+}
+
+func monthPresent(rows []Row, key string) (Row, bool) {
+	for _, r := range rows {
+		if r.Key == key {
+			return r, true
+		}
+	}
+	return Row{}, false
+}
+
 func TestBuildScopesByProjectAndActor(t *testing.T) {
 	src := threads{{
 		ThreadID: "t1", Project: "app",
