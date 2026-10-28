@@ -2318,6 +2318,9 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 	default:
 		prefix = investigatePromptPrefix(wtBranch, pol.InvestigateShell)
 	}
+	if b.borrowedPRCheckout(proj, threadID, runCwd, wtBranch) {
+		prefix += borrowedCheckoutNote()
+	}
 	prompt = assembleRunPrompt(prefix, prompt)
 	if pol.Coerced && present {
 		// One-line notice when D2 coerce applied (best-effort).
@@ -2430,7 +2433,7 @@ func (b *Bot) executeTask(ctx context.Context, item taskItem, job *runJob) {
 			Agent:          agentCLI.Agent.String(),
 			Model:          agentCLI.Model,
 			Project:        proj.Name,
-			Cwd:            runCwd,
+			Cwd:            b.storedRunCwd(proj, threadID, runCwd, wtBranch, prev.Cwd),
 			MainCwd:        proj.Cwd,
 			WorktreeBranch: wtBranch,
 			Origin:         item.origin,

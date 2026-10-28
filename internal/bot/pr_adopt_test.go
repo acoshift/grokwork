@@ -282,7 +282,7 @@ func TestResolveRunCwdContinuesInProjectCheckout(t *testing.T) {
 	}
 }
 
-func TestResolveRunCwdRefusesPRBranchInOtherWorktree(t *testing.T) {
+func TestResolveRunCwdContinuesInExistingCheckout(t *testing.T) {
 	dir := t.TempDir()
 	proj := filepath.Join(dir, "proj")
 	if err := os.MkdirAll(proj, 0o755); err != nil {
@@ -290,11 +290,14 @@ func TestResolveRunCwdRefusesPRBranchInOtherWorktree(t *testing.T) {
 	}
 	initGitRepo(t, proj)
 	primary := gitOutTrim(t, proj, "rev-parse", "--abbrev-ref", "HEAD")
-	runGitIn(t, proj, "checkout", "-b", "feat-x")
+	runGitIn(t, proj, "checkout", "-b", "chore/bun-1.4.4-node-24.22.1")
 	runGitIn(t, proj, "commit", "--allow-empty", "-m", "feat")
 	runGitIn(t, proj, "checkout", primary)
-	other := filepath.Join(dir, "other")
-	runGitIn(t, proj, "worktree", "add", other, "feat-x")
+	other := filepath.Join(dir, ".worktrees", "console-bun-node-deps")
+	if err := os.MkdirAll(filepath.Dir(other), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGitIn(t, proj, "worktree", "add", other, "chore/bun-1.4.4-node-24.22.1")
 
 	cfg := &config.Config{
 		GrokBin:           "false",
@@ -307,6 +310,86 @@ func TestResolveRunCwdRefusesPRBranchInOtherWorktree(t *testing.T) {
 		TimeoutMs:         5000,
 		Yolo:              new(true),
 	}
+	store, err := sessionstore.New(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := New(cfg, store, hist)
+	unit := gitworktree.NewWebUnitID()
+	e := sessionstore.Entry{Project: "app", Origin: SourceWeb, Cwd: proj, MainCwd: proj}
+	e.UpsertPR(sessionstore.TrackedPR{
+		Owner: "acme", Repo: "app", Number: 12, State: "OPEN", HeadRef: "chore/bun-1.4.4-node-24.22.1",
+		URL: "https://github.com/acme/app/pull/12",
+	})
+	if err := store.Set(unit, e); err != nil {
+		t.Fatal(err)
+	}
+
+	ref := projectRef{Name: "app", Cwd: proj}
+	cwd, branch, err := b.resolveRunCwd(t.Context(), ref, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !samePath(cwd, other) || branch != "" {
+		t.Fatalf("cwd=%q branch=%q want the existing checkout and no owned branch", cwd, branch)
+	}
+	if head := gitOutTrim(t, proj, "rev-parse", "--abbrev-ref", "HEAD"); head != primary {
+		t.Fatalf("main checkout HEAD moved to %q", head)
+	}
+	got, ok := store.Get(unit)
+	if !ok || got.Cwd != proj || got.WorktreeBranch != "" {
+		t.Fatalf("session stamped cwd=%q branch=%q", got.Cwd, got.WorktreeBranch)
+	}
+	owned := gitworktree.WorktreePath(cfg.WorktreesRoot(), "app", unit)
+	if _, statErr := os.Stat(owned); !os.IsNotExist(statErr) {
+		t.Fatalf("managed worktree created at %s: %v", owned, statErr)
+	}
+
+	cwd2, branch2, err := b.resolveRunCwd(t.Context(), ref, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !samePath(cwd2, other) || branch2 != "" {
+		t.Fatalf("second turn cwd=%q branch=%q", cwd2, branch2)
+	}
+	if _, statErr := os.Stat(other); statErr != nil {
+		t.Fatalf("existing checkout removed: %v", statErr)
+	}
+}
+
+func TestResolveRunCwdRefusesPRBranchInOtherUnitWorktree(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepo(t, proj)
+	primary := gitOutTrim(t, proj, "rev-parse", "--abbrev-ref", "HEAD")
+	runGitIn(t, proj, "checkout", "-b", "feat-x")
+	runGitIn(t, proj, "commit", "--allow-empty", "-m", "feat")
+	runGitIn(t, proj, "checkout", primary)
+
+	cfg := &config.Config{
+		GrokBin:           "false",
+		Projects:          config.PathProjects(map[string]string{"app": proj}),
+		Channels:          map[string]string{"ch1": "app"},
+		DataDir:           filepath.Join(dir, "data"),
+		ConfigPath:        filepath.Join(dir, "config.json"),
+		WorktreeIsolation: new(true),
+		MaxTurns:          5,
+		TimeoutMs:         5000,
+		Yolo:              new(true),
+	}
+	other := filepath.Join(cfg.WorktreesRoot(), "app", "other-unit")
+	if err := os.MkdirAll(filepath.Dir(other), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGitIn(t, proj, "worktree", "add", other, "feat-x")
+
 	store, err := sessionstore.New(cfg.DataDir)
 	if err != nil {
 		t.Fatal(err)
@@ -331,7 +414,48 @@ func TestResolveRunCwdRefusesPRBranchInOtherWorktree(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 	if gitworktree.CheckedOutAtMain(err, proj) {
-		t.Fatal("other worktree must not count as the main checkout")
+		t.Fatal("other unit worktree must not count as the main checkout")
+	}
+	if _, statErr := os.Stat(other); statErr != nil {
+		t.Fatalf("other unit worktree removed: %v", statErr)
+	}
+}
+
+func TestStoredRunCwdSkipsBorrowedCheckout(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	cfg := &config.Config{
+		DataDir:    filepath.Join(dir, "data"),
+		ConfigPath: filepath.Join(dir, "config.json"),
+		Projects:   config.PathProjects(map[string]string{"app": proj}),
+	}
+	b := New(cfg, nil, nil)
+	ref := projectRef{Name: "app", Cwd: proj}
+	unit := "w_unit"
+	borrowed := filepath.Join(dir, ".worktrees", "console-bun-node-deps")
+
+	if got := b.storedRunCwd(ref, unit, borrowed, "", proj); got != proj {
+		t.Fatalf("borrowed stored as %q", got)
+	}
+	if sessionHasWorktree(sessionstore.Entry{Cwd: b.storedRunCwd(ref, unit, borrowed, "", ""), MainCwd: proj}) {
+		t.Fatal("borrowed checkout would be swept as this unit's worktree")
+	}
+	if got := b.storedRunCwd(ref, unit, borrowed, "", borrowed); got != proj {
+		t.Fatalf("already-borrowed prev stored as %q", got)
+	}
+	owned := gitworktree.WorktreePath(cfg.WorktreesRoot(), "app", unit)
+	if got := b.storedRunCwd(ref, unit, borrowed, "", owned); got != owned {
+		t.Fatalf("owned prev stored as %q", got)
+	}
+	ask := gitworktree.PRAskPath(cfg.DataDir, "app", unit)
+	if got := b.storedRunCwd(ref, unit, ask, "", ""); got != ask {
+		t.Fatalf("pr-ask stored as %q", got)
+	}
+	if got := b.storedRunCwd(ref, unit, owned, "grokwork/w_unit", ""); got != owned {
+		t.Fatalf("managed cwd stored as %q", got)
+	}
+	if !strings.Contains(borrowedCheckoutNote(), "do not remove this checkout") {
+		t.Fatal("note must tell the agent the checkout is not ours")
 	}
 }
 
