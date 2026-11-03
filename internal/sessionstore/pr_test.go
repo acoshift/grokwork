@@ -2,6 +2,7 @@ package sessionstore
 
 import (
 	"testing"
+	"time"
 )
 
 func TestDropPRsRefreshesLegacyMirror(t *testing.T) {
@@ -77,6 +78,25 @@ func TestNormalizeLegacyAndUpsertMulti(t *testing.T) {
 	e.UpsertPR(TrackedPR{URL: "https://github.com/o/other/pull/9", Number: 9, State: "CLOSED"})
 	if !e.AllPRsTerminal() {
 		t.Fatal("expected all terminal")
+	}
+}
+
+func TestUpsertPRKeepsCreatedAt(t *testing.T) {
+	opened := time.Date(2026, 7, 2, 15, 4, 0, 0, time.UTC)
+	e := Entry{}
+	e.UpsertPR(TrackedPR{
+		URL: "https://github.com/o/r/pull/5", Number: 5, State: "OPEN", CreatedAt: opened,
+	})
+	e.UpsertPR(TrackedPR{URL: "https://github.com/o/r/pull/5", Number: 5, State: "OPEN", Checks: "✓ 1"})
+	p, ok := e.FindPR("https://github.com/o/r/pull/5")
+	if !ok || !p.CreatedAt.Equal(opened) || p.Checks != "✓ 1" {
+		t.Fatalf("created time wiped: %+v ok=%v", p, ok)
+	}
+	later := opened.Add(time.Hour)
+	e.UpsertPR(TrackedPR{URL: "https://github.com/o/r/pull/5", Number: 5, State: "OPEN", CreatedAt: later})
+	p, _ = e.FindPR("https://github.com/o/r/pull/5")
+	if !p.CreatedAt.Equal(later) {
+		t.Fatalf("explicit created time ignored: %v", p.CreatedAt)
 	}
 }
 

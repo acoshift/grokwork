@@ -21,7 +21,7 @@ func TestListPRsWithMock(t *testing.T) {
 		if !strings.Contains(joined, "--state open") {
 			t.Fatalf("missing --state open: %v", args)
 		}
-		for _, field := range []string{"number", "url", "title", "state", "isDraft", "author", "reviewDecision", "headRefOid", "headRefName", "updatedAt"} {
+		for _, field := range []string{"number", "url", "title", "state", "isDraft", "author", "reviewDecision", "headRefOid", "headRefName", "createdAt", "updatedAt"} {
 			if !strings.Contains(joined, field) {
 				t.Fatalf("list missing json field %s: %v", field, args)
 			}
@@ -29,7 +29,7 @@ func TestListPRsWithMock(t *testing.T) {
 		return []byte(`[
 			{"number":12,"url":"https://github.com/acme/app/pull/12","title":"Human PR","state":"OPEN","isDraft":false,
 			 "author":{"login":"zoe"},"reviewDecision":"REVIEW_REQUIRED","headRefOid":"abc","headRefName":"feat-x",
-			 "updatedAt":"2026-08-30T10:00:00Z"},
+			 "createdAt":"2026-08-01T08:00:00Z","updatedAt":"2026-08-30T10:00:00Z"},
 			{"number":13,"url":"https://github.com/acme/app/pull/13","title":"Draft","state":"OPEN","isDraft":true,
 			 "author":"kai","reviewDecision":"","headRefOid":"def","headRefName":"wip",
 			 "updatedAt":"2026-08-29T09:00:00Z"}
@@ -53,6 +53,9 @@ func TestListPRsWithMock(t *testing.T) {
 	}
 	if list[0].UpdatedAt.IsZero() || list[0].UpdatedAt.UTC().Format("2006-01-02 15:04") != "2026-08-30 10:00" {
 		t.Fatalf("first updatedAt=%v", list[0].UpdatedAt)
+	}
+	if list[0].CreatedAt.IsZero() || list[0].CreatedAt.UTC().Format("2006-01-02 15:04") != "2026-08-01 08:00" {
+		t.Fatalf("first createdAt=%v", list[0].CreatedAt)
 	}
 	if !list[1].IsDraft || list[1].Author != "kai" {
 		t.Fatalf("second=%+v", list[1])

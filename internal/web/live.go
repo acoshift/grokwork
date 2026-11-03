@@ -198,9 +198,13 @@ func (s *Server) fpShip() string {
 		board.Total, board.Open, board.Draft, board.ChecksFailing,
 		board.ChangesRequested, board.Approved, board.Merged, board.Closed)
 	for _, r := range board.Rows {
-		fmt.Fprintf(&b, "%s|%d|%s|%s|%s|%s|%v|%v|%d|%s\n",
+		created := ""
+		if !r.CreatedAt.IsZero() {
+			created = r.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		fmt.Fprintf(&b, "%s|%d|%s|%s|%s|%s|%v|%v|%d|%s|%s\n",
 			r.ThreadID, r.Number, r.State, r.Checks, r.Review, r.Label,
-			r.Running, r.ChecksFailing, r.Queue, r.UpdatedAt)
+			r.Running, r.ChecksFailing, r.Queue, r.UpdatedAt, created)
 	}
 	return hashFingerprint(b.String())
 }

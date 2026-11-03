@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // FormatAskPRKey is the lookup key for SessionKindPRAsk units.
@@ -49,6 +50,11 @@ type TrackedPR struct {
 	IsDraft bool   `json:"isDraft,omitempty"`
 	Owner   string `json:"owner,omitempty"`
 	Repo    string `json:"repo,omitempty"`
+	// CreatedAt is when GitHub opened the pull request. The ship board sorts
+	// by it across repos, because a PR number only orders work inside one repo.
+	// Zero until a poll or import has seen it. Immutable: UpsertPR keeps the
+	// stored value when a later write does not carry one.
+	CreatedAt time.Time `json:"createdAt,omitzero"`
 	// Discord status card message for this PR.
 	StatusMsgID string `json:"statusMsgId,omitempty"`
 
@@ -172,6 +178,11 @@ func (e *Entry) UpsertPR(pr TrackedPR) {
 			}
 			if pr.CIAutoFixSHA == "" {
 				pr.CIAutoFixSHA = prev.CIAutoFixSHA
+			}
+			// Created time does not change. A refresh that did not ask GitHub
+			// for it must not wipe the stamp the poller already stored.
+			if pr.CreatedAt.IsZero() {
+				pr.CreatedAt = prev.CreatedAt
 			}
 			// Preserve auto-fix count unless the caller increased it.
 			if pr.CIAutoFixCount < prev.CIAutoFixCount {

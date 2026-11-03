@@ -91,7 +91,10 @@ func TestViewWithMock(t *testing.T) {
 		joined := strings.Join(args, " ")
 		switch {
 		case strings.HasPrefix(joined, "pr view"):
-			return []byte(`{"number":9,"url":"https://github.com/o/r/pull/9","title":"T","state":"OPEN","isDraft":false,"reviewDecision":"APPROVED","headRefOid":"abc","headRefName":"grok/discord/1"}`), nil
+			if !strings.Contains(joined, "createdAt") {
+				t.Fatalf("pr view must request createdAt: %v", args)
+			}
+			return []byte(`{"number":9,"url":"https://github.com/o/r/pull/9","title":"T","state":"OPEN","isDraft":false,"reviewDecision":"APPROVED","headRefOid":"abc","headRefName":"grok/discord/1","createdAt":"2026-07-02T15:04:00Z"}`), nil
 		case strings.HasPrefix(joined, "pr checks"):
 			return []byte(`[{"name":"ci","state":"SUCCESS","bucket":"pass"}]`), nil
 		default:
@@ -105,6 +108,9 @@ func TestViewWithMock(t *testing.T) {
 	}
 	if info.Number != 9 || info.Checks != "✓ 1" || info.ReviewDecision != "APPROVED" {
 		t.Fatalf("%+v", info)
+	}
+	if info.CreatedAt.IsZero() || info.CreatedAt.UTC().Format("2006-01-02 15:04") != "2026-07-02 15:04" {
+		t.Fatalf("createdAt=%v", info.CreatedAt)
 	}
 }
 

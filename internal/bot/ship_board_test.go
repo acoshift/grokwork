@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/history"
@@ -471,15 +472,27 @@ func TestChecksLookFailing(t *testing.T) {
 }
 
 func TestSortShipRowsStableAcrossUpdatedAt(t *testing.T) {
-	// Same attention rank, different session activity — order must not follow UpdatedAt.
-	rows := []ShipPRRow{
-		{ThreadID: "t-new", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 10, State: "OPEN", RawState: "OPEN", UpdatedAt: "2026-07-21T12:00:00Z"},
-		{ThreadID: "t-old", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 20, State: "OPEN", RawState: "OPEN", UpdatedAt: "2026-07-01T00:00:00Z"},
-		{ThreadID: "t-fail", Project: "beta", GHOwner: "acme", GHRepo: "api", Number: 3, State: "OPEN", RawState: "OPEN", ChecksFailing: true, UpdatedAt: "2026-07-10T00:00:00Z"},
-		{ThreadID: "t-merge", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 5, State: "MERGED", RawState: "MERGED", UpdatedAt: "2026-07-20T00:00:00Z"},
-		{ThreadID: "t-draft", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 15, State: "DRAFT", RawState: "OPEN", UpdatedAt: "2026-07-19T00:00:00Z"},
+	// Same attention rank, different session activity — order follows GitHub
+	// createdAt across repos, never session UpdatedAt or PR number.
+	at := func(s string) time.Time {
+		tm, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm
 	}
-	// Shuffle input order; result must be deterministic.
+	rows := []ShipPRRow{
+		// Newer open PR, but a lower number in a repo that sorts later.
+		{ThreadID: "t-new", Project: "zeta", GHOwner: "acme", GHRepo: "web", Number: 3, State: "OPEN", RawState: "OPEN", UpdatedAt: "2026-07-01T00:00:00Z", CreatedAt: at("2026-07-21T12:00:00Z")},
+		// Older open PR with a higher number in a repo that sorts first.
+		{ThreadID: "t-old", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 400, State: "OPEN", RawState: "OPEN", UpdatedAt: "2026-07-21T12:00:00Z", CreatedAt: at("2026-07-01T00:00:00Z")},
+		// Failing, and the oldest created time — attention still wins.
+		{ThreadID: "t-fail", Project: "beta", GHOwner: "acme", GHRepo: "api", Number: 3, State: "OPEN", RawState: "OPEN", ChecksFailing: true, UpdatedAt: "2026-07-10T00:00:00Z", CreatedAt: at("2026-06-01T00:00:00Z")},
+		{ThreadID: "t-merge", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 5, State: "MERGED", RawState: "MERGED", UpdatedAt: "2026-07-20T00:00:00Z", CreatedAt: at("2026-07-20T00:00:00Z")},
+		{ThreadID: "t-draft", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 15, State: "DRAFT", RawState: "OPEN", UpdatedAt: "2026-07-19T00:00:00Z", CreatedAt: at("2026-07-19T00:00:00Z")},
+		// No created time yet: after every dated row in the same rank.
+		{ThreadID: "t-unstamped", Project: "alpha", GHOwner: "acme", GHRepo: "app", Number: 999, State: "OPEN", RawState: "OPEN", UpdatedAt: "2026-08-01T00:00:00Z"},
+	}
 	for i := range 3 {
 		in := append([]ShipPRRow(nil), rows...)
 		if i == 1 {
@@ -489,11 +502,10 @@ func TestSortShipRowsStableAcrossUpdatedAt(t *testing.T) {
 			in[1], in[2] = in[2], in[1]
 		}
 		sortShipRows(in)
-		// Fail first, then open by project/repo/#desc, then draft, then merged.
-		want := []string{"t-fail", "t-old", "t-new", "t-draft", "t-merge"}
+		want := []string{"t-fail", "t-new", "t-old", "t-unstamped", "t-draft", "t-merge"}
 		for j, id := range want {
 			if in[j].ThreadID != id {
-				t.Fatalf("pass %d pos %d: got %q want %q (rows=%+v)", i, j, in[j].ThreadID, id, in)
+				t.Fatalf("pass %d pos %d: got %q want %q", i, j, in[j].ThreadID, id)
 			}
 		}
 	}

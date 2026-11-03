@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Info is a point-in-time pull request snapshot for Discord.
@@ -25,6 +26,10 @@ type Info struct {
 	Checks         string // human rollup, e.g. "✓ 3 · ✗ 1 · … 2"
 	Owner          string
 	Repo           string
+	// CreatedAt is when GitHub opened the pull request. Zero when the
+	// snapshot did not ask for it. PR numbers are only ordered inside one
+	// repo, so the ship board sorts on this instead.
+	CreatedAt time.Time
 }
 
 // Runner runs a command in dir and returns stdout. Tests inject fakes.
@@ -235,7 +240,7 @@ func ViewWith(ctx context.Context, run Runner, repoDir, selector string) (Info, 
 		return Info{}, fmt.Errorf("empty PR selector")
 	}
 	raw, err := run(ctx, repoDir, "gh", "pr", "view", selector,
-		"--json", "number,url,title,state,isDraft,reviewDecision,headRefOid,headRefName")
+		"--json", "number,url,title,state,isDraft,reviewDecision,headRefOid,headRefName,createdAt")
 	if err != nil {
 		return Info{}, err
 	}
@@ -271,7 +276,7 @@ func ViewByHeadWith(ctx context.Context, run Runner, repoDir, branch string) (In
 	raw, err := run(ctx, repoDir, "gh", "pr", "list",
 		"--head", branch,
 		"--state", "all",
-		"--json", "number,url,title,state,isDraft,reviewDecision,headRefOid,headRefName",
+		"--json", "number,url,title,state,isDraft,reviewDecision,headRefOid,headRefName,createdAt",
 		"--limit", "5",
 	)
 	if err != nil {
@@ -612,6 +617,7 @@ type viewJSON struct {
 	ReviewDecision string `json:"reviewDecision"`
 	HeadRefOid     string `json:"headRefOid"`
 	HeadRefName    string `json:"headRefName"`
+	CreatedAt      string `json:"createdAt"`
 }
 
 func (v viewJSON) toInfo() Info {
@@ -624,6 +630,7 @@ func (v viewJSON) toInfo() Info {
 		ReviewDecision: v.ReviewDecision,
 		HeadSHA:        v.HeadRefOid,
 		HeadRef:        v.HeadRefName,
+		CreatedAt:      parseGHTime(v.CreatedAt),
 	}
 	fillOwnerRepo(&info)
 	return info

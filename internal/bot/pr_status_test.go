@@ -66,6 +66,53 @@ func TestApplyPRInfoPreservesUpdatedAt(t *testing.T) {
 	}
 }
 
+func TestApplyPRInfoStoresCreatedAt(t *testing.T) {
+	dir := t.TempDir()
+	store, err := sessionstore.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := New(&config.Config{DataDir: dir}, store, nil)
+	threadID := "w_pr_created"
+	if err := store.Set(threadID, sessionstore.Entry{SessionID: "s1", Project: "app"}); err != nil {
+		t.Fatal(err)
+	}
+	info := ghpr.Info{
+		Number: 7, URL: "https://github.com/acme/app/pull/7", Title: "fix",
+		State: "OPEN", Owner: "acme", Repo: "app", Checks: "✓ 1",
+	}
+	if err := b.applyPRInfo(nil, threadID, info); err != nil {
+		t.Fatal(err)
+	}
+	before, ok := store.Get(threadID)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	opened := time.Date(2026, 7, 2, 15, 4, 0, 0, time.UTC)
+	info.CreatedAt = opened
+	if err := b.applyPRInfo(nil, threadID, info); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(threadID)
+	got.NormalizePRs()
+	if len(got.PRs) != 1 || !got.PRs[0].CreatedAt.Equal(opened) {
+		t.Fatalf("createdAt=%v", got.PRs)
+	}
+	if got.UpdatedAt != before.UpdatedAt {
+		t.Fatalf("UpdatedAt moved %q → %q", before.UpdatedAt, got.UpdatedAt)
+	}
+	// A later snapshot that omits the timestamp must not clear it.
+	info.CreatedAt = time.Time{}
+	if err := b.applyPRInfo(nil, threadID, info); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = store.Get(threadID)
+	got.NormalizePRs()
+	if !got.PRs[0].CreatedAt.Equal(opened) {
+		t.Fatalf("createdAt cleared: %v", got.PRs[0].CreatedAt)
+	}
+}
+
 func TestPreservePRFields(t *testing.T) {
 	prev := sessionstore.Entry{
 		PRURL:          "https://github.com/o/r/pull/3",

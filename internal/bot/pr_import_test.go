@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -37,7 +38,7 @@ func TestImportOpenGitHubPRs(t *testing.T) {
 		return []byte(`[
 			{"number":12,"url":"https://github.com/acme/app/pull/12","title":"Human opened this",
 			 "state":"OPEN","isDraft":false,"author":{"login":"zoe"},"reviewDecision":"REVIEW_REQUIRED",
-			 "headRefOid":"abc","headRefName":"feat-x","updatedAt":"2026-08-30T10:00:00Z"},
+			 "headRefOid":"abc","headRefName":"feat-x","createdAt":"2026-07-02T15:04:00Z","updatedAt":"2026-08-30T10:00:00Z"},
 			{"number":13,"url":"https://github.com/acme/app/pull/13","title":"Grokwork in flight",
 			 "state":"OPEN","isDraft":false,"author":{"login":"bot"},"headRefOid":"def",
 			 "headRefName":"grokwork/123","updatedAt":"2026-08-30T10:00:00Z"}
@@ -75,6 +76,9 @@ func TestImportOpenGitHubPRs(t *testing.T) {
 	e.NormalizePRs()
 	if len(e.PRs) != 1 || e.PRs[0].Number != 12 || e.PRs[0].HeadRef != "feat-x" {
 		t.Fatalf("PR=%+v", e.PRs)
+	}
+	if e.PRs[0].CreatedAt.IsZero() || e.PRs[0].CreatedAt.UTC().Format(time.RFC3339) != "2026-07-02T15:04:00Z" {
+		t.Fatalf("createdAt=%v", e.PRs[0].CreatedAt)
 	}
 
 	if len(b.FindPRSessions("app", "acme", "app", 13)) != 0 {

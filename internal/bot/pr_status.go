@@ -501,8 +501,21 @@ func (b *Bot) applyPRInfo(s *discordgo.Session, threadID string, info ghpr.Info)
 		pr.CINotifiedSHA = existing.CINotifiedSHA
 		pr.CIAutoFixCount = existing.CIAutoFixCount
 		pr.CIAutoFixSHA = existing.CIAutoFixSHA
+		// A view that omitted createdAt must not clear a stamp already stored.
+		if pr.CreatedAt.IsZero() {
+			pr.CreatedAt = existing.CreatedAt
+		}
 		if prPollUnchanged(existing, pr) {
-			return nil
+			if existing.CreatedAt.Equal(pr.CreatedAt) {
+				return nil
+			}
+			// Created time is not on the card. Learning it must not repost
+			// the status message or re-run labels and the timeline.
+			_, _, pErr := b.sessions.Patch(threadID, func(ent *sessionstore.Entry) {
+				ent.NormalizePRs()
+				ent.UpsertPR(pr)
+			})
+			return pErr
 		}
 	}
 
@@ -639,6 +652,8 @@ func (b *Bot) announcePRTimeline(s *discordgo.Session, threadID string, prev ghp
 
 // prPollUnchanged is the poller's "gh returned the same surface" check.
 // CI debounce fields are copied onto next before this runs, so they match.
+// CreatedAt is not part of the surface: learning it is stored without
+// reposting the card.
 func prPollUnchanged(prev, next sessionstore.TrackedPR) bool {
 	return prev.Number == next.Number &&
 		prev.State == next.State &&
@@ -655,17 +670,18 @@ func prPollUnchanged(prev, next sessionstore.TrackedPR) bool {
 
 func trackedFromInfo(info ghpr.Info) sessionstore.TrackedPR {
 	pr := sessionstore.TrackedPR{
-		URL:     info.URL,
-		Number:  info.Number,
-		State:   info.State,
-		Title:   info.Title,
-		Checks:  info.Checks,
-		Review:  info.ReviewDecision,
-		HeadSHA: info.HeadSHA,
-		HeadRef: info.HeadRef,
-		IsDraft: info.IsDraft,
-		Owner:   info.Owner,
-		Repo:    info.Repo,
+		URL:       info.URL,
+		Number:    info.Number,
+		State:     info.State,
+		Title:     info.Title,
+		Checks:    info.Checks,
+		Review:    info.ReviewDecision,
+		HeadSHA:   info.HeadSHA,
+		HeadRef:   info.HeadRef,
+		IsDraft:   info.IsDraft,
+		Owner:     info.Owner,
+		Repo:      info.Repo,
+		CreatedAt: info.CreatedAt,
 	}
 	pr.FillOwnerRepoFromURL()
 	return pr
@@ -890,6 +906,7 @@ func entryPRInfos(e sessionstore.Entry) []ghpr.Info {
 			Checks:         p.Checks,
 			Owner:          p.Owner,
 			Repo:           p.Repo,
+			CreatedAt:      p.CreatedAt,
 		})
 	}
 	return out

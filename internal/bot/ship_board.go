@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/acoshift/grokwork/internal/ghpr"
 	"github.com/acoshift/grokwork/internal/reviewstore"
@@ -22,6 +23,7 @@ type ShipPRRow struct {
 	Running     bool
 	Queue       int
 	UpdatedAt   string
+	CreatedAt   time.Time // GitHub PR open time; zero until a poll or import stored it
 
 	URL      string
 	Number   int
@@ -231,6 +233,7 @@ func shipRowFrom(threadID string, e sessionstore.Entry, pr sessionstore.TrackedP
 		Running:            running,
 		Queue:              queue,
 		UpdatedAt:          e.UpdatedAt,
+		CreatedAt:          pr.CreatedAt,
 		FromCase:           e.IsCase(),
 		CasePhase:          e.CasePhase(),
 		CaseTitle:          strings.TrimSpace(e.CustomerTitle),
@@ -350,6 +353,11 @@ func mergeShipGroup(group []ShipPRRow) ShipPRRow {
 		row.Queue = max(row.Queue, r.Queue)
 		if r.UpdatedAt > row.UpdatedAt {
 			row.UpdatedAt = r.UpdatedAt
+		}
+		// Created time is a PR fact. The freshest status snapshot can be the
+		// unit that has not been polled since the field existed.
+		if row.CreatedAt.IsZero() && !r.CreatedAt.IsZero() {
+			row.CreatedAt = r.CreatedAt
 		}
 		if r.FromCase && !row.FromCase {
 			row.FromCase, row.CasePhase, row.CaseTitle = true, r.CasePhase, r.CaseTitle
@@ -519,11 +527,27 @@ func sortShipRows(rows []ShipPRRow) {
 		}
 		return 11
 	}
-	// Stable keys only — do not sort by session UpdatedAt. Turn stamps move
-	// rows for real work; PR/check noise must not reshuffle the table on SSE.
+	// Within a rank, newest GitHub createdAt first, across every repo. A PR
+	// number only orders work inside one repo, so it is not the key. Rows
+	// that have not been polled yet (zero created time) sort after dated
+	// rows, and among themselves keep the old project/repo/number order so
+	// the board does not jump on the deploy that introduces the field.
+	// Session UpdatedAt stays out of the key: a turn moves it.
 	slices.SortStableFunc(rows, func(a, b ShipPRRow) int {
 		if ra, rb := rank(a), rank(b); ra != rb {
 			return ra - rb
+		}
+		ac, bc := a.CreatedAt, b.CreatedAt
+		switch {
+		case !ac.IsZero() && !bc.IsZero():
+			if c := bc.Compare(ac); c != 0 {
+				return c
+			}
+		case ac.IsZero() != bc.IsZero():
+			if ac.IsZero() {
+				return 1
+			}
+			return -1
 		}
 		if c := strings.Compare(strings.ToLower(a.Project), strings.ToLower(b.Project)); c != 0 {
 			return c
@@ -534,7 +558,6 @@ func sortShipRows(rows []ShipPRRow) {
 		if c := strings.Compare(strings.ToLower(a.GHRepo), strings.ToLower(b.GHRepo)); c != 0 {
 			return c
 		}
-		// Higher PR number first within a repo (usually newer).
 		if a.Number != b.Number {
 			return b.Number - a.Number
 		}

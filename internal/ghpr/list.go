@@ -57,7 +57,7 @@ func ListPRsWith(ctx context.Context, run Runner, repoDir string, opts PRListOpt
 		"--state", state,
 		"--limit", strconv.Itoa(limit),
 		"--repo", owner + "/" + repo,
-		"--json", "number,url,title,state,isDraft,author,reviewDecision,headRefOid,headRefName,updatedAt",
+		"--json", "number,url,title,state,isDraft,author,reviewDecision,headRefOid,headRefName,createdAt,updatedAt",
 	}
 	raw, err := run(ctx, repoDir, "gh", args...)
 	if err != nil {
@@ -76,6 +76,7 @@ type prListJSON struct {
 	ReviewDecision string `json:"reviewDecision"`
 	HeadRefOid     string `json:"headRefOid"`
 	HeadRefName    string `json:"headRefName"`
+	CreatedAt      string `json:"createdAt"`
 	UpdatedAt      string `json:"updatedAt"`
 }
 
@@ -108,6 +109,7 @@ func (r prListJSON) toItem(owner, repo string) PRListItem {
 			HeadRef:        r.HeadRefName,
 			Owner:          strings.TrimSpace(owner),
 			Repo:           strings.TrimSpace(repo),
+			CreatedAt:      parseGHTime(r.CreatedAt),
 		},
 		Author:    authorLogin(r.Author),
 		UpdatedAt: parseGHTime(r.UpdatedAt),

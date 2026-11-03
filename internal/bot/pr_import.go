@@ -102,16 +102,17 @@ func (b *Bot) importTrackedPR(project string, item ghpr.PRListItem) (unitID stri
 	}
 	unitID = gitworktree.NewWebUnitID()
 	pr := sessionstore.TrackedPR{
-		URL:     item.URL,
-		Number:  item.Number,
-		State:   item.State,
-		Title:   item.Title,
-		Review:  item.ReviewDecision,
-		HeadSHA: item.HeadSHA,
-		HeadRef: item.HeadRef,
-		IsDraft: item.IsDraft,
-		Owner:   item.Owner,
-		Repo:    item.Repo,
+		URL:       item.URL,
+		Number:    item.Number,
+		State:     item.State,
+		Title:     item.Title,
+		Review:    item.ReviewDecision,
+		HeadSHA:   item.HeadSHA,
+		HeadRef:   item.HeadRef,
+		IsDraft:   item.IsDraft,
+		Owner:     item.Owner,
+		Repo:      item.Repo,
+		CreatedAt: item.CreatedAt,
 	}
 	pr.FillOwnerRepoFromURL()
 	e := sessionstore.Entry{

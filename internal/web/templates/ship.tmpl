@@ -89,7 +89,7 @@
     <a class="m-row" href="{{if and .GHOwner .GHRepo .Number}}/prs/{{.GHOwner}}/{{.GHRepo}}/{{.Number}}?project={{urlquery .Project}}{{else if .URL}}{{.URL}}{{else}}/sessions/{{.ThreadID}}{{if .Project}}?project={{urlquery .Project}}{{end}}{{end}}">
       <span class="m-row-main">
         <span class="m-row-t">{{if .Title}}{{.Title}}{{else if .Goal}}{{.Goal}}{{else if and .GHOwner .GHRepo .Number}}{{.GHOwner}}/{{.GHRepo}}#{{.Number}}{{else if .Number}}#{{.Number}}{{else}}PR{{end}}</span>
-        <span class="m-row-s">{{if and .GHOwner .GHRepo .Number}}<span class="mono">{{.GHOwner}}/{{.GHRepo}}#{{.Number}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{if .OwnerName}}{{.OwnerName}} · {{end}}{{shortTime .UpdatedAt}}</span>
+        <span class="m-row-s">{{if and .GHOwner .GHRepo .Number}}<span class="mono">{{.GHOwner}}/{{.GHRepo}}#{{.Number}}</span> · {{end}}{{if and (not $.Project) .Project}}{{.Project}} · {{end}}{{if .OwnerName}}{{.OwnerName}} · {{end}}{{shortTime .CreatedAt}}</span>
         <span class="m-row-s">
           {{if eq .State "OPEN"}}<span class="badge live">open</span>
           {{else if eq .State "DRAFT"}}<span class="badge">draft</span>
@@ -121,7 +121,7 @@
         {{if not $.Project}}<th>Project</th>{{end}}
         <th>Owner</th>
         <th>Label</th>
-        <th>Date</th>
+        <th>Created</th>
       </tr>
     </thead>
     <tbody>
@@ -200,7 +200,7 @@
           {{if .LabelManual}} <span class="muted" style="font-size:0.75rem;">manual</span>{{end}}
           {{if and .Imported (not .Label)}}<span class="muted">—</span>{{end}}
         </td>
-        <td class="mono">{{shortTime .UpdatedAt}}</td>
+        <td class="mono">{{with shortTime .CreatedAt}}{{.}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
       {{end}}
     </tbody>

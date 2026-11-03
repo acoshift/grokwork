@@ -1964,6 +1964,67 @@ func TestShipBoardRendersPRs(t *testing.T) {
 	}
 }
 
+func TestShipTableOrdersByCreatedAtAcrossRepos(t *testing.T) {
+	srv, _, _ := testServer(t)
+	opened := func(s string) time.Time {
+		tm, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm
+	}
+	seed := map[string]sessionstore.Entry{
+		"w_old_high_number": {
+			Project: "proj", OwnerName: "alice",
+			PRs: []sessionstore.TrackedPR{{
+				URL: "https://github.com/acme/app/pull/400", Number: 400, State: "OPEN",
+				Title: "old high number", Owner: "acme", Repo: "app",
+				CreatedAt: opened("2026-07-01T00:00:00Z"),
+			}},
+		},
+		"w_new_other_repo": {
+			Project: "proj", OwnerName: "alice",
+			PRs: []sessionstore.TrackedPR{{
+				URL: "https://github.com/acme/web/pull/3", Number: 3, State: "OPEN",
+				Title: "newest other repo", Owner: "acme", Repo: "web",
+				CreatedAt: opened("2026-07-20T12:00:00Z"),
+			}},
+		},
+		"w_fail_oldest": {
+			Project: "proj", OwnerName: "alice",
+			PRs: []sessionstore.TrackedPR{{
+				URL: "https://github.com/acme/api/pull/1", Number: 1, State: "OPEN",
+				Title: "failing oldest", Owner: "acme", Repo: "api", Checks: "✗ 1",
+				CreatedAt: opened("2026-06-01T00:00:00Z"),
+			}},
+		},
+	}
+	for id, e := range seed {
+		if err := srv.sessions.Set(id, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/projects/proj/ship", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	body := w.Body.String()
+	fail := strings.Index(body, "failing oldest")
+	newer := strings.Index(body, "newest other repo")
+	older := strings.Index(body, "old high number")
+	if fail < 0 || newer < 0 || older < 0 || !(fail < newer && newer < older) {
+		t.Fatalf("order fail=%d newer=%d older=%d", fail, newer, older)
+	}
+	for _, stamp := range []string{"2026-07-20 12:00", "2026-07-01 00:00", "<th>Created</th>"} {
+		if !strings.Contains(body, stamp) {
+			t.Fatalf("ship table missing %q", stamp)
+		}
+	}
+}
+
 func TestShipBoardRendersImportedPR(t *testing.T) {
 	srv, _, _ := testServer(t)
 	if err := srv.sessions.Set("w_imported_pr", sessionstore.Entry{
