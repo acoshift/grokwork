@@ -14,7 +14,8 @@ import (
 const CreateFetchThrottle = 5 * time.Second
 
 // In-process throttle: last successful fetch time per main checkout path.
-// Shared by idle auto-fetch, worktree create, and manual Commits UI fetch.
+// Shared by idle auto-fetch, worktree create, manual Commits UI fetch, and
+// FetchNow. fetchMu is held for the whole git fetch so two fetches do not run at once.
 var (
 	fetchMu   sync.Mutex
 	lastFetch = map[string]time.Time{}
@@ -55,6 +56,35 @@ func MaybeFetch(ctx context.Context, repo string, interval time.Duration) (ran b
 		return false, nil
 	}
 	if err := runGit(ctx, repo, "fetch", "--all", "--prune"); err != nil {
+		return false, err
+	}
+	lastFetch[key] = time.Now()
+	return true, nil
+}
+
+// FetchNow runs git fetch origin --prune, ignoring the idle interval.
+// A merge this process just performed moved origin; MaybeFetch would skip
+// when a fetch already happened inside the interval, and it never runs when
+// the operator set the interval to 0. ran is false when repo is empty or not
+// a checkout. A successful fetch stamps the throttle clock. A failed fetch
+// does not, so the idle loop can retry. Callers serialize with MaybeFetch
+// on fetchMu.
+func FetchNow(ctx context.Context, repo string) (ran bool, err error) {
+	repo = strings.TrimSpace(repo)
+	if repo == "" || !IsRepo(repo) {
+		return false, nil
+	}
+	key := fetchKey(repo)
+	if key == "" {
+		return false, nil
+	}
+
+	fetchMu.Lock()
+	defer fetchMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := runGit(ctx, repo, "fetch", "origin", "--prune"); err != nil {
 		return false, err
 	}
 	lastFetch[key] = time.Now()

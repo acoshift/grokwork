@@ -2,6 +2,7 @@ package gitworktree
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -150,6 +151,94 @@ func TestMaybeFetchIntervalThrottle(t *testing.T) {
 		t.Fatalf("should skip after NoteFetched: ran=%v err=%v", ran, err)
 	}
 	_ = seed
+}
+
+func TestFetchNowBypassesThrottle(t *testing.T) {
+	resetFetchStateForTest()
+	t.Cleanup(resetFetchStateForTest)
+
+	remote, seed := initRemotePair(t)
+	repo := t.TempDir()
+	runGitTest(t, repo, "clone", remote, ".")
+	resetFetchStateForTest()
+	NoteFetched(repo)
+
+	if err := os.WriteFile(filepath.Join(seed, "a.txt"), []byte("v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, seed, "add", "a.txt")
+	runGitTest(t, seed, "commit", "-m", "v2")
+	runGitTest(t, seed, "push", "origin", "main")
+	want, err := gitOutput(t.Context(), seed, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ran, err := FetchNow(t.Context(), repo)
+	if err != nil || !ran {
+		t.Fatalf("FetchNow ran=%v err=%v", ran, err)
+	}
+	got, err := gitOutput(t.Context(), repo, "rev-parse", "refs/remotes/origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("origin/main=%s want %s", got, want)
+	}
+	ran, err = MaybeFetch(t.Context(), repo, time.Hour)
+	if err != nil || ran {
+		t.Fatalf("FetchNow should throttle the idle loop: ran=%v err=%v", ran, err)
+	}
+}
+
+func TestFetchNowSkipAndFailureDoNotStamp(t *testing.T) {
+	resetFetchStateForTest()
+	t.Cleanup(resetFetchStateForTest)
+
+	ran, err := FetchNow(t.Context(), "  ")
+	if err != nil || ran {
+		t.Fatalf("empty ran=%v err=%v", ran, err)
+	}
+	ran, err = FetchNow(t.Context(), t.TempDir())
+	if err != nil || ran {
+		t.Fatalf("non-repo ran=%v err=%v", ran, err)
+	}
+
+	remote, _ := initRemotePair(t)
+	repo := t.TempDir()
+	runGitTest(t, repo, "clone", remote, ".")
+	resetFetchStateForTest()
+	runGitTest(t, repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "missing"))
+	ran, err = FetchNow(t.Context(), repo)
+	if err == nil || ran {
+		t.Fatalf("bad origin ran=%v err=%v", ran, err)
+	}
+	runGitTest(t, repo, "remote", "set-url", "origin", remote)
+	ran, err = MaybeFetch(t.Context(), repo, time.Hour)
+	if err != nil || !ran {
+		t.Fatalf("failed FetchNow stamped the throttle: ran=%v err=%v", ran, err)
+	}
+}
+
+func TestFetchNowCancelledDoesNotStamp(t *testing.T) {
+	resetFetchStateForTest()
+	t.Cleanup(resetFetchStateForTest)
+
+	remote, _ := initRemotePair(t)
+	repo := t.TempDir()
+	runGitTest(t, repo, "clone", remote, ".")
+	resetFetchStateForTest()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	ran, err := FetchNow(ctx, repo)
+	if !errors.Is(err, context.Canceled) || ran {
+		t.Fatalf("ran=%v err=%v", ran, err)
+	}
+	ran, err = MaybeFetch(t.Context(), repo, time.Hour)
+	if err != nil || !ran {
+		t.Fatalf("cancelled FetchNow stamped the throttle: ran=%v err=%v", ran, err)
+	}
 }
 
 func TestEnsureFetchesAndStartsFromOrigin(t *testing.T) {

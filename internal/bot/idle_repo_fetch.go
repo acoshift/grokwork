@@ -3,16 +3,29 @@ package bot
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/acoshift/grokwork/internal/gitworktree"
 )
+
+// runRepoFetch is FetchNow. Tests replace it to observe the background call
+// without a remote.
+var runRepoFetch = gitworktree.FetchNow
 
 // How often the idle-fetch loop wakes to re-check per-project intervals.
 const idleRepoFetchTick = 1 * time.Minute
 
 // Cap a single project's git fetch so a hung remote cannot block the loop forever.
 const idleRepoFetchTimeout = 3 * time.Minute
+
+// postMergeFetchAttempts covers a lock clash with terminal worktree cleanup.
+// That cleanup runs git on the same checkout, in a goroutine started just
+// before this fetch. Git fails the lock immediately. Idle fetch may be off,
+// so a single failure would leave origin stale until someone fetches by hand.
+const postMergeFetchAttempts = 3
+
+const postMergeFetchRetry = time.Second
 
 func (b *Bot) startIdleRepoFetch() {
 	if b == nil {
@@ -92,4 +105,55 @@ func (b *Bot) runIdleRepoFetchCycle(reason string) {
 	}
 	log.Printf("bg: idle-repo fetch cycle reason=%s projects=%d fetched=%d throttled=%d skipped=%d failed=%d elapsed=%s",
 		reason, len(targets), fetched, throttled, skipped, failed, time.Since(start).Round(time.Millisecond))
+}
+
+// ScheduleRepoFetch refreshes cwd's origin refs without blocking the caller.
+// A merge this process just performed moved origin. Idle fetch may be
+// disabled or minutes away, and the commits page, deploy board, and new
+// worktrees read origin/*. The fetch uses the bot lifetime so shutdown
+// cancels it. Errors are logged; they do not affect the merge that already
+// landed. cwd is the catalog checkout for that repo, not a session worktree.
+func (b *Bot) ScheduleRepoFetch(cwd, label string) {
+	if b == nil {
+		return
+	}
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return
+	}
+	label = strings.TrimSpace(label)
+	go b.repoFetch(cwd, label)
+}
+
+func (b *Bot) repoFetch(cwd, label string) {
+	bg := b.bgContext()
+	if bg.Err() != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(bg, idleRepoFetchTimeout)
+	defer cancel()
+	start := time.Now()
+	var ran bool
+	var err error
+	for attempt := range postMergeFetchAttempts {
+		if attempt > 0 && !sleepCtx(bg, postMergeFetchRetry) {
+			return
+		}
+		ran, err = runRepoFetch(ctx, cwd)
+		if err == nil || bg.Err() != nil {
+			break
+		}
+	}
+	if err != nil {
+		if bg.Err() != nil {
+			return
+		}
+		log.Printf("warn: repo fetch %s path=%s: %v", label, cwd, err)
+		return
+	}
+	if !ran {
+		log.Printf("bg: repo fetch %s skipped (not a git checkout)", label)
+		return
+	}
+	log.Printf("bg: repo fetch %s elapsed=%s", label, time.Since(start).Round(time.Millisecond))
 }

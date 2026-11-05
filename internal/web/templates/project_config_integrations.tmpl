@@ -526,6 +526,7 @@
     While Grok Work is running, periodically run <span class="mono">git fetch --all --prune</span> on this project’s
     main checkout so commits / remote-tracking refs stay fresh.
     Default is <span class="mono">5</span> minutes when unset; <span class="mono">0</span> disables idle fetch.
+    Merging a pull request here fetches that repo’s checkout in the background, including when idle fetch is off.
     New worktrees always fetch first, independent of this setting.
   </p>
   <form class="inline" method="post" action="{{route "config.setProjectFetch"}}" style="grid-template-columns: 12rem auto;">

@@ -253,6 +253,9 @@ func (s *Server) postPRMerge(ctx *hime.Context) error {
 	if s.bot != nil {
 		threads = s.bot.ApplyPRTerminalState(owner, repo, n, "MERGED")
 		detailMap["threads"] = threads
+		// Idle fetch may be off or minutes away. Refresh this checkout off the
+		// request so commits, deploys, and new worktrees see the merge.
+		s.bot.ScheduleRepoFetch(cwd, fmt.Sprintf("project=%s %s/%s", project, owner, repo))
 	}
 	s.auditAction(ctx, audit.ActionPRMerge, nil, detailMap)
 	msg := "PR merged (" + string(method) + ")"

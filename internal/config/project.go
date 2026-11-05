@@ -42,8 +42,9 @@ type ProjectConfig struct {
 	Teams map[string]TeamConfig `json:"teams,omitempty"`
 	// RepoFetchIntervalMinutes controls idle background git fetch for this
 	// project's main checkout. nil/omitted → DefaultRepoFetchIntervalMinutes (5).
-	// 0 disables idle auto-fetch. New worktrees always fetch with a short
-	// hardcoded throttle (see gitworktree.CreateFetchThrottle).
+	// 0 disables the idle loop. Merging a pull request in the web UI still
+	// fetches that checkout once. New worktrees always
+	// fetch with a short hardcoded throttle (see gitworktree.CreateFetchThrottle).
 	RepoFetchIntervalMinutes *int `json:"repoFetchIntervalMinutes,omitempty"`
 	// DirectToPrimary, when true, new sessions stamp ShipMode=direct and ship
 	// via fast-forward push to the project primary (no PR). nil/false = PR mode.
