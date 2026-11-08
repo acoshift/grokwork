@@ -564,8 +564,18 @@ func TestPagesRender(t *testing.T) {
 		if w.Header().Get("Service-Worker-Allowed") != "/" {
 			t.Fatalf("Service-Worker-Allowed=%q want /", w.Header().Get("Service-Worker-Allowed"))
 		}
-		if !strings.Contains(w.Body.String(), "fetch") {
+		sw := w.Body.String()
+		if !strings.Contains(sw, "fetch") {
 			t.Fatal("sw must register a fetch handler for installability")
+		}
+		// iOS Safari 26.5+ sends an empty body for a disk-backed file upload
+		// while a service worker controls the page. Intercepting the POST
+		// (respondWith of the original request) drops that body on WebKit.
+		if !strings.Contains(sw, `event.request.method !== "GET"`) || !strings.Contains(sw, "HEAD") {
+			t.Fatal("sw must leave non-GET requests to the browser")
+		}
+		if !strings.Contains(sw, "respondWith") {
+			t.Fatal("sw must still pass GET through")
 		}
 
 		for _, path := range []string{

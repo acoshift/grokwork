@@ -238,6 +238,13 @@ func TestStartPageShowsFormForMember(t *testing.T) {
 		`id="start-images"`,
 		`name="images"`,
 		`id="start-attach-chips"`,
+		// iOS file picks are copied to memory before the boosted POST. The
+		// source comment names WebKit 319985; the rendered page strips
+		// comments, so pin the copy itself.
+		"function materialize(file)",
+		"file.arrayBuffer",
+		"_gwPending",
+		"form.requestSubmit(submitter)",
 		"Files (images, PDFs, …)",
 		`value="investigate"`,
 		`value="explain"`,

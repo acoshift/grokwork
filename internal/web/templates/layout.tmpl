@@ -6337,9 +6337,21 @@
       var chips = chipId ? document.getElementById(chipId) : null;
       var dt = new DataTransfer();
       var pasteN = 0;
+      // Write-back of input.files queues a change on some browsers. Swallow it
+      // so the files we just stored are not appended a second time.
+      var ignoreChange = false;
+      // File object identity for everything already queued or stored. The
+      // picker hands back a new File per pick, so a repeat pick still accumulates.
+      var seen = new WeakSet();
 
       function sync() {
-        input.files = dt.files;
+        ignoreChange = true;
+        try {
+          input.files = dt.files;
+        } catch (err) {
+          ignoreChange = false;
+        }
+        setTimeout(function () { ignoreChange = false; }, 0);
         if (!chips) return;
         chips.innerHTML = "";
         if (!dt.files.length) {
@@ -6379,12 +6391,102 @@
         }
       }
 
-      input.addEventListener("change", function () {
-        for (var i = 0; i < input.files.length; i++) {
-          dt.items.add(input.files[i]);
+      // Disk-backed picker files upload as an empty body on iOS Safari 26.5+
+      // when a service worker controls the page (WebKit 319985). htmx posts
+      // this form with XHR, so the CSRF field vanishes with the file and the
+      // session never starts. An in-memory copy is what the networking process
+      // can actually send.
+      function materialize(file) {
+        if (!file || !file.arrayBuffer) return Promise.resolve(file);
+        return file.arrayBuffer().then(function (buf) {
+          try {
+            return new File([buf], file.name || "attachment", {
+              type: file.type || "application/octet-stream",
+              lastModified: file.lastModified || Date.now()
+            });
+          } catch (err) {
+            return file;
+          }
+        }, function () { return file; });
+      }
+      function notePending(p) {
+        var chain = (input._gwPending || Promise.resolve()).then(function () { return p; });
+        input._gwPending = chain;
+        var clear = function () {
+          if (input._gwPending === chain) input._gwPending = null;
+        };
+        chain.then(clear, clear);
+      }
+      function take(list) {
+        if (!list || !list.length || ignoreChange) return;
+        var batch = [];
+        for (var i = 0; i < list.length; i++) {
+          var f = list[i];
+          if (!f || seen.has(f)) continue;
+          seen.add(f);
+          batch.push(f);
         }
-        sync();
+        if (!batch.length) return;
+        var job = Promise.all(batch.map(materialize)).then(function (files) {
+          for (var i = 0; i < files.length; i++) {
+            if (!files[i]) continue;
+            seen.add(files[i]);
+            try { dt.items.add(files[i]); } catch (err) { /* skip one unreadable file */ }
+          }
+          sync();
+        });
+        notePending(job);
+      }
+
+      input.addEventListener("change", function () {
+        take(input.files);
       });
+
+      var form = input.closest("form");
+      if (form && !form._gwFileGate) {
+        form._gwFileGate = true;
+        // Capture runs before htmx's bubble listener. A submit that races the
+        // copy would still post the disk-backed file, so hold that one submit
+        // and replay it once the in-memory files are on the input.
+        form.addEventListener("submit", function (e) {
+          if (form._gwFileWait) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          var inputs = form.querySelectorAll("input[type=file][data-attach-chips]");
+          var waits = [];
+          for (var i = 0; i < inputs.length; i++) {
+            if (inputs[i]._gwPending) waits.push(inputs[i]._gwPending);
+          }
+          if (!waits.length) return;
+          // The continue composer posts intent=fix from the clicked button.
+          // htmx remembers that button on click/focus, and a bare
+          // requestSubmit() submits the first button instead. Focus the
+          // original submitter so both paths name the same button.
+          var submitter = e.submitter || null;
+          form._gwFileWait = true;
+          e.preventDefault();
+          e.stopPropagation();
+          Promise.all(waits).then(function () {
+            form._gwFileWait = false;
+            if (typeof form.requestSubmit !== "function") {
+              form.submit();
+              return;
+            }
+            if (submitter && submitter.isConnected && !submitter.disabled) {
+              try { submitter.focus(); } catch (err) {}
+              try {
+                form.requestSubmit(submitter);
+                return;
+              } catch (err) {}
+            }
+            form.requestSubmit();
+          }, function () {
+            form._gwFileWait = false;
+          });
+        }, true);
+      }
 
       var btnId = input.getAttribute("data-attach-button");
       if (btnId) {
@@ -6426,19 +6528,17 @@
           e.preventDefault();
           var files = e.dataTransfer.files;
           if (!files || !files.length) return;
-          for (var i = 0; i < files.length; i++) dt.items.add(files[i]);
-          sync();
+          take(files);
         });
       }
 
-      var form = input.closest("form");
       if (form) {
         var ta = form.querySelector("textarea");
         if (ta) {
           ta.addEventListener("paste", function (e) {
             var items = e.clipboardData && e.clipboardData.items;
             if (!items) return;
-            var added = false;
+            var namedFiles = [];
             for (var i = 0; i < items.length; i++) {
               var it = items[i];
               if (!it || it.kind !== "file" || (it.type && it.type.indexOf("image/") !== 0)) continue;
@@ -6447,13 +6547,11 @@
               pasteN++;
               var ext = (it.type && it.type.split("/")[1]) || "png";
               if (ext === "jpeg") ext = "jpg";
-              var named = new File([f], "pasted-" + pasteN + "." + ext, { type: f.type || "image/png" });
-              dt.items.add(named);
-              added = true;
+              namedFiles.push(new File([f], "pasted-" + pasteN + "." + ext, { type: f.type || "image/png" }));
             }
-            if (added) {
+            if (namedFiles.length) {
               e.preventDefault();
-              sync();
+              take(namedFiles);
             }
           });
         }
