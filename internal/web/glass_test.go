@@ -9,9 +9,10 @@ import (
 )
 
 // TestLiquidGlassMaterial loads a real page and checks the stylesheet the
-// handler actually shipped. Chrome (sidebar, tab bar, primary buttons,
-// dialogs, sheets) uses the translucent blurred material and a specular
-// edge. Reading surfaces do not. Dark restyles the material, reduced
+// handler actually shipped. Chrome (sidebar, tab bar, dialogs, sheets)
+// uses the translucent blurred material and a specular edge. Buttons and
+// reading surfaces stay opaque so labels do not show through. Dark
+// restyles the material, reduced
 // transparency frosts it, and reduced motion drops decorative animation.
 func TestLiquidGlassMaterial(t *testing.T) {
 	srv, _, _ := testServer(t)
@@ -43,9 +44,11 @@ func TestLiquidGlassMaterial(t *testing.T) {
 	if !strings.Contains(mustProp(t, light, "--glass-material"), "blur(") {
 		t.Fatal("--glass-material does not blur")
 	}
-	lightButton := mustAlpha(t, "light --button", mustProp(t, light, "--button"))
-	if lightTint >= 100 || lightButton >= 100 {
-		t.Fatalf("material is opaque: tint=%v button=%v", lightTint, lightButton)
+	if lightTint >= 100 {
+		t.Fatalf("glass tint is opaque: %v", lightTint)
+	}
+	if _, translucent := slashAlpha(mustProp(t, light, "--button")); translucent {
+		t.Fatal("primary button fill must be opaque")
 	}
 
 	darkBody, ok := mediaRoot(blocks, func(pre string) bool {
@@ -58,6 +61,9 @@ func TestLiquidGlassMaterial(t *testing.T) {
 	darkHighlight := mustProp(t, darkBody, "--glass-highlight")
 	if darkTint == lightTint || darkHighlight == lightHighlight {
 		t.Fatalf("dark scheme did not restyle the material (%v %q)", darkTint, darkHighlight)
+	}
+	if _, translucent := slashAlpha(mustProp(t, darkBody, "--button")); translucent {
+		t.Fatal("dark primary button fill must be opaque")
 	}
 	if !strings.Contains(darkHighlight, "inset") {
 		t.Fatalf("dark highlight lost its specular inset: %q", darkHighlight)
@@ -88,7 +94,7 @@ func TestLiquidGlassMaterial(t *testing.T) {
 		t.Fatal("reduced motion does not disable decorative animation")
 	}
 
-	for _, sel := range []string{"aside.side::before", ".tabbar", "button", ".gw-confirm-modal", ".pr-rail"} {
+	for _, sel := range []string{"aside.side::before", ".tabbar", ".gw-confirm-modal", ".pr-rail"} {
 		rule, found := ruleWithSelector(blocks, sel)
 		if !found {
 			t.Fatalf("missing chrome rule %s", sel)
@@ -104,6 +110,14 @@ func TestLiquidGlassMaterial(t *testing.T) {
 	menu, found := ruleWithSelector(blocks, ".proj-menu")
 	if !found || !strings.Contains(menu, "background: var(--surface)") || strings.Contains(menu, "backdrop-filter") {
 		t.Fatal("project menu must be an opaque surface so the nav does not show through")
+	}
+	btn, found := ruleWithSelector(blocks, "button")
+	if !found || strings.Contains(btn, "backdrop-filter") || !strings.Contains(btn, "background: var(--button)") {
+		t.Fatal("primary buttons must be an opaque fill, not glass")
+	}
+	secondary, found := ruleWithSelector(blocks, ".btn-secondary")
+	if !found || !strings.Contains(secondary, "background: var(--surface)") || strings.Contains(secondary, "var(--glass-tint)") {
+		t.Fatal("secondary buttons must be an opaque surface")
 	}
 
 	for _, sel := range []string{".card", ".m-rows", ".dpatch", ".gw-stream-log", ".table-scroll", ".fcard", ".review-bar", ".sr-rows", ".composer"} {
