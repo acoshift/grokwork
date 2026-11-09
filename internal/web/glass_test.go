@@ -119,6 +119,22 @@ func TestLiquidGlassMaterial(t *testing.T) {
 			t.Fatal("aside.side must not carry backdrop-filter or transform; that traps the phone tab bar")
 		}
 	}
+	// The panel is position:fixed, so it does not reserve a column. The
+	// content padding has to start past inset + width, or titles sit under
+	// the glass. Phone resets this with its own shorthand.
+	var clearsSidebar bool
+	for _, rule := range rulesWithSelector(blocks, "main.main") {
+		if strings.Contains(rule, "calc(var(--side-inset) + var(--side-width) + var(--side-gap))") {
+			clearsSidebar = true
+		}
+	}
+	if !clearsSidebar {
+		t.Fatal("desktop content column does not clear the floating sidebar")
+	}
+	sideRule, found := ruleWithSelector(blocks, "aside.side")
+	if !found || !strings.Contains(sideRule, "width: var(--side-width)") || !strings.Contains(sideRule, "left: var(--side-inset)") {
+		t.Fatal("sidebar width and inset must be the same metrics the content column clears")
+	}
 	for _, rule := range rulesMatching(blocks, func(sel string) bool { return strings.Contains(sel, "#live-root") }) {
 		if strings.Contains(rule, "backdrop-filter") || strings.Contains(rule, "transform:") || hasFilterProp(rule) {
 			t.Fatal("#live-root must not carry filter, backdrop-filter, or transform")

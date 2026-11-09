@@ -180,6 +180,12 @@
       --glass-radius: 1.35rem;
       --glass-pill: hsl(var(--black) / 6%);
       --page-wash: hsl(var(--black) / 16%);
+      /* Shared by the fixed sidebar and the content column. The column
+         starts after the panel plus a gap, so page text does not sit
+         under the glass. */
+      --side-inset: 0.7rem;
+      --side-width: 15.2rem;
+      --side-gap: 1.05rem;
       --font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
@@ -309,14 +315,15 @@
        aside.side: a filter here would be the containing block for the phone
        tab bar (position:fixed) and would fight view-transition-name: gw-side.
        isolation keeps the pseudo's negative z-index inside this panel.
-       Inset from the viewport so the page can sit underneath the rim. */
+       Inset from the viewport. The page wash shows through the glass;
+       the content column starts past the panel (see main.main). */
     aside.side {
       position: fixed;
       z-index: 30;
-      top: calc(0.7rem + env(safe-area-inset-top, 0px));
-      left: 0.7rem;
-      bottom: 0.7rem;
-      width: 15.2rem;
+      top: calc(var(--side-inset) + env(safe-area-inset-top, 0px));
+      left: var(--side-inset);
+      bottom: var(--side-inset);
+      width: var(--side-width);
       height: auto;
       display: flex;
       flex-direction: column;
@@ -343,9 +350,9 @@
     }
     main.main {
       min-width: 0;
-      /* 0.7rem inset + 15.2rem panel, minus a sliver so the column tucks
-         under the glass edge. */
-      padding: calc(1.5rem + env(safe-area-inset-top, 0px)) 1.75rem 4rem 15.45rem;
+      /* Clear the fixed panel. inset + width is the panel's right edge;
+         the gap keeps titles and cards off the glass. */
+      padding: calc(1.5rem + env(safe-area-inset-top, 0px)) 1.75rem 4rem calc(var(--side-inset) + var(--side-width) + var(--side-gap));
     }
     /* ── Login gate ──────────────────────────────────────────────────────
        The public page has no sidebar, so the whole viewport is the frame and
