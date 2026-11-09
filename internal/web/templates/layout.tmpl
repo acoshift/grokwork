@@ -151,9 +151,9 @@
       --danger-bg: hsl(var(--red-50));
       --merged: hsl(var(--purple-600));
       --merged-bg: hsl(var(--purple-100) / 55%);
-      --button: hsl(var(--neutral-1000));
+      --button: hsl(var(--neutral-1000) / 76%);
       --button-fg: hsl(var(--white));
-      --button-hover: hsl(var(--neutral-800));
+      --button-hover: hsl(var(--neutral-800) / 86%);
       --ring: hsl(var(--black) / 8%);
       --ring-strong: hsl(var(--black) / 14%);
       --hover-border: hsl(var(--black) / 22%);
@@ -165,6 +165,21 @@
       --search-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23636363' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='16.5' y1='16.5' x2='21' y2='21'/%3E%3C/svg%3E");
       --radius: 0.5rem;
       --radius-lg: 0.75rem;
+      /* Liquid Glass: chrome and controls only. Tint is translucent so the
+         page behind shows through; blur lives in --glass-material; the
+         highlight is the specular top edge. Content surfaces stay on
+         --surface and must not reference these. */
+      --glass-tint: hsl(0 0% 100% / 44%);
+      --glass-tint-strong: hsl(0 0% 100% / 72%);
+      --glass-blur: 28px;
+      --glass-saturate: 1.65;
+      --glass-material: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+      --glass-highlight: inset 0 1px 0 hsl(0 0% 100% / 75%);
+      --glass-edge: hsl(0 0% 100% / 62%);
+      --glass-shadow: 0 12px 32px -18px hsl(var(--black) / 32%), 0 1px 1px hsl(var(--black) / 8%);
+      --glass-radius: 1.35rem;
+      --glass-pill: hsl(var(--black) / 6%);
+      --page-wash: hsl(var(--black) / 16%);
       --font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
@@ -192,9 +207,16 @@
         --danger-bg: hsl(0 68% 60% / 11%);
         --merged: hsl(282 45% 68%);
         --merged-bg: hsl(282 40% 50% / 15%);
-        --button: hsl(0 0% 93%);
+        --button: hsl(0 0% 93% / 80%);
         --button-fg: hsl(0 0% 8%);
-        --button-hover: hsl(0 0% 82%);
+        --button-hover: hsl(0 0% 100% / 88%);
+        --glass-tint: hsl(0 0% 20% / 40%);
+        --glass-tint-strong: hsl(0 0% 28% / 68%);
+        --glass-highlight: inset 0 1px 0 hsl(0 0% 100% / 22%);
+        --glass-edge: hsl(0 0% 100% / 16%);
+        --glass-shadow: 0 14px 36px -16px hsl(0 0% 0% / 65%), 0 1px 1px hsl(0 0% 0% / 40%);
+        --glass-pill: hsl(0 0% 100% / 10%);
+        --page-wash: hsl(0 0% 100% / 14%);
         --ring: hsl(0 0% 100% / 10%);
         --ring-strong: hsl(0 0% 100% / 18%);
         --hover-border: hsl(0 0% 100% / 24%);
@@ -204,6 +226,26 @@
         --shadow-2: 0 1px 2px hsl(0 0% 0% / 30%), 0 10px 28px -18px hsl(0 0% 0% / 60%);
         --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4.5 6.25L8 9.75L11.5 6.25' stroke='%23a3a3a3' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
         --search-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='16.5' y1='16.5' x2='21' y2='21'/%3E%3C/svg%3E");
+      }
+    }
+    /* Frost the material: more opaque, less blur. The combined query below
+       restates the dark tint so this light frost does not win on a dark display. */
+    @media (prefers-reduced-transparency: reduce) {
+      :root {
+        --glass-tint: hsl(0 0% 99% / 94%);
+        --glass-tint-strong: hsl(0 0% 99% / 97%);
+        --glass-blur: 8px;
+        --button: hsl(var(--neutral-1000) / 94%);
+        --button-hover: hsl(var(--neutral-800) / 96%);
+      }
+    }
+    @media (prefers-color-scheme: dark) and (prefers-reduced-transparency: reduce) {
+      :root {
+        --glass-tint: hsl(0 0% 12% / 94%);
+        --glass-tint-strong: hsl(0 0% 14% / 97%);
+        --glass-blur: 8px;
+        --button: hsl(0 0% 93% / 94%);
+        --button-hover: hsl(0 0% 100% / 96%);
       }
     }
     * { box-sizing: border-box; }
@@ -240,7 +282,11 @@
       font-family: var(--font);
       font-size: 0.95rem;
       background: var(--bg);
-      background-image: radial-gradient(70rem 30rem at 18% -8%, var(--glow), transparent);
+      /* A quiet wash sits under the floating sidebar so the glass has
+         something other than a flat panel to tint. Still the monochrome ramp. */
+      background-image:
+        radial-gradient(46rem 38rem at 0% 46%, var(--page-wash), transparent 64%),
+        radial-gradient(70rem 30rem at 18% -8%, var(--glow), transparent);
       background-repeat: no-repeat;
       color: var(--text);
       min-height: 100vh;
@@ -256,26 +302,50 @@
 
     /* ── App shell: sidebar console + content column ─────────────────── */
     .wrap {
-      display: grid;
-      grid-template-columns: 14.5rem minmax(0, 1fr);
+      display: block;
       min-height: 100vh;
     }
+    /* Floating glass panel. backdrop-filter stays on ::before, never on
+       aside.side: a filter here would be the containing block for the phone
+       tab bar (position:fixed) and would fight view-transition-name: gw-side.
+       isolation keeps the pseudo's negative z-index inside this panel.
+       Inset from the viewport so the page can sit underneath the rim. */
     aside.side {
-      position: sticky;
-      top: 0;
-      align-self: start;
-      height: 100dvh;
+      position: fixed;
+      z-index: 30;
+      top: calc(0.7rem + env(safe-area-inset-top, 0px));
+      left: 0.7rem;
+      bottom: 0.7rem;
+      width: 15.2rem;
+      height: auto;
       display: flex;
       flex-direction: column;
-      padding: calc(1.35rem + env(safe-area-inset-top, 0px)) 0.95rem 1.1rem;
-      background-color: var(--bg);
-      border-right: 1px solid var(--border);
-      overflow-y: auto;
+      padding: 0.9rem 0.75rem 0.85rem;
+      background: transparent;
+      border: 1px solid var(--glass-edge);
+      border-radius: var(--glass-radius);
+      box-shadow: var(--glass-shadow);
+      overflow: hidden;
+      isolation: isolate;
       scrollbar-width: thin;
+    }
+    aside.side::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      border-radius: inherit;
+      background: var(--glass-tint);
+      -webkit-backdrop-filter: var(--glass-material);
+      backdrop-filter: var(--glass-material);
+      box-shadow: var(--glass-highlight);
+      pointer-events: none;
     }
     main.main {
       min-width: 0;
-      padding: calc(2rem + env(safe-area-inset-top, 0px)) 2.4rem 4rem;
+      /* 0.7rem inset + 15.2rem panel, minus a sliver so the column tucks
+         under the glass edge. */
+      padding: calc(1.5rem + env(safe-area-inset-top, 0px)) 1.75rem 4rem 15.45rem;
     }
     /* ── Login gate ──────────────────────────────────────────────────────
        The public page has no sidebar, so the whole viewport is the frame and
@@ -425,8 +495,10 @@
       gap: 0.55rem;
       background: var(--button);
       color: var(--button-fg);
-      border-color: transparent;
-      box-shadow: var(--shadow-2);
+      border-color: var(--glass-edge);
+      box-shadow: var(--glass-highlight), var(--glass-shadow);
+      -webkit-backdrop-filter: var(--glass-material);
+      backdrop-filter: var(--glass-material);
       animation: loginRise 0.6s cubic-bezier(0.22, 0.8, 0.36, 1) 0.4s both;
     }
     /* Provider marks, keyed off data-provider the way #side-nav keys off
@@ -444,8 +516,8 @@
     a.btn.login-cta:hover {
       background: var(--button-hover);
       color: var(--button-fg);
-      border-color: transparent;
-      box-shadow: var(--shadow-2), 0 0 0 4px var(--ring);
+      border-color: var(--glass-edge);
+      box-shadow: var(--glass-highlight), var(--glass-shadow), 0 0 0 4px var(--ring);
     }
     /* Only the first provider is the primary action; the rest drop back to the
        surface treatment so the gate never shows two equally loud buttons.
@@ -456,14 +528,14 @@
     }
     a.btn.login-cta ~ a.btn.login-cta,
     a.btn.login-cta ~ a.btn.login-cta:hover {
-      background: var(--surface);
+      background: var(--glass-tint);
       color: var(--text);
-      border-color: var(--border-strong);
-      box-shadow: none;
+      border-color: var(--glass-edge);
+      box-shadow: var(--glass-highlight);
     }
     a.btn.login-cta ~ a.btn.login-cta:hover {
-      background: var(--surface-2);
-      box-shadow: 0 0 0 4px var(--ring);
+      background: var(--glass-tint-strong);
+      box-shadow: var(--glass-highlight), 0 0 0 4px var(--ring);
     }
     /* Keep the loginRise stagger going past the first button. */
     a.btn.login-cta:nth-of-type(2) { animation-delay: 0.46s; }
@@ -473,7 +545,7 @@
        Offset ring, echoing the mark's plate: --bg gap, then edge. */
     a.btn.login-cta:focus-visible,
     a.btn.login-cta ~ a.btn.login-cta:focus-visible {
-      box-shadow: var(--shadow-2), 0 0 0 3px var(--bg), 0 0 0 5px var(--focus-border);
+      box-shadow: var(--glass-highlight), 0 0 0 3px var(--bg), 0 0 0 5px var(--focus-border);
     }
     a.btn.login-cta::before {
       content: "";
@@ -539,9 +611,10 @@
       appearance: none;
       width: 100%;
       height: 2.1rem;
-      background: var(--surface) var(--search-icon) no-repeat 0.55rem center / 0.9rem;
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius);
+      background: var(--glass-tint-strong) var(--search-icon) no-repeat 0.55rem center / 0.9rem;
+      border: 1px solid var(--glass-edge);
+      box-shadow: var(--glass-highlight);
+      border-radius: 0.65rem;
       padding: 0.35rem 0.6rem 0.35rem 1.85rem;
       font: inherit;
       font-size: 0.88rem;
@@ -561,9 +634,13 @@
       display: flex;
       flex-direction: column;
       gap: 0.15rem;
-      margin-top: 1.6rem;
+      margin-top: 1.15rem;
+      flex: 1 1 auto;
+      min-height: 0;
       /* Keep visible so the project switcher menu is not clipped (mobile
-         horizontal scroll lives on .nav-links instead). */
+         horizontal scroll lives on .nav-links instead). The link column
+         scrolls; the glass panel itself does not, or the blur would scroll
+         away with the items. */
       overflow: visible;
     }
     .nav-links {
@@ -571,13 +648,17 @@
       flex-direction: column;
       gap: 0.15rem;
       min-width: 0;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .nav-links > a {
       display: flex;
       align-items: center;
       gap: 0.6rem;
       padding: 0.48rem 0.65rem;
-      border-radius: 0.55rem;
+      border-radius: 0.65rem;
       color: var(--muted);
       border: 1px solid transparent;
       text-decoration: none;
@@ -699,14 +780,18 @@
        from navIcon — not a CSS mask. */
     .nav-links > a:hover {
       color: var(--text);
-      background: var(--surface-l2);
+      background: var(--glass-pill);
       text-decoration: none;
     }
     .nav-links > a.active {
       color: var(--text);
-      background: var(--surface);
-      border-color: var(--border);
-      box-shadow: var(--shadow-1);
+      background: var(--glass-pill);
+      border-color: transparent;
+      box-shadow: var(--glass-highlight);
+    }
+    .nav-links > a:focus-visible {
+      outline: none;
+      box-shadow: var(--glass-highlight), 0 0 0 3px var(--ring-strong);
     }
     /* Async active-item counts. Placeholder sits *before* the label so
        assertNavActive still sees a suffix of "Ship" / "Cases" / …; flex
@@ -763,9 +848,10 @@
       align-items: center;
       gap: 0.55rem;
       padding: 0.45rem 0.6rem;
-      border: 1px solid var(--border-strong);
-      border-radius: 0.55rem;
-      background: var(--surface);
+      border: 1px solid var(--glass-edge);
+      border-radius: 0.65rem;
+      background: var(--glass-tint-strong);
+      box-shadow: var(--glass-highlight);
       cursor: pointer;
       user-select: none;
       transition: border-color 0.12s ease;
@@ -815,10 +901,12 @@
       flex-direction: column;
       gap: 0.1rem;
       padding: 0.3rem;
-      background: var(--surface);
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-2);
+      background: var(--glass-tint);
+      border: 1px solid var(--glass-edge);
+      border-radius: 0.85rem;
+      box-shadow: var(--glass-highlight), var(--glass-shadow);
+      -webkit-backdrop-filter: var(--glass-material);
+      backdrop-filter: var(--glass-material);
       max-height: 16rem;
       overflow-y: auto;
       animation: menu-in 0.14s ease;
@@ -983,11 +1071,11 @@
       width: 100%;
       height: 2rem;
       font-size: 0.8rem;
-      background: transparent;
+      background: var(--glass-tint);
       color: var(--muted);
-      border: 1px solid var(--border-strong);
+      border: 1px solid var(--glass-edge);
     }
-    .logout-form button:hover { background: var(--surface-l2); color: var(--text); }
+    .logout-form button:hover { background: var(--glass-tint-strong); color: var(--text); }
 
     /* SSE telemetry status: JS owns className ("", "ok", "warn", "err") on
        #sse-status. Visible label is short on narrow viewports (no refresh
@@ -1846,7 +1934,7 @@
       gap: 0.35rem;
       background: var(--button);
       color: var(--button-fg);
-      border: 1px solid transparent;
+      border: 1px solid var(--glass-edge);
       border-radius: 999px;
       padding: 0 1.1rem;
       font: inherit;
@@ -1861,6 +1949,9 @@
       max-width: 100%;
       flex-shrink: 0;
       text-decoration: none;
+      box-shadow: var(--glass-highlight);
+      -webkit-backdrop-filter: var(--glass-material);
+      backdrop-filter: var(--glass-material);
       transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
       -webkit-appearance: none;
       appearance: none;
@@ -1874,7 +1965,7 @@
     button:focus-visible,
     .btn:focus-visible {
       outline: none;
-      box-shadow: 0 0 0 3px var(--ring-strong);
+      box-shadow: var(--glass-highlight), 0 0 0 3px var(--ring-strong);
     }
     form.inline > button,
     form.inline > .btn,
@@ -1885,17 +1976,38 @@
     button.btn-secondary,
     .btn-secondary,
     a.btn {
-      background: var(--surface);
+      background: var(--glass-tint);
       color: var(--text);
-      border-color: var(--border-strong);
+      border-color: var(--glass-edge);
     }
     button.btn-secondary:hover,
     .btn-secondary:hover,
     a.btn:hover {
-      background: var(--surface-l2);
-      border-color: var(--hover-border);
+      background: var(--glass-tint-strong);
+      border-color: var(--glass-edge);
       color: var(--text);
       text-decoration: none;
+    }
+    /* Chromeless controls sit inside content or on an avatar. A blur disc
+       on them reads as a smudge, not a button. */
+    button.linkish,
+    .side-user-btn,
+    button.row-x,
+    .gw-stream-x,
+    .ffold,
+    .attach-chip-remove {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      box-shadow: none;
+    }
+    button.linkish:focus-visible,
+    .side-user-btn:focus-visible,
+    button.row-x:focus-visible,
+    .gw-stream-x:focus-visible,
+    .ffold:focus-visible,
+    .attach-chip-remove:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--ring-strong);
     }
     button.btn-danger,
     .btn-danger {
@@ -1961,14 +2073,16 @@
        model write, not a chat bubble. Lives outside #live-root so boosts
        never tear it down mid-stream. */
     .gw-stream-modal {
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius-lg);
+      border: 1px solid var(--glass-edge);
+      border-radius: var(--glass-radius);
       padding: 0;
       width: min(40rem, calc(100vw - 2rem));
       max-height: min(34rem, calc(100vh - 2.5rem));
-      background: var(--surface);
+      background: var(--glass-tint);
       color: var(--text);
-      box-shadow: var(--shadow-2), 0 24px 64px -28px hsl(var(--black) / 35%);
+      box-shadow: var(--glass-highlight), var(--glass-shadow);
+      -webkit-backdrop-filter: var(--glass-material);
+      backdrop-filter: var(--glass-material);
     }
     .gw-stream-modal::backdrop {
       background: hsl(0 0% 0% / 42%);
@@ -2137,14 +2251,16 @@
        echoing the stream log's live wire. Lives outside #live-root so
        boosted swaps never tear it down while open. */
     .gw-confirm-modal {
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius-lg);
+      border: 1px solid var(--glass-edge);
+      border-radius: var(--glass-radius);
       padding: 0;
       width: min(24rem, calc(100vw - 2rem));
-      background: var(--surface);
+      background: var(--glass-tint);
       color: var(--text);
       overflow: hidden;
-      box-shadow: var(--shadow-2), 0 24px 64px -28px hsl(var(--black) / 35%);
+      box-shadow: var(--glass-highlight), var(--glass-shadow);
+      -webkit-backdrop-filter: var(--glass-material);
+      backdrop-filter: var(--glass-material);
     }
     .gw-confirm-modal::backdrop {
       background: hsl(0 0% 0% / 42%);
@@ -4399,10 +4515,10 @@
       width: 2.15rem;
       height: 2.15rem;
       padding: 0;
-      border: none;
+      border: 1px solid var(--glass-edge);
       border-radius: 50%;
-      background: var(--text);
-      color: var(--bg);
+      background: var(--button);
+      color: var(--button-fg);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -4688,9 +4804,17 @@
       .fstat { font-size: 0.68rem; }
       .rv-pnum { font-size: 0.72rem; }
       aside.side {
-        /* relative + z-index so the project menu paints above main content. */
+        /* relative + z-index so the project menu paints above main content.
+           Not fixed: the desktop panel is, and a filter must not land on this
+           box or the tab bar (a fixed descendant) would anchor to it.
+           The glass stays on ::before. Inset/radius/shadow from the desktop
+           panel are cleared so the bar is full-bleed. */
         position: relative;
         z-index: 40;
+        top: auto;
+        left: auto;
+        right: auto;
+        bottom: auto;
         height: auto;
         width: 100%;
         max-width: 100%;
@@ -4701,8 +4825,10 @@
         align-items: center;
         gap: 0.5rem 0.9rem;
         padding: calc(0.8rem + env(safe-area-inset-top, 0px)) 1rem 0.8rem;
-        border-right: none;
-        border-bottom: 1px solid var(--border);
+        border-radius: 0;
+        border: none;
+        border-bottom: 1px solid var(--glass-edge);
+        box-shadow: none;
         overflow: visible;
       }
       .brand { flex-shrink: 0; min-width: 0; }
@@ -4767,8 +4893,11 @@
         height: 1.8rem;
         margin-left: auto;
         border-radius: 50%;
-        background: var(--text);
-        color: var(--bg);
+        background: var(--button);
+        color: var(--button-fg);
+        box-shadow: var(--glass-highlight);
+        -webkit-backdrop-filter: var(--glass-material);
+        backdrop-filter: var(--glass-material);
       }
       .ws-start::before {
         content: "";
@@ -4792,10 +4921,11 @@
         z-index: 80;
         margin: 0;
         padding: 0.3rem 0.3rem calc(0.4rem + env(safe-area-inset-bottom));
-        background: color-mix(in srgb, var(--bg) 88%, transparent);
-        -webkit-backdrop-filter: blur(16px);
-        backdrop-filter: blur(16px);
-        border-top: 1px solid var(--border);
+        background: var(--glass-tint);
+        -webkit-backdrop-filter: var(--glass-material);
+        backdrop-filter: var(--glass-material);
+        border-top: 1px solid var(--glass-edge);
+        box-shadow: var(--glass-highlight);
       }
       .tabbar > a {
         flex: 1 1 0;
@@ -4834,6 +4964,11 @@
       }
       .tabbar > a.active { color: var(--text); }
       .tabbar > a.active > .nav-icon { opacity: 1; }
+      .tabbar > a:focus-visible {
+        outline: none;
+        border-radius: 0.75rem;
+        box-shadow: 0 0 0 3px var(--ring-strong);
+      }
       .side-foot {
         margin-top: 0;
         margin-left: auto;
@@ -4879,10 +5014,12 @@
         z-index: 70;
         min-width: 10.5rem;
         padding: 0.35rem;
-        background: var(--surface);
-        border: 1px solid var(--border-strong);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow-2);
+        background: var(--glass-tint);
+        border: 1px solid var(--glass-edge);
+        border-radius: 0.85rem;
+        box-shadow: var(--glass-highlight), var(--glass-shadow);
+        -webkit-backdrop-filter: var(--glass-material);
+        backdrop-filter: var(--glass-material);
         animation: menu-in 0.14s ease;
       }
       .side-user.is-open .side-user-pop { display: block; }
@@ -4948,10 +5085,11 @@
         z-index: 90;
         margin: 0;
         padding: 0.55rem 0.75rem calc(0.65rem + env(safe-area-inset-bottom));
-        background: color-mix(in srgb, var(--bg) 90%, transparent);
-        -webkit-backdrop-filter: blur(16px);
-        backdrop-filter: blur(16px);
-        border-top: 1px solid var(--border);
+        background: var(--glass-tint);
+        -webkit-backdrop-filter: var(--glass-material);
+        backdrop-filter: var(--glass-material);
+        border-top: 1px solid var(--glass-edge);
+        box-shadow: var(--glass-highlight);
       }
       .composer textarea { font-size: 16px; }
       .composer-hint { display: none; }
@@ -5011,22 +5149,23 @@
         gap: 0.35rem;
         height: 2.4rem;
         padding: 0 0.95rem 0 0.8rem;
-        border: none;
+        border: 1px solid var(--glass-edge);
         border-radius: 999px;
         /* Same fill/fg as primary buttons — not --text/--bg. --bg is the page
            wash (neutral-50 / near-black), so using it as label color washed the
            glyph out and a --bg halo read as a muddy ring, especially over the
-           session composer's frosted glass (color-mix of the same token). */
+           session composer's frosted glass. */
         background: var(--button);
         color: var(--button-fg);
         font: inherit;
         font-size: 0.84rem;
         font-weight: 600;
         letter-spacing: -0.01em;
-        /* Surface stroke, not a page-bg halo: cuts the pill out of a same-ink
-           user bubble, and stays clean over frosted tab bar / composer chrome
-           where a solid --bg ring looked like a wrong-color border. */
-        box-shadow: 0 0 0 2px var(--surface), 0 6px 18px -6px hsl(var(--black) / 45%);
+        /* Surface stroke plus the specular edge. The stroke cuts the pill out
+           of a same-ink user bubble over frosted chrome. */
+        box-shadow: var(--glass-highlight), 0 0 0 2px var(--surface), 0 6px 18px -6px hsl(var(--black) / 45%);
+        -webkit-backdrop-filter: var(--glass-material);
+        backdrop-filter: var(--glass-material);
         cursor: pointer;
       }
       /* Global button:hover / :focus-visible outrank a bare .rail-fab (element
@@ -5038,7 +5177,7 @@
       }
       .rail-fab:focus-visible {
         outline: none;
-        box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus-border), 0 6px 18px -6px hsl(var(--black) / 45%);
+        box-shadow: var(--glass-highlight), 0 0 0 2px var(--surface), 0 0 0 4px var(--focus-border), 0 6px 18px -6px hsl(var(--black) / 45%);
       }
       /* Only pages with something in the rail get the button. Presence of the
          <aside> is not enough: pr_detail always emits it, and a merged PR seen
@@ -5121,10 +5260,12 @@
         overscroll-behavior: contain;
         gap: 0.7rem;
         padding: 0 0.8rem calc(1rem + env(safe-area-inset-bottom));
-        background: var(--bg);
-        border-top: 1px solid var(--border-strong);
-        border-radius: 1.15rem 1.15rem 0 0;
-        box-shadow: 0 -12px 32px -16px hsl(var(--black) / 45%);
+        background: var(--glass-tint);
+        border-top: 1px solid var(--glass-edge);
+        border-radius: var(--glass-radius) var(--glass-radius) 0 0;
+        box-shadow: var(--glass-highlight), 0 -12px 32px -16px hsl(var(--black) / 45%);
+        -webkit-backdrop-filter: var(--glass-material);
+        backdrop-filter: var(--glass-material);
         transform: translateY(100%);
         visibility: hidden;
         transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1),
@@ -5147,8 +5288,11 @@
         z-index: 1;
         margin: 0 -0.8rem;
         padding: 0.45rem 0.9rem 0.55rem;
-        background: var(--bg);
-        border-bottom: 1px solid var(--border);
+        background: var(--glass-tint-strong);
+        border-bottom: 1px solid var(--glass-edge);
+        box-shadow: var(--glass-highlight);
+        -webkit-backdrop-filter: var(--glass-material);
+        backdrop-filter: var(--glass-material);
       }
       .rail-sheet-grip {
         grid-column: 1 / -1;
