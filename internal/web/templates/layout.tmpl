@@ -4918,21 +4918,25 @@
       .nav-label { display: none; }
       /* Project switching moved to the Projects tab — one context per bar. */
       .proj-switch { display: none; }
-      /* Fixed bottom tab bar. Sits above content; main.main reserves room. */
+      /* Floating glass footer. Inset from the screen edges, including the
+         home indicator, so the page shows around it and the blur has
+         something to sample. main.main's bottom padding clears it. */
       .tabbar {
         display: flex;
         position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
+        left: var(--side-inset);
+        right: var(--side-inset);
+        bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
         z-index: 80;
         margin: 0;
-        padding: 0.3rem 0.3rem calc(0.4rem + env(safe-area-inset-bottom));
+        padding: 0.28rem 0.35rem;
         background: var(--glass-tint);
         -webkit-backdrop-filter: var(--glass-material);
         backdrop-filter: var(--glass-material);
-        border-top: 1px solid var(--glass-edge);
-        box-shadow: var(--glass-highlight);
+        border: 1px solid var(--glass-edge);
+        border-radius: var(--glass-radius);
+        box-shadow: var(--glass-highlight), var(--glass-shadow);
+        overflow: hidden;
       }
       .tabbar > a {
         flex: 1 1 0;
@@ -4941,7 +4945,8 @@
         flex-direction: column;
         align-items: center;
         gap: 0.18rem;
-        padding: 0.25rem 0 0;
+        padding: 0.32rem 0.1rem 0.26rem;
+        border-radius: 0.85rem;
         font-size: 0.64rem;
         font-weight: 550;
         letter-spacing: 0.01em;
@@ -4969,7 +4974,10 @@
         z-index: 1;
         animation: nav-count-in 0.16s ease;
       }
-      .tabbar > a.active { color: var(--text); }
+      .tabbar > a.active {
+        color: var(--text);
+        background: var(--glass-pill);
+      }
       .tabbar > a.active > .nav-icon { opacity: 1; }
       .tabbar > a:focus-visible {
         outline: none;

@@ -97,6 +97,10 @@ func TestLiquidGlassMaterial(t *testing.T) {
 			t.Fatalf("%s is not a translucent blurred material with a specular highlight", sel)
 		}
 	}
+	tabbar, found := ruleWithSelector(blocks, ".tabbar")
+	if !found || !strings.Contains(tabbar, "border-radius: var(--glass-radius)") || !strings.Contains(tabbar, "var(--side-inset)") {
+		t.Fatal("phone tab bar is not a floating glass footer")
+	}
 
 	for _, sel := range []string{".card", ".m-rows", ".dpatch", ".gw-stream-log", ".table-scroll", ".fcard", ".review-bar", ".sr-rows", ".composer"} {
 		rules := rulesWithSelector(blocks, sel)
