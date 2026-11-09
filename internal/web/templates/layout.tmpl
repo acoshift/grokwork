@@ -908,12 +908,12 @@
       flex-direction: column;
       gap: 0.1rem;
       padding: 0.3rem;
-      background: var(--glass-tint);
-      border: 1px solid var(--glass-edge);
+      /* Opaque on purpose. A glass tint leaves the nav labels readable
+         through the items. */
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
       border-radius: 0.85rem;
-      box-shadow: var(--glass-highlight), var(--glass-shadow);
-      -webkit-backdrop-filter: var(--glass-material);
-      backdrop-filter: var(--glass-material);
+      box-shadow: var(--glass-shadow);
       max-height: 16rem;
       overflow-y: auto;
       animation: menu-in 0.14s ease;
