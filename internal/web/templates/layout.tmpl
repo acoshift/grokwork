@@ -7367,11 +7367,15 @@
     // sidebar uses) because depth alone cannot place "/": it is the parent of
     // a workspace but a peer of the other global tabs. Within a scope every
     // tab-bar destination is level 1 and anything else is 1 + its segment
-    // count, so a deeper URL is a deeper screen. Project settings tabs are
-    // the exception that stays flat: Access has one fewer segment than the
-    // others, and counting it would slide into Workflow while the rest of
-    // the strip crossfades.
-    var TAB_SECTIONS = { ship: 1, cases: 1, sessions: 1, reviews: 1 };
+    // count, so a deeper URL is a deeper screen. The footer tabs that are a
+    // path segment (Today, Ship, Cases, Reviews) all live in TAB_SECTIONS;
+    // Overview (/projects/{p}) and Projects (/) are level 1 via the length
+    // checks below. Sessions shares that shape from the sidebar. A footer
+    // tab left out of the set slides while the others crossfade. Project
+    // settings tabs are the other exception that stays flat: Access has one
+    // fewer segment than the others, and counting it would slide into
+    // Workflow while the rest of the strip crossfades.
+    var TAB_SECTIONS = { today: 1, ship: 1, cases: 1, sessions: 1, reviews: 1 };
     // Detail families (same list as Go navScopeFromURL) are always leaf
     // screens even though their URLs are short: /projects/{p}/start is four
     // segments and redirects to a two-segment /sessions/{id}, so counting
