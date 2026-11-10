@@ -4828,9 +4828,30 @@
         padding: calc(0.8rem + env(safe-area-inset-top, 0px)) 1rem 0.8rem;
         border-radius: 0;
         border: none;
-        border-bottom: 1px solid var(--glass-edge);
+        border-bottom: 1px solid var(--border);
         box-shadow: none;
         overflow: visible;
+      }
+      /* The header is in flow, so its backdrop is the page wash, not
+         scrolling content. The shared 28px blur only smears that wash into
+         a fog across the whole bar. A short blur and the stronger tint keep
+         it glass without softening the title, status, or icons. Reduced
+         transparency still wins: --glass-blur drops to 8px and min() follows. */
+      aside.side::before {
+        background: var(--glass-tint-strong);
+        -webkit-backdrop-filter: blur(min(12px, var(--glass-blur))) saturate(1.2);
+        backdrop-filter: blur(min(12px, var(--glass-blur))) saturate(1.2);
+      }
+      /* Keep the bar's own text above the blur layer. A z-index:-1 pseudo
+         inside isolation is enough on desktop; iOS has composited the phone
+         header's children into that blur. */
+      aside.side .brand,
+      aside.side .nav-search,
+      aside.side .side-foot,
+      aside.side .ws-back,
+      aside.side .ws-start {
+        position: relative;
+        z-index: 1;
       }
       .brand { flex-shrink: 0; min-width: 0; }
       /* Search takes the whole second line of the top bar rather than
@@ -4843,7 +4864,15 @@
         flex: 1 1 100%;
         margin-top: 0;
       }
-      .nav-search input[type=search] { height: 2.3rem; }
+      .nav-search input[type=search] {
+        height: 2.15rem;
+        /* The bar behind this field is already glass. A second translucent
+           fill stacks two materials and the field goes milky. Opaque surface,
+           same rule as buttons. */
+        background-color: var(--surface);
+        border-color: var(--border-strong);
+        box-shadow: none;
+      }
       /* ── Native-app shell (phone/tablet) ─────────────────────────────
          The bottom tab bar is scope-aware (global sections, or the selected
          project's sections inside a workspace), so the top bar carries only
@@ -4909,18 +4938,20 @@
       .nav-label { display: none; }
       /* Project switching moved to the Projects tab — one context per bar. */
       .proj-switch { display: none; }
-      /* Floating glass footer. Inset from the screen edges, including the
-         home indicator, so the page shows around it and the blur has
-         something to sample. main.main's bottom padding clears it. */
+      /* Floating glass capsule, the iOS 26 tab bar: about 21pt off the
+         screen edge, not the safe area stacked on another margin. The home
+         indicator lives in that gap. A further segment of safe area would
+         park the bar a thumb's width too high. main.main's bottom padding
+         clears the top of the capsule. */
       .tabbar {
         display: flex;
         position: fixed;
-        left: var(--side-inset);
-        right: var(--side-inset);
-        bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
+        left: max(1rem, var(--side-inset));
+        right: max(1rem, var(--side-inset));
+        bottom: max(1.15rem, calc(env(safe-area-inset-bottom, 0px) - 0.85rem));
         z-index: 80;
         margin: 0;
-        padding: 0.28rem 0.35rem;
+        padding: 0.16rem 0.22rem;
         background: var(--glass-tint);
         -webkit-backdrop-filter: var(--glass-material);
         backdrop-filter: var(--glass-material);
@@ -4935,10 +4966,11 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 0.18rem;
-        padding: 0.32rem 0.1rem 0.26rem;
-        border-radius: 0.85rem;
-        font-size: 0.64rem;
+        gap: 0.08rem;
+        padding: 0.18rem 0.06rem 0.12rem;
+        /* Concentric with the capsule: outer radius minus the bar padding. */
+        border-radius: calc(var(--glass-radius) - 0.16rem);
+        font-size: 0.58rem;
         font-weight: 550;
         letter-spacing: 0.01em;
         color: var(--muted);
@@ -4946,8 +4978,8 @@
         position: relative;
       }
       .tabbar > a > .nav-icon {
-        width: 1.42rem;
-        height: 1.42rem;
+        width: 1.22rem;
+        height: 1.22rem;
         opacity: 0.85;
       }
       .tabbar > a > .nav-count:not([hidden]) {
@@ -4972,7 +5004,7 @@
       .tabbar > a.active > .nav-icon { opacity: 1; }
       .tabbar > a:focus-visible {
         outline: none;
-        border-radius: 0.75rem;
+        border-radius: calc(var(--glass-radius) - 0.16rem);
         box-shadow: 0 0 0 3px var(--ring-strong);
       }
       .side-foot {
@@ -5038,7 +5070,7 @@
       .logout-form button { width: 100%; height: 2.2rem; }
       main.main {
         /* Bottom padding clears the fixed tab bar (+ iPhone home indicator). */
-        padding: 1.1rem 1rem calc(5.2rem + env(safe-area-inset-bottom));
+        padding: 1.1rem 1rem calc(3.15rem + max(1.15rem, env(safe-area-inset-bottom, 0px)));
         max-width: 100%;
         min-width: 0;
       }
@@ -5149,7 +5181,7 @@
         right: 0.85rem;
         /* Above the tab bar by default; above the composer where one
            replaces it (same key the tab bar itself is hidden on). */
-        bottom: calc(4.6rem + env(safe-area-inset-bottom));
+        bottom: calc(3.35rem + max(1.15rem, env(safe-area-inset-bottom, 0px)));
         z-index: 91;
         align-items: center;
         gap: 0.35rem;
