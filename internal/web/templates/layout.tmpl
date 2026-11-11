@@ -617,7 +617,7 @@
       border: 1px solid var(--glass-edge);
       box-shadow: var(--glass-highlight);
       border-radius: 0.65rem;
-      padding: 0.35rem 0.6rem 0.35rem 1.85rem;
+      padding: 0.35rem 2rem 0.35rem 1.85rem;
       font: inherit;
       font-size: 0.88rem;
       color: var(--text);
@@ -629,8 +629,10 @@
       border-color: var(--focus-border);
       box-shadow: 0 0 0 3px var(--ring);
     }
+    /* Safari draws its own cancel glyph inside type=search. The shell uses
+       .search-clear instead, which can hide while the field is empty. */
     .nav-search input[type=search]::-webkit-search-decoration,
-    .nav-search input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; }
+    .nav-search input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
 
     nav {
       display: flex;
@@ -1733,6 +1735,52 @@
       border-color: var(--focus-border);
       box-shadow: 0 0 0 3px var(--ring);
     }
+    /* Clear control shared by the shell box and the results query. The button
+       is position:absolute, so it does not join the toolbar's flex row.
+       button { display: inline-flex } beats the UA [hidden] rule — without
+       !important an empty field still paints the X. */
+    .search-clear-host { position: relative; }
+    .search-clear-host > input[type=search] { padding-right: 2rem; }
+    .search-clear-host > input[type=search]::-webkit-search-decoration,
+    .search-clear-host > input[type=search]::-webkit-search-cancel-button {
+      -webkit-appearance: none;
+      appearance: none;
+      display: none;
+    }
+    .search-clear-host > button.search-clear[hidden] { display: none !important; }
+    .search-clear-host > button.search-clear {
+      position: absolute;
+      top: 50%;
+      right: 0.28rem;
+      transform: translateY(-50%);
+      width: 1.35rem;
+      height: 1.35rem;
+      min-width: 0;
+      min-height: 0;
+      margin: 0;
+      padding: 0;
+      gap: 0;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      box-shadow: none;
+      font-size: 0;
+      font-weight: 400;
+      line-height: 0;
+      cursor: pointer;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .search-clear-host > button.search-clear svg {
+      display: block;
+      width: 0.62rem;
+      height: 0.62rem;
+    }
+    .search-clear-host > button.search-clear:hover {
+      background: var(--surface-l2);
+      color: var(--text);
+    }
 
     /* ── Search results (/search) ─────────────────────────────────────
        One row shape at every width. The list-vs-table duality the other
@@ -1996,7 +2044,8 @@
     button.row-x,
     .gw-stream-x,
     .ffold,
-    .attach-chip-remove {
+    .attach-chip-remove,
+    button.search-clear {
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
       box-shadow: none;
@@ -2006,7 +2055,8 @@
     button.row-x:focus-visible,
     .gw-stream-x:focus-visible,
     .ffold:focus-visible,
-    .attach-chip-remove:focus-visible {
+    .attach-chip-remove:focus-visible,
+    button.search-clear:focus-visible {
       outline: none;
       box-shadow: 0 0 0 3px var(--ring-strong);
     }
@@ -5623,8 +5673,9 @@
            because that is what decides whose commits get read. /search has no
            rule in navScopeFromURL, so the results stay in the global shell and
            ?project= is a data filter there, exactly like /ship's. */}}
-      <form class="nav-search" id="nav-search" method="get" action="{{route "search"}}" role="search">
+      <form class="nav-search search-clear-host" id="nav-search" method="get" action="{{route "search"}}" role="search">
         <input type="search" name="q" value="{{.Search.Query}}" placeholder="Search" aria-label="Search" autocomplete="off" spellcheck="false">
+        {{template "searchClear" .}}
       </form>
       {{/* Scope-aware sidebar. data-scope mirrors the server's URL-derived
            workspace project (navScopeFromURL); the layout JS re-derives it on
@@ -8164,6 +8215,37 @@
       setup();
     })();
   })();
+  // Search clear. The control is rendered hidden when the field is empty and
+  // shown as soon as it has text. Delegated because the results field is
+  // swapped with #live-root; the shell box is not.
+  (function () {
+    function syncSearchClear(input) {
+      if (!input || !input.closest) return;
+      var host = input.closest(".search-clear-host");
+      if (!host) return;
+      var btn = host.querySelector(".search-clear");
+      if (!btn) return;
+      btn.hidden = input.value.length === 0;
+    }
+    function onSearchValue(e) {
+      var t = e.target;
+      if (!t || !t.closest || !t.closest(".search-clear-host")) return;
+      syncSearchClear(t);
+    }
+    document.addEventListener("input", onSearchValue);
+    document.addEventListener("search", onSearchValue);
+    document.addEventListener("click", function (e) {
+      var btn = e.target && e.target.closest && e.target.closest(".search-clear");
+      if (!btn) return;
+      e.preventDefault();
+      var host = btn.closest(".search-clear-host");
+      var input = host && host.querySelector("input");
+      if (!input) return;
+      input.value = "";
+      syncSearchClear(input);
+      input.focus();
+    });
+  })();
   </script>
 </body>
 </html>
@@ -8175,6 +8257,16 @@
      Inert and invisible until body.rail-sheet-open; display:none above the
      phone breakpoint, so on desktop it is not even a paint. */}}
 {{define "rail_scrim"}}<div class="rail-scrim" id="rail-scrim" data-rail-close></div>{{end}}
+{{/* Clear button for a .search-clear-host search field. hidden while the
+     query is empty; layout JS drops it as soon as the field has text.
+     type=button so it never submits the GET. */}}
+{{define "searchClear"}}
+<button type="button" class="search-clear" aria-label="Clear search"{{if not .Search.Query}} hidden{{end}}>
+  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+    <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>
+</button>
+{{end}}
 {{/* Sheet header for a detail-page rail. Rendered by every .pr-rail as its
      first child and display:none above the phone breakpoint, so on desktop it
      is neither drawn nor focusable — the rail is an ordinary column there.

@@ -39,10 +39,19 @@ func TestSearchShellBoxAndPageMarkers(t *testing.T) {
 		if code != http.StatusOK {
 			t.Fatalf("%s status=%d", path, code)
 		}
-		for _, want := range []string{`id="nav-search"`, `action="/search"`} {
+		for _, want := range []string{`id="nav-search"`, `action="/search"`, `class="nav-search search-clear-host"`} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("%s missing shell search %q", path, want)
 			}
+		}
+		// Empty field: the control is in the markup, and [hidden] keeps it out
+		// of the box. button { display: inline-flex } would paint it anyway
+		// without the author override pinned below.
+		if strings.Count(body, `aria-label="Clear search" hidden>`) != 1 {
+			t.Fatalf("%s: want one hidden clear button, got %d", path, strings.Count(body, `aria-label="Clear search" hidden>`))
+		}
+		if !strings.Contains(body, `button.search-clear[hidden]`) {
+			t.Fatalf("%s: clear button hidden state loses to the button display rule", path)
 		}
 	}
 
@@ -54,6 +63,21 @@ func TestSearchShellBoxAndPageMarkers(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("/search missing %q", want)
 		}
+	}
+	// No query yet: shell box and the results field each render a hidden clear.
+	if strings.Count(body, `aria-label="Clear search" hidden>`) != 2 {
+		t.Fatalf("/search empty: want two hidden clear buttons, got %d", strings.Count(body, `aria-label="Clear search" hidden>`))
+	}
+
+	code, body = getSearch(t, srv, "/search?q=ledger", nil)
+	if code != http.StatusOK {
+		t.Fatalf("/search?q=ledger status=%d", code)
+	}
+	if strings.Count(body, `aria-label="Clear search">`) != 2 {
+		t.Fatalf("/search?q=ledger: want a visible clear on the shell box and the query field, got %d", strings.Count(body, `aria-label="Clear search">`))
+	}
+	if strings.Contains(body, `aria-label="Clear search" hidden>`) {
+		t.Fatal("/search?q=ledger: clear button hidden while the query is set")
 	}
 	// The results page is a full document, not a fragment: it renders inside the
 	// shell like every other lead view.

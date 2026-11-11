@@ -5,7 +5,10 @@
 <form method="get" action="{{route "search"}}" class="toolbar" id="search-form">
   <div class="field">
     <label for="search-q">Query</label>
-    <input id="search-q" type="search" name="q" value="{{.Search.Query}}" placeholder="WEBAPP-14, goal, #42, sha…" autocomplete="off">
+    <div class="search-clear-host">
+      <input id="search-q" type="search" name="q" value="{{.Search.Query}}" placeholder="WEBAPP-14, goal, #42, sha…" autocomplete="off">
+      {{template "searchClear" .}}
+    </div>
   </div>
   <div class="field">
     <label for="search-project">Project</label>
