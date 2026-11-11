@@ -97,6 +97,11 @@ func TestParseXAIRatesUsesStandardContextNotLong(t *testing.T) {
 	if _, ok := got["grok-4.7-xhigh"]; ok {
 		t.Fatal("effort aliases must not be stored; lookup peels the suffix")
 	}
+	// Grok 4.7 Fast is a separate catalog id. The docs page has no row for it,
+	// and it must not inherit grok-4.7 (the catalog calls it 2x).
+	if _, ok := (OfficialRateCatalog{rates: got}).RateFor("grok-4.7-build-fast-high"); ok {
+		t.Fatal("grok-4.7-build-fast must not inherit the grok-4.7 row")
+	}
 	r, ok = got["grok-4.6"]
 	if !ok {
 		t.Fatal("missing grok-4.6")

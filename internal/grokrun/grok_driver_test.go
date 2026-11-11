@@ -11,14 +11,25 @@ func TestGrokCLIModel(t *testing.T) {
 	}{
 		{"grok-4.7-xhigh", "grok-4.7", "xhigh"},
 		{"grok-4.7-high", "grok-4.7", "high"},
+		{"grok-4.7-medium", "grok-4.7", "medium"},
+		{"grok-4.7-low", "grok-4.7", "low"},
 		{"grok-4.7", "grok-4.7", ""},
 		{" GROK-4.7-XHIGH ", "grok-4.7", "xhigh"},
+		{"grok-4.7-build-fast", "grok-4.7-build-fast", ""},
+		{"grok-4.7-build-fast-xhigh", "grok-4.7-build-fast", "xhigh"},
+		{"grok-4.7-build-fast-high", "grok-4.7-build-fast", "high"},
+		{"grok-4.7-build-fast-medium", "grok-4.7-build-fast", "medium"},
+		{"grok-4.7-build-fast-low", "grok-4.7-build-fast", "low"},
+		{" GROK-4.7-BUILD-FAST-HIGH ", "grok-4.7-build-fast", "high"},
 		{"grok-4.6-xhigh", "grok-4.6", "xhigh"},
 		{" GROK-4.6-XHIGH ", "grok-4.6", "xhigh"},
 		{"grok-4.6-high", "grok-4.6", "high"},
+		{"grok-4.6-medium", "grok-4.6", "medium"},
+		{"grok-4.6-low", "grok-4.6", "low"},
 		{"grok-4.6", "grok-4.6", ""},
 		{"grok-4.5", "grok-4.5", ""},
 		{"grok-4.5-high", "grok-4.5", "high"},
+		{"grok-4.5-medium", "grok-4.5", "medium"},
 		{"grok-4.5-low", "grok-4.5", "low"},
 		{" GROK-4.5-LOW ", "grok-4.5", "low"},
 		// Cursor's xhigh id is a real catalog name and must not be rewritten
@@ -49,10 +60,20 @@ func TestRateModelStripsGrokAndClaudeEffort(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"grok-4.7-xhigh", "grok-4.7"},
 		{"grok-4.7-high", "grok-4.7"},
+		{"grok-4.7-medium", "grok-4.7"},
+		{"grok-4.7-low", "grok-4.7"},
 		{"grok-4.6-xhigh", "grok-4.6"},
 		{" GROK-4.6-HIGH ", "grok-4.6"},
+		{"grok-4.6-medium", "grok-4.6"},
+		{"grok-4.6-low", "grok-4.6"},
 		{"grok-4.5-low", "grok-4.5"},
+		{"grok-4.5-medium", "grok-4.5"},
 		{"grok-4.6", "grok-4.6"},
+		// Fast is its own catalog id. Peeling it onto grok-4.7 would price a
+		// 2x model at the base rate.
+		{"grok-4.7-build-fast", "grok-4.7-build-fast"},
+		{"grok-4.7-build-fast-xhigh", "grok-4.7-build-fast"},
+		{"grok-4.7-build-fast-low", "grok-4.7-build-fast"},
 		{"claude-fable-5-1-xhigh", "claude-fable-5-1"},
 		{"claude-opus-5-high", "claude-opus-5"},
 		{"claude-haiku-4-5-high", "claude-haiku-4-5"},
@@ -97,6 +118,16 @@ func TestGrokArgsLowMapsToEffort(t *testing.T) {
 	}
 	if got := argValue(args, "--effort"); got != "low" {
 		t.Errorf("--effort=%q want low in %v", got, args)
+	}
+}
+
+func TestGrokArgsFastKeepsCatalogID(t *testing.T) {
+	args := grokArgs(Options{Model: "grok-4.7-build-fast-high", MaxTurns: 1})
+	if got := argValue(args, "-m"); got != "grok-4.7-build-fast" {
+		t.Errorf("-m=%q want grok-4.7-build-fast in %v", got, args)
+	}
+	if got := argValue(args, "--effort"); got != "high" {
+		t.Errorf("--effort=%q want high in %v", got, args)
 	}
 }
 

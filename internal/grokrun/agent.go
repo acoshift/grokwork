@@ -130,16 +130,25 @@ type ModelOption struct {
 // survives a save.
 func ModelOptions() []ModelOption {
 	return []ModelOption{
-		// grok. `grok models` reports what a given account can actually reach, so
-		// this list is intentionally short — extend it per deployment.
-		// Every name carries an effort suffix: grokCLIModel passes
-		// -m <base> --effort <level>. Rates key on the unsuffixed base
-		// (RateModel).
+		// grok. `grok models` lists catalog ids (grok-4.7, grok-4.7-build-fast,
+		// grok-4.6, grok-4.5). Each name appends an effort that id advertises.
+		// grokCLIModel passes -m <id> --effort <level>. grok-4.7-build-fast is
+		// Grok 4.7 Fast, its own id: "fast" stays on -m, and the rate key is
+		// that id (RateModel), not grok-4.7.
 		{Value: "grok-4.7-xhigh", Label: "grok-4.7-xhigh", Agent: AgentGrok},
 		{Value: "grok-4.7-high", Label: "grok-4.7-high", Agent: AgentGrok},
+		{Value: "grok-4.7-medium", Label: "grok-4.7-medium", Agent: AgentGrok},
+		{Value: "grok-4.7-low", Label: "grok-4.7-low", Agent: AgentGrok},
+		{Value: "grok-4.7-build-fast-xhigh", Label: "grok-4.7-build-fast-xhigh", Agent: AgentGrok},
+		{Value: "grok-4.7-build-fast-high", Label: "grok-4.7-build-fast-high", Agent: AgentGrok},
+		{Value: "grok-4.7-build-fast-medium", Label: "grok-4.7-build-fast-medium", Agent: AgentGrok},
+		{Value: "grok-4.7-build-fast-low", Label: "grok-4.7-build-fast-low", Agent: AgentGrok},
 		{Value: "grok-4.6-xhigh", Label: "grok-4.6-xhigh", Agent: AgentGrok},
 		{Value: "grok-4.6-high", Label: "grok-4.6-high", Agent: AgentGrok},
+		{Value: "grok-4.6-medium", Label: "grok-4.6-medium", Agent: AgentGrok},
+		{Value: "grok-4.6-low", Label: "grok-4.6-low", Agent: AgentGrok},
 		{Value: "grok-4.5-high", Label: "grok-4.5-high", Agent: AgentGrok},
+		{Value: "grok-4.5-medium", Label: "grok-4.5-medium", Agent: AgentGrok},
 		{Value: "grok-4.5-low", Label: "grok-4.5-low", Agent: AgentGrok},
 
 		// claude (Claude Code CLI). Every name carries -high / -xhigh:

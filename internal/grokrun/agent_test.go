@@ -1,6 +1,7 @@
 package grokrun
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -135,6 +136,24 @@ func TestModelOptionsMatchInference(t *testing.T) {
 	if opts[0].Value != "grok-4.7-xhigh" || opts[0].Agent != AgentGrok {
 		t.Fatalf("first option is %q/%q; newest grok model must lead", opts[0].Value, opts[0].Agent)
 	}
+	// `grok models` advertises these efforts, plus grok-4.7-build-fast as its
+	// own id. Order is the dropdown order.
+	wantGrok := []string{
+		"grok-4.7-xhigh", "grok-4.7-high", "grok-4.7-medium", "grok-4.7-low",
+		"grok-4.7-build-fast-xhigh", "grok-4.7-build-fast-high",
+		"grok-4.7-build-fast-medium", "grok-4.7-build-fast-low",
+		"grok-4.6-xhigh", "grok-4.6-high", "grok-4.6-medium", "grok-4.6-low",
+		"grok-4.5-high", "grok-4.5-medium", "grok-4.5-low",
+	}
+	var gotGrok []string
+	for _, opt := range opts {
+		if opt.Agent == AgentGrok {
+			gotGrok = append(gotGrok, opt.Value)
+		}
+	}
+	if !slices.Equal(gotGrok, wantGrok) {
+		t.Fatalf("grok options=\n%v\nwant\n%v", gotGrok, wantGrok)
+	}
 }
 
 // Family grouping is derived from the catalog so bulk "disable Cursor GPT"
@@ -196,12 +215,20 @@ func TestAgentForModel(t *testing.T) {
 	}{
 		{"grok-4.7-xhigh", AgentGrok, true},
 		{"grok-4.7-high", AgentGrok, true},
+		{"grok-4.7-medium", AgentGrok, true},
+		{"grok-4.7-low", AgentGrok, true},
 		{"grok-4.7", AgentGrok, true},
+		{"grok-4.7-build-fast", AgentGrok, true},
+		{"grok-4.7-build-fast-xhigh", AgentGrok, true},
+		{"grok-4.7-build-fast-high", AgentGrok, true},
 		{"grok-4.6-xhigh", AgentGrok, true},
 		{"grok-4.6-high", AgentGrok, true},
+		{"grok-4.6-medium", AgentGrok, true},
+		{"grok-4.6-low", AgentGrok, true},
 		{"grok-4.6", AgentGrok, true},
 		{"grok-4.5", AgentGrok, true},
 		{"grok-4.5-high", AgentGrok, true},
+		{"grok-4.5-medium", AgentGrok, true},
 		{"grok-4.5-low", AgentGrok, true},
 		{"grok-code-fast-1", AgentGrok, true},
 		{"sonnet", AgentClaude, true},
