@@ -9,8 +9,8 @@ import (
 )
 
 // TestLiquidGlassMaterial loads a real page and checks the stylesheet the
-// handler actually shipped. Chrome (sidebar, tab bar, dialogs, sheets)
-// uses the translucent blurred material and a specular edge. Buttons and
+// handler actually shipped. Chrome (sidebar, tab bar, sheets) uses the
+// translucent blurred material and a specular edge. Buttons, dialogs, and
 // reading surfaces stay opaque so labels do not show through. Dark
 // restyles the material, reduced
 // transparency frosts it, and reduced motion drops decorative animation.
@@ -94,7 +94,7 @@ func TestLiquidGlassMaterial(t *testing.T) {
 		t.Fatal("reduced motion does not disable decorative animation")
 	}
 
-	for _, sel := range []string{"aside.side::before", ".tabbar", ".gw-confirm-modal", ".pr-rail"} {
+	for _, sel := range []string{"aside.side::before", ".tabbar", ".pr-rail"} {
 		rule, found := ruleWithSelector(blocks, sel)
 		if !found {
 			t.Fatalf("missing chrome rule %s", sel)
@@ -110,6 +110,12 @@ func TestLiquidGlassMaterial(t *testing.T) {
 	menu, found := ruleWithSelector(blocks, ".proj-menu")
 	if !found || !strings.Contains(menu, "background: var(--surface)") || strings.Contains(menu, "backdrop-filter") {
 		t.Fatal("project menu must be an opaque surface so the nav does not show through")
+	}
+	for _, sel := range []string{".gw-confirm-modal", ".gw-stream-modal"} {
+		rule, ok := ruleWithSelector(blocks, sel)
+		if !ok || !strings.Contains(rule, "background: var(--surface)") || strings.Contains(rule, "backdrop-filter") {
+			t.Fatalf("%s must be an opaque surface so the page does not show through", sel)
+		}
 	}
 	btn, found := ruleWithSelector(blocks, "button")
 	if !found || strings.Contains(btn, "backdrop-filter") || !strings.Contains(btn, "background: var(--button)") {

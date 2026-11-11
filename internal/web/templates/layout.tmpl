@@ -2129,11 +2129,10 @@
       padding: 0;
       width: min(40rem, calc(100vw - 2rem));
       max-height: min(34rem, calc(100vh - 2.5rem));
-      background: var(--glass-tint);
+      /* Opaque on purpose. A glass tint leaves the page readable through the dialog. */
+      background: var(--surface);
       color: var(--text);
       box-shadow: var(--glass-highlight), var(--glass-shadow);
-      -webkit-backdrop-filter: var(--glass-material);
-      backdrop-filter: var(--glass-material);
     }
     .gw-stream-modal::backdrop {
       background: hsl(0 0% 0% / 42%);
@@ -2306,12 +2305,11 @@
       border-radius: var(--glass-radius);
       padding: 0;
       width: min(24rem, calc(100vw - 2rem));
-      background: var(--glass-tint);
+      /* Opaque on purpose. A glass tint leaves the page readable through the dialog. */
+      background: var(--surface);
       color: var(--text);
       overflow: hidden;
       box-shadow: var(--glass-highlight), var(--glass-shadow);
-      -webkit-backdrop-filter: var(--glass-material);
-      backdrop-filter: var(--glass-material);
     }
     .gw-confirm-modal::backdrop {
       background: hsl(0 0% 0% / 42%);
