@@ -8217,7 +8217,10 @@
   })();
   // Search clear. The control is rendered hidden when the field is empty and
   // shown as soon as it has text. Delegated because the results field is
-  // swapped with #live-root; the shell box is not.
+  // swapped with #live-root; the shell box is not. Clearing submits that
+  // field's form so the result list matches the empty query — requestSubmit
+  // fires submit, which hx-boost handles. form.submit() would skip the event
+  // and full-load the page.
   (function () {
     function syncSearchClear(input) {
       if (!input || !input.closest) return;
@@ -8240,10 +8243,20 @@
       e.preventDefault();
       var host = btn.closest(".search-clear-host");
       var input = host && host.querySelector("input");
-      if (!input) return;
-      input.value = "";
-      syncSearchClear(input);
-      input.focus();
+      if (!input || !input.form) return;
+      // The shell box lives outside the boost target, so a results-form
+      // submit would leave the old query (and its X) sitting in the sidebar.
+      // Blank every box that was showing this same text. A different unsent
+      // draft in the other box stays.
+      var cleared = input.value;
+      var boxes = document.querySelectorAll(".search-clear-host input");
+      for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].value !== cleared) continue;
+        boxes[i].value = "";
+        syncSearchClear(boxes[i]);
+      }
+      if (typeof input.form.requestSubmit === "function") input.form.requestSubmit();
+      else input.form.submit();
     });
   })();
   </script>
@@ -8259,7 +8272,8 @@
 {{define "rail_scrim"}}<div class="rail-scrim" id="rail-scrim" data-rail-close></div>{{end}}
 {{/* Clear button for a .search-clear-host search field. hidden while the
      query is empty; layout JS drops it as soon as the field has text.
-     type=button so it never submits the GET. */}}
+     type=button so the click can blank the field before requestSubmit —
+     a submit button would GET the value still in the box. */}}
 {{define "searchClear"}}
 <button type="button" class="search-clear" aria-label="Clear search"{{if not .Search.Query}} hidden{{end}}>
   <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">

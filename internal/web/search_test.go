@@ -53,6 +53,11 @@ func TestSearchShellBoxAndPageMarkers(t *testing.T) {
 		if !strings.Contains(body, `button.search-clear[hidden]`) {
 			t.Fatalf("%s: clear button hidden state loses to the button display rule", path)
 		}
+		// Clearing must GET the form. A click that only blanks the field leaves
+		// the previous result list on screen.
+		if !strings.Contains(body, "input.form.requestSubmit()") {
+			t.Fatalf("%s: clear button does not submit the search form", path)
+		}
 	}
 
 	code, body := getSearch(t, srv, "/search", nil)
