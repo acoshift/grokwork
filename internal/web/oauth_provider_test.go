@@ -229,8 +229,8 @@ func TestLoginPageRendersOnlyConfiguredProviders(t *testing.T) {
 }
 
 // Zero usable providers is reachable by misconfiguration (an env-sourced secret
-// unset while the process runs) and locks everyone out, so the gate has to
-// explain itself rather than render a door with no handle.
+// unset while the process runs). The gate explains itself and renders no
+// provider button. A pasted login token is not a provider, so that form stays.
 func TestLoginPageWithNoProvidersConfigured(t *testing.T) {
 	t.Setenv("GITHUB_CLIENT_SECRET", "env-github-secret")
 	f := newAuthFixture(t, func(cfg *config.Config) {
@@ -253,8 +253,11 @@ func TestLoginPageWithNoProvidersConfigured(t *testing.T) {
 		t.Fatalf("status=%d", w.Code)
 	}
 	body := w.Body.String()
-	if strings.Contains(body, `id="login-`) {
-		t.Error("no provider is usable; no login button may render")
+	if strings.Contains(body, `class="btn login-cta"`) {
+		t.Error("no provider is usable; no provider login button may render")
+	}
+	if !strings.Contains(body, `id="login-token"`) {
+		t.Error("token login stays available when no provider is configured")
 	}
 	if !strings.Contains(body, "No login providers are configured") {
 		t.Errorf("expected the misconfiguration notice, got:\n%s", body)

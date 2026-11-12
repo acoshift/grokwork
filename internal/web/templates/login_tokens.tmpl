@@ -1,0 +1,81 @@
+{{define "content"}}
+<h1 id="page-login-tokens">Login tokens</h1>
+<p class="sub">
+  A token signs you in as this account. The secret is shown once, when you create it.
+</p>
+
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+{{if .LoginTokenSecret}}
+<div class="flash" id="login-token-once">
+  Copy this token now. It will not be shown again.
+  <code id="login-token-secret">{{.LoginTokenSecret}}</code>
+</div>
+{{end}}
+
+{{if .LoginTokensUnavailable}}
+<div class="section card" id="login-tokens-unavailable">
+  <p class="sub" style="margin:0">
+    Web auth is off on this deployment, so login tokens are not available.
+  </p>
+</div>
+{{else}}
+
+<div class="section card" id="login-token-create">
+  <h2>New token</h2>
+  <form method="post" action="{{route "account.tokens"}}" hx-boost="false">
+    {{template "csrf" $}}
+    <label>Expires
+      <input type="date" name="expires" id="login-token-expires">
+    </label>
+    <p class="sub" style="margin:0.3rem 0 0.8rem">
+      Optional. The token works through the end of this date. Leave it empty for no expiry.
+    </p>
+    <button type="submit" class="btn">Create token</button>
+  </form>
+</div>
+
+<div class="section card">
+  <h2>Your tokens</h2>
+  {{if .LoginTokenRows}}
+  <div class="table-scroll">
+  <table id="login-tokens-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Created</th>
+        <th>Expires</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .LoginTokenRows}}
+      <tr id="login-token-{{.ID}}">
+        <td class="mono">{{.ID}}</td>
+        <td class="mono muted">{{.Created}}</td>
+        <td class="mono login-token-expiry">{{.Expiry}}</td>
+        <td class="login-token-status">{{.Status}}</td>
+        <td class="row-actions">
+          {{if .CanRevoke}}
+          <form method="post" action="{{route "account.tokens.revoke"}}"
+                data-confirm="Revoke this login token? It will stop signing in immediately."
+                data-confirm-title="Revoke token" data-confirm-ok="Revoke" data-confirm-danger>
+            {{template "csrf" $}}
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button type="submit" class="btn-danger">Revoke</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <div class="empty" id="login-tokens-empty">No tokens yet.</div>
+  {{end}}
+</div>
+
+{{end}}
+{{end}}

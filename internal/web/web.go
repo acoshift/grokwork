@@ -35,6 +35,7 @@ import (
 	"github.com/acoshift/grokwork/internal/history"
 	"github.com/acoshift/grokwork/internal/identity"
 	"github.com/acoshift/grokwork/internal/linear"
+	"github.com/acoshift/grokwork/internal/logintoken"
 	"github.com/acoshift/grokwork/internal/markdown"
 	"github.com/acoshift/grokwork/internal/reviewstore"
 	"github.com/acoshift/grokwork/internal/sessionstore"
@@ -66,6 +67,9 @@ type Server struct {
 	// second one over the same file — see bot.SetIdentity.
 	identity  *identity.Store
 	apiTokens *apitoken.Store
+	// loginTokens are browser login credentials. They are not apiTokens and
+	// are never accepted as Authorization: Bearer.
+	loginTokens *logintoken.Store
 	// Test injectables (nil → production defaults).
 	ghRunner  ghpr.Runner
 	gcsRunner gcs.Runner
@@ -161,7 +165,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	if _, err := tokens.BootstrapFromEnv(); err != nil {
 		fmt.Fprintf(os.Stderr, "[warn] api token bootstrap: %v\n", err)
 	}
-	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, webUsers: webUsers, audit: auditLog, deploys: deployEngine, identity: b.Identity(), apiTokens: tokens}
+	loginTokens, err := logintoken.New(cfg.DataDir)
+	if err != nil {
+		panic("web: login tokens: " + err.Error())
+	}
+	s := &Server{cfg: cfg, sessions: sessions, history: hist, bot: b, webSessions: webSess, webUsers: webUsers, audit: auditLog, deploys: deployEngine, identity: b.Identity(), apiTokens: tokens, loginTokens: loginTokens}
 	s.wireDeployNotifier()
 	app := hime.New()
 	app.Address(cfg.ListenAddr())
@@ -198,6 +206,8 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"account":                            "/account",
 		"account.link":                       "/account/link",
 		"account.unlink":                     "/account/unlink",
+		"account.tokens":                     "/account/tokens",
+		"account.tokens.revoke":              "/account/tokens/revoke",
 		"history":                            "/history",
 		"history.thread":                     "/history/",
 		"sessions":                           "/sessions",
@@ -374,6 +384,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("project_config_danger", "layout.tmpl", "project_config_danger.tmpl", "project_config_shared.tmpl")
 	tp.ParseFiles("login", "layout.tmpl", "login.tmpl")
 	tp.ParseFiles("account", "layout.tmpl", "account.tmpl")
+	tp.ParseFiles("login_tokens", "layout.tmpl", "login_tokens.tmpl")
 	tp.ParseFiles("issues", "layout.tmpl", "issues.tmpl")
 	tp.ParseFiles("issue_new", "layout.tmpl", "issue_new.tmpl")
 	tp.ParseFiles("issue_detail", "layout.tmpl", "issue_detail.tmpl")
@@ -409,6 +420,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	registerPWA(mux)
 	s.registerAPI(mux)
 	mux.Handle("GET /login", hime.Handler(s.loginPage))
+	mux.Handle("POST /login", hime.Handler(s.loginWithToken))
 	// {provider} matches exactly one segment, so /auth/discord/callback cannot
 	// be swallowed by /auth/{provider}; an unknown key 404s in the handler.
 	mux.Handle("GET /auth/{provider}", hime.Handler(s.oauthStart))
@@ -425,6 +437,11 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /account", s.requireAuth(hime.Handler(s.accountPage)))
 	mux.Handle("POST /account/link", s.requireAccount(hime.Handler(s.postAccountLink)))
 	mux.Handle("POST /account/unlink", s.requireAccount(hime.Handler(s.postAccountUnlink)))
+	// Login tokens are self-service, like /account, except a session that
+	// itself came from a token cannot open the page or change tokens.
+	mux.Handle("GET /account/tokens", s.requireLoginTokenManager(hime.Handler(s.loginTokensPage)))
+	mux.Handle("POST /account/tokens", s.requireLoginTokenManager(hime.Handler(s.postLoginTokenCreate)))
+	mux.Handle("POST /account/tokens/revoke", s.requireLoginTokenManager(hime.Handler(s.postLoginTokenRevoke)))
 
 	// Authenticated pages + SSE + partials
 	mux.Handle("GET /{$}", s.requireAuth(hime.Handler(s.home)))
@@ -879,6 +896,13 @@ type pageData struct {
 	// explaining the expiry, which is worth saying exactly when it bites and is
 	// noise on an account with no GitHub login at all.
 	AccountHandleStale bool
+	// Login tokens (/account/tokens). The secret is set only on the create
+	// response. TokenSession hides the page from a session that logged in
+	// with a token. LoginTokensUnavailable is the auth-off explanation.
+	LoginTokenRows         []loginTokenRow
+	LoginTokenSecret       string
+	LoginTokensUnavailable bool
+	TokenSession           bool
 	// Workflow read UI (PR4–7)
 	Project             string
 	RepoCatalog         []config.GitHubRepoRef
@@ -1203,6 +1227,7 @@ func (s *Server) basePage(ctx *hime.Context) pageData {
 		d.UserID = sess.DiscordUserID
 		d.UserAvatar = sess.AvatarURL
 		d.UserRole = string(sess.Role)
+		d.TokenSession = sess.TokenLogin
 		d.IsAdmin = config.RoleAtLeast(sess.Role, config.WebRoleAdmin)
 		// Gate UI by role (handlers still enforce). Member+ for writes/merge/sessions.
 		if !config.RoleAtLeast(sess.Role, config.WebRoleMember) {

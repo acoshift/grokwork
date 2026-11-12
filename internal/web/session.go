@@ -63,6 +63,10 @@ type Session struct {
 	Role          config.WebRole `json:"role"`
 	CSRF          string         `json:"csrf"`
 	ExpiresAt     time.Time      `json:"expiresAt"`
+	// TokenLogin is set when this session was established by a login token.
+	// It is stored on the session record so a sliding renew and a process
+	// restart keep the management page closed to it for the session's whole life.
+	TokenLogin bool `json:"tokenLogin,omitzero"`
 }
 
 type sessionFile struct {
@@ -133,6 +137,15 @@ func (st *sessionStore) saveLocked() error {
 }
 
 func (st *sessionStore) Create(discordUserID, displayName, avatarURL string, role config.WebRole) (*Session, error) {
+	return st.create(discordUserID, displayName, avatarURL, role, false)
+}
+
+// CreateTokenLogin is Create for a session established by a login token.
+func (st *sessionStore) CreateTokenLogin(discordUserID, displayName, avatarURL string, role config.WebRole) (*Session, error) {
+	return st.create(discordUserID, displayName, avatarURL, role, true)
+}
+
+func (st *sessionStore) create(discordUserID, displayName, avatarURL string, role config.WebRole, tokenLogin bool) (*Session, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.sessions == nil {
@@ -154,6 +167,7 @@ func (st *sessionStore) Create(discordUserID, displayName, avatarURL string, rol
 		Role:          role,
 		CSRF:          csrf,
 		ExpiresAt:     time.Now().Add(sessionTTL),
+		TokenLogin:    tokenLogin,
 	}
 	st.sessions[id] = s
 	if err := st.saveLocked(); err != nil {

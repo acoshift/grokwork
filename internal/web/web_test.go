@@ -163,6 +163,10 @@ func TestPagesRender(t *testing.T) {
 		// page says so instead of rendering buttons that would refuse.
 		{"/account", `id="page-account"`},
 		{"/account", `id="account-anonymous"`},
+		// Login tokens are unavailable with web auth off, the same way account
+		// management is inert: the page says so and offers no create form.
+		{"/account/tokens", `id="page-login-tokens"`},
+		{"/account/tokens", `id="login-tokens-unavailable"`},
 		// Cross-project deploy board: renders with no runs on disk at all.
 		{"/deploys", `id="page-deploys-board"`},
 		{"/deploys", `id="live-deploys-board"`},

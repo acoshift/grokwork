@@ -19,12 +19,23 @@
   {{end}}
   {{if not .LoginProviders}}
   {{/* Reachable by misconfiguration (a credential removed from the environment
-       at runtime), and it locks everyone out — so say what is missing rather
-       than render a gate with no door. */}}
+       at runtime). Say what is missing rather than offer a provider button
+       that cannot start. A pasted login token stays available. */}}
   <p class="login-empty">No login providers are configured. An administrator must set
     <code>discordClientId</code>/<code>discordClientSecret</code> or
     <code>webAuth.providers</code> in <code>config.json</code>, plus
     <code>webPublicBaseURL</code>.</p>
   {{end}}
+  {{if .LoginProviders}}
+  <p class="login-or" id="login-token-or">or</p>
+  {{end}}
+  {{/* Full navigation: the response sets the session cookie, which a boosted
+       swap would not apply as a document load. */}}
+  <form class="login-token" id="login-token-form" method="post" action="{{route "login"}}" hx-boost="false">
+    {{if .LoginNext}}<input type="hidden" name="next" value="{{.LoginNext}}">{{end}}
+    <label for="login-token">Login token</label>
+    <input type="password" name="token" id="login-token" autocomplete="off" spellcheck="false" required>
+    <button type="submit" class="btn" id="login-token-submit">Log in with token</button>
+  </form>
 </div>
 {{end}}

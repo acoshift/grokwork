@@ -571,6 +571,37 @@
     .login-empty code {
       font-size: 0.82em;
     }
+    .login-or {
+      margin: 1.15rem 0 0.85rem;
+      font-size: 0.72rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted-soft);
+    }
+    .login-token {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.55rem;
+      margin: 0;
+      text-align: left;
+    }
+    .login-token label {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .login-token input {
+      width: 100%;
+      height: 2.7rem;
+    }
+    .login-token button.btn {
+      width: 100%;
+      height: 2.9rem;
+      background: var(--surface);
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
     @keyframes loginRise {
       from { opacity: 0; transform: translateY(0.6rem); }
       to   { opacity: 1; transform: none; }
@@ -1586,6 +1617,8 @@
       border-color: hsl(var(--red-500) / 25%);
       color: var(--danger);
     }
+    /* The one-time login token is a long unbroken string. */
+    #login-token-once { overflow-wrap: anywhere; }
 
     /* ── Tables ──────────────────────────────────────────────────────── */
     /* Horizontal scroll shell so wide tables never blow out the page. */
@@ -5805,6 +5838,9 @@
                      inside the identity block of the phone menu — a row of its
                      own would add a full 1rem-gap row to the desktop footer. */}}
                 <a class="side-user-account" href="{{route "account"}}">Account</a>
+                {{if not .TokenSession}}
+                <a class="side-user-account" href="{{route "account.tokens"}}" id="nav-login-tokens">Login tokens</a>
+                {{end}}
               </span>
               <form method="post" action="{{route "logout"}}" class="logout-form" hx-boost="false">
                 {{if .CSRF}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}

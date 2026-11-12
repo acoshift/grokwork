@@ -36,46 +36,53 @@ const (
 	ActionWorktreePruneIdle      = "worktree.prune_idle"
 	ActionLoginFail              = "login.fail"
 	ActionLoginOK                = "login.ok"
-	ActionIssueComment           = "issue.comment"
-	ActionIssueClose             = "issue.close"
-	ActionIssueCreate            = "issue.create"
-	ActionIssueChecklistLink     = "issue.checklist.link"  // bot appended a session link to a tasklist line
-	ActionIssueChecklistCheck    = "issue.checklist.check" // bot flipped a tasklist box after all session PRs merged
-	ActionPRComment              = "pr.comment"
-	ActionPRClose                = "pr.close"
-	ActionPRMerge                = "pr.merge"
-	ActionPRReviewSubmit         = "pr.review.submit"
-	ActionPRReviewRequest        = "pr.review.request"
-	ActionPRReviewCancel         = "pr.review.cancel"
-	ActionPRReviewGitHub         = "pr.review.github" // real gh pr review as the host gh user; unlike ActionPRReviewSubmit it can satisfy branch protection
-	ActionPRImport               = "pr.import"        // background importer bound a GitHub PR grokwork did not open
-	ActionSessionStart           = "session.start"    // Fix with Grok / web session start
-	ActionSessionCancel          = "session.cancel"
-	ActionSessionReset           = "session.reset"
-	ActionSessionDequeue         = "session.dequeue"
-	ActionSessionLabel           = "session.label"
-	ActionSessionGoal            = "session.goal"
-	ActionSessionClaim           = "session.claim"
-	ActionSessionHandOff         = "session.handoff"
-	ActionSessionWatch           = "session.watch"
-	ActionSessionUnwatch         = "session.unwatch"
-	ActionSessionIssueLink       = "session.issue.link"   // bind a GitHub/Linear ticket to a unit
-	ActionSessionIssueUnlink     = "session.issue.unlink" // drop one binding (or all, detail.scope=all)
-	ActionErrorResolve           = "error.resolve"        // web write-back: provider status resolved|open
-	ActionCommitReviewStart      = "commit.review.start"
-	ActionPRReviewStart          = "pr.review.start" // agentic PR review → PR comment
-	ActionPRAskStart             = "pr.ask.start"    // throwaway in-page PR Q&A; never a session list row
-	ActionGitFetch               = "git.fetch"
-	ActionGitCherryPick          = "git.cherrypick"          // cherry-pick SHAs onto an allowlisted target branch and push
-	ActionGitCherryPickContinue  = "git.cherrypick.continue" // resolve conflict and continue/push
-	ActionGitCherryPickAbort     = "git.cherrypick.abort"
-	ActionGitCherryPickSuggest   = "git.cherrypick.suggest" // one-shot conflict resolution, no session
-	ActionGitForcePush           = "git.forcepush"          // point an allowlisted target branch at one SHA (create, FF, or lease)
-	ActionGitSync                = "git.sync"               // fetch + merge origin primary into a unit branch
-	ActionGitCheckpoint          = "git.checkpoint"         // bot-owned local checkpoint ref
-	ActionGitCheckpointRestore   = "git.checkpoint_restore" // hard reset a unit worktree to a checkpoint
-	ActionVerifyRun              = "verify.run"             // project verify commands (shell, no model)
-	ActionAccessDeny             = "access.deny"            // refused before any command ran
+	// Browser login tokens (internal/logintoken). Distinct from ActionLoginOK,
+	// which is an OAuth callback, and from ActionAPITokenMint, which is a
+	// machine credential. The plaintext secret is never an event field.
+	ActionLoginTokenOK          = "login.token.ok"
+	ActionLoginTokenFail        = "login.token.fail"
+	ActionLoginTokenCreate      = "login.token.create"
+	ActionLoginTokenRevoke      = "login.token.revoke"
+	ActionIssueComment          = "issue.comment"
+	ActionIssueClose            = "issue.close"
+	ActionIssueCreate           = "issue.create"
+	ActionIssueChecklistLink    = "issue.checklist.link"  // bot appended a session link to a tasklist line
+	ActionIssueChecklistCheck   = "issue.checklist.check" // bot flipped a tasklist box after all session PRs merged
+	ActionPRComment             = "pr.comment"
+	ActionPRClose               = "pr.close"
+	ActionPRMerge               = "pr.merge"
+	ActionPRReviewSubmit        = "pr.review.submit"
+	ActionPRReviewRequest       = "pr.review.request"
+	ActionPRReviewCancel        = "pr.review.cancel"
+	ActionPRReviewGitHub        = "pr.review.github" // real gh pr review as the host gh user; unlike ActionPRReviewSubmit it can satisfy branch protection
+	ActionPRImport              = "pr.import"        // background importer bound a GitHub PR grokwork did not open
+	ActionSessionStart          = "session.start"    // Fix with Grok / web session start
+	ActionSessionCancel         = "session.cancel"
+	ActionSessionReset          = "session.reset"
+	ActionSessionDequeue        = "session.dequeue"
+	ActionSessionLabel          = "session.label"
+	ActionSessionGoal           = "session.goal"
+	ActionSessionClaim          = "session.claim"
+	ActionSessionHandOff        = "session.handoff"
+	ActionSessionWatch          = "session.watch"
+	ActionSessionUnwatch        = "session.unwatch"
+	ActionSessionIssueLink      = "session.issue.link"   // bind a GitHub/Linear ticket to a unit
+	ActionSessionIssueUnlink    = "session.issue.unlink" // drop one binding (or all, detail.scope=all)
+	ActionErrorResolve          = "error.resolve"        // web write-back: provider status resolved|open
+	ActionCommitReviewStart     = "commit.review.start"
+	ActionPRReviewStart         = "pr.review.start" // agentic PR review → PR comment
+	ActionPRAskStart            = "pr.ask.start"    // throwaway in-page PR Q&A; never a session list row
+	ActionGitFetch              = "git.fetch"
+	ActionGitCherryPick         = "git.cherrypick"          // cherry-pick SHAs onto an allowlisted target branch and push
+	ActionGitCherryPickContinue = "git.cherrypick.continue" // resolve conflict and continue/push
+	ActionGitCherryPickAbort    = "git.cherrypick.abort"
+	ActionGitCherryPickSuggest  = "git.cherrypick.suggest" // one-shot conflict resolution, no session
+	ActionGitForcePush          = "git.forcepush"          // point an allowlisted target branch at one SHA (create, FF, or lease)
+	ActionGitSync               = "git.sync"               // fetch + merge origin primary into a unit branch
+	ActionGitCheckpoint         = "git.checkpoint"         // bot-owned local checkpoint ref
+	ActionGitCheckpointRestore  = "git.checkpoint_restore" // hard reset a unit worktree to a checkpoint
+	ActionVerifyRun             = "verify.run"             // project verify commands (shell, no model)
+	ActionAccessDeny            = "access.deny"            // refused before any command ran
 	// Identity linking (internal/identity). A link changes which grants, threads
 	// and spend a login resolves to, so both the grant and every refusal are
 	// events — a refused link is exactly what a "someone tried to attach a login
