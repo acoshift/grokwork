@@ -94,7 +94,7 @@ func TestLiquidGlassMaterial(t *testing.T) {
 		t.Fatal("reduced motion does not disable decorative animation")
 	}
 
-	for _, sel := range []string{"aside.side::before", ".tabbar", ".pr-rail"} {
+	for _, sel := range []string{"aside.side::before", ".tabbar"} {
 		rule, found := ruleWithSelector(blocks, sel)
 		if !found {
 			t.Fatalf("missing chrome rule %s", sel)
@@ -102,6 +102,32 @@ func TestLiquidGlassMaterial(t *testing.T) {
 		if !hasGlassMaterial(rule) {
 			t.Fatalf("%s is not a translucent blurred material with a specular highlight", sel)
 		}
+	}
+	// The phone action sheet is a reading surface: its cards drop their own
+	// fill, so a glass tint leaves the page readable through them. Same rule
+	// as dialogs. The desktop rail is only a column and has no fill of its own.
+	var sheetOpaque, headOpaque bool
+	for _, rule := range rulesWithSelector(blocks, ".pr-rail") {
+		if strings.Contains(rule, "backdrop-filter") {
+			t.Fatal("action sheet must not blur; the page shows through the cards")
+		}
+		if strings.Contains(rule, "background: var(--surface)") {
+			sheetOpaque = true
+		}
+	}
+	if !sheetOpaque {
+		t.Fatal("phone action sheet must be an opaque surface")
+	}
+	for _, rule := range rulesWithSelector(blocks, ".rail-sheet-head") {
+		if strings.Contains(rule, "backdrop-filter") {
+			t.Fatal("action sheet header must not blur")
+		}
+		if strings.Contains(rule, "background: var(--surface)") {
+			headOpaque = true
+		}
+	}
+	if !headOpaque {
+		t.Fatal("action sheet header must be an opaque surface")
 	}
 	tabbar, found := ruleWithSelector(blocks, ".tabbar")
 	if !found || !strings.Contains(tabbar, "border-radius: var(--glass-radius)") || !strings.Contains(tabbar, "var(--side-inset)") {

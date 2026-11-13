@@ -5376,12 +5376,12 @@
         overscroll-behavior: contain;
         gap: 0.7rem;
         padding: 0 0.8rem calc(1rem + env(safe-area-inset-bottom));
-        background: var(--glass-tint);
-        border-top: 1px solid var(--glass-edge);
+        /* Opaque on purpose. The groups inside drop their own fill, so a
+           glass tint leaves the page readable through every action card. */
+        background: var(--surface);
+        border-top: 1px solid var(--border);
         border-radius: var(--glass-radius) var(--glass-radius) 0 0;
-        box-shadow: var(--glass-highlight), 0 -12px 32px -16px hsl(var(--black) / 45%);
-        -webkit-backdrop-filter: var(--glass-material);
-        backdrop-filter: var(--glass-material);
+        box-shadow: 0 -12px 32px -16px hsl(var(--black) / 45%);
         transform: translateY(100%);
         visibility: hidden;
         transition: transform 0.26s cubic-bezier(0.32, 0.72, 0, 1),
@@ -5404,11 +5404,10 @@
         z-index: 1;
         margin: 0 -0.8rem;
         padding: 0.45rem 0.9rem 0.55rem;
-        background: var(--glass-tint-strong);
-        border-bottom: 1px solid var(--glass-edge);
-        box-shadow: var(--glass-highlight);
-        -webkit-backdrop-filter: var(--glass-material);
-        backdrop-filter: var(--glass-material);
+        /* Same fill as the sheet. A second glass layer lets scrolling
+           actions show through the grip and the title. */
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
       }
       .rail-sheet-grip {
         grid-column: 1 / -1;
