@@ -196,6 +196,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	app.Routes(hime.Routes{
 		"home":                               "/",
 		"login":                              "/login",
+		"login.token":                        "/login/token",
 		"auth.discord":                       "/auth/discord",
 		"auth.discord.callback":              "/auth/discord/callback",
 		"auth.google":                        "/auth/google",
@@ -420,6 +421,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	registerPWA(mux)
 	s.registerAPI(mux)
 	mux.Handle("GET /login", hime.Handler(s.loginPage))
+	mux.Handle("GET /login/token", hime.Handler(s.loginTokenPage))
 	mux.Handle("POST /login", hime.Handler(s.loginWithToken))
 	// {provider} matches exactly one segment, so /auth/discord/callback cannot
 	// be swallowed by /auth/{provider}; an unknown key 404s in the handler.
@@ -884,6 +886,9 @@ type pageData struct {
 	// that are fully configured. Empty renders the misconfiguration notice
 	// instead of a gate with no way through it.
 	LoginProviders []loginProviderView
+	// LoginTokenStep is the second screen of token login: the field, not the
+	// button. The first screen stays a column of actions.
+	LoginTokenStep bool
 	// Account page (/account): the logins that resolve to this account, and the
 	// configured providers it has none from yet. AccountLinkingOn is false when
 	// no identity store is installed, which turns the page into a read-only

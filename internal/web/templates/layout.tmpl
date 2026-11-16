@@ -571,12 +571,33 @@
     .login-empty code {
       font-size: 0.82em;
     }
-    .login-or {
-      margin: 1.15rem 0 0.85rem;
-      font-size: 0.72rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--muted-soft);
+    /* Same pill as the provider row. a.btn already paints it as a surface
+       button, so it stays quieter than the first provider. With no provider
+       at all it is the only action and takes the primary ink — :has is the
+       same hook the phone sheet uses, and the focus ring has to be restated
+       because this rule's box-shadow outranks .btn:focus-visible. */
+    a.btn.login-token-go {
+      width: 100%;
+      height: 2.9rem;
+      margin-top: 0.6rem;
+      animation: loginRise 0.6s cubic-bezier(0.22, 0.8, 0.36, 1) 0.52s both;
+    }
+    .login:not(:has(a.login-cta)) a.btn.login-token-go {
+      margin-top: 1rem;
+      background: var(--button);
+      color: var(--button-fg);
+      border-color: transparent;
+      box-shadow: var(--glass-shadow);
+      animation-delay: 0.4s;
+    }
+    .login:not(:has(a.login-cta)) a.btn.login-token-go:hover {
+      background: var(--button-hover);
+      color: var(--button-fg);
+      border-color: transparent;
+      box-shadow: var(--glass-shadow), 0 0 0 4px var(--ring);
+    }
+    .login:not(:has(a.login-cta)) a.btn.login-token-go:focus-visible {
+      box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--focus-border);
     }
     .login-token {
       width: 100%;
@@ -586,6 +607,7 @@
       gap: 0.55rem;
       margin: 0;
       text-align: left;
+      animation: loginRise 0.6s cubic-bezier(0.22, 0.8, 0.36, 1) 0.4s both;
     }
     .login-token label {
       font-size: 0.78rem;
@@ -598,9 +620,30 @@
     .login-token button.btn {
       width: 100%;
       height: 2.9rem;
-      background: var(--surface);
+      background: var(--button);
+      color: var(--button-fg);
+      border-color: transparent;
+      box-shadow: var(--glass-shadow);
+    }
+    .login-token button.btn:hover {
+      background: var(--button-hover);
+      color: var(--button-fg);
+      border-color: transparent;
+      box-shadow: var(--glass-shadow), 0 0 0 4px var(--ring);
+    }
+    .login-token button.btn:focus-visible {
+      box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--focus-border);
+    }
+    a.login-back {
+      margin-top: 1rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      text-decoration: none;
+      animation: loginRise 0.6s cubic-bezier(0.22, 0.8, 0.36, 1) 0.55s both;
+    }
+    a.login-back:hover {
       color: var(--text);
-      border-color: var(--border-strong);
+      text-decoration: underline;
     }
     @keyframes loginRise {
       from { opacity: 0; transform: translateY(0.6rem); }

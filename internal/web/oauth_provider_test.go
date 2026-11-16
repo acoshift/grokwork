@@ -226,11 +226,18 @@ func TestLoginPageRendersOnlyConfiguredProviders(t *testing.T) {
 	if strings.Contains(body, "No login providers are configured") {
 		t.Error("misconfiguration notice must not show when providers exist")
 	}
+	if strings.Contains(body, `name="token"`) || strings.Contains(body, `id="login-token-form"`) {
+		t.Error("token field must stay off the first screen")
+	}
+	if !strings.Contains(body, `id="login-with-token"`) || !strings.Contains(body, `href="/login/token?next=%2Fconfig"`) {
+		t.Error("token button must carry next onto the token page")
+	}
 }
 
 // Zero usable providers is reachable by misconfiguration (an env-sourced secret
 // unset while the process runs). The gate explains itself and renders no
-// provider button. A pasted login token is not a provider, so that form stays.
+// provider button. A pasted login token is not a provider, so the token
+// button stays. The field is the next page.
 func TestLoginPageWithNoProvidersConfigured(t *testing.T) {
 	t.Setenv("GITHUB_CLIENT_SECRET", "env-github-secret")
 	f := newAuthFixture(t, func(cfg *config.Config) {
@@ -256,8 +263,11 @@ func TestLoginPageWithNoProvidersConfigured(t *testing.T) {
 	if strings.Contains(body, `class="btn login-cta"`) {
 		t.Error("no provider is usable; no provider login button may render")
 	}
-	if !strings.Contains(body, `id="login-token"`) {
+	if !strings.Contains(body, `id="login-with-token"`) || !strings.Contains(body, `href="/login/token" hx-boost="false"`) {
 		t.Error("token login stays available when no provider is configured")
+	}
+	if strings.Contains(body, `name="token"`) || strings.Contains(body, `type="password"`) {
+		t.Error("token field must stay off the first screen")
 	}
 	if !strings.Contains(body, "No login providers are configured") {
 		t.Errorf("expected the misconfiguration notice, got:\n%s", body)

@@ -29,21 +29,75 @@ func TestLoginTokenPageAndAdmit(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		`id="page-login"`,
-		`id="login-token-form"`,
-		`hx-boost="false"`,
-		`name="token"`,
-		`id="login-token"`,
-		`type="password"`,
+		`id="login-with-token"`,
+		`href="/login/token" hx-boost="false"`,
+		`>Log in with token</a>`,
 		`id="login-discord"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("login page missing %q", want)
 		}
 	}
+	for _, unwanted := range []string{
+		`id="login-token-form"`,
+		`name="token"`,
+		`type="password"`,
+		`id="login-token-or"`,
+		`id="page-login-token"`,
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("first screen must not contain %q", unwanted)
+		}
+	}
+
+	tokenReq := httptest.NewRequest(http.MethodGet, "/login/token?next="+url.QueryEscape("/config"), nil)
+	tokenPage := httptest.NewRecorder()
+	h.ServeHTTP(tokenPage, tokenReq)
+	if tokenPage.Code != http.StatusOK {
+		t.Fatalf("token page status=%d", tokenPage.Code)
+	}
+	tokenBody := tokenPage.Body.String()
+	for _, want := range []string{
+		`id="page-login-token"`,
+		`id="login-token-form"`,
+		`hx-boost="false"`,
+		`name="token"`,
+		`id="login-token"`,
+		`type="password"`,
+		`id="login-token-submit"`,
+		`name="next" value="/config"`,
+		`id="login-token-back"`,
+		`href="/login?next=%2Fconfig" hx-boost="false"`,
+	} {
+		if !strings.Contains(tokenBody, want) {
+			t.Fatalf("token page missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{
+		`id="login-discord"`,
+		`id="login-with-token"`,
+		`id="page-login"`,
+	} {
+		if strings.Contains(tokenBody, unwanted) {
+			t.Fatalf("token page must not contain %q", unwanted)
+		}
+	}
+	unsafe := httptest.NewRecorder()
+	h.ServeHTTP(unsafe, httptest.NewRequest(http.MethodGet, "/login/token?next="+url.QueryEscape("//evil.example/phish"), nil))
+	if unsafe.Code != http.StatusOK {
+		t.Fatalf("unsafe next status=%d", unsafe.Code)
+	}
+	if strings.Contains(unsafe.Body.String(), "evil.example") || strings.Contains(unsafe.Body.String(), `name="next"`) {
+		t.Fatal("unsafe next survived onto the token page")
+	}
 
 	sid, _, err := f.srv.LoginAs("member-1", "Member", config.WebRoleMember)
 	if err != nil {
 		t.Fatal(err)
+	}
+	authedToken := authedGet(t, h, "/login/token?next="+url.QueryEscape("/config"), sid)
+	if authedToken.Code < 300 || authedToken.Code >= 400 || locationPath(t, authedToken) != "/config" {
+		t.Fatalf("signed-in token page status=%d location=%q", authedToken.Code, authedToken.Header().Get("Location"))
 	}
 	secret := createLoginToken(t, h, sid, csrfFor(t, h, sid), "")
 	wantRole, ok := f.cfg.ResolveWebRoleForConfig("member-1")
@@ -116,7 +170,7 @@ func TestLoginTokenRejectsUnknownRevokedExpiredAndRoleless(t *testing.T) {
 	unknown := "gl_0123456789abcdef_THISSECRETMUSTNOTBELOGGED"
 	w := postLoginToken(t, h, unknown, "/config")
 	assertLoginRefused(t, h, w, unknown)
-	if path := locationPath(t, w); path == "/config" || !strings.HasPrefix(path, "/login") {
+	if path := locationPath(t, w); path == "/config" || !strings.HasPrefix(path, "/login/token") {
 		t.Fatalf("unknown token location=%q", path)
 	}
 
@@ -192,7 +246,7 @@ func TestLoginTokenRejectsUnknownRevokedExpiredAndRoleless(t *testing.T) {
 	roleless := createLoginToken(t, h, rolelessSID, csrfFor(t, h, rolelessSID), "")
 	w = postLoginToken(t, h, roleless, "/config")
 	assertLoginRefused(t, h, w, roleless)
-	if path := locationPath(t, w); !strings.HasPrefix(path, "/login") {
+	if path := locationPath(t, w); !strings.HasPrefix(path, "/login/token") {
 		t.Fatalf("role-less location=%q", path)
 	}
 
@@ -472,6 +526,11 @@ func TestLoginTokenAuthOff(t *testing.T) {
 	if path := locationPath(t, login); path != "/" {
 		t.Fatalf("auth-off login path=%q", path)
 	}
+	gate := httptest.NewRecorder()
+	h.ServeHTTP(gate, httptest.NewRequest(http.MethodGet, "/login/token", nil))
+	if gate.Code < 300 || gate.Code >= 400 || locationPath(t, gate) != "/" {
+		t.Fatalf("auth-off token page status=%d location=%q", gate.Code, gate.Header().Get("Location"))
+	}
 }
 
 func postLoginToken(t *testing.T, h http.Handler, token, next string) *httptest.ResponseRecorder {
@@ -608,8 +667,24 @@ func assertLoginRefused(t *testing.T, h http.Handler, w *httptest.ResponseRecord
 	if strings.Contains(loc, secret) || strings.Contains(w.Body.String(), secret) {
 		t.Fatal("refused login echoed the token")
 	}
-	if !strings.HasPrefix(locationPath(t, w), "/login") {
+	path := locationPath(t, w)
+	if !strings.HasPrefix(path, "/login/token") {
 		t.Fatalf("refused login location=%q", loc)
+	}
+	page := httptest.NewRecorder()
+	h.ServeHTTP(page, httptest.NewRequest(http.MethodGet, path, nil))
+	if page.Code != http.StatusOK {
+		t.Fatalf("token page after refusal status=%d", page.Code)
+	}
+	pageBody := page.Body.String()
+	if strings.Contains(pageBody, secret) {
+		t.Fatal("token page echoed the refused token")
+	}
+	if !strings.Contains(pageBody, `id="page-login-token"`) || !strings.Contains(pageBody, `id="login-token-form"`) {
+		t.Fatal("refused login did not return to the token page")
+	}
+	if strings.Contains(pageBody, `id="login-with-token"`) {
+		t.Fatal("refused login returned to the first screen")
 	}
 	follow := httptest.NewRecorder()
 	h.ServeHTTP(follow, httptest.NewRequest(http.MethodGet, "/config", nil))

@@ -68,7 +68,8 @@ func (s *Server) requireLoginTokenManager(next http.Handler) http.Handler {
 }
 
 // loginWithToken is POST /login. The posted secret is not written to the
-// audit row, the redirect, or an error string.
+// audit row, the redirect, or an error string. A refusal returns to the
+// token page, where the field is — the first screen has no input to correct.
 func (s *Server) loginWithToken(ctx *hime.Context) error {
 	if !s.cfg.WebAuthEnabled() {
 		return ctx.Redirect("/")
@@ -79,7 +80,7 @@ func (s *Server) loginWithToken(ctx *hime.Context) error {
 		if next != "/" {
 			q["next"] = next
 		}
-		return ctx.RedirectTo("login", q)
+		return ctx.RedirectTo("login.token", q)
 	}
 	raw := strings.TrimSpace(ctx.PostFormValue("token"))
 	if raw == "" {

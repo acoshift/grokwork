@@ -220,18 +220,29 @@ func safeLocalNext(next string) string {
 }
 
 func (s *Server) loginPage(ctx *hime.Context) error {
+	return s.renderLogin(ctx, false)
+}
+
+func (s *Server) loginTokenPage(ctx *hime.Context) error {
+	return s.renderLogin(ctx, true)
+}
+
+func (s *Server) renderLogin(ctx *hime.Context, tokenStep bool) error {
 	d := s.basePage(ctx)
 	d.Title = "Log in"
 	d.IsLogin = true
 	d.SSEPath = "" // login is public; do not open authenticated SSE
 	rawNext := strings.TrimSpace(ctx.FormValue("next"))
 	d.LoginNext = safeLocalNext(rawNext)
-	if d.LoginNext == "/" && rawNext != "" && rawNext != "/" {
-		// Drop unsafe next from the login form/link entirely.
+	if d.LoginNext == "/" {
+		// Home is already where a missing next lands. The template treats any
+		// non-empty LoginNext as "put it on the link", and ?next=%2F is noise.
+		// Unsafe values also collapse to "/" here, so they stay off the link.
 		d.LoginNext = ""
 	}
 	d.Error = strings.TrimSpace(ctx.FormValue("err"))
 	d.LoginProviders = s.loginProviders()
+	d.LoginTokenStep = tokenStep
 	if s.cfg.WebAuthEnabled() {
 		if sess := s.sessionFromRequest(ctx.Request); sess != nil {
 			return ctx.Redirect(safeLocalNext(rawNext))
