@@ -1165,9 +1165,8 @@ func (b *Bot) resetThreadCore(threadID string) (msg string, err error) {
 }
 
 func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID string) (cwd, branch string, err error) {
-	cwd = proj.Cwd
 	if !b.cfg.WorktreeIsolationEnabled() {
-		return cwd, "", nil
+		return requireProjectCheckout(proj)
 	}
 
 	primary := ""
@@ -1178,7 +1177,7 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 	if e, ok := b.sessions.Get(threadID); ok && e.IsPRAsk() {
 		if !gitworktree.IsRepo(proj.Cwd) {
 			log.Printf("task: project %s is not a git repo — using main cwd", proj.Name)
-			return cwd, "", nil
+			return requireProjectCheckout(proj)
 		}
 		path, err := b.ensurePRAskCheckout(ctx, proj, threadID, e)
 		if err != nil {
@@ -1205,7 +1204,7 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 
 	if !gitworktree.IsRepo(proj.Cwd) {
 		log.Printf("task: project %s is not a git repo — using main cwd", proj.Name)
-		return cwd, "", nil
+		return requireProjectCheckout(proj)
 	}
 
 	opts := b.ensureOptsForUnit(threadID)
@@ -1246,6 +1245,17 @@ func (b *Bot) resolveRunCwd(ctx context.Context, proj projectRef, threadID strin
 		return "", "", err
 	}
 	return tree.Path, tree.Branch, nil
+}
+
+// requireProjectCheckout rejects a missing project folder before exec.
+// A missing cwd is reported as "fork/exec grok: no such file or directory".
+func requireProjectCheckout(proj projectRef) (string, string, error) {
+	st, err := os.Stat(proj.Cwd)
+	if err != nil || !st.IsDir() {
+		log.Printf("task: project %s checkout missing cwd=%s: %v", proj.Name, proj.Cwd, err)
+		return "", "", fmt.Errorf("project checkout for %s is missing", proj.Name)
+	}
+	return proj.Cwd, "", nil
 }
 
 // ensurePRAskCheckout fetches the PR head and adds a detached worktree at that

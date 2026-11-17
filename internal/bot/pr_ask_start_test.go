@@ -1,6 +1,8 @@
 package bot
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -295,5 +297,34 @@ func TestSweepPRAskDeletesIdle(t *testing.T) {
 	}
 	if len(th.Turns) != 0 {
 		t.Fatalf("history turns=%d want deleted", len(th.Turns))
+	}
+}
+
+func TestSweepPRAskKeepsProjectCheckout(t *testing.T) {
+	b, proj := testFixBot(t)
+	keep := filepath.Join(proj, "KEEP")
+	if err := os.WriteFile(keep, []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := sessionstore.Entry{
+		Project:     "app",
+		SessionKind: sessionstore.SessionKindPRAsk,
+		AskPRKey:    "acme/app#9",
+		Cwd:         proj,
+		MainCwd:     proj,
+		UpdatedAt:   time.Now().Add(-31 * 24 * time.Hour).UTC().Format(time.RFC3339),
+	}
+	if err := b.sessions.Set("w_ask_root", e); err != nil {
+		t.Fatal(err)
+	}
+	if n := b.sweepPRAskUnits(); n != 1 {
+		t.Fatalf("swept %d", n)
+	}
+	if _, ok := b.sessions.Get("w_ask_root"); ok {
+		t.Fatal("entry still present")
+	}
+	body, err := os.ReadFile(keep)
+	if err != nil || string(body) != "keep\n" {
+		t.Fatalf("project checkout was removed: %v %q", err, body)
 	}
 }

@@ -583,6 +583,72 @@ func TestRemoveWebManagedBranch(t *testing.T) {
 	}
 }
 
+func TestRemoveRefusesProjectCheckout(t *testing.T) {
+	// A multi-repo project folder is not a git repo. PR-ask cleanup stored that
+	// folder as the session cwd and Remove fell through to os.RemoveAll.
+	ctx := t.Context()
+	parent := t.TempDir()
+	repo := filepath.Join(parent, "platform")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepoAt(t, repo)
+	keep := filepath.Join(parent, "KEEP")
+	if err := os.WriteFile(keep, []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sibling := filepath.Join(parent, "hah-landing")
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initGitRepoAt(t, sibling)
+
+	if err := Remove(ctx, parent, parent, ""); err == nil {
+		t.Fatal("expected refuse to remove the project folder")
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("project folder was deleted: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".git")); err != nil {
+		t.Fatalf("nested checkout was deleted: %v", err)
+	}
+
+	if err := Remove(ctx, repo, parent, ""); err == nil {
+		t.Fatal("expected refuse to remove a parent of the checkout")
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("parent of checkout was deleted: %v", err)
+	}
+
+	if err := Remove(ctx, repo, sibling, ""); err == nil {
+		t.Fatal("expected refuse to remove a sibling checkout")
+	}
+	if _, err := os.Stat(filepath.Join(sibling, ".git")); err != nil {
+		t.Fatalf("sibling checkout was deleted: %v", err)
+	}
+
+	if err := Remove(ctx, repo, repo, ""); err == nil {
+		t.Fatal("expected refuse to remove the main checkout")
+	}
+	if _, err := os.Stat(filepath.Join(repo, "README")); err != nil {
+		t.Fatalf("main checkout was deleted: %v", err)
+	}
+
+	sub := filepath.Join(repo, "pkg")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "keep.go"), []byte("package pkg\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Remove(ctx, repo, sub, ""); err == nil {
+		t.Fatal("expected refuse to remove a directory inside the checkout")
+	}
+	if _, err := os.Stat(filepath.Join(sub, "keep.go")); err != nil {
+		t.Fatalf("directory inside the checkout was deleted: %v", err)
+	}
+}
+
 func TestRemoveRefusesUnprotectedBranch(t *testing.T) {
 	repo := initTestRepo(t)
 	ctx := context.Background()
@@ -689,6 +755,12 @@ func TestAddDetachedAtCommit(t *testing.T) {
 func initTestRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	initGitRepoAt(t, dir)
+	return dir
+}
+
+func initGitRepoAt(t *testing.T, dir string) {
+	t.Helper()
 	run := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
@@ -708,5 +780,4 @@ func initTestRepo(t *testing.T) string {
 	}
 	run("add", "README")
 	run("commit", "-m", "init")
-	return dir
 }

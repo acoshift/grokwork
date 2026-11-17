@@ -659,7 +659,8 @@ func (b *Bot) deletePRAskUnit(threadID string, e sessionstore.Entry) error {
 	if path == "" && b.cfg != nil {
 		path = gitworktree.PRAskPath(b.cfg.DataDir, e.Project, threadID)
 	}
-	if mainCwd != "" && path != "" {
+	// Cwd on a multi-repo project is the project folder. That is not a worktree.
+	if mainCwd != "" && path != "" && !gitworktree.ContainsCheckout(path, mainCwd) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		if rmErr := gitworktree.Remove(ctx, mainCwd, path, ""); rmErr != nil {
 			log.Printf("warn: pr-ask checkout remove thread=%s: %v", threadID, rmErr)

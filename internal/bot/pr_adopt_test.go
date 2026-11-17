@@ -229,6 +229,41 @@ func TestResolveRunCwdContinuesWhenPRBranchCheckedOut(t *testing.T) {
 	}
 }
 
+func TestResolveRunCwdMissingProjectCheckout(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "gone")
+	cfg := &config.Config{
+		GrokBin:           "false",
+		Projects:          config.PathProjects(map[string]string{"healthathome": missing}),
+		Channels:          map[string]string{"ch1": "healthathome"},
+		DataDir:           filepath.Join(dir, "data"),
+		ConfigPath:        filepath.Join(dir, "config.json"),
+		WorktreeIsolation: new(true),
+		MaxTurns:          5,
+		TimeoutMs:         5000,
+		Yolo:              new(true),
+	}
+	store, err := sessionstore.New(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hist, err := history.New(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := New(cfg, store, hist)
+	cwd, branch, err := b.resolveRunCwd(t.Context(), projectRef{Name: "healthathome", Cwd: missing}, "w_missing")
+	if err == nil || err.Error() != "project checkout for healthathome is missing" {
+		t.Fatalf("err=%v", err)
+	}
+	if cwd != "" || branch != "" {
+		t.Fatalf("cwd=%q branch=%q", cwd, branch)
+	}
+	if strings.Contains(err.Error(), missing) {
+		t.Fatalf("error leaks path: %v", err)
+	}
+}
+
 func TestResolveRunCwdContinuesInProjectCheckout(t *testing.T) {
 	dir := t.TempDir()
 	proj := filepath.Join(dir, "proj")

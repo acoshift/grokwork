@@ -493,6 +493,10 @@ func Remove(ctx context.Context, repo, path, branch string) error {
 }
 
 // removeWorktreeAtPath force-removes a linked worktree directory if it exists.
+// git worktree remove fails for the project folder itself (a multi-repo parent
+// is not a repo, and the main checkout is not a linked worktree). The RemoveAll
+// fallback must not run there: a PR-ask whose cwd is that folder would delete
+// the whole project.
 func removeWorktreeAtPath(ctx context.Context, repo, path string) error {
 	if path == "" {
 		return nil
@@ -500,7 +504,13 @@ func removeWorktreeAtPath(ctx context.Context, repo, path string) error {
 	if _, err := os.Stat(path); err != nil {
 		return nil
 	}
+	if ContainsCheckout(path, repo) || insideCheckout(repo, path) {
+		return fmt.Errorf("refuse to remove %s: it is the checkout at %s", path, repo)
+	}
 	if err := runGit(ctx, repo, "worktree", "remove", "--force", path); err != nil {
+		if standaloneGitCheckout(path) {
+			return fmt.Errorf("refuse to delete git checkout %s (%v)", path, err)
+		}
 		_ = pruneStaleWorktrees(ctx, repo)
 		if rmErr := os.RemoveAll(path); rmErr != nil {
 			return fmt.Errorf("remove path: %v (git: %v)", rmErr, err)
@@ -508,6 +518,59 @@ func removeWorktreeAtPath(ctx context.Context, repo, path string) error {
 		_ = pruneStaleWorktrees(ctx, repo)
 	}
 	return nil
+}
+
+// ContainsCheckout reports whether path is checkout or a directory that
+// contains it. Deleting path would remove the project checkout.
+func ContainsCheckout(path, checkout string) bool {
+	path = absClean(path)
+	checkout = absClean(checkout)
+	if path == "" || checkout == "" {
+		return false
+	}
+	if path == checkout {
+		return true
+	}
+	rel, err := filepath.Rel(path, checkout)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// insideCheckout reports whether path sits inside checkout.
+func insideCheckout(checkout, path string) bool {
+	checkout = absClean(checkout)
+	path = absClean(path)
+	if checkout == "" || path == "" || checkout == path {
+		return false
+	}
+	rel, err := filepath.Rel(checkout, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func absClean(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return filepath.Clean(p)
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	return filepath.Clean(abs)
+}
+
+// standaloneGitCheckout is a normal clone (.git directory), not a linked worktree.
+func standaloneGitCheckout(path string) bool {
+	st, err := os.Lstat(filepath.Join(path, ".git"))
+	return err == nil && st.IsDir()
 }
 
 // pruneStaleWorktrees drops admin entries for worktree paths that no longer exist.
