@@ -9,9 +9,10 @@ import (
 )
 
 // BuildErrorFixPrompt is the Fix-from-error task body. The sample stack is not
-// embedded — the agent re-gets it via MCP.
-func BuildErrorFixPrompt(actorDisplay string, tracked sessionstore.TrackedError, direct bool) string {
-	return buildErrorPrompt(actorDisplay, tracked, true, direct)
+// embedded — the agent re-gets it via MCP. extra is optional user instructions;
+// empty leaves the canned body unchanged. Investigate never takes extra.
+func BuildErrorFixPrompt(actorDisplay string, tracked sessionstore.TrackedError, direct bool, extra string) string {
+	return appendExtraInstructions(buildErrorPrompt(actorDisplay, tracked, true, direct), extra)
 }
 
 // BuildErrorInvestigatePrompt is the Investigate-from-error task body (no PR contract).

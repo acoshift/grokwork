@@ -502,6 +502,9 @@ func (s *Server) postErrorStart(ctx *hime.Context, intent bot.ErrorIntent) error
 		Resource: name,
 		Model:    strings.TrimSpace(ctx.PostFormValue("model")),
 	}
+	if intent == bot.ErrorIntentFix {
+		opts.Extra = ctx.PostFormValue("extra")
+	}
 	if err := s.fillErrorStartFromProvider(ctx, project, src, &opts); err != nil {
 		s.auditAction(ctx, audit.ActionSessionStart, err, map[string]any{
 			"project": project, "provider": src, "errorId": id, "intent": string(intent),

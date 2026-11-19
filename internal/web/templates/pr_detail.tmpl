@@ -318,6 +318,7 @@
          select is hidden: the modal clones its options, and with scripting off the
          form still posts the default. */}}
     {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
+    {{template "extra_instructions" "pr-address-extra"}}
     <div class="btn-pair">
       <button type="submit" class="btn-secondary" id="btn-address-ci"
         {{- if .CanSelectModel}} data-confirm="Pushes fixes for the failing checks on this pull request. It never merges." data-confirm-title="Address CI" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address CI</button>
@@ -343,6 +344,7 @@
     {{template "csrf" $}}
     <input type="hidden" name="project" value="{{.Project}}">
     {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
+    {{template "extra_instructions" "pr-review-extra"}}
     <div class="form-actions">
       <button type="submit" class="btn-secondary" id="btn-review-pr"
         {{- if .CanSelectModel}} data-confirm="Reviews this pull request in a new session and posts the findings as one PR comment." data-confirm-title="Review PR" data-confirm-ok="Start review" data-confirm-select="model" data-confirm-select-label="Review model"{{end}}>Review in new session</button>

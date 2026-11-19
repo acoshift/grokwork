@@ -21,6 +21,10 @@ type CommitReviewOpts struct {
 	// Model overrides the configured review model for this session. Empty takes
 	// config's review model (then the task model). Requires builder-class caps.
 	Model string
+	// Extra is optional user instructions appended after the canned review task.
+	// Empty and whitespace-only leave the prompt unchanged. Not copied into the
+	// session goal.
+	Extra string
 }
 
 // StartCommitReview creates a workflow unit and enqueues an agentic commit-review task.
@@ -181,5 +185,5 @@ Rules:
 - Do not merge anything. Code fixes are optional: only implement a fix in this worktree if it is clearly warranted; otherwise filing issues is enough.
 - In your final reply: note how many review/verifier agents you used, list issue URLs (or state that none were filed), and give a short overall assessment.
 `)
-	return b.String()
+	return appendExtraInstructions(b.String(), opts.Extra)
 }

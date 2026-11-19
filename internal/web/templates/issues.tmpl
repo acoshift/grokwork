@@ -78,6 +78,14 @@
 <p class="sub">No repos in catalog. Set <span class="mono">projects.{{.Project}}.github.repos</span> on Config, or ensure git remotes exist.</p>
 {{end}}
 
+{{/* Outside the live region: a swap of #live-issues-table would wipe a textarea
+    inside the partial. form= associates this control with #issues-bulk-fix at
+    submit time, including the confirm modal's requestSubmit. */}}
+{{if and .CanStartSession .ActiveOwner .ActiveRepo}}
+<label class="extra-instructions extra-instructions-bulk" for="issues-bulk-extra">Extra instructions <span class="muted">(optional)</span>
+  <textarea id="issues-bulk-extra" name="extra" form="issues-bulk-fix" rows="2" placeholder="Anything else the agent should weigh"></textarea>
+</label>
+{{end}}
 {{/* Shell paints immediately; table loads via partial so enter is not blocked on gh. */}}
 {{if and .ActiveOwner .ActiveRepo}}
 <div class="live-region"

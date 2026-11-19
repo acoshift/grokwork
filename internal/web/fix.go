@@ -165,6 +165,7 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 
 	actor := s.fixActor(ctx)
 	model := strings.TrimSpace(ctx.PostFormValue("model"))
+	extra := ctx.PostFormValue("extra")
 	reqCtx := ctx.Context()
 	gh := s.ghRun()
 
@@ -198,6 +199,7 @@ func (s *Server) postIssuesBulkFix(ctx *hime.Context) error {
 				Body:      body,
 				ImageText: githubIssueImageText(info),
 				Model:     model,
+				Extra:     extra,
 			})
 			out[i] = bulkOne{n: n, res: res, err: startErr}
 			detail := map[string]any{
@@ -377,6 +379,10 @@ func (s *Server) postIssueStart(ctx *hime.Context, useGoal bool) error {
 
 	actor := s.fixActor(ctx)
 	model := strings.TrimSpace(ctx.PostFormValue("model"))
+	extra := ""
+	if !useGoal {
+		extra = ctx.PostFormValue("extra")
+	}
 	res, startErr := s.bot.StartFix(bot.FixStartOpts{
 		Kind:      bot.FixKindGitHub,
 		Project:   project,
@@ -392,6 +398,7 @@ func (s *Server) postIssueStart(ctx *hime.Context, useGoal bool) error {
 		ImageText: githubIssueImageText(info),
 		Model:     model,
 		UseGoal:   useGoal,
+		Extra:     extra,
 	})
 	return s.handleFixResult(ctx, startErr, res, fixRedirectContext{
 		Kind: kind, Project: project, Owner: owner, Repo: repo, Number: n, Model: model,
@@ -459,6 +466,7 @@ func (s *Server) postClickUpFix(ctx *hime.Context) error {
 		Body:       body,
 		State:      state,
 		Model:      model,
+		Extra:      ctx.PostFormValue("extra"),
 	})
 	display := customID
 	if display == "" {
@@ -518,6 +526,7 @@ func (s *Server) postLinearFix(ctx *hime.Context) error {
 		Body:       body,
 		State:      state,
 		Model:      model,
+		Extra:      ctx.PostFormValue("extra"),
 	})
 	return s.handleFixResult(ctx, startErr, res, fixRedirectContext{
 		Kind: "linear", Project: project, Identifier: identifier, Model: model,

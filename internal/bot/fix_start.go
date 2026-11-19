@@ -90,6 +90,10 @@ type FixStartOpts struct {
 	// Reuse continues the existing unit without a second `/goal` (that would be
 	// "already set" / "already complete" on a live grok session).
 	UseGoal bool
+	// Extra is optional user instructions for Fix. Implement (UseGoal) ignores
+	// it. Empty and whitespace-only leave the canned prompt unchanged. Not
+	// copied into the session goal, Discord thread title, or starter message.
+	Extra string
 }
 
 // FixStartStatus is the outcome of StartFix.
@@ -250,7 +254,7 @@ func fixTrackedIssue(opts FixStartOpts) sessionstore.TrackedIssue {
 func fixPromptFor(opts FixStartOpts, direct, reuse bool) string {
 	switch opts.Kind {
 	case FixKindLinear:
-		return BuildLinearFixPrompt(opts.Actor.DisplayName, opts.Identifier, opts.Title, opts.URL, opts.State, opts.Body, direct)
+		return BuildLinearFixPrompt(opts.Actor.DisplayName, opts.Identifier, opts.Title, opts.URL, opts.State, opts.Body, direct, opts.Extra)
 	case FixKindClickUp:
 		display := strings.TrimSpace(opts.CustomID)
 		if display == "" {
@@ -259,12 +263,12 @@ func fixPromptFor(opts FixStartOpts, direct, reuse bool) string {
 		if display == "" {
 			display = strings.TrimSpace(opts.ClickUpID)
 		}
-		return BuildClickUpFixPrompt(opts.Actor.DisplayName, display, opts.Title, opts.URL, opts.State, opts.Body, direct)
+		return BuildClickUpFixPrompt(opts.Actor.DisplayName, display, opts.Title, opts.URL, opts.State, opts.Body, direct, opts.Extra)
 	default:
 		if opts.UseGoal {
 			return BuildGitHubImplementPrompt(opts.Actor.DisplayName, opts.Owner, opts.Repo, opts.Number, opts.Title, opts.URL, opts.Body, direct, reuse)
 		}
-		return BuildGitHubFixPrompt(opts.Actor.DisplayName, opts.Owner, opts.Repo, opts.Number, opts.Title, opts.URL, opts.Body, direct)
+		return BuildGitHubFixPrompt(opts.Actor.DisplayName, opts.Owner, opts.Repo, opts.Number, opts.Title, opts.URL, opts.Body, direct, opts.Extra)
 	}
 }
 

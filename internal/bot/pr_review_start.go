@@ -32,6 +32,10 @@ type PRReviewOpts struct {
 	// Model overrides the configured review model for this session. Empty takes
 	// config's review model (then the task model). Requires builder-class caps.
 	Model string
+	// Extra is optional user instructions appended after the canned review task.
+	// Empty and whitespace-only leave the prompt unchanged. Not copied into the
+	// session goal.
+	Extra string
 }
 
 // StartPRReview creates a workflow unit and enqueues an agentic PR-review task.
@@ -236,5 +240,5 @@ Rules:
 - Do not open GitHub issues, and do not submit a GitHub approval/request-changes review — a plain comment only.
 - In your final reply: note how many review/verifier agents you used, link the comment you posted, and give a short overall assessment.
 `)
-	return b.String()
+	return appendExtraInstructions(b.String(), opts.Extra)
 }

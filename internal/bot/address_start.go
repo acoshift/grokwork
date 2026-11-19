@@ -40,6 +40,10 @@ type AddressCIOpts struct {
 	// keeps the agent it was stamped with. Empty takes the configured review
 	// model. Requires builder-class caps.
 	Model string
+	// Extra is optional user instructions appended after the canned task.
+	// Empty and whitespace-only leave the prompt unchanged. Not copied into
+	// the session goal or Discord starter.
+	Extra string
 }
 
 // StartAddressCI reuses a unit by PR or creates one, binds the PR, and StartTasks.
@@ -220,6 +224,9 @@ type AddressReviewOpts struct {
 	Conversation []ghpr.IssueComment
 	// Model applies only when this dispatch creates a session — see AddressCIOpts.
 	Model string
+	// Extra is optional user instructions appended after the canned task.
+	// Empty and whitespace-only leave the prompt unchanged.
+	Extra string
 }
 
 // StartAddressReview reuses/creates a unit, binds PR, and runs with review prompt.
@@ -452,7 +459,7 @@ func BuildAddressCIPrompt(opts AddressCIOpts) string {
 	b.WriteString("Scope: this pull request only — do not touch other PRs on multi-PR threads unless required for this fix.\n\n")
 	b.WriteString(core)
 	b.WriteString("\nDo not merge the PR.\n")
-	return b.String()
+	return appendExtraInstructions(b.String(), opts.Extra)
 }
 
 // BuildAddressReviewPrompt asks Grok to address unresolved review comments on one PR.
@@ -520,7 +527,7 @@ func BuildAddressReviewPrompt(opts AddressReviewOpts) string {
 		b.WriteString("4. Summarize what you changed for each comment.\n")
 	}
 	b.WriteString("Do not merge the PR.\n")
-	return b.String()
+	return appendExtraInstructions(b.String(), opts.Extra)
 }
 
 // Prompt budget for the PR conversation. Unlike inline threads, which are

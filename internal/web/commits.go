@@ -327,6 +327,7 @@ func (s *Server) postCommitReview(ctx *hime.Context) error {
 		Author:   author,
 		Date:     date,
 		Model:    model,
+		Extra:    ctx.PostFormValue("extra"),
 	})
 
 	detailMap := map[string]any{

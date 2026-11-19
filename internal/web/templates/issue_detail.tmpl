@@ -210,6 +210,7 @@
     {{/* Model is hidden: the confirm modal clones its options, and with scripting
          off the form still posts the Default. Reuse ignores the choice. */}}
     {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
+    {{if not $isPlan}}{{template "extra_instructions" "issue-fix-extra"}}{{end}}
     <div class="form-actions">
       {{if $isPlan}}
       <button type="submit" id="btn-implement-github"

@@ -3317,6 +3317,27 @@
       padding: 0.45rem 0 0.25rem;
     }
     .grok-dispatch label.check { min-height: 0; font-size: 0.84rem; }
+    .extra-instructions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      margin: 0;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .extra-instructions textarea {
+      min-height: 4.5rem;
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 450;
+      color: var(--text);
+    }
+    .extra-instructions-bulk {
+      display: flex;
+      max-width: 36rem;
+      margin: -0.4rem 0 1.1rem;
+    }
     /* A second dispatch in one rail group (PR rail: the Address pair, then Review)
        needs a hairline, or its note reads as more of the first one's note. */
     .grok-dispatch.dispatch-next { border-top: 1px solid var(--border); padding-top: 0.75rem; }
@@ -8340,6 +8361,8 @@
 </html>
 {{end}}
 {{define "csrf"}}{{if .CSRF}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}{{end}}
+{{/* Optional note posted with review and fix starts. The argument is the element id. */}}
+{{define "extra_instructions"}}<label class="extra-instructions" for="{{.}}">Extra instructions <span class="muted">(optional)</span><textarea id="{{.}}" name="extra" rows="2" placeholder="Anything else the agent should weigh"></textarea></label>{{end}}
 {{/* Scrim for the phone action sheet. Rendered immediately before the rail, so
      it lands in the same stacking context and can sit between the composer and
      the sheet — no <body>-level z-index can do that once #live-root is lifted.

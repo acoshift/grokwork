@@ -45,6 +45,10 @@ type ErrorStartOpts struct {
 	Count       int64
 	LastSeen    time.Time
 	Model       string
+	// Extra is optional user instructions for Fix. Investigate ignores it.
+	// Empty and whitespace-only leave the canned prompt unchanged. Not copied
+	// into the session goal, Discord thread title, or starter message.
+	Extra string
 }
 
 // StartError discovers or creates a work unit, binds the error, and StartTasks.
@@ -171,7 +175,7 @@ func errorTracked(opts ErrorStartOpts) sessionstore.TrackedError {
 
 func errorPromptFor(opts ErrorStartOpts, tracked sessionstore.TrackedError, direct bool) string {
 	if opts.Intent == ErrorIntentFix {
-		return BuildErrorFixPrompt(opts.Actor.DisplayName, tracked, direct)
+		return BuildErrorFixPrompt(opts.Actor.DisplayName, tracked, direct, opts.Extra)
 	}
 	return BuildErrorInvestigatePrompt(opts.Actor.DisplayName, tracked)
 }

@@ -81,6 +81,7 @@ func (s *Server) postPRAddressCI(ctx *hime.Context) error {
 		HeadSHA: info.HeadSHA, HeadRef: info.HeadRef, Checks: info.Checks,
 		Failed: failed, LogSnippet: snippet,
 		Model: model,
+		Extra: ctx.PostFormValue("extra"),
 	})
 	return s.handleAddressResult(ctx, startErr, res, addressRedirectContext{
 		Kind: "address_ci", Project: project, Owner: owner, Repo: repo, Number: n, Model: model,
@@ -148,6 +149,7 @@ func (s *Server) postPRAddressReview(ctx *hime.Context) error {
 		Comments:     comments,
 		Conversation: detail.Comments,
 		Model:        model,
+		Extra:        ctx.PostFormValue("extra"),
 	})
 	return s.handleAddressResult(ctx, startErr, res, addressRedirectContext{
 		Kind: "address_review", Project: project, Owner: owner, Repo: repo, Number: n, Model: model,

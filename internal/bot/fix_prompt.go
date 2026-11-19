@@ -7,11 +7,28 @@ import (
 
 const fixPromptBodyMaxRunes = 12_000
 
+// extraInstructionsHeading marks the optional user note. Empty extra never emits it.
+const extraInstructionsHeading = "### Additional instructions\n"
+
+// appendExtraInstructions appends a trimmed user note after the canned prompt.
+// Whitespace-only extra returns prompt unchanged. Over-long text is shortened
+// to fixPromptBodyMaxRunes; the canned prompt is never truncated. The note is
+// copied as typed — #, ?, and & stay literal.
+func appendExtraInstructions(prompt, extra string) string {
+	extra = strings.TrimSpace(extra)
+	if extra == "" {
+		return prompt
+	}
+	extra = truncateRunes(extra, fixPromptBodyMaxRunes)
+	return prompt + "\n" + extraInstructionsHeading + extra + "\n"
+}
+
 // BuildGitHubFixPrompt is the Fix-with-Grok task body for a GitHub issue (web).
 // Callers still prepend remoteWorkPromptPrefix + issueBindingPrompt at execute time;
 // this fragment carries the user-facing fix task and ship contract.
 // direct selects No-PR wording (commit + host ship) vs open/update a PR.
-func BuildGitHubFixPrompt(actorDisplay, owner, repo string, number int, title, url, body string, direct bool) string {
+// extra is optional user instructions; empty leaves the canned body unchanged.
+func BuildGitHubFixPrompt(actorDisplay, owner, repo string, number int, title, url, body string, direct bool, extra string) string {
 	actorDisplay = strings.TrimSpace(actorDisplay)
 	if actorDisplay == "" {
 		actorDisplay = "web user"
@@ -39,7 +56,7 @@ func BuildGitHubFixPrompt(actorDisplay, owner, repo string, number int, title, u
 		b.WriteString("(no body)\n")
 	}
 	b.WriteString(fixPromptShipSteps(direct, fmt.Sprintf("Fixes %s/%s#%d", owner, repo, number)))
-	return b.String()
+	return appendExtraInstructions(b.String(), extra)
 }
 
 // BuildGitHubImplementPrompt is the issue-detail Implement task. A new session
@@ -94,7 +111,8 @@ func BuildGitHubImplementPrompt(actorDisplay, owner, repo string, number int, ti
 }
 
 // BuildLinearFixPrompt is the Fix-with-Grok task body for a Linear issue (web).
-func BuildLinearFixPrompt(actorDisplay, identifier, title, url, state, description string, direct bool) string {
+// extra is optional user instructions; empty leaves the canned body unchanged.
+func BuildLinearFixPrompt(actorDisplay, identifier, title, url, state, description string, direct bool, extra string) string {
 	actorDisplay = strings.TrimSpace(actorDisplay)
 	if actorDisplay == "" {
 		actorDisplay = "web user"
@@ -126,11 +144,12 @@ func BuildLinearFixPrompt(actorDisplay, identifier, title, url, state, descripti
 	if !direct {
 		b.WriteString("Put the identifier in the PR title so Linear's GitHub integration can move state.\n")
 	}
-	return b.String()
+	return appendExtraInstructions(b.String(), extra)
 }
 
 // BuildClickUpFixPrompt is the Fix-with-Grok task body for a ClickUp task (web).
-func BuildClickUpFixPrompt(actorDisplay, display, title, url, state, description string, direct bool) string {
+// extra is optional user instructions; empty leaves the canned body unchanged.
+func BuildClickUpFixPrompt(actorDisplay, display, title, url, state, description string, direct bool, extra string) string {
 	actorDisplay = strings.TrimSpace(actorDisplay)
 	if actorDisplay == "" {
 		actorDisplay = "web user"
@@ -159,7 +178,7 @@ func BuildClickUpFixPrompt(actorDisplay, display, title, url, state, description
 	}
 	b.WriteString(fixPromptShipSteps(direct, "Fixes "+display))
 	b.WriteString("Use grokwork MCP clickup_get_task for more detail. Do not call ClickUp's HTTP API.\n")
-	return b.String()
+	return appendExtraInstructions(b.String(), extra)
 }
 
 func fixPromptShipSteps(direct bool, fixesLine string) string {

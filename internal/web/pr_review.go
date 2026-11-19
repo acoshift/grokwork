@@ -62,6 +62,7 @@ func (s *Server) postPRAgentReview(ctx *hime.Context) error {
 		Body: detail.Body, Author: detail.Author,
 		Additions: detail.Additions, Deletions: detail.Deletions, ChangedFiles: detail.ChangedFiles,
 		Model: model,
+		Extra: ctx.PostFormValue("extra"),
 	})
 
 	detailMap := map[string]any{

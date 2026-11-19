@@ -48,6 +48,7 @@
     <input type="hidden" name="owner" value="{{.ActiveOwner}}">
     <input type="hidden" name="repo" value="{{.ActiveRepo}}">
     {{if .CanSelectModel}}<select name="model" hidden>{{template "model_picker_options" $}}</select>{{end}}
+    {{template "extra_instructions" "commit-extra"}}
     <div class="form-actions"><button type="submit">Review in new session</button></div>
   </form>
   <p class="rail-note">The agent reviews the commit with full tools and files a GitHub issue per confirmed finding.</p>
