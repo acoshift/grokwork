@@ -401,14 +401,21 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.acoshift.grokwork.pl
 # Stop (unload job; process exits)
 launchctl bootout gui/$(id -u)/com.acoshift.grokwork
 
-# Restart after rebuilding the binary (keeps the same installed plist)
+# Restart after rebuilding the binary (keeps the same installed plist).
+# kickstart alone is not enough: replacing the binary changes its cdhash,
+# launchd SIGKILLs the new image (exit 78, Launch Constraint Violation),
+# and the repair stays stuck on the old registration. bootout + bootstrap
+# pins the constraint to this build.
 go build -o grokwork .
-launchctl kickstart -k gui/$(id -u)/com.acoshift.grokwork
+launchctl bootout gui/$(id -u)/com.acoshift.grokwork
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.acoshift.grokwork.plist
+launchctl enable gui/$(id -u)/com.acoshift.grokwork
+launchctl kickstart gui/$(id -u)/com.acoshift.grokwork
 ```
 
-`kickstart -k` kills the current process and starts a new one. A plain `go build -o grokwork .` overwrites the file on disk but does **not** replace the running process — always kickstart (or bootout + bootstrap) after a rebuild.
+A plain `go build -o grokwork .` overwrites the file on disk but does not replace the running process. Re-register the job after every rebuild.
 
-If bootstrap fails with “service already loaded”, either kickstart or bootout first, then bootstrap again.
+`bootout` on a job that is not loaded prints “No such process”; that is fine. If `bootstrap` fails with “service already loaded”, bootout first, then bootstrap again.
 
 ### 4. Status and logs
 
