@@ -100,7 +100,7 @@
         {{else}}
         <span class="m-row-t mono">{{.ThreadID}}</span>
         {{end}}
-        <span class="m-row-s">{{if .Goal}}<span class="mono">{{.ThreadID}}</span> · {{end}}{{if .Label}}{{.Label}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{relativeAge .UpdatedAt}}{{end}}</span>
+        <span class="m-row-s">{{if .Label}}{{.Label}} · {{end}}{{.TurnCount}} turn{{if ne .TurnCount 1}}s{{end}}{{if .LastUser}} · {{.LastUser}}{{end}}{{if .UpdatedAt}} · {{relativeAge .UpdatedAt}}{{end}}</span>
         {{if .PRs}}<span class="m-row-s session-prs">{{template "session_pr_chips" .}}</span>{{end}}
       </span>
     </a>
@@ -116,19 +116,21 @@
         <th>Turns</th>
         <th>Last user</th>
         <th>Updated</th>
-        <th>Goal</th>
       </tr>
     </thead>
     <tbody>
       {{range .Threads}}
       <tr>
+        {{if .Goal}}
+        <td><a class="clamp" href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}">{{.Goal}}</a></td>
+        {{else}}
         <td class="mono"><a class="tid" href="/sessions/{{.ThreadID}}?project={{urlquery $.Project}}">{{.ThreadID}}</a></td>
+        {{end}}
         <td>{{template "session_row_state" .}}</td>
         <td class="session-prs">{{if .PRs}}<span class="session-pr-list">{{template "session_pr_links" .}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono">{{.TurnCount}}</td>
         <td>{{if .LastUser}}{{.LastUser}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="mono muted">{{if .UpdatedAt}}{{relativeAge .UpdatedAt}}{{else}}—{{end}}</td>
-        <td>{{if .Goal}}<span class="clamp muted">{{.Goal}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
       {{end}}
     </tbody>

@@ -935,6 +935,46 @@ func TestSessionListsRenderRelativeAge(t *testing.T) {
 	}
 }
 
+// TestOverviewRecentSessionsShowTitle pins the project overview recent list:
+// the session name is the sticky goal, and the id is only the fallback when
+// a unit has no title. The sessions hub keeps the id column.
+func TestOverviewRecentSessionsShowTitle(t *testing.T) {
+	srv, _, _ := testServer(t)
+	if err := srv.sessions.Set("thread-notitle", sessionstore.Entry{
+		SessionID: "sess-none",
+		Project:   "proj",
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := getBody(t, srv.Handler(), "/projects/proj")
+	const titled = `<a class="clamp" href="/sessions/thread-99?project=proj">please fix the flaky test</a>`
+	if !strings.Contains(body, titled) {
+		t.Fatal("overview recent list must link the session title")
+	}
+	if strings.Contains(body, `<a class="tid" href="/sessions/thread-99?project=proj">thread-99</a>`) {
+		t.Fatal("overview recent list still names the session by its id")
+	}
+	if strings.Contains(body, `<span class="mono">thread-99</span>`) || strings.Contains(body, `<span class="m-row-t mono">thread-99</span>`) {
+		t.Fatal("overview recent list repeats the id under a titled session")
+	}
+	if strings.Contains(body, ">Goal</th>") {
+		t.Fatal("overview recent list still has a separate Goal column")
+	}
+	const untitled = `<a class="tid" href="/sessions/thread-notitle?project=proj">thread-notitle</a>`
+	if !strings.Contains(body, untitled) {
+		t.Fatal("a session with no title must still show its id")
+	}
+	if !strings.Contains(body, `<span class="m-row-t mono">thread-notitle</span>`) {
+		t.Fatal("phone row for an untitled session must show its id")
+	}
+
+	hub := getBody(t, srv.Handler(), "/sessions")
+	if !strings.Contains(hub, `<a class="tid" href="/sessions/thread-99?project=proj">thread-99</a>`) || !strings.Contains(hub, ">Goal</th>") {
+		t.Fatal("sessions hub must keep the id column and the goal column")
+	}
+}
+
 func TestSessionBoundIssueLinks(t *testing.T) {
 	srv, _, _ := testServer(t)
 	if err := srv.sessions.Set("thread-99", sessionstore.Entry{
