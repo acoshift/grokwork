@@ -43,7 +43,8 @@
   {{/* The model select is hidden: it exists so the confirm modal can clone its
        options, and so the form still posts a default with scripting off. */}}
   <form method="post" action="/projects/{{.Project}}/commits/{{.Commit.SHA}}/review" class="grok-dispatch" hx-boost="false"
-    {{- if .CanSelectModel}} data-confirm="Reviews this commit in a new session and files an issue per confirmed finding." data-confirm-title="Review commit" data-confirm-ok="Start review" data-confirm-select="model" data-confirm-select-label="Review model"{{end}}>
+    data-confirm="Reviews this commit in a new session and files an issue per confirmed finding." data-confirm-title="Review commit" data-confirm-ok="Start review" data-confirm-text="extra"
+    {{- if .CanSelectModel}} data-confirm-select="model" data-confirm-select-label="Review model"{{end}}>
     {{template "csrf" .}}
     <input type="hidden" name="owner" value="{{.ActiveOwner}}">
     <input type="hidden" name="repo" value="{{.ActiveRepo}}">

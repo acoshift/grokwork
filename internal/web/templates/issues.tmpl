@@ -39,7 +39,8 @@
 </form>
 {{if .CanStartSession}}
   <button type="button" id="btn-issues-fix" class="btn-secondary" form="issues-bulk-fix" disabled
-    {{- if .CanSelectModel}} data-confirm="Starts a new session for each selected issue. Opens or updates a PR; it never merges." data-confirm-title="Fix" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model"{{end}}>Fix</button>
+    data-confirm="Starts a new session for each selected issue. Opens or updates a PR; it never merges." data-confirm-title="Fix" data-confirm-ok="Start" data-confirm-text="extra"
+    {{- if .CanSelectModel}} data-confirm-select="model" data-confirm-select-label="Model"{{end}}>Fix</button>
   <button type="button" id="btn-issues-fix-cancel" class="btn-secondary" hidden>Cancel</button>
   <span id="issues-fix-hint" class="sub" hidden>Select issues, then Confirm. Each gets a new fix session.</span>
 {{end}}
@@ -78,13 +79,11 @@
 <p class="sub">No repos in catalog. Set <span class="mono">projects.{{.Project}}.github.repos</span> on Config, or ensure git remotes exist.</p>
 {{end}}
 
-{{/* Outside the live region: a swap of #live-issues-table would wipe a textarea
-    inside the partial. form= associates this control with #issues-bulk-fix at
-    submit time, including the confirm modal's requestSubmit. */}}
+{{/* Outside the live region: a swap of #live-issues-table would wipe the hidden
+    field the confirm modal writes back into. form= associates it with
+    #issues-bulk-fix, including the modal's requestSubmit. */}}
 {{if and .CanStartSession .ActiveOwner .ActiveRepo}}
-<label class="extra-instructions extra-instructions-bulk" for="issues-bulk-extra">Extra instructions <span class="muted">(optional)</span>
-  <textarea id="issues-bulk-extra" name="extra" form="issues-bulk-fix" rows="2" placeholder="Anything else the agent should weigh"></textarea>
-</label>
+<textarea id="issues-bulk-extra" name="extra" form="issues-bulk-fix" hidden></textarea>
 {{end}}
 {{/* Shell paints immediately; table loads via partial so enter is not blocked on gh. */}}
 {{if and .ActiveOwner .ActiveRepo}}

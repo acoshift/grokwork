@@ -321,9 +321,11 @@
     {{template "extra_instructions" "pr-address-extra"}}
     <div class="btn-pair">
       <button type="submit" class="btn-secondary" id="btn-address-ci"
-        {{- if .CanSelectModel}} data-confirm="Pushes fixes for the failing checks on this pull request. It never merges." data-confirm-title="Address CI" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address CI</button>
+        data-confirm="Pushes fixes for the failing checks on this pull request. It never merges." data-confirm-title="Address CI" data-confirm-ok="Start" data-confirm-text="extra"
+        {{- if .CanSelectModel}} data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address CI</button>
       <button type="submit" class="btn-secondary" id="btn-address-review" formaction="/prs/{{.ActiveOwner}}/{{.ActiveRepo}}/{{.PRNumber}}/address-review"
-        {{- if .CanSelectModel}} data-confirm="Works through the unresolved review threads and the PR conversation. It never merges." data-confirm-title="Address review" data-confirm-ok="Start" data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address review</button>
+        data-confirm="Works through the unresolved review threads and the PR conversation. It never merges." data-confirm-title="Address review" data-confirm-ok="Start" data-confirm-text="extra"
+        {{- if .CanSelectModel}} data-confirm-select="model" data-confirm-select-label="Model (new sessions only)"{{end}}>Address review</button>
     </div>
   </form>
   <p class="rail-note">Pushes fixes to this PR; it never merges. A continued session keeps the model it started on, so the model choice only reaches a new one.</p>
@@ -347,7 +349,8 @@
     {{template "extra_instructions" "pr-review-extra"}}
     <div class="form-actions">
       <button type="submit" class="btn-secondary" id="btn-review-pr"
-        {{- if .CanSelectModel}} data-confirm="Reviews this pull request in a new session and posts the findings as one PR comment." data-confirm-title="Review PR" data-confirm-ok="Start review" data-confirm-select="model" data-confirm-select-label="Review model"{{end}}>Review in new session</button>
+        data-confirm="Reviews this pull request in a new session and posts the findings as one PR comment." data-confirm-title="Review PR" data-confirm-ok="Start review" data-confirm-text="extra"
+        {{- if .CanSelectModel}} data-confirm-select="model" data-confirm-select-label="Review model"{{end}}>Review in new session</button>
     </div>
   </form>
   <p class="rail-note">Always a new session, never one from the dropdown above. Posts findings as a single PR comment — no GitHub issues, no code changes, no merge.</p>

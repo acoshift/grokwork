@@ -2434,7 +2434,21 @@
       color: var(--muted);
     }
     .gw-confirm-field > select { width: 100%; }
+    .gw-confirm-field > textarea {
+      width: 100%;
+      min-height: 4.75rem;
+      font-family: inherit;
+      font-size: 0.88rem;
+      font-weight: 450;
+      resize: vertical;
+    }
     .gw-confirm-field .model-limits { margin-top: 0.45rem; }
+    /* The note is the reason this dialog is wider than a yes/no ask. */
+    .gw-confirm-modal.has-note {
+      width: min(32rem, calc(100vw - 2rem));
+      max-height: calc(100dvh - 2rem);
+      overflow: auto;
+    }
     /* row-reverse + flex-start keeps the buttons packed right and Cancel on the
        left, while Confirm stays first in DOM (the form's default button). */
     .gw-confirm-foot {
@@ -3317,27 +3331,6 @@
       padding: 0.45rem 0 0.25rem;
     }
     .grok-dispatch label.check { min-height: 0; font-size: 0.84rem; }
-    .extra-instructions {
-      display: flex;
-      flex-direction: column;
-      gap: 0.3rem;
-      margin: 0;
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--muted);
-    }
-    .extra-instructions textarea {
-      min-height: 4.5rem;
-      font-family: inherit;
-      font-size: 0.85rem;
-      font-weight: 450;
-      color: var(--text);
-    }
-    .extra-instructions-bulk {
-      display: flex;
-      max-width: 36rem;
-      margin: -0.4rem 0 1.1rem;
-    }
     /* A second dispatch in one rail group (PR rail: the Address pair, then Review)
        needs a hairline, or its note reads as more of the first one's note. */
     .grok-dispatch.dispatch-next { border-top: 1px solid var(--border); padding-top: 0.75rem; }
@@ -5977,6 +5970,13 @@
         <select id="gw-confirm-select"></select>
         <p class="model-limits" id="gw-confirm-limits" hidden></p>
       </div>
+      {{/* Optional note for data-confirm-text. The page keeps a hidden textarea
+           the modal copies from and writes back into before submit, so scripting
+           off still posts the field (empty). */}}
+      <div class="gw-confirm-field" id="gw-confirm-text-field" hidden>
+        <label for="gw-confirm-text" id="gw-confirm-text-label">Extra instructions (optional)</label>
+        <textarea id="gw-confirm-text" rows="4" placeholder="Anything else the agent should weigh"></textarea>
+      </div>
       {{/* Confirm is FIRST in DOM so it is the dialog form's default button:
            implicit submission — Enter pressed in the picker select, which is where
            focus lands — must confirm, not cancel. With Cancel first, Enter silently
@@ -6327,7 +6327,8 @@
     // resolve a Promise; declaratively, forms (or a specific submit button,
     // e.g. one of several actions) carry data-confirm plus optional
     // data-confirm-title / data-confirm-ok / data-confirm-danger /
-    // data-confirm-wait (keep the dialog open with a spinner while the form POSTs).
+    // data-confirm-wait (keep the dialog open with a spinner while the form POSTs) /
+    // data-confirm-text (optional note copied from a textarea the form already carries).
     var dlg = document.getElementById("gw-confirm-modal");
     if (!dlg) return;
     var dlgForm = dlg.querySelector("form");
@@ -6338,6 +6339,9 @@
     var fieldWrap = document.getElementById("gw-confirm-field");
     var fieldLabel = document.getElementById("gw-confirm-field-label");
     var fieldSelect = document.getElementById("gw-confirm-select");
+    var textWrap = document.getElementById("gw-confirm-text-field");
+    var textLabel = document.getElementById("gw-confirm-text-label");
+    var textArea = document.getElementById("gw-confirm-text");
     var pending = null; // resolver of the currently open dialog's Promise
     var waitOnOk = false;
     var waitMessage = "";
@@ -6395,6 +6399,7 @@
       okBtn.classList.remove("is-loading");
       cancelBtn.disabled = false;
       fieldSelect.disabled = false;
+      textArea.disabled = false;
       dlg.classList.toggle("is-danger", danger);
       dlg.classList.toggle("is-alert", isAlert);
       titleEl.textContent = opts.title || (isAlert ? "Heads up" : "Are you sure?");
@@ -6416,6 +6421,16 @@
       } else {
         fillLimitsNote(document.getElementById("gw-confirm-limits"), null);
       }
+      // data-confirm-text: a note the caller already stores on a textarea.
+      // Copy in, edit here, write back on confirm. Cancel leaves the source as it was.
+      var note = opts.text && opts.text.from ? opts.text : null;
+      textWrap.hidden = !note;
+      dlg.classList.toggle("has-note", !!note);
+      textArea.value = "";
+      if (note) {
+        textLabel.textContent = note.label || "Extra instructions (optional)";
+        textArea.value = note.from.value || "";
+      }
       return new Promise(function (resolve) {
         pending = resolve;
         dlg.returnValue = "";
@@ -6427,44 +6442,67 @@
         // it appeared, hiding the very question being confirmed. Gated on a fine
         // hovering pointer rather than sniffing iOS: any touch UI that expands a
         // select on focus has the same problem, and a mouse/keyboard one does not.
+        // A note-only ask focuses the textarea on the same pointer, so typing
+        // starts immediately. On touch, focus stays on a button: the keyboard
+        // would cover the modal the same way the picker wheel does. When both
+        // fields are present the select keeps focus; the note is optional.
         if (pick && !danger && quietSelectFocus()) fieldSelect.focus();
+        else if (note && !pick && !danger && quietSelectFocus()) textArea.focus();
         else (danger && !isAlert ? cancelBtn : okBtn).focus();
       });
     }
 
+    // Settle the open confirm. ok is the verdict; the field values are read
+    // now because the dialog may still be closing and returnValue is not
+    // updated until after the submit event.
+    function settle(ok) {
+      var resolve = pending;
+      pending = null;
+      if (!resolve) return;
+      resolve({ ok: !!ok, value: fieldSelect.value, text: textArea.value });
+    }
     // data-confirm-wait: Confirm must not close the dialog. method="dialog"
     // would tear it down before the underlying POST starts, leaving the page
     // frozen with no spinner while git fetch/cherry-pick/push runs.
+    // Every other submit settles here, from the button, rather than from the
+    // dialog's close event. Chrome 158 closes a method="dialog" form without
+    // firing close, and returnValue is still empty while submit is dispatched,
+    // so a confirm that waited for close never resubmitted the page form.
     dlgForm.addEventListener("submit", function (e) {
-      if (!waitOnOk) return;
-      if (e.submitter && e.submitter.value === "cancel") return;
-      e.preventDefault();
-      if (dlg.classList.contains("is-busy")) return;
-      dlg.classList.add("is-busy");
-      dlg.setAttribute("aria-busy", "true");
-      okBtn.disabled = true;
-      okBtn.classList.add("is-loading");
-      cancelBtn.disabled = true;
-      fieldSelect.disabled = true;
-      if (waitMessage) msgEl.textContent = waitMessage;
-      var resolve = pending;
-      pending = null;
-      if (resolve) resolve({ ok: true, value: fieldSelect.value });
+      var cancel = e.submitter && e.submitter.value === "cancel";
+      if (dlg.classList.contains("is-busy")) {
+        e.preventDefault();
+        return;
+      }
+      if (waitOnOk && !cancel) {
+        e.preventDefault();
+        dlg.classList.add("is-busy");
+        dlg.setAttribute("aria-busy", "true");
+        okBtn.disabled = true;
+        okBtn.classList.add("is-loading");
+        cancelBtn.disabled = true;
+        fieldSelect.disabled = true;
+        textArea.disabled = true;
+        if (waitMessage) msgEl.textContent = waitMessage;
+        settle(true);
+        return;
+      }
+      if (waitOnOk && cancel) return; // dialog closes; beforetoggle/close settles it as a cancel
+      settle(!cancel);
     });
     dlg.addEventListener("cancel", function (e) {
       if (dlg.classList.contains("is-busy")) e.preventDefault();
     });
-    // method="dialog" buttons and Esc (native cancel) both land here.
+    // Esc and the backdrop call close() with no submit. beforetoggle is what
+    // Chrome 158 actually fires; close covers browsers that still emit it.
+    // A button submit has already settled, so pending is empty and this is a no-op.
+    dlg.addEventListener("beforetoggle", function (e) {
+      if (e.newState !== "closed" || !pending) return;
+      settle(dlg.classList.contains("is-alert"));
+    });
     dlg.addEventListener("close", function () {
-      if (dlg.open) return; // stale queued close from a superseded open
-      var resolve = pending;
-      pending = null;
-      if (resolve) {
-        resolve({
-          ok: dlg.classList.contains("is-alert") || dlg.returnValue === "ok",
-          value: fieldSelect.value
-        });
-      }
+      if (dlg.open || !pending) return; // stale queued close from a superseded open
+      settle(dlg.classList.contains("is-alert") || dlg.returnValue === "ok");
     });
     // Click on the backdrop (the dialog element itself) = cancel.
     dlg.addEventListener("click", function (e) {
@@ -6561,8 +6599,13 @@
       // data-confirm-select="<field name>" turns the confirm into a one-choice
       // picker over a control the form already carries. The pick is written back
       // before the submit is replayed, so the value travels as a normal field.
+      // data-confirm-text does the same for a textarea, including one that lives
+      // outside the form and points at it with form= (bulk Fix). elements[]
+      // includes those. Scripting off posts the hidden field empty.
       var pickName = src.dataset.confirmSelect;
       var pickEl = pickName ? form.elements[pickName] : null;
+      var textName = src.dataset.confirmText;
+      var textEl = textName ? form.elements[textName] : null;
       openModal("confirm", {
         title: src.dataset.confirmTitle,
         message: src.dataset.confirm,
@@ -6570,10 +6613,12 @@
         danger: src.hasAttribute("data-confirm-danger"),
         wait: src.hasAttribute("data-confirm-wait"),
         waitMessage: src.dataset.confirmWait,
-        select: pickEl ? { label: src.dataset.confirmSelectLabel, from: pickEl } : null
+        select: pickEl ? { label: src.dataset.confirmSelectLabel, from: pickEl } : null,
+        text: textEl ? { label: src.dataset.confirmTextLabel, from: textEl } : null
       }).then(function (r) {
         if (!r.ok || !form.isConnected) return; // SSE swap may replace the form while open
         if (pickEl && pickEl.isConnected) pickEl.value = r.value;
+        if (textEl && textEl.isConnected) textEl.value = r.text || "";
         form.dataset.gwConfirmed = "1";
         if (s && s.isConnected) form.requestSubmit(s);
         else form.requestSubmit();
@@ -8362,7 +8407,9 @@
 {{end}}
 {{define "csrf"}}{{if .CSRF}}<input type="hidden" name="csrf" value="{{.CSRF}}">{{end}}{{end}}
 {{/* Optional note posted with review and fix starts. The argument is the element id. */}}
-{{define "extra_instructions"}}<label class="extra-instructions" for="{{.}}">Extra instructions <span class="muted">(optional)</span><textarea id="{{.}}" name="extra" rows="2" placeholder="Anything else the agent should weigh"></textarea></label>{{end}}
+{{/* Hidden source for data-confirm-text. The confirm modal copies the value in
+     and writes it back before submit. Scripting off posts empty. */}}
+{{define "extra_instructions"}}<textarea id="{{.}}" name="extra" hidden></textarea>{{end}}
 {{/* Scrim for the phone action sheet. Rendered immediately before the rail, so
      it lands in the same stacking context and can sit between the composer and
      the sheet — no <body>-level z-index can do that once #live-root is lifted.

@@ -407,12 +407,13 @@ func TestExtraInstructionsControlRendered(t *testing.T) {
 		path    string
 		ids     []string
 		exactly int
+		texts   int // data-confirm-text="extra" on the dispatch control
 	}{
-		{"/projects/proj/commits/" + sha + "?owner=acme&repo=app", []string{"commit-extra"}, 1},
-		{"/prs/acme/app/9?project=proj", []string{"pr-address-extra", "pr-review-extra"}, 2},
-		{"/projects/proj/issues/42?owner=acme&repo=app", []string{"issue-fix-extra"}, 1},
-		{"/projects/proj/linear/ENG-1", []string{"linear-extra"}, 1},
-		{"/projects/proj/clickup/DEV-1", []string{"clickup-extra"}, 1},
+		{"/projects/proj/commits/" + sha + "?owner=acme&repo=app", []string{"commit-extra"}, 1, 1},
+		{"/prs/acme/app/9?project=proj", []string{"pr-address-extra", "pr-review-extra"}, 2, 3},
+		{"/projects/proj/issues/42?owner=acme&repo=app", []string{"issue-fix-extra"}, 1, 1},
+		{"/projects/proj/linear/ENG-1", []string{"linear-extra"}, 1, 1},
+		{"/projects/proj/clickup/DEV-1", []string{"clickup-extra"}, 1, 1},
 	}
 	for _, pg := range pages {
 		for _, who := range []struct {
@@ -426,9 +427,18 @@ func TestExtraInstructionsControlRendered(t *testing.T) {
 			if got := strings.Count(body, `name="extra"`); got != pg.exactly {
 				t.Fatalf("%s %s: name=extra count=%d want %d", who.name, pg.path, got, pg.exactly)
 			}
+			if strings.Contains(body, `class="extra-instructions"`) {
+				t.Fatalf("%s %s still renders the extra prompt inline", who.name, pg.path)
+			}
+			if !strings.Contains(body, `id="gw-confirm-text"`) {
+				t.Fatalf("%s %s confirm modal missing the extra prompt", who.name, pg.path)
+			}
+			if got := strings.Count(body, `data-confirm-text="extra"`); got != pg.texts {
+				t.Fatalf("%s %s: data-confirm-text count=%d want %d", who.name, pg.path, got, pg.texts)
+			}
 			for _, id := range pg.ids {
-				if !strings.Contains(body, `id="`+id+`"`) {
-					t.Fatalf("%s %s missing %s", who.name, pg.path, id)
+				if !strings.Contains(body, `id="`+id+`" name="extra" hidden`) {
+					t.Fatalf("%s %s missing hidden extra field %s", who.name, pg.path, id)
 				}
 			}
 			hasModel := strings.Contains(body, `name="model"`)
@@ -441,7 +451,7 @@ func TestExtraInstructionsControlRendered(t *testing.T) {
 	// Plan / Implement does not offer the control. The plan form is still there.
 	for _, who := range []string{builder, investigator} {
 		body := getPageBody(t, srv, who, "/projects/proj/issues/99?owner=acme&repo=app")
-		if strings.Contains(body, `name="extra"`) || strings.Contains(body, "issue-fix-extra") {
+		if strings.Contains(body, `name="extra"`) || strings.Contains(body, "issue-fix-extra") || strings.Contains(body, `data-confirm-text="extra"`) {
 			t.Fatal("implement form must not offer extra instructions")
 		}
 		if !strings.Contains(body, `id="btn-implement-github"`) {
@@ -458,8 +468,14 @@ func TestExtraInstructionsControlRendered(t *testing.T) {
 		{"investigator", investigator, false},
 	} {
 		body := getPageBody(t, srv, who.sid, "/projects/proj/issues?owner=acme&repo=app")
-		if !strings.Contains(body, `id="issues-bulk-extra"`) || !strings.Contains(body, `form="issues-bulk-fix"`) {
-			t.Fatalf("%s issues shell missing bulk extra control", who.name)
+		if !strings.Contains(body, `id="issues-bulk-extra" name="extra" form="issues-bulk-fix" hidden`) {
+			t.Fatalf("%s issues shell missing hidden bulk extra field", who.name)
+		}
+		if !strings.Contains(body, `data-confirm-text="extra"`) {
+			t.Fatalf("%s bulk Fix must open the extra prompt in the confirm modal", who.name)
+		}
+		if strings.Contains(body, `class="extra-instructions"`) {
+			t.Fatalf("%s bulk extra still renders inline", who.name)
 		}
 		if strings.Contains(body, `id="live-issues-table"`) {
 			shell, table, ok := strings.Cut(body, `id="live-issues-table"`)
@@ -488,8 +504,11 @@ func TestExtraInstructionsControlRendered(t *testing.T) {
 	// Error Fix shows the control for someone who can ship. Investigate never does.
 	// An investigator does not see the Fix form at all (same CanShip gate as the picker).
 	errBody := getPageBody(t, srv, admin, "/projects/proj/errors/deploys/iss1?location=loc&name=api")
-	if strings.Count(errBody, `name="extra"`) != 1 || !strings.Contains(errBody, `id="error-fix-extra"`) {
-		t.Fatal("error fix form missing its extra control")
+	if strings.Count(errBody, `name="extra"`) != 1 || !strings.Contains(errBody, `id="error-fix-extra" name="extra" hidden`) {
+		t.Fatal("error fix form missing its hidden extra field")
+	}
+	if strings.Count(errBody, `data-confirm-text="extra"`) != 1 {
+		t.Fatal("error Fix must be the only control that opens the extra prompt")
 	}
 	if !strings.Contains(errBody, `id="btn-fix-error"`) || !strings.Contains(errBody, `id="btn-investigate-error"`) {
 		t.Fatal("error page missing Fix or Investigate")
