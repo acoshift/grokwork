@@ -2781,7 +2781,8 @@ func TestProjectConfigPage(t *testing.T) {
 	}
 
 	// Save repos → back to the project's Integrations tab with flash.
-	form := url.Values{"name": {"proj"}, "repos": {"acme/app\nacme/api"}}
+	// Lines are stored alphabetically; casing of the typed spelling is kept.
+	form := url.Values{"name": {"proj"}, "repos": {"Zeta/lib\nacme/zebra\nAcme/api\n# skip\n\nACME/App\nacme/app"}}
 	req = httptest.NewRequest(http.MethodPost, "/config/projects/github", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w = httptest.NewRecorder()
@@ -2791,6 +2792,44 @@ func TestProjectConfigPage(t *testing.T) {
 	}
 	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/config/projects/proj/integrations?") || !strings.Contains(loc, "ok=") {
 		t.Fatalf("set repos Location=%q", loc)
+	}
+	const wantRepos = "Acme/api\nACME/App\nacme/zebra\nZeta/lib"
+	var gotRepos string
+	for _, p := range cfg.Snapshot().Projects {
+		if p.Name == "proj" {
+			gotRepos = p.GitHubReposText
+		}
+	}
+	if gotRepos != wantRepos {
+		t.Fatalf("repos text=%q want %q", gotRepos, wantRepos)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/config/projects/proj/integrations", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("integrations status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), wantRepos) {
+		t.Fatalf("integrations page did not show sorted repos:\n%s", w.Body.String())
+	}
+
+	// A bad line refuses the save and leaves the sorted catalog in place.
+	form = url.Values{"name": {"proj"}, "repos": {"not-a-repo\nzed/last"}}
+	req = httptest.NewRequest(http.MethodPost, "/config/projects/github", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
+		t.Fatalf("invalid repo Location=%q", loc)
+	}
+	gotRepos = ""
+	for _, p := range cfg.Snapshot().Projects {
+		if p.Name == "proj" {
+			gotRepos = p.GitHubReposText
+		}
+	}
+	if gotRepos != wantRepos {
+		t.Fatalf("invalid save changed repos to %q", gotRepos)
 	}
 
 	// Channel map from the project page round-trips to Integrations.

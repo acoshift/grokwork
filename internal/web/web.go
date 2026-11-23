@@ -1,6 +1,7 @@
 package web
 
 import (
+	"cmp"
 	"context"
 	"embed"
 	"fmt"
@@ -1830,6 +1831,14 @@ func (s *Server) setProjectGitHub(ctx *hime.Context) error {
 		}
 		repos = append(repos, config.GitHubRepoRef{Owner: strings.TrimSpace(parts[0]), Repo: strings.TrimSpace(parts[1])})
 	}
+	// The first saved line is the default repo on pages that do not name one.
+	// Stable so the first typed spelling of a duplicate wins.
+	slices.SortStableFunc(repos, func(a, b config.GitHubRepoRef) int {
+		return cmp.Or(
+			cmp.Compare(strings.ToLower(a.Owner), strings.ToLower(b.Owner)),
+			cmp.Compare(strings.ToLower(a.Repo), strings.ToLower(b.Repo)),
+		)
+	})
 	err := s.cfg.SetProjectGitHubRepos(name, repos)
 	s.auditAction(ctx, "config.set_project_github", err, map[string]any{"name": name, "count": len(repos)})
 	return s.projectConfigTabRedirect(ctx, name, "integrations", fmt.Sprintf("Updated GitHub repos for project %q", name), err)
