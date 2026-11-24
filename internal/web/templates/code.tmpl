@@ -139,8 +139,9 @@
     <input id="code-line-jump" type="number" min="1" step="1" inputmode="numeric">
     <button type="button" id="code-line-go">Go</button>
   </div>
+  {{/* A newline between these rows is a blank line: the parent is a pre. */}}
   <pre class="code-view" id="code-view">{{range .Code.Lines}}<span class="code-line" id="L{{.N}}"><a class="code-ln" href="#L{{.N}}">{{.N}}</a><span class="code-dc">{{range .Tokens}}{{if .Class}}<span class="tok tok-{{.Class}}">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}</span></span>
-{{end}}</pre>
+{{- end}}</pre>
   {{end}}
   {{end}}
 </div>

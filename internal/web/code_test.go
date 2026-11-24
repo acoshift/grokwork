@@ -500,6 +500,9 @@ func TestCodeHighlightsFilePreview(t *testing.T) {
 	if !strings.Contains(view, `class="code-ln"`) || !strings.Contains(view, `class="code-dc"`) {
 		t.Fatal("preview is missing the gutter")
 	}
+	if strings.Contains(view, "\n") {
+		t.Fatal("code preview keeps a blank line between rows")
+	}
 	if !strings.Contains(view, `id="L12"`) || !strings.Contains(view, `href="#L12"`) {
 		t.Fatal("line hash missing")
 	}
