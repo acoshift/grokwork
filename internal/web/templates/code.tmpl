@@ -50,6 +50,11 @@
       {{end}}
     </select>
   </div>
+  <div class="field" style="flex-basis:16rem">
+    <label for="code-q">Open file</label>
+    <input id="code-q" name="q" type="search" value="{{.Code.Query}}" placeholder="Path fragment" autocomplete="off" spellcheck="false">
+  </div>
+  <button type="submit" class="btn-secondary">Find</button>
   <input type="hidden" name="path" id="code-path" value="{{.Code.Path}}">
 </form>
 {{if .Code.CanFetch}}
@@ -60,6 +65,7 @@
   <input type="hidden" name="ref" value="{{.Code.Ref}}">
   <input type="hidden" name="commit" value="{{if .Code.Pinned}}{{.Code.TreeOID}}{{end}}">
   <input type="hidden" name="path" value="{{.Code.Path}}">
+  <input type="hidden" name="q" value="{{.Code.Query}}">
   <button type="submit" class="btn-secondary" title="git fetch --all --prune; unshallow if needed">Fetch</button>
 </form>
 {{end}}
@@ -78,6 +84,23 @@
   <button type="button" class="btn-secondary" data-copy-target="code-path-label" style="margin-left:0.5rem">Copy path</button>
   {{end}}
 </p>
+{{end}}
+
+{{if .Code.Query}}
+<div class="section" id="code-matches">
+  {{if .Code.QueryNote}}
+  <p>{{.Code.QueryNote}}</p>
+  {{else if not .Code.Matches}}
+  <p class="muted">No files match.</p>
+  {{else}}
+  <p class="sub" id="code-match-count">{{if .Code.QueryClipped}}Showing {{.Code.QueryShown}} of {{.Code.QueryTotal}}.{{else}}{{.Code.QueryTotal}} {{if eq .Code.QueryTotal 1}}file{{else}}files{{end}}{{end}}</p>
+  <ul class="code-tree">
+    {{range .Code.Matches}}
+    <li><a href="{{.Href}}">{{.Name}}</a></li>
+    {{end}}
+  </ul>
+  {{end}}
+</div>
 {{end}}
 
 {{if .Code.File}}
@@ -104,14 +127,24 @@
   {{else}}
   {{if .Code.LFS}}<p>Git LFS pointer. The object is not in this view.</p>{{end}}
   {{if .Code.TooMany}}
-  <p>This file has too many lines to show here.{{if .Code.RawURL}} <a href="{{.Code.RawURL}}" hx-boost="false">Raw</a>{{end}}</p>
+  <p class="code-trunc">This file has too many lines to show here.{{if .Code.RawURL}} <a href="{{.Code.RawURL}}" hx-boost="false">Raw</a>{{end}}</p>
   {{else if .Code.Lines}}
-  <pre class="code-view" id="code-view">{{range .Code.Lines}}<span class="code-line" id="L{{.N}}"><a class="code-ln" href="#L{{.N}}">{{.N}}</a>{{.Text}}</span>
+  <div class="code-tools" id="code-tools">
+    <label for="code-search">Find</label>
+    <input id="code-search" type="search" placeholder="Find in file" autocomplete="off" spellcheck="false">
+    <button type="button" id="code-search-prev">Previous</button>
+    <button type="button" id="code-search-next">Next</button>
+    <span id="code-search-count" class="muted"></span>
+    <label for="code-line-jump">Line</label>
+    <input id="code-line-jump" type="number" min="1" step="1" inputmode="numeric">
+    <button type="button" id="code-line-go">Go</button>
+  </div>
+  <pre class="code-view" id="code-view">{{range .Code.Lines}}<span class="code-line" id="L{{.N}}"><a class="code-ln" href="#L{{.N}}">{{.N}}</a><span class="code-dc">{{range .Tokens}}{{if .Class}}<span class="tok tok-{{.Class}}">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}</span></span>
 {{end}}</pre>
   {{end}}
   {{end}}
 </div>
-{{else if .Code.Listed}}
+{{else if and .Code.Listed (not .Code.Query)}}
 <div class="section" id="code-tree">
   {{if not .Code.Entries}}
   <p class="muted">This directory is empty.</p>
@@ -135,10 +168,23 @@
   .code-tree { list-style: none; padding: 0; margin: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
   .code-tree li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0.75rem; border-top: 1px solid var(--border); }
   .code-tree li:first-child { border-top: 0; }
-  .code-view { overflow: auto; margin: 0; padding: 0.75rem 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-family: var(--mono); font-size: 0.82rem; line-height: 1.45; }
-  .code-line { display: block; padding-right: 0.75rem; white-space: pre; }
+  .code-view { overflow: auto; margin: 0; padding: 0.35rem 0 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-family: var(--mono); font-size: 0.78rem; line-height: 1.45; }
+  .code-line { display: flex; min-width: max-content; white-space: pre; }
   .code-line:target { background: var(--accent-soft); }
-  .code-ln { display: inline-block; width: 3.5rem; padding-right: 0.75rem; text-align: right; color: var(--muted); user-select: none; text-decoration: none; }
+  .code-ln { flex: none; width: 3.5rem; padding-right: 0.75rem; text-align: right; color: var(--muted); user-select: none; text-decoration: none; }
+  .code-dc { white-space: pre; padding: 0 0.75rem 0 0.35rem; }
+  .tok-kw { color: var(--accent); }
+  .tok-str { color: var(--ok); }
+  .tok-com { color: var(--muted); }
+  .tok-num { color: var(--warn); }
+  .tok-typ { color: var(--merged); }
+  .code-tools { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0 0 0.55rem; }
+  .code-tools input { font: inherit; font-family: var(--mono); font-size: 0.82rem; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.3rem 0.5rem; }
+  .code-tools input[type="search"] { min-width: 12rem; }
+  .code-tools input[type="number"] { width: 5rem; }
+  .code-hit { background: var(--warn-bg); color: inherit; }
+  .code-hit-current { outline: 1px solid var(--warn); }
+  .code-trunc { color: var(--muted); }
 </style>
 <script>
 (function(){
@@ -155,9 +201,11 @@
     var refEl=document.getElementById('code-ref');
     var commitEl=document.getElementById('code-commit');
     var pathEl=document.getElementById('code-path');
+    var qEl=document.getElementById('code-q');
     if(refEl) refEl.disabled=true;
     if(commitEl) commitEl.disabled=true;
     if(pathEl) pathEl.disabled=true;
+    if(qEl) qEl.disabled=true;
   });
   var refEl=document.getElementById('code-ref');
   if(refEl) refEl.addEventListener('change', function(){
@@ -166,6 +214,137 @@
   });
   form.addEventListener('submit', sync);
   sync();
+})();
+(function(){
+  var view=document.getElementById('code-view');
+  if(!view) return;
+  var input=document.getElementById('code-search');
+  var prev=document.getElementById('code-search-prev');
+  var next=document.getElementById('code-search-next');
+  var count=document.getElementById('code-search-count');
+  var jump=document.getElementById('code-line-jump');
+  var go=document.getElementById('code-line-go');
+  var hits=[];
+  var at=-1;
+  function clearMarks(){
+    var marks=view.querySelectorAll('mark.code-hit');
+    for(var i=0;i<marks.length;i++){
+      var m=marks[i];
+      var parent=m.parentNode;
+      while(m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+      parent.normalize();
+    }
+    hits=[];
+    at=-1;
+    if(count) count.textContent='';
+  }
+  function markLine(dc, needle){
+    var full=dc.textContent;
+    var lower=full.toLowerCase();
+    var q=needle.toLowerCase();
+    var ranges=[];
+    var idx=0;
+    while((idx=lower.indexOf(q, idx))>=0){
+      ranges.push([idx, idx+q.length]);
+      idx+=q.length;
+    }
+    if(!ranges.length) return;
+    var walker=document.createTreeWalker(dc, NodeFilter.SHOW_TEXT);
+    var nodes=[];
+    while(walker.nextNode()) nodes.push(walker.currentNode);
+    var offset=0;
+    var pushed={};
+    for(var n=0;n<nodes.length;n++){
+      var node=nodes[n];
+      var text=node.nodeValue;
+      var start=offset;
+      var end=offset+text.length;
+      var frag=null;
+      var pos=0;
+      for(var ri=0;ri<ranges.length;ri++){
+        var a=Math.max(ranges[ri][0], start);
+        var b=Math.min(ranges[ri][1], end);
+        if(a>=b) continue;
+        if(!frag) frag=document.createDocumentFragment();
+        var la=a-start;
+        var lb=b-start;
+        if(la>pos) frag.appendChild(document.createTextNode(text.slice(pos, la)));
+        var mark=document.createElement('mark');
+        mark.className='code-hit';
+        mark.textContent=text.slice(la, lb);
+        frag.appendChild(mark);
+        if(!pushed[ri]){ hits.push(mark); pushed[ri]=true; }
+        pos=lb;
+      }
+      if(frag){
+        if(pos<text.length) frag.appendChild(document.createTextNode(text.slice(pos)));
+        node.parentNode.replaceChild(frag, node);
+      }
+      offset=end;
+    }
+  }
+  function search(){
+    clearMarks();
+    var q=(input.value||'').trim();
+    if(!q) return;
+    var rows=view.querySelectorAll('.code-dc');
+    for(var i=0;i<rows.length;i++) markLine(rows[i], q);
+    if(count) count.textContent=hits.length ? '1/'+hits.length : '0';
+    if(hits.length) show(0);
+  }
+  function show(i){
+    if(!hits.length) return;
+    if(at>=0 && hits[at]) hits[at].classList.remove('code-hit-current');
+    at=(i+hits.length)%hits.length;
+    hits[at].classList.add('code-hit-current');
+    hits[at].scrollIntoView({block:'center', inline:'nearest'});
+    if(count) count.textContent=(at+1)+'/'+hits.length;
+  }
+  function goLine(){
+    var n=parseInt(jump.value, 10);
+    if(!n || n<1) return;
+    var row=document.getElementById('L'+n);
+    if(!row){
+      if(count) count.textContent='No such line';
+      return;
+    }
+    if(location.hash !== '#L'+n) location.hash = 'L'+n;
+    row.scrollIntoView({block:'center'});
+  }
+  var timer;
+  input.addEventListener('input', function(){
+    clearTimeout(timer);
+    timer=setTimeout(search, 80);
+  });
+  next.addEventListener('click', function(){ if(at<0) search(); else show(at+1); });
+  prev.addEventListener('click', function(){ if(at<0) search(); else show(at-1); });
+  input.addEventListener('keydown', function(e){
+    if(e.key==='Escape'){ input.value=''; clearMarks(); return; }
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    if(e.shiftKey){ if(at<0) search(); else show(at-1); }
+    else { if(at<0) search(); else show(at+1); }
+  });
+  if(!window.__gwCodeFind){
+    window.__gwCodeFind=true;
+    document.addEventListener('keydown', function(e){
+      if(e.key!=='/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      var box=document.getElementById('code-search');
+      if(!box || !document.getElementById('code-view')) return;
+      var t=e.target;
+      if(t && t.closest && t.closest('input, textarea, select')) return;
+      e.preventDefault();
+      box.focus();
+      box.select();
+    });
+  }
+  go.addEventListener('click', goLine);
+  jump.addEventListener('keydown', function(e){
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    goLine();
+  });
 })();
 </script>
 {{end}}

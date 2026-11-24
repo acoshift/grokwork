@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -52,6 +53,20 @@ func newCodeFixture(t *testing.T) codeFixture {
 	}
 	write("README", []byte("two\n"))
 	write("src/main.go", []byte("package main\n"))
+	write("src/view.go", []byte(strings.Join([]string{
+		"package view",
+		"",
+		`import "fmt"`,
+		"",
+		"// one",
+		"// two",
+		"// three",
+		"// four",
+		"func show() string {",
+		`	return fmt.Sprintf("%s", "<script>alert(1)</script>")`,
+		"}",
+		"// end",
+	}, "\n")+"\n"))
 	write("page.html", []byte("<html><script>alert(1)</script></html>\n"))
 	write(".hidden", []byte("dot\n"))
 	write("*", []byte("star\n"))
@@ -140,7 +155,7 @@ func TestCodeBrowsesRepoBranchAndCommit(t *testing.T) {
 
 	file := getCode(t, fx.srv, "/projects/proj/code?owner=acme&repo=app&path=src/main.go")
 	view := codeViewText(t, file)
-	if !strings.Contains(view, "package main") {
+	if !strings.Contains(stripTags(view), "package main") {
 		t.Fatalf("file view: %s", view)
 	}
 	if !strings.Contains(file, "/projects/proj/commits/"+fx.head+"?") {
@@ -364,7 +379,7 @@ func TestCodeRepoQueryCannotEscape(t *testing.T) {
 		return nil, nil
 	}
 	for _, repo := range []string{"../secret-leak", "..", "foo/bar"} {
-		body := getCode(t, srv, "/projects/proj/code?owner=acme&repo="+url.QueryEscape(repo))
+		body := getCode(t, srv, "/projects/proj/code?owner=acme&repo="+url.QueryEscape(repo)+"&q=SECRET_CODE_LEAK")
 		if strings.Contains(body, "SECRET_CODE_LEAK") || strings.Contains(body, `id="code-tree"`) {
 			t.Fatalf("repo %q escaped: %s", repo, body)
 		}
@@ -472,6 +487,143 @@ func TestCodeRequiresProjectAccess(t *testing.T) {
 	}
 }
 
+func TestCodeHighlightsFilePreview(t *testing.T) {
+	fx := newCodeFixture(t)
+	page := getCode(t, fx.srv, "/projects/proj/code?owner=acme&repo=app&path=src/view.go")
+	view := codeViewText(t, page)
+	if !strings.Contains(view, `class="tok tok-kw">package</span>`) || !strings.Contains(view, `class="tok tok-str">`) {
+		t.Fatalf("go file missing distinct tokens: %s", view)
+	}
+	if !strings.Contains(view, "&lt;script&gt;alert(1)") || strings.Contains(view, "<script>alert(1)") {
+		t.Fatalf("script text was not escaped in the preview: %s", view)
+	}
+	if !strings.Contains(view, `class="code-ln"`) || !strings.Contains(view, `class="code-dc"`) {
+		t.Fatal("preview is missing the gutter")
+	}
+	if !strings.Contains(view, `id="L12"`) || !strings.Contains(view, `href="#L12"`) {
+		t.Fatal("line hash missing")
+	}
+	for _, id := range []string{"code-search", "code-search-prev", "code-search-next", "code-line-jump", "code-line-go"} {
+		if !strings.Contains(page, `id="`+id+`"`) {
+			t.Fatalf("preview missing %s", id)
+		}
+	}
+	if !strings.Contains(page, ">Previous<") || !strings.Contains(page, ">Next<") || !strings.Contains(page, ">Go<") {
+		t.Fatal("find controls missing")
+	}
+	file := between(t, page, `id="code-file"`, "\n<style>")
+	for _, bad := range []string{">Edit<", ">Save<", ">Commit<"} {
+		if strings.Contains(file, bad) {
+			t.Fatalf("preview has %s", bad)
+		}
+	}
+
+	html := getCode(t, fx.srv, "/projects/proj/code?owner=acme&repo=app&path=page.html")
+	htmlView := codeViewText(t, html)
+	if !strings.Contains(htmlView, "&lt;script&gt;alert(1)") || strings.Contains(htmlView, "<script>alert(1)") {
+		t.Fatalf("html fixture: %s", htmlView)
+	}
+	if strings.Contains(htmlView, `class="tok `) {
+		t.Fatal("unknown extension was highlighted")
+	}
+
+	for _, path := range []string{"bin.dat", "big.bin", "long.txt", "link"} {
+		body := getCode(t, fx.srv, "/projects/proj/code?owner=acme&repo=app&path="+path)
+		if strings.Contains(body, `id="code-view"`) || strings.Contains(body, `class="tok `) {
+			t.Fatalf("%s rendered a highlighted preview", path)
+		}
+	}
+	lfs := getCode(t, fx.srv, "/projects/proj/code?owner=acme&repo=app&path=pointer")
+	lfsView := codeViewText(t, lfs)
+	if strings.Contains(lfsView, `class="tok `) || !strings.Contains(lfsView, "version https://git-lfs.github.com/spec/v1") {
+		t.Fatal("lfs pointer was highlighted or dropped")
+	}
+}
+
+func TestCodePathQueryUsesSelectedTree(t *testing.T) {
+	fx := newCodeFixture(t)
+	gitIn(t, fx.app, "checkout", "-b", "side", fx.first)
+	sideFile := filepath.Join(fx.app, "only-side.txt")
+	if err := os.WriteFile(sideFile, []byte("side\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, fx.app, "add", "only-side.txt")
+	gitIn(t, fx.app, "commit", "-m", "side only")
+	side := strings.TrimSpace(gitOut(t, fx.app, "rev-parse", "HEAD"))
+	gitIn(t, fx.app, "update-ref", "refs/remotes/origin/side", side)
+	gitIn(t, fx.app, "checkout", "--detach", fx.head)
+
+	if err := os.MkdirAll(filepath.Join(fx.app, "bulk"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 201 {
+		name := fmt.Sprintf("bulk/f%03d.txt", i)
+		if err := os.WriteFile(filepath.Join(fx.app, name), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitIn(t, fx.app, "add", "bulk")
+	gitIn(t, fx.app, "commit", "-m", "bulk")
+	gitIn(t, fx.app, "update-ref", "refs/remotes/origin/main", "HEAD")
+	if err := os.WriteFile(filepath.Join(fx.app, "worktree-only.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var args [][]string
+	fx.srv.codeRunner = recordCodeRun(t, &args)
+	mainHead := strings.TrimSpace(gitOut(t, fx.app, "rev-parse", "HEAD"))
+
+	found := getCode(t, fx.srv, "/projects/proj/code?owner=acme&repo=app&q=SRC/MAIN.GO")
+	sec := between(t, found, `id="code-matches"`, "\n<style>")
+	if !strings.Contains(sec, ">src/main.go</a>") {
+		t.Fatalf("selected commit missing src/main.go: %s", sec)
+	}
+	if strings.Contains(sec, "only-side.txt") || strings.Contains(sec, "worktree-only.txt") {
+		t.Fatalf("query leaked another branch or the work tree: %s", sec)
+	}
+	var listed bool
+	for _, cmd := range args {
+		if !hasArg(cmd, "ls-tree") || !hasArg(cmd, "-r") || !hasArg(cmd, "--name-only") {
+			continue
+		}
+		if hasArg(cmd, mainHead) {
+			listed = true
+		}
+		for _, arg := range cmd {
+			if strings.Contains(strings.ToLower(arg), "src/main") || strings.Contains(arg, "SRC") {
+				t.Fatalf("query text reached git: %q", cmd)
+			}
+		}
+	}
+	if !listed {
+		t.Fatalf("path query did not list the resolved commit: %q", args)
+	}
+
+	args = nil
+	sidePage := getCode(t, fx.srv, "/projects/proj/code?owner=acme&repo=app&ref=origin/side&q=only-side")
+	sideSec := between(t, sidePage, `id="code-matches"`, "\n<style>")
+	if !strings.Contains(sideSec, ">only-side.txt</a>") || strings.Contains(sideSec, "page.html") || strings.Contains(sideSec, "bulk/f") {
+		t.Fatalf("side tree: %s", sideSec)
+	}
+
+	absent := getCode(t, fx.srv, "/projects/proj/code?owner=acme&repo=app&q=only-side.txt")
+	absentSec := between(t, absent, `id="code-matches"`, "\n<style>")
+	if strings.Contains(absentSec, "only-side.txt") || !strings.Contains(absentSec, "No files match") {
+		t.Fatalf("main tree included a side-only file: %s", absentSec)
+	}
+	dirty := getCode(t, fx.srv, "/projects/proj/code?owner=acme&repo=app&q=worktree-only.txt")
+	dirtySec := between(t, dirty, `id="code-matches"`, "\n<style>")
+	if strings.Contains(dirtySec, "worktree-only.txt") || !strings.Contains(dirtySec, "No files match") {
+		t.Fatalf("work tree file matched: %s", dirtySec)
+	}
+
+	clipped := getCode(t, fx.srv, "/projects/proj/code?owner=acme&repo=app&q=bulk/f")
+	clipSec := between(t, clipped, `id="code-matches"`, "\n<style>")
+	if !strings.Contains(clipSec, "Showing 200 of 201.") || strings.Count(clipSec, "bulk/f") != 200 {
+		t.Fatalf("clip: count=%d body=%s", strings.Count(clipSec, "bulk/f"), clipSec)
+	}
+}
+
 func getCode(t *testing.T, srv *Server, raw string) string {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, raw, nil)
@@ -481,6 +633,37 @@ func getCode(t *testing.T, srv *Server, raw string) string {
 		t.Fatalf("GET %s status=%d body=%s", raw, w.Code, w.Body.String())
 	}
 	return w.Body.String()
+}
+
+func between(t *testing.T, body, start, end string) string {
+	t.Helper()
+	i := strings.Index(body, start)
+	if i < 0 {
+		t.Fatalf("missing %s", start)
+	}
+	rest := body[i:]
+	j := strings.Index(rest, end)
+	if j < 0 {
+		t.Fatalf("missing %s after %s", end, start)
+	}
+	return rest[:j]
+}
+
+func stripTags(s string) string {
+	var b strings.Builder
+	for {
+		i := strings.IndexByte(s, '<')
+		if i < 0 {
+			b.WriteString(s)
+			return b.String()
+		}
+		b.WriteString(s[:i])
+		j := strings.IndexByte(s[i:], '>')
+		if j < 0 {
+			return b.String()
+		}
+		s = s[i+j+1:]
+	}
 }
 
 func codeViewText(t *testing.T, body string) string {
@@ -509,7 +692,7 @@ func assertCodePickersClear(t *testing.T, body string) {
 		t.Fatal("ref change listener missing")
 	}
 	repoChange := rest[:j]
-	for _, id := range []string{"code-ref", "code-commit", "code-path"} {
+	for _, id := range []string{"code-ref", "code-commit", "code-path", "code-q"} {
 		if !strings.Contains(repoChange, `getElementById('`+id+`')`) || !strings.Contains(repoChange, `disabled=true`) {
 			t.Fatalf("repo change must disable %s before submit: %s", id, repoChange)
 		}
@@ -521,7 +704,7 @@ func assertCodePickersClear(t *testing.T, body string) {
 	if !strings.Contains(refChange, `getElementById('code-commit')`) || !strings.Contains(refChange, `disabled=true`) {
 		t.Fatalf("ref change must disable commit: %s", refChange)
 	}
-	if strings.Contains(refChange, "code-path") || strings.Contains(refChange, "code-ref") {
+	if strings.Contains(refChange, "code-path") || strings.Contains(refChange, "code-ref") || strings.Contains(refChange, "code-q") {
 		t.Fatalf("ref change must keep path: %s", refChange)
 	}
 }

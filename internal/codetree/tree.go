@@ -386,6 +386,36 @@ func lookup(ctx context.Context, run Runner, repo, commitOID, clean string) (Ent
 	return entries[0], nil
 }
 
+// ListPaths returns every path in commitOID's tree. It reads that object,
+// not the work tree. commitOID must already be a full oid. A path git
+// prints that CleanPath would reject is dropped. Output over the tree cap
+// is an error, not a partial list.
+func ListPaths(ctx context.Context, run Runner, repo, commitOID string) ([]string, error) {
+	if run == nil {
+		run = Run
+	}
+	if !FullOID(commitOID) {
+		return nil, ErrBadRev
+	}
+	out, err := run(ctx, repo, maxTreeOutput,
+		"--literal-pathspecs", "ls-tree", "-r", "-z", "--name-only", commitOID)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for rec := range bytes.SplitSeq(out, []byte{0}) {
+		if len(rec) == 0 {
+			continue
+		}
+		clean, err := CleanPath(string(rec))
+		if err != nil || clean == "" {
+			continue
+		}
+		paths = append(paths, clean)
+	}
+	return paths, nil
+}
+
 func list(ctx context.Context, run Runner, repo, treeOID string) ([]Entry, error) {
 	if !FullOID(treeOID) {
 		return nil, ErrBadRev

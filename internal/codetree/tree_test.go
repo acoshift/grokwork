@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -194,6 +195,37 @@ func TestResolveCommitRejectsFlag(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatalf("calls=%d", calls)
+	}
+}
+
+func TestListPathsReadsCommitNotWorktree(t *testing.T) {
+	dir := initRepo(t)
+	oid := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(dir, "dirty.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := ListPaths(t.Context(), nil, dir, oid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(paths, "README") || slices.Contains(paths, "dirty.txt") {
+		t.Fatalf("paths %v", paths)
+	}
+	if _, err := ListPaths(t.Context(), nil, dir, "not-an-oid"); !errors.Is(err, ErrBadRev) {
+		t.Fatalf("bad oid err=%v", err)
+	}
+
+	var ran bool
+	run := func(context.Context, string, int64, ...string) ([]byte, error) {
+		ran = true
+		return []byte("../outside\x00README\x00"), nil
+	}
+	paths, err = ListPaths(t.Context(), run, dir, oid)
+	if err != nil || !ran {
+		t.Fatal(err)
+	}
+	if slices.Contains(paths, "../outside") || !slices.Contains(paths, "README") {
+		t.Fatalf("escaped path kept: %v", paths)
 	}
 }
 

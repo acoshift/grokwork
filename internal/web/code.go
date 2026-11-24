@@ -23,6 +23,7 @@ import (
 const (
 	codeListCap  = 2000
 	codeMaxLines = 10000
+	codeFindCap  = 200
 )
 
 // commitHex is a Git object name, short or full, SHA-1 or SHA-256.
@@ -61,15 +62,21 @@ type codeView struct {
 	MissingObject bool
 	// Note is a page error that is not one of the flags above (bad commit,
 	// bad path, revision that did not resolve).
-	Note      string
-	Size      int64
-	SizeText  string
-	Mode      string
-	BlobOID   string
-	BlobShort string
-	Lines     []codeLine
-	RawURL    string
-	CanFetch  bool
+	Note         string
+	Size         int64
+	SizeText     string
+	Mode         string
+	BlobOID      string
+	BlobShort    string
+	Lines        []codeLine
+	RawURL       string
+	CanFetch     bool
+	Query        string
+	QueryNote    string
+	QueryTotal   int
+	QueryShown   int
+	QueryClipped bool
+	Matches      []codeEntry
 }
 
 type codeTag struct {
@@ -97,8 +104,8 @@ type codeEntry struct {
 }
 
 type codeLine struct {
-	N    int
-	Text string
+	N      int
+	Tokens []codeToken
 }
 
 type codeRev struct {
@@ -223,6 +230,7 @@ func (s *Server) loadCode(ctx *hime.Context, project string, active config.GitHu
 	v.TreeOID = treeOID
 	v.TreeShort = shortOID(treeOID)
 	s.fillCodeCommits(ctx, repoPath, rev, treeOID, &v)
+	v.Query = strings.TrimSpace(ctx.FormValue("q"))
 
 	clean, pathErr := codetree.CleanPath(ctx.FormValue("path"))
 	if pathErr != nil {
@@ -231,6 +239,9 @@ func (s *Server) loadCode(ctx *hime.Context, project string, active config.GitHu
 	}
 	v.Path = clean
 	v.Crumbs = codeCrumbs(project, active.Owner, active.Repo, rev.Ref, pinnedCommit(v), clean)
+	if v.Query != "" {
+		s.fillCodeMatches(ctx, &v, project, active, repoPath)
+	}
 	if clean != "" {
 		v.ParentHref = codeURL(project, false, active.Owner, active.Repo, rev.Ref, pinnedCommit(v), parentPath(clean))
 	}
@@ -364,12 +375,58 @@ func (s *Server) fillCodeFile(ctx *hime.Context, v *codeView, project string, ac
 		v.Empty = true
 		return
 	}
-	lines, tooMany := splitCodeLines(string(body))
+	parts, tooMany := splitCodeLines(string(body))
 	if tooMany {
 		v.TooMany = true
 		return
 	}
-	v.Lines = lines
+	if v.LFS {
+		v.Lines = plainCodeLines(parts)
+		return
+	}
+	v.Lines = highlightParts(v.Path, parts)
+}
+
+func (s *Server) fillCodeMatches(ctx *hime.Context, v *codeView, project string, active config.GitHubRepoRef, repoPath string) {
+	paths, err := codetree.ListPaths(ctx.Context(), s.codeRun(), repoPath, v.TreeOID)
+	if err != nil {
+		if errors.Is(err, codetree.ErrOutputCapped) {
+			v.QueryNote = "This tree is too large to search."
+			return
+		}
+		v.QueryNote = "Could not list this revision."
+		return
+	}
+	shown, total := filterCodePaths(paths, v.Query)
+	v.QueryTotal = total
+	v.QueryShown = len(shown)
+	v.QueryClipped = total > len(shown)
+	pin := pinnedCommit(*v)
+	for _, p := range shown {
+		v.Matches = append(v.Matches, codeEntry{
+			Name: p,
+			Href: codeURL(project, false, active.Owner, active.Repo, v.Ref, pin, p),
+		})
+	}
+}
+
+func filterCodePaths(paths []string, q string) ([]string, int) {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return nil, 0
+	}
+	var shown []string
+	total := 0
+	for _, p := range paths {
+		if !strings.Contains(strings.ToLower(p), q) {
+			continue
+		}
+		total++
+		if len(shown) < codeFindCap {
+			shown = append(shown, p)
+		}
+	}
+	return shown, total
 }
 
 func pinnedCommit(v codeView) string {
@@ -684,7 +741,7 @@ func formatCodeSize(n int64) string {
 	}
 }
 
-func splitCodeLines(body string) ([]codeLine, bool) {
+func splitCodeLines(body string) ([]string, bool) {
 	body = strings.TrimSuffix(body, "\n")
 	if body == "" {
 		return nil, false
@@ -693,12 +750,7 @@ func splitCodeLines(body string) ([]codeLine, bool) {
 	if n > codeMaxLines {
 		return nil, true
 	}
-	parts := strings.Split(body, "\n")
-	lines := make([]codeLine, len(parts))
-	for i, t := range parts {
-		lines[i] = codeLine{N: i + 1, Text: t}
-	}
-	return lines, false
+	return strings.Split(body, "\n"), false
 }
 
 func codeAttachmentName(p string) string {
