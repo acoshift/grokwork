@@ -1671,7 +1671,9 @@ func TestIOSStatusBarIsFlatAndDiffTextDoesNotInflate(t *testing.T) {
 // TestOverviewMobileBrowseListsWorkspaceSections pins the phone-only Browse
 // block on the project overview: every workspace section that is not a bottom
 // tab (or the Start-task top-bar chip) must appear here, or mobile users have
-// no path to Files / Actions / Spend / etc. Order mirrors the desktop sidebar.
+// no path to Files / Actions / Sessions / Spend / etc. The footer is
+// Today/Overview/Ship/Cases/Reviews — Sessions is a sidebar row, not a tab.
+// Order mirrors the desktop sidebar.
 func TestOverviewMobileBrowseListsWorkspaceSections(t *testing.T) {
 	srv, _, _ := testServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/projects/proj", nil)
@@ -1696,6 +1698,7 @@ func TestOverviewMobileBrowseListsWorkspaceSections(t *testing.T) {
 		`href="/projects/proj/files"`,
 		`href="/projects/proj/deploys"`,
 		`href="/projects/proj/actions"`,
+		`href="/projects/proj/sessions"`,
 		`href="/projects/proj/worktrees"`,
 		`href="/projects/proj/spend"`,
 		`href="/config/projects/proj"`,
@@ -1704,6 +1707,7 @@ func TestOverviewMobileBrowseListsWorkspaceSections(t *testing.T) {
 		">Files<",
 		">Deploys<",
 		">Actions<",
+		">Sessions<",
 		">Worktrees<",
 		">Spend<",
 		">Settings<",
@@ -1712,12 +1716,20 @@ func TestOverviewMobileBrowseListsWorkspaceSections(t *testing.T) {
 			t.Fatalf("mobile Browse missing %q", want)
 		}
 	}
+	// Sidebar order: Sessions sits between Actions and Worktrees. It is not a
+	// footer tab (Today took that slot), so dropping it leaves phones with no
+	// path to the sessions hub.
+	actions := strings.Index(browse, `href="/projects/proj/actions"`)
+	sessions := strings.Index(browse, `href="/projects/proj/sessions"`)
+	worktrees := strings.Index(browse, `href="/projects/proj/worktrees"`)
+	if actions < 0 || sessions < actions || worktrees < sessions {
+		t.Fatalf("Browse order want Actions < Sessions < Worktrees, got %d %d %d", actions, sessions, worktrees)
+	}
 	// Tab-bar destinations stay off the Browse list (they already have a
 	// permanent footer control). Start task is the top-bar chip.
 	for _, ban := range []string{
 		`href="/projects/proj/ship"`,
 		`href="/projects/proj/cases"`,
-		`href="/projects/proj/sessions"`,
 		`href="/projects/proj/reviews"`,
 		`href="/projects/proj/start"`,
 		">Overview<",

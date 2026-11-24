@@ -38,9 +38,10 @@
   {{template "project_pulse_runs" .}}
 </div>
 
-{{/* Phone-only: workspace sections without a bottom tab (the scoped footer
-     keeps Overview/Ship/Cases/Sessions/Reviews; the rest drill in here, in
-     the same order as the desktop workspace sidebar). */}}
+{{/* Phone-only: workspace sections without a bottom tab. The scoped footer
+     is Today/Overview/Ship/Cases/Reviews (five max); Start task is the
+     top-bar chip. Sessions is a sidebar row, not a tab — it belongs here,
+     in the same order as the desktop workspace sidebar. */}}
 <div class="section m-only" id="m-workspace-browse">
   <h2>Browse</h2>
   <div class="m-rows">
@@ -73,6 +74,9 @@
     </a>
     <a class="m-row" href="/projects/{{.Project}}/actions">
       <span class="m-row-main"><span class="m-row-t">Actions</span><span class="m-row-s">GitHub workflows · dispatch · run history</span></span>
+    </a>
+    <a class="m-row" href="/projects/{{.Project}}/sessions">
+      <span class="m-row-main"><span class="m-row-t">Sessions</span><span class="m-row-s">all sessions · filter by state and owner</span></span>
     </a>
     <a class="m-row" href="/projects/{{.Project}}/worktrees">
       <span class="m-row-main"><span class="m-row-t">Worktrees</span><span class="m-row-s">per-session checkouts · prune</span></span>
