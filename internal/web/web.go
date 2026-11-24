@@ -21,6 +21,7 @@ import (
 	"github.com/acoshift/grokwork/internal/audit"
 	"github.com/acoshift/grokwork/internal/bot"
 	"github.com/acoshift/grokwork/internal/clickup"
+	"github.com/acoshift/grokwork/internal/codetree"
 	"github.com/acoshift/grokwork/internal/config"
 	"github.com/acoshift/grokwork/internal/deploy"
 	"github.com/acoshift/grokwork/internal/errsrc"
@@ -72,8 +73,9 @@ type Server struct {
 	// are never accepted as Authorization: Bearer.
 	loginTokens *logintoken.Store
 	// Test injectables (nil → production defaults).
-	ghRunner  ghpr.Runner
-	gcsRunner gcs.Runner
+	ghRunner   ghpr.Runner
+	codeRunner codetree.Runner
+	gcsRunner  gcs.Runner
 	// githubImageGet, when set, replaces the authenticated GitHub image GET.
 	githubImageGet func(ctx context.Context, rawURL string) (contentType string, body []byte, err error)
 	ghTokenMu      sync.Mutex
@@ -402,6 +404,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	tp.ParseFiles("session", "layout.tmpl", "session.tmpl")
 	tp.ParseFiles("start", "layout.tmpl", "start.tmpl")
 	tp.ParseFiles("commits", "layout.tmpl", "commits.tmpl")
+	tp.ParseFiles("code", "layout.tmpl", "code.tmpl")
 	tp.ParseFiles("deploys", "layout.tmpl", "deploys.tmpl")
 	tp.ParseFiles("deploys_board", "layout.tmpl", "deploys_board.tmpl")
 	tp.ParseFiles("deploy_run", "layout.tmpl", "deploy_run.tmpl")
@@ -550,6 +553,9 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("GET /partials/projects/{project}/actions/workflows", s.requireAuth(hime.Handler(s.actionsWorkflowsPartial)))
 	mux.Handle("POST /projects/{project}/actions/dispatch",
 		s.requireFeature("githubWrites", s.requireMember(hime.Handler(s.postActionsDispatch))))
+	mux.Handle("GET /projects/{project}/code", s.requireAuth(hime.Handler(s.codePage)))
+	mux.Handle("GET /projects/{project}/code/raw", s.requireAuth(hime.Handler(s.codeRaw)))
+	mux.Handle("POST /projects/{project}/code/fetch", s.requireMember(hime.Handler(s.postCodeFetch)))
 	mux.Handle("GET /projects/{project}/commits", s.requireAuth(hime.Handler(s.commitsList)))
 	mux.Handle("POST /projects/{project}/commits/fetch", s.requireMember(hime.Handler(s.postCommitsFetch)))
 	mux.Handle("POST /projects/{project}/commits/cherrypick", s.requireMember(hime.Handler(s.postCommitsCherryPick)))
@@ -809,6 +815,7 @@ type pageData struct {
 	IsClickUp      bool
 	IsErrors       bool
 	IsCommits      bool
+	IsCode         bool
 	IsReviews      bool
 	IsStart        bool
 	IsDeploys      bool
@@ -1048,8 +1055,10 @@ type pageData struct {
 	CommitHasNext    bool
 	// 1-based position of the first/last row on this page within the full
 	// log (total is unknown — git log has no cheap count). Zero when empty.
-	CommitRangeStart  int
-	CommitRangeEnd    int
+	CommitRangeStart int
+	CommitRangeEnd   int
+	// Code is the source browser (one directory or one file at a revision).
+	Code              codeView
 	CanReviewCommit   bool
 	CherryPickTargets []string
 	CanCherryPick     bool

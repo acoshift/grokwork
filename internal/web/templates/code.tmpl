@@ -1,0 +1,171 @@
+{{define "content"}}
+<h1 id="page-code">{{.Project}} <span class="muted" style="font-weight:500;font-size:0.95rem">· code</span></h1>
+<p class="sub">
+  {{if .ActiveOwner}}Repo <span class="mono">{{.ActiveOwner}}/{{.ActiveRepo}}</span>{{end}}
+  {{if .Code.Ref}} · <span class="mono">{{.Code.Ref}}</span>{{end}}
+  {{if .Code.TreeShort}} · <span class="mono" title="{{.Code.TreeOID}}">{{.Code.TreeShort}}</span>{{end}}
+  {{if .Code.Path}} · <span class="mono" id="code-path-label">{{.Code.Path}}</span>{{end}}
+</p>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+{{if .RepoCatalog}}
+<div class="toolbar" id="code-toolbar">
+<form method="get" action="/projects/{{.Project}}/code" id="code-filter" style="display:contents">
+  <div class="field" style="flex-basis:18rem">
+    <label for="code-repo-pick">Repository</label>
+    <select id="code-repo-pick" name="repo_full" data-autosubmit>
+      {{range .RepoCatalog}}
+      <option value="{{.Owner}}/{{.Repo}}" {{if and (eq .Owner $.ActiveOwner) (eq .Repo $.ActiveRepo)}}selected{{end}}>{{.Owner}}/{{.Repo}}</option>
+      {{end}}
+    </select>
+    <input type="hidden" name="owner" id="code-owner" value="{{.ActiveOwner}}">
+    <input type="hidden" name="repo" id="code-repo" value="{{.ActiveRepo}}">
+  </div>
+  <div class="field">
+    <label for="code-ref">Ref</label>
+    <select id="code-ref" name="ref" class="mono" data-autosubmit>
+      {{if .Code.Branches}}
+      <optgroup label="Branches">
+        {{range .Code.Branches}}
+        <option value="{{.}}"{{if eq . $.Code.Ref}} selected{{end}}>{{.}}</option>
+        {{end}}
+      </optgroup>
+      {{end}}
+      {{if .Code.Tags}}
+      <optgroup label="Tags">
+        {{range .Code.Tags}}
+        <option value="{{.Ref}}"{{if eq .Ref $.Code.Ref}} selected{{end}}>{{.Label}}</option>
+        {{end}}
+      </optgroup>
+      {{end}}
+    </select>
+  </div>
+  <div class="field" style="flex-basis:22rem">
+    <label for="code-commit">Commit</label>
+    <select id="code-commit" name="commit" class="mono" data-autosubmit>
+      <option value=""{{if not .Code.Pinned}} selected{{end}}>Latest{{if .Code.TipShort}} ({{.Code.TipShort}}){{end}}</option>
+      {{range .Code.Commits}}
+      <option value="{{.SHA}}"{{if .Selected}} selected{{end}}>{{.Short}} {{.Subject}}</option>
+      {{end}}
+    </select>
+  </div>
+  <input type="hidden" name="path" id="code-path" value="{{.Code.Path}}">
+</form>
+{{if .Code.CanFetch}}
+<form method="post" action="/projects/{{.Project}}/code/fetch" id="code-fetch" hx-boost="false" style="display:contents">
+  {{template "csrf" .}}
+  <input type="hidden" name="owner" value="{{.ActiveOwner}}">
+  <input type="hidden" name="repo" value="{{.ActiveRepo}}">
+  <input type="hidden" name="ref" value="{{.Code.Ref}}">
+  <input type="hidden" name="commit" value="{{if .Code.Pinned}}{{.Code.TreeOID}}{{end}}">
+  <input type="hidden" name="path" value="{{.Code.Path}}">
+  <button type="submit" class="btn-secondary" title="git fetch --all --prune; unshallow if needed">Fetch</button>
+</form>
+{{end}}
+</div>
+{{else}}
+<p class="sub">No repos in catalog. Set <span class="mono">projects.{{.Project}}.github.repos</span> on Config, or ensure git remotes exist.</p>
+{{end}}
+
+{{if .Code.Crumbs}}
+<p class="pr-crumb" id="code-crumbs">
+  {{range .Code.Crumbs}}
+  {{if .Href}}<a href="{{.Href}}">{{.Label}}</a>{{else}}<span class="mono">{{.Label}}</span>{{end}}
+  {{if not .Last}}<span class="crumb-sep">/</span>{{end}}
+  {{end}}
+  {{if .Code.Path}}
+  <button type="button" class="btn-secondary" data-copy-target="code-path-label" style="margin-left:0.5rem">Copy path</button>
+  {{end}}
+</p>
+{{end}}
+
+{{if .Code.File}}
+<div class="section" id="code-file">
+  <p class="sub">
+    {{if .Code.Mode}}<span class="mono">{{.Code.Mode}}</span>{{end}}
+    {{if .Code.SizeText}} · {{.Code.SizeText}}{{end}}
+    {{if .Code.BlobShort}} · blob <span class="mono" title="{{.Code.BlobOID}}">{{.Code.BlobShort}}</span>{{end}}
+    {{if .Code.TreeOID}} · <a href="/projects/{{.Project}}/commits/{{.Code.TreeOID}}?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}">View commit</a>{{end}}
+    {{if .Code.RawURL}} · <a href="{{.Code.RawURL}}" hx-boost="false">Raw</a>{{end}}
+  </p>
+  {{if .Code.Submodule}}
+  <p>Submodule <span class="mono">{{.Code.BlobShort}}</span>. This view does not open it.</p>
+  {{else if .Code.Symlink}}
+  <p>Symlink to <span class="mono">{{if .Code.LinkText}}{{.Code.LinkText}}{{else}}(not text){{end}}</span></p>
+  {{else if .Code.TooBig}}
+  <p>This file is {{.Code.SizeText}}, over the 1 MiB limit. It is not shown or downloaded here.</p>
+  {{else if .Code.Binary}}
+  <p>Binary file{{if .Code.SizeText}}, {{.Code.SizeText}}{{end}}.{{if .Code.RawURL}} <a href="{{.Code.RawURL}}" hx-boost="false">Download</a>{{end}}</p>
+  {{else if .Code.MissingObject}}
+  <p>Object is not in this clone. Fetch to try again.</p>
+  {{else if .Code.Empty}}
+  <p class="muted">Empty file.</p>
+  {{else}}
+  {{if .Code.LFS}}<p>Git LFS pointer. The object is not in this view.</p>{{end}}
+  {{if .Code.TooMany}}
+  <p>This file has too many lines to show here.{{if .Code.RawURL}} <a href="{{.Code.RawURL}}" hx-boost="false">Raw</a>{{end}}</p>
+  {{else if .Code.Lines}}
+  <pre class="code-view" id="code-view">{{range .Code.Lines}}<span class="code-line" id="L{{.N}}"><a class="code-ln" href="#L{{.N}}">{{.N}}</a>{{.Text}}</span>
+{{end}}</pre>
+  {{end}}
+  {{end}}
+</div>
+{{else if .Code.Listed}}
+<div class="section" id="code-tree">
+  {{if not .Code.Entries}}
+  <p class="muted">This directory is empty.</p>
+  {{else}}
+  {{if .Code.Clipped}}<p class="sub">Showing {{.Code.Shown}} of {{.Code.EntryTotal}}.</p>{{end}}
+  <ul class="code-tree">
+    {{range .Code.Entries}}
+    <li>
+      {{if .Href}}<a href="{{.Href}}">{{.Name}}</a>{{else}}<span>{{.Name}}</span>{{end}}
+      {{if .Meta}}<span class="muted">{{.Meta}}</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+</div>
+{{else if and .Code.Clipped (lt .Code.EntryTotal 0)}}
+<p>This directory is too large to list.</p>
+{{end}}
+
+<style>
+  .code-tree { list-style: none; padding: 0; margin: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+  .code-tree li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0.75rem; border-top: 1px solid var(--border); }
+  .code-tree li:first-child { border-top: 0; }
+  .code-view { overflow: auto; margin: 0; padding: 0.75rem 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-family: var(--mono); font-size: 0.82rem; line-height: 1.45; }
+  .code-line { display: block; padding-right: 0.75rem; white-space: pre; }
+  .code-line:target { background: var(--accent-soft); }
+  .code-ln { display: inline-block; width: 3.5rem; padding-right: 0.75rem; text-align: right; color: var(--muted); user-select: none; text-decoration: none; }
+</style>
+<script>
+(function(){
+  var form=document.getElementById('code-filter');
+  if(!form) return;
+  var sel=document.getElementById('code-repo-pick');
+  function sync(){
+    var p=(sel.value||'/').split('/');
+    document.getElementById('code-owner').value=p[0]||'';
+    document.getElementById('code-repo').value=p[1]||'';
+  }
+  sel.addEventListener('change', function(){
+    sync();
+    var refEl=document.getElementById('code-ref');
+    var commitEl=document.getElementById('code-commit');
+    var pathEl=document.getElementById('code-path');
+    if(refEl) refEl.disabled=true;
+    if(commitEl) commitEl.disabled=true;
+    if(pathEl) pathEl.disabled=true;
+  });
+  var refEl=document.getElementById('code-ref');
+  if(refEl) refEl.addEventListener('change', function(){
+    var commitEl=document.getElementById('code-commit');
+    if(commitEl) commitEl.disabled=true;
+  });
+  form.addEventListener('submit', sync);
+  sync();
+})();
+</script>
+{{end}}

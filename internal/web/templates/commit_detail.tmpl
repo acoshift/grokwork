@@ -10,6 +10,7 @@
 {{if .Commit.SHA}}
 <div class="pr-meta">
   <span class="mono" title="{{.Commit.SHA}}">{{.Commit.SHA}}</span>
+  <a href="/projects/{{.Project}}/code?owner={{urlquery .ActiveOwner}}&amp;repo={{urlquery .ActiveRepo}}&amp;commit={{urlquery .Commit.SHA}}">Browse code</a>
   {{if .Commit.AuthorName}}<span>{{.Commit.AuthorName}}{{if .Commit.AuthorEmail}} <span class="mono">&lt;{{.Commit.AuthorEmail}}&gt;</span>{{end}}</span>{{end}}
   {{if not .Commit.AuthorDate.IsZero}}<span class="mono">{{.Commit.AuthorDate.Format "2006-01-02 15:04 MST"}}</span>{{end}}
   {{with .DiffReview}}<span class="mono">{{if .TotalAdds}}<span class="diff-add">+{{.TotalAdds}}</span> {{end}}{{if .TotalDels}}<span class="diff-del">−{{.TotalDels}}</span> · {{end}}{{len .Files}} files</span>{{end}}

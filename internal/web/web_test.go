@@ -1523,7 +1523,7 @@ func TestNavBrandChrome(t *testing.T) {
 			t.Fatalf("global chrome missing %q", want)
 		}
 	}
-	for _, ban := range []string{">Dashboard<", ">Issues<", ">Commits<", ">History</a>", "Grok Discord"} {
+	for _, ban := range []string{">Dashboard<", ">Issues<", ">Commits<", ">Code<", ">History</a>", "Grok Discord"} {
 		if strings.Contains(body, ban) {
 			t.Fatalf("global chrome must not contain %q", ban)
 		}
@@ -1545,6 +1545,7 @@ func TestNavBrandChrome(t *testing.T) {
 		">Cases<",
 		">Issues<",
 		">Commits<",
+		">Code<",
 		">Files<",
 		">Deploys<",
 		">Actions<",
@@ -1556,6 +1557,7 @@ func TestNavBrandChrome(t *testing.T) {
 		`href="/projects/proj/cases"`,
 		`href="/projects/proj/issues"`,
 		`href="/projects/proj/commits"`,
+		`href="/projects/proj/code"`,
 		`href="/projects/proj/files"`,
 		`href="/projects/proj/deploys"`,
 		`href="/projects/proj/actions"`,
@@ -1599,8 +1601,15 @@ func TestNavBrandChrome(t *testing.T) {
 	}
 	// Config is deliberately not a tab in either scope (rarely used; it keeps
 	// a drill-in row on the Projects home / workspace Browse instead).
-	if strings.Contains(tabbar, ">Projects</a>") || strings.Contains(tabbar, ">Settings</a>") {
-		t.Fatal("workspace tab bar must not contain global Projects or Settings tabs")
+	if strings.Contains(tabbar, ">Projects</a>") || strings.Contains(tabbar, ">Settings</a>") || strings.Contains(tabbar, ">Code</a>") {
+		t.Fatal("workspace tab bar must not contain global Projects, Settings, or Code tabs")
+	}
+	nav := body[navStart:tabStart]
+	commits := strings.Index(nav, `href="/projects/proj/commits"`)
+	code := strings.Index(nav, `href="/projects/proj/code"`)
+	files := strings.Index(nav, `href="/projects/proj/files"`)
+	if commits < 0 || code < commits || files < code {
+		t.Fatalf("sidebar order want Commits < Code < Files, got %d %d %d", commits, code, files)
 	}
 }
 
@@ -1695,6 +1704,7 @@ func TestOverviewMobileBrowseListsWorkspaceSections(t *testing.T) {
 	for _, want := range []string{
 		`href="/projects/proj/issues"`,
 		`href="/projects/proj/commits"`,
+		`href="/projects/proj/code"`,
 		`href="/projects/proj/files"`,
 		`href="/projects/proj/deploys"`,
 		`href="/projects/proj/actions"`,
@@ -1704,6 +1714,7 @@ func TestOverviewMobileBrowseListsWorkspaceSections(t *testing.T) {
 		`href="/config/projects/proj"`,
 		">Issues<",
 		">Commits<",
+		">Code<",
 		">Files<",
 		">Deploys<",
 		">Actions<",
@@ -1724,6 +1735,12 @@ func TestOverviewMobileBrowseListsWorkspaceSections(t *testing.T) {
 	worktrees := strings.Index(browse, `href="/projects/proj/worktrees"`)
 	if actions < 0 || sessions < actions || worktrees < sessions {
 		t.Fatalf("Browse order want Actions < Sessions < Worktrees, got %d %d %d", actions, sessions, worktrees)
+	}
+	commits := strings.Index(browse, `href="/projects/proj/commits"`)
+	code := strings.Index(browse, `href="/projects/proj/code"`)
+	files := strings.Index(browse, `href="/projects/proj/files"`)
+	if commits < 0 || code < commits || files < code {
+		t.Fatalf("Browse order want Commits < Code < Files, got %d %d %d", commits, code, files)
 	}
 	// Tab-bar destinations stay off the Browse list (they already have a
 	// permanent footer control). Start task is the top-bar chip.
