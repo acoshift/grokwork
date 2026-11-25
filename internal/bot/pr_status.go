@@ -164,9 +164,9 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) prPollStats {
 			stats.Updated++
 			continue
 		}
-		// Local terminal cleanup above still runs. GitHub view/checks, and the
-		// CI auto-fix they trip, do not — the next cycle picks the project up
-		// again once the flag is cleared.
+		// Terminal cleanup above is local for a disabled project. Open PRs are
+		// not viewed or checked, so CI auto-fix does not run. The next cycle
+		// includes the project once the flag is cleared.
 		if b.cfg != nil && b.cfg.ProjectDisabled(e.Project) {
 			continue
 		}
@@ -761,9 +761,15 @@ func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 		return fmt.Errorf("open PRs remain")
 	}
 
-	// Before the worktree is freed: prViewCwd may still need it. Idempotent —
-	// the poller may re-observe a fully-terminal session after the box is checked.
-	b.syncEpicChecklist(threadID, e)
+	// Checklist edits and CleanupIfPRDoneWith talk to GitHub (issue view/edit,
+	// gh pr list, and the remote-branch delete). Skip them while the project
+	// is disabled. The local worktree remove below still runs. An open case
+	// returns before that remove, so skipping the checklist is what keeps
+	// the next poll off GitHub.
+	disabled := b.cfg != nil && b.cfg.ProjectDisabled(e.Project)
+	if !disabled {
+		b.syncEpicChecklist(threadID, e)
+	}
 
 	if e.IsCase() && !e.IsCaseClosed() {
 		return nil
@@ -784,23 +790,29 @@ func (b *Bot) cleanupWhenAllPRsDone(threadID string) error {
 
 	if mainCwd != "" && gitworktree.IsRepo(mainCwd) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		opts := gitworktree.EnsureOpts{BranchPrefix: gitworktree.PrefixForUnitID(threadID)}
-		if p := gitworktree.PrefixFromBranch(branch); p != "" {
-			opts.BranchPrefix = p
-		}
-		cleaned, state, err := gitworktree.CleanupIfPRDoneWith(ctx, mainCwd, b.cfg.WorktreesRoot(), e.Project, threadID, opts)
-		if err != nil {
-			log.Printf("pr-status: CleanupIfPRDone thread=%s: %v — trying Remove", threadID, err)
+		if disabled {
 			if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {
 				log.Printf("pr-status: Remove thread=%s: %v", threadID, rmErr)
 			}
-		} else if cleaned {
-			log.Printf("pr-status: cleaned worktree after PR %s thread=%s", state, threadID)
 		} else {
-			if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {
-				log.Printf("pr-status: Remove (fallback) thread=%s: %v", threadID, rmErr)
+			opts := gitworktree.EnsureOpts{BranchPrefix: gitworktree.PrefixForUnitID(threadID)}
+			if p := gitworktree.PrefixFromBranch(branch); p != "" {
+				opts.BranchPrefix = p
+			}
+			cleaned, state, err := gitworktree.CleanupIfPRDoneWith(ctx, mainCwd, b.cfg.WorktreesRoot(), e.Project, threadID, opts)
+			if err != nil {
+				log.Printf("pr-status: CleanupIfPRDone thread=%s: %v — trying Remove", threadID, err)
+				if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {
+					log.Printf("pr-status: Remove thread=%s: %v", threadID, rmErr)
+				}
+			} else if cleaned {
+				log.Printf("pr-status: cleaned worktree after PR %s thread=%s", state, threadID)
 			} else {
-				log.Printf("pr-status: removed worktree (fallback) thread=%s prs=%d", threadID, len(e.PRs))
+				if rmErr := gitworktree.Remove(ctx, mainCwd, path, branch); rmErr != nil {
+					log.Printf("pr-status: Remove (fallback) thread=%s: %v", threadID, rmErr)
+				} else {
+					log.Printf("pr-status: removed worktree (fallback) thread=%s prs=%d", threadID, len(e.PRs))
+				}
 			}
 		}
 		cancel()

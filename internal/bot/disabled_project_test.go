@@ -242,3 +242,133 @@ func gitRev(t *testing.T, dir, ref string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// TestPollSkipsGitHubOnDisabledTerminalCleanup drives pollPRStatuses for a
+// disabled project whose PRs are already terminal and whose worktree is still
+// pending. branchPRTerminal execs gh itself and ignores SetGHRunner, and an
+// open case re-enters this path every poll, so the assertion is a PATH shim.
+func TestPollSkipsGitHubOnDisabledTerminalCleanup(t *testing.T) {
+	calls := ghShimOnPath(t)
+
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-b", "main")
+	runGit(t, repo, "config", "user.email", "test@example.com")
+	runGit(t, repo, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "a.txt")
+	runGit(t, repo, "commit", "-m", "init")
+	const (
+		mergedID     = "quiet-merged"
+		caseID       = "quiet-case"
+		mergedBranch = "grokwork/quiet-merged"
+		caseBranch   = "grokwork/quiet-case"
+	)
+	runGit(t, repo, "branch", mergedBranch)
+	runGit(t, repo, "branch", caseBranch)
+
+	b, store := testBotSessions(t)
+	drainBotOnCleanup(t, b)
+	b.cfg.Projects["quiet"] = config.ProjectConfig{Path: repo, Disabled: true}
+	b.cfg.WebAuth = &config.WebAuthConfig{
+		Enabled:  true,
+		Features: config.WebAuthFeatures{GitHubWrites: true},
+	}
+
+	merged := sessionstore.Entry{
+		Project: "quiet", SessionID: "s-merged",
+		MainCwd: repo, WorktreeBranch: mergedBranch,
+		PRs: []sessionstore.TrackedPR{{
+			URL: "https://github.com/acme/quiet/pull/3", Number: 3, State: "MERGED",
+			Title: "done", HeadSHA: "abc", HeadRef: mergedBranch, Owner: "acme", Repo: "quiet",
+		}},
+		Issues: []sessionstore.TrackedIssue{{
+			Number: 9, Owner: "acme", Repo: "quiet",
+			URL: "https://github.com/acme/quiet/issues/9",
+		}},
+	}
+	openCase := merged
+	openCase.SessionID = "s-case"
+	openCase.Mode = "case"
+	openCase.Phase = sessionstore.PhaseFixing
+	openCase.WorktreeBranch = caseBranch
+	openCase.PRs = []sessionstore.TrackedPR{{
+		URL: "https://github.com/acme/quiet/pull/4", Number: 4, State: "MERGED",
+		Title: "case done", HeadSHA: "def", HeadRef: caseBranch, Owner: "acme", Repo: "quiet",
+	}}
+	if err := store.Set(mergedID, merged); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set(caseID, openCase); err != nil {
+		t.Fatal(err)
+	}
+
+	b.pollPRStatuses(nil)
+	if got := readGHCalls(t, calls); got != "" {
+		t.Fatalf("disabled terminal cleanup invoked gh:\n%s", got)
+	}
+
+	got, ok := store.Get(mergedID)
+	if !ok {
+		t.Fatal("merged session missing")
+	}
+	if got.Cwd != "" || got.WorktreeBranch != "" {
+		t.Fatalf("local cleanup left worktree pointers: cwd=%q branch=%q", got.Cwd, got.WorktreeBranch)
+	}
+	if localBranchExists(t, repo, mergedBranch) {
+		t.Fatal("local managed branch was not removed")
+	}
+
+	kept, ok := store.Get(caseID)
+	if !ok {
+		t.Fatal("case session missing")
+	}
+	if kept.WorktreeBranch != caseBranch {
+		t.Fatalf("open case worktree cleared: %q", kept.WorktreeBranch)
+	}
+	if !localBranchExists(t, repo, caseBranch) {
+		t.Fatal("open case branch was deleted")
+	}
+
+	// The open case stays pending, so the next poll walks cleanup again.
+	b.pollPRStatuses(nil)
+	if got := readGHCalls(t, calls); got != "" {
+		t.Fatalf("second poll invoked gh:\n%s", got)
+	}
+	if !localBranchExists(t, repo, caseBranch) {
+		t.Fatal("second poll deleted the open case branch")
+	}
+}
+
+// ghShimOnPath puts a fake gh ahead of PATH. branchPRTerminal and the default
+// gh runner both exec "gh" by name, so this sees calls SetGHRunner cannot.
+func ghShimOnPath(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + calls + "\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return calls
+}
+
+func readGHCalls(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ""
+		}
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func localBranchExists(t *testing.T, repo, branch string) bool {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", "-C", repo, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	return cmd.Run() == nil
+}
