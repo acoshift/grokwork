@@ -121,7 +121,7 @@ func (s *Server) prAskRedirect(ctx *hime.Context, owner, repo string, n int, pro
 func (s *Server) partialPRAsk(ctx *hime.Context) error {
 	d, err := s.prAskPageData(ctx)
 	if err != nil {
-		return writeStatus(ctx, err)
+		return err
 	}
 	return s.viewFragment(ctx, "pr_detail", "pr_ask", d)
 }
@@ -129,7 +129,7 @@ func (s *Server) partialPRAsk(ctx *hime.Context) error {
 func (s *Server) partialPRAskRun(ctx *hime.Context) error {
 	d, err := s.prAskPageData(ctx)
 	if err != nil {
-		return writeStatus(ctx, err)
+		return err
 	}
 	return s.viewFragment(ctx, "pr_detail", "pr_ask_run", d)
 }
@@ -142,12 +142,12 @@ func (s *Server) prAskPageData(ctx *hime.Context) (pageData, error) {
 	repo := strings.TrimSpace(ctx.PathValue("repo"))
 	n, err := strconv.Atoi(strings.TrimSpace(ctx.PathValue("n")))
 	if err != nil || n <= 0 || owner == "" || repo == "" {
-		return pageData{}, httpStatus(http.StatusBadRequest, "invalid PR path")
+		return pageData{}, ctx.BadRequest("invalid PR path")
 	}
 	project := strings.TrimSpace(ctx.FormValue("project"))
 	project, ref, _, err := s.resolveCatalogRepoAccess(ctx, project, owner, repo)
 	if err != nil {
-		return pageData{}, httpStatus(http.StatusForbidden, err.Error())
+		return pageData{}, ctx.Forbidden(err.Error())
 	}
 	d := s.basePage(ctx)
 	d.IsShip = true
