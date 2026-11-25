@@ -515,6 +515,142 @@ func TestProjectRepoFetchInterval(t *testing.T) {
 	}
 }
 
+func TestProjectDisabledPersists(t *testing.T) {
+	dir := t.TempDir()
+	quiet := filepath.Join(dir, "quiet")
+	live := filepath.Join(dir, "live")
+	for _, p := range []string{quiet, live} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfgPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"discordToken": "tok",
+		"projects": {
+			"quiet": "` + quiet + `",
+			"live": {"path": "` + live + `"}
+		},
+		"channels": {}
+	}`
+	if err := os.WriteFile(cfgPath, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	if err := json.Unmarshal(file, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConfigPath = cfgPath
+	cfg.DataDir = dir
+	if cfg.ProjectDisabled("quiet") || cfg.ProjectDisabled("live") {
+		t.Fatal("absent flag, including a string-form project, loaded as disabled")
+	}
+
+	if err := cfg.SetProjectDisabled("quiet", true); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(cfg.Projects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var round ProjectsMap
+	if err := json.Unmarshal(encoded, &round); err != nil {
+		t.Fatal(err)
+	}
+	if !round["quiet"].Disabled {
+		t.Fatal("quiet lost disabled across projects-map marshal")
+	}
+	if round["live"].Disabled {
+		t.Fatal("live became disabled across projects-map marshal")
+	}
+
+	if err := cfg.SetProjectRepoFetchIntervalMinutes("quiet", 15); err != nil {
+		t.Fatal(err)
+	}
+	again := reloadConfig(t, cfgPath)
+	if !again.Projects["quiet"].Disabled {
+		t.Fatal("unrelated save dropped disabled")
+	}
+	if again.Projects["quiet"].RepoFetchIntervalMinutes == nil || *again.Projects["quiet"].RepoFetchIntervalMinutes != 15 {
+		t.Fatalf("interval=%v", again.Projects["quiet"].RepoFetchIntervalMinutes)
+	}
+	if again.Projects["live"].Disabled || again.Projects["live"].Path != live {
+		t.Fatalf("live changed: %+v", again.Projects["live"])
+	}
+	var snapQuiet, snapLive bool
+	var sawQuiet, sawLive bool
+	for _, item := range cfg.Snapshot().Projects {
+		switch item.Name {
+		case "quiet":
+			sawQuiet = true
+			snapQuiet = item.Disabled
+		case "live":
+			sawLive = true
+			snapLive = item.Disabled
+		}
+	}
+	if !sawQuiet || !sawLive || !snapQuiet || snapLive {
+		t.Fatalf("snapshot quiet=%v live=%v saw=%v/%v", snapQuiet, snapLive, sawQuiet, sawLive)
+	}
+
+	if err := cfg.SetProjectDisabled("quiet", false); err != nil {
+		t.Fatal(err)
+	}
+	cleared := reloadConfig(t, cfgPath)
+	if cleared.Projects["quiet"].Disabled {
+		t.Fatal("clearing disabled did not persist")
+	}
+	if cleared.Projects["live"].Disabled || cleared.Projects["live"].Path != live {
+		t.Fatalf("live changed on clear: %+v", cleared.Projects["live"])
+	}
+	if cfg.ProjectDisabled("quiet") || cfg.Snapshot().Projects == nil {
+		t.Fatal("live config still reports quiet disabled")
+	}
+	for _, item := range cfg.Snapshot().Projects {
+		if item.Name == "quiet" && item.Disabled {
+			t.Fatal("snapshot still reports quiet disabled")
+		}
+	}
+}
+
+func TestIdleFetchTargetsKeepSharedPathWhenSiblingDisabled(t *testing.T) {
+	shared := t.TempDir()
+	only := t.TempDir()
+	mins := 5
+	cfg := &Config{Projects: ProjectsMap{
+		"off":  {Path: shared, Disabled: true, RepoFetchIntervalMinutes: &mins},
+		"on":   {Path: shared, RepoFetchIntervalMinutes: &mins},
+		"solo": {Path: only, Disabled: true, RepoFetchIntervalMinutes: &mins},
+	}}
+	var sawOff, sawOn, sawSolo bool
+	for _, tgt := range cfg.IdleRepoFetchTargets() {
+		switch tgt.Name {
+		case "off":
+			sawOff = true
+			if tgt.Interval != 0 || tgt.Path != shared {
+				t.Fatalf("off=%+v", tgt)
+			}
+		case "on":
+			sawOn = true
+			if tgt.Interval != 5*time.Minute || tgt.Path != shared {
+				t.Fatalf("on=%+v", tgt)
+			}
+		case "solo":
+			sawSolo = true
+			if tgt.Interval != 0 || tgt.Path != only {
+				t.Fatalf("solo=%+v", tgt)
+			}
+		}
+	}
+	if !sawOff || !sawOn || !sawSolo {
+		t.Fatalf("targets=%+v", cfg.IdleRepoFetchTargets())
+	}
+}
+
 func TestLoadStringProjectsStillWorks(t *testing.T) {
 	dir := t.TempDir()
 	proj := filepath.Join(dir, "p")

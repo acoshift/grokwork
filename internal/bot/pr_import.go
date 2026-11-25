@@ -35,6 +35,9 @@ func (b *Bot) importOpenGitHubPRs() int {
 }
 
 func (b *Bot) importOpenGitHubPRsForProject(project string) int {
+	if b.cfg.ProjectDisabled(project) {
+		return 0
+	}
 	cwd, ok := b.cfg.ProjectPath(project)
 	if !ok || strings.TrimSpace(cwd) == "" {
 		return 0

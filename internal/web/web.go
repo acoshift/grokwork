@@ -240,6 +240,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 		"config.storage":                     "/config/storage",
 		"config.setProjectChannel":           "/config/projects/channel",
 		"config.setProjectFetch":             "/config/projects/fetch",
+		"config.setProjectDisabled":          "/config/projects/disabled",
 		"config.setProjectShip":              "/config/projects/ship",
 		"config.setProjectAgentMCP":          "/config/projects/agent-mcp",
 		"config.setProjectSafeTeam":          "/config/projects/safe-team",
@@ -719,6 +720,7 @@ func New(cfg *config.Config, sessions *sessionstore.Store, hist *history.Store, 
 	mux.Handle("POST /config/projects/storage", s.requireAdmin(hime.Handler(s.setProjectStorage)))
 	mux.Handle("POST /config/projects/channel", s.requireAdmin(hime.Handler(s.setProjectChannel)))
 	mux.Handle("POST /config/projects/fetch", s.requireAdmin(hime.Handler(s.setProjectFetch)))
+	mux.Handle("POST /config/projects/disabled", s.requireAdmin(hime.Handler(s.setProjectDisabled)))
 	mux.Handle("POST /config/projects/ship", s.requireAdmin(hime.Handler(s.setProjectShip)))
 	mux.Handle("POST /config/projects/agent-mcp", s.requireAdmin(hime.Handler(s.setProjectAgentMCP)))
 	mux.Handle("POST /config/projects/safe-team", s.requireAdmin(hime.Handler(s.setProjectSafeTeam)))
@@ -1880,6 +1882,20 @@ func (s *Server) setProjectFetch(ctx *hime.Context) error {
 		"name": name, "repoFetchIntervalMinutes": mins,
 	})
 	return s.projectConfigTabRedirect(ctx, name, "integrations", fmt.Sprintf("Updated idle repo fetch interval for project %q", name), err)
+}
+
+func (s *Server) setProjectDisabled(ctx *hime.Context) error {
+	name := ctx.PostFormValue("name")
+	disabled := ctx.PostFormValue("disabled") == "1"
+	err := s.cfg.SetProjectDisabled(name, disabled)
+	s.auditAction(ctx, "config.set_project_disabled", err, map[string]any{
+		"name": name, "disabled": disabled,
+	})
+	msg := fmt.Sprintf("Background jobs for project %q are on", name)
+	if disabled {
+		msg = fmt.Sprintf("Background jobs for project %q are off", name)
+	}
+	return s.projectConfigTabRedirect(ctx, name, "integrations", msg, err)
 }
 
 func (s *Server) setProjectShip(ctx *hime.Context) error {

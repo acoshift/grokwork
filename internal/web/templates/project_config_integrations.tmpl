@@ -541,5 +541,29 @@
     <div class="form-actions" style="align-self:end"><button type="submit">Save</button></div>
   </form>
 </div>
+
+<div class="section card" id="project-background">
+  <h2>Background jobs</h2>
+  <p class="sub" style="margin-top:0" id="project-disabled-state">
+    {{if .ProjectItem.Disabled}}
+    Background jobs are off for this project. Idle git fetch and GitHub PR sync skip it until this is cleared.
+    {{else}}
+    Background jobs are on for this project. Idle git fetch and GitHub PR sync include it.
+    {{end}}
+  </p>
+  <p class="sub">
+    Turning this off saves fetch and GitHub calls for a project that is not in use.
+    Chat, the web UI, deploys, and fetching by hand keep working.
+  </p>
+  <form method="post" action="{{route "config.setProjectDisabled"}}">
+    {{template "csrf" $}}
+    <input type="hidden" name="name" value="{{.ProjectItem.Name}}">
+    <label class="check">
+      <input id="project-disabled" type="checkbox" name="disabled" value="1"{{if .ProjectItem.Disabled}} checked{{end}}>
+      Disable background jobs
+    </label>
+    <div class="form-actions"><button type="submit">Save</button></div>
+  </form>
+</div>
 </div>
 {{end}}

@@ -267,6 +267,7 @@ type ProjectItem struct {
 	// (normalized, sorted, deduped) — "who is on this project".
 	MemberIDs                []string
 	RepoFetchIntervalMinutes int  // effective minutes (default when unset; 0 = disabled)
+	Disabled                 bool // background fetch and PR sync are off
 	DirectToPrimary          bool // true when project ships without PRs
 	AgentMCPAlways           bool // true when Grok investigate/plan also attach grokwork MCP
 	// Safe team / capabilities (K16)
@@ -1499,6 +1500,7 @@ func (c *Config) Snapshot() Snapshot {
 			Teams:                    teamItems(pc),
 			MemberIDs:                projectActorIDsLocked(pc),
 			RepoFetchIntervalMinutes: fetchMins,
+			Disabled:                 pc.Disabled,
 			DirectToPrimary:          pc.DirectToPrimary != nil && *pc.DirectToPrimary,
 			AgentMCPAlways:           pc.AgentMCPAlways != nil && *pc.AgentMCPAlways,
 			SafeTeamMode:             pc.SafeTeamMode != nil && *pc.SafeTeamMode,

@@ -46,6 +46,12 @@ type ProjectConfig struct {
 	// fetches that checkout once. New worktrees always
 	// fetch with a short hardcoded throttle (see gitworktree.CreateFetchThrottle).
 	RepoFetchIntervalMinutes *int `json:"repoFetchIntervalMinutes,omitempty"`
+	// Disabled turns off this project's background git fetch and GitHub PR
+	// sync (open-PR import and status refresh). Absent or false leaves those
+	// jobs on. Discord, the web UI, deploys, manual fetches, and worktree
+	// creation are unchanged. A positive repoFetchIntervalMinutes still does
+	// not fetch while this is set.
+	Disabled bool `json:"disabled,omitzero"`
 	// DirectToPrimary, when true, new sessions stamp ShipMode=direct and ship
 	// via fast-forward push to the project primary (no PR). nil/false = PR mode.
 	DirectToPrimary *bool `json:"directToPrimary,omitempty"`
@@ -233,6 +239,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 		AllowedUserIDs           []string                `json:"allowedUserIds,omitempty"`
 		Teams                    map[string]TeamConfig   `json:"teams,omitempty"`
 		RepoFetchIntervalMinutes *int                    `json:"repoFetchIntervalMinutes,omitempty"`
+		Disabled                 bool                    `json:"disabled,omitzero"`
 		DirectToPrimary          *bool                   `json:"directToPrimary,omitempty"`
 		AgentMCPAlways           *bool                   `json:"agentMCPAlways,omitempty"`
 		SafeTeamMode             *bool                   `json:"safeTeamMode,omitempty"`
@@ -264,6 +271,7 @@ func (m ProjectsMap) MarshalJSON() ([]byte, error) {
 			AllowedUserIDs:           slices.Clone(pc.AllowedUserIDs),
 			Teams:                    cloneTeams(pc.Teams),
 			RepoFetchIntervalMinutes: cloneIntPtr(pc.RepoFetchIntervalMinutes),
+			Disabled:                 pc.Disabled,
 			DirectToPrimary:          cloneBoolPtr(pc.DirectToPrimary),
 			AgentMCPAlways:           cloneBoolPtr(pc.AgentMCPAlways),
 			SafeTeamMode:             cloneBoolPtr(pc.SafeTeamMode),
@@ -326,6 +334,7 @@ func cloneProjectsMap(m ProjectsMap) ProjectsMap {
 			AllowedUserIDs:           slices.Clone(v.AllowedUserIDs),
 			Teams:                    cloneTeams(v.Teams),
 			RepoFetchIntervalMinutes: cloneIntPtr(v.RepoFetchIntervalMinutes),
+			Disabled:                 v.Disabled,
 			DirectToPrimary:          cloneBoolPtr(v.DirectToPrimary),
 			AgentMCPAlways:           cloneBoolPtr(v.AgentMCPAlways),
 			SafeTeamMode:             cloneBoolPtr(v.SafeTeamMode),
@@ -529,7 +538,11 @@ func (c *Config) IdleRepoFetchTargets() []IdleRepoFetchTarget {
 			continue
 		}
 		mins := DefaultRepoFetchIntervalMinutes
-		if pc.RepoFetchIntervalMinutes != nil {
+		if pc.Disabled {
+			// Same as an explicit 0: this project is not fetched, and the path
+			// stays unmarked so an enabled project on the same checkout still is.
+			mins = 0
+		} else if pc.RepoFetchIntervalMinutes != nil {
 			if *pc.RepoFetchIntervalMinutes < 0 {
 				mins = DefaultRepoFetchIntervalMinutes
 			} else {
@@ -574,6 +587,36 @@ func (c *Config) SetProjectRepoFetchIntervalMinutes(name string, minutes int) er
 	}
 	d := minutes
 	pc.RepoFetchIntervalMinutes = &d
+	c.Projects[name] = pc
+	return c.saveLocked()
+}
+
+// ProjectDisabled reports whether background git fetch and GitHub PR sync
+// are off for this project. An unknown project is not disabled.
+func (c *Config) ProjectDisabled(name string) bool {
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pc, ok := c.Projects[name]
+	return ok && pc.Disabled
+}
+
+// SetProjectDisabled turns background git fetch and GitHub PR sync on or off
+// for one project and persists. The next cron cycle reads the new value.
+func (c *Config) SetProjectDisabled(name string, disabled bool) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("project name is required")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pc, ok := c.Projects[name]
+	if !ok {
+		return fmt.Errorf("project %q not found", name)
+	}
+	pc.Disabled = disabled
 	c.Projects[name] = pc
 	return c.saveLocked()
 }

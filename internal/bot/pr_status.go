@@ -164,6 +164,12 @@ func (b *Bot) pollPRStatuses(s *discordgo.Session) prPollStats {
 			stats.Updated++
 			continue
 		}
+		// Local terminal cleanup above still runs. GitHub view/checks, and the
+		// CI auto-fix they trip, do not — the next cycle picks the project up
+		// again once the flag is cleared.
+		if b.cfg != nil && b.cfg.ProjectDisabled(e.Project) {
+			continue
+		}
 		stats.Open++
 
 		// Prefer a real git worktree; fall back to project/session path so full
